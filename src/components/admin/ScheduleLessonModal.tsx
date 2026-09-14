@@ -140,13 +140,13 @@ export default function ScheduleLessonModal({
     >
       <form onSubmit={handleSave} noValidate className="flex flex-col gap-4">
         {errors.form && (
-          <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600 dark:bg-red-500/10 dark:text-red-400">
+          <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
             {errors.form}
           </p>
         )}
 
         {isReschedule ? (
-          <p className="-mt-1 rounded-xl bg-indigo-50 px-3 py-2.5 text-xs font-medium text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300">
+          <p className="-mt-1 rounded-xl bg-indigo-50 px-3 py-2.5 text-xs font-medium text-indigo-700">
             {session!.group} / {session!.subject} ({session!.date})
           </p>
         ) : (
@@ -217,7 +217,7 @@ export default function ScheduleLessonModal({
           value={form.scheduledStartTime}
           onChange={(e) => set('scheduledStartTime', e.target.value)}
         />
-        <p className="-mt-2 text-[11px] text-slate-400 dark:text-slate-500">
+        <p className="-mt-2 text-[11px] text-slate-400">
           Kamera va vaqt belgilansa, tizim darsni avtomatik kuzatadi: o'qituvchining vaqtida kelishi (#22), talaba
           diqqati (#19) va o'qituvchi faolligi (#21).
         </p>

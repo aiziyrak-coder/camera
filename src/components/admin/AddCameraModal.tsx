@@ -180,7 +180,7 @@ export default function AddCameraModal({
     >
       <form onSubmit={handleSave} noValidate className="flex flex-col gap-4">
         {errors.form && (
-          <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600 dark:bg-red-500/10 dark:text-red-400">
+          <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
             {errors.form}
           </p>
         )}
@@ -231,7 +231,7 @@ export default function AddCameraModal({
           />
         </div>
         {isEdit && (
-          <p className="-mt-2 text-[11px] text-slate-400 dark:text-slate-500">
+          <p className="-mt-2 text-[11px] text-slate-400">
             Login/parol bo'sh qoldirilsa, avval saqlangan qiymat o'zgarishsiz qoladi.
           </p>
         )}
@@ -263,7 +263,7 @@ export default function AddCameraModal({
             {(() => {
               const existing = zones.find((z) => z.zone === form.zone.trim());
               return existing ? (
-                <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+                <p className="mt-1 text-[11px] text-slate-400">
                   Bu xonada allaqachon {existing.cameraCount} ta kamera bor — yangisi qo'shiladi
                 </p>
               ) : null;
@@ -301,44 +301,44 @@ export default function AddCameraModal({
             { value: 'tamirda', label: "Ta'mirda" },
           ]}
         />
-        <label className="flex items-center gap-2.5 rounded-xl bg-white/40 px-3 py-2.5 text-sm dark:bg-white/5">
+        <label className="flex items-center gap-2.5 rounded-xl bg-white/40 px-3 py-2.5 text-sm">
           <input
             type="checkbox"
             checked={form.isEntrance}
             onChange={(e) => set('isEntrance', e.target.checked)}
             className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
           />
-          <span className="text-slate-700 dark:text-slate-300">
+          <span className="text-slate-700">
             Kirish/koridor kamerasi
-            <span className="ml-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+            <span className="ml-1.5 text-[11px] text-slate-400">
               (davomat uchun bir necha kadr tekshiriladi — tez o'tib ketuvchini ushlash ehtimolini oshiradi)
             </span>
           </span>
         </label>
-        <label className="flex items-center gap-2.5 rounded-xl bg-white/40 px-3 py-2.5 text-sm dark:bg-white/5">
+        <label className="flex items-center gap-2.5 rounded-xl bg-white/40 px-3 py-2.5 text-sm">
           <input
             type="checkbox"
             checked={form.isPerimeter}
             onChange={(e) => set('isPerimeter', e.target.checked)}
             className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
           />
-          <span className="text-slate-700 dark:text-slate-300">
+          <span className="text-slate-700">
             Hovli / perimetr kamerasi
-            <span className="ml-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+            <span className="ml-1.5 text-[11px] text-slate-400">
               (transport AI faqat shu kameralarda ishlaydi — bino oldi, avtoturargoh)
             </span>
           </span>
         </label>
-        <label className="flex items-center gap-2.5 rounded-xl bg-white/40 px-3 py-2.5 text-sm dark:bg-white/5">
+        <label className="flex items-center gap-2.5 rounded-xl bg-white/40 px-3 py-2.5 text-sm">
           <input
             type="checkbox"
             checked={form.isExit}
             onChange={(e) => set('isExit', e.target.checked)}
             className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
           />
-          <span className="text-slate-700 dark:text-slate-300">
+          <span className="text-slate-700">
             Chiqish kamerasi
-            <span className="ml-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+            <span className="ml-1.5 text-[11px] text-slate-400">
               (faqat shu kamerada ko'rinish "ketdi" deb belgilanadi — boshqa ichki kameralar davomatni
               tasdiqlaydi, lekin ketishni belgilamaydi)
             </span>
@@ -362,19 +362,19 @@ export default function AddCameraModal({
             </button>
 
             {testState === 'success' && testResult && (
-              <p className="mt-2 flex items-center gap-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+              <p className="mt-2 flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-600">
                 <CheckCircle2 size={14} />
                 {testResult.message}
                 {testResult.latencyMs != null ? ` (${testResult.latencyMs} ms)` : ''}
               </p>
             )}
             {testState === 'failed' && testResult && (
-              <p className="mt-2 flex items-center gap-1.5 rounded-xl bg-red-50 dark:bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-600 dark:text-red-400">
+              <p className="mt-2 flex items-center gap-1.5 rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-600">
                 <XCircle size={14} />
                 {testResult.message}
               </p>
             )}
-            <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+            <p className="mt-1.5 text-[11px] text-slate-400">
               Haqiqiy tekshiruv: TCP portga ulanish va imkon bo'lsa RTSP oqimini ffprobe orqali tasdiqlash.
             </p>
           </div>

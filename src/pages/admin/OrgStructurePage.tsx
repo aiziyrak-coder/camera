@@ -101,12 +101,12 @@ export default function OrgStructurePage() {
       />
 
       {error && (
-        <p className="mb-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600 dark:bg-red-500/10 dark:text-red-400">
+        <p className="mb-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
           {error}
         </p>
       )}
 
-      <div className="mb-5 flex gap-2 border-b border-white/70 dark:border-white/10 text-sm">
+      <div className="mb-5 flex gap-2 border-b border-white/70 text-sm">
         {TABS.map((t) => (
           <button
             key={t}
@@ -114,7 +114,7 @@ export default function OrgStructurePage() {
             className={`-mb-px border-b-2 px-3 py-2 font-medium transition-colors ${
               tab === t
                 ? 'border-indigo-600 text-indigo-600'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
           >
             {t}
@@ -132,27 +132,27 @@ export default function OrgStructurePage() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {buildings.map((b) => (
                 <div key={b.id} className="glass-deep flex flex-col gap-3 p-5">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 dark:bg-indigo-500/15 text-indigo-600">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
                     <Building2 size={18} />
                   </div>
                   <div>
-                    <p className="font-bold text-slate-900 dark:text-slate-100">{b.name}</p>
-                    <p className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                    <p className="font-bold text-slate-900">{b.name}</p>
+                    <p className="flex items-center gap-1 text-xs text-slate-500">
                       <Camera size={12} />
                       {b.cameraCount} ta kamera biriktirilgan
                     </p>
                   </div>
-                  <div className="flex gap-3 border-t border-white/70 dark:border-white/10 pt-3 text-xs font-semibold">
+                  <div className="flex gap-3 border-t border-white/70 pt-3 text-xs font-semibold">
                     <button
                       onClick={() => setEditingBuilding(b)}
-                      className="flex items-center gap-1 text-indigo-600 dark:text-indigo-400 hover:underline"
+                      className="flex items-center gap-1 text-indigo-600 hover:underline"
                     >
                       <Pencil size={12} />
                       Tahrirlash
                     </button>
                     <button
                       onClick={() => handleDeleteBuilding(b.id)}
-                      className="flex items-center gap-1 text-red-500 dark:text-red-400 hover:underline"
+                      className="flex items-center gap-1 text-red-500 hover:underline"
                     >
                       <Trash2 size={12} />
                       O'chirish
@@ -163,7 +163,7 @@ export default function OrgStructurePage() {
 
               <button
                 onClick={() => setBuildingModalOpen(true)}
-                className="glass-deep flex min-h-[140px] flex-col items-center justify-center gap-2 border-dashed text-sm font-semibold text-slate-500 dark:text-slate-400 transition-colors hover:text-indigo-600 dark:hover:text-indigo-400"
+                className="glass-deep flex min-h-[140px] flex-col items-center justify-center gap-2 border-dashed text-sm font-semibold text-slate-500 transition-colors hover:text-indigo-600"
               >
                 <Plus size={20} />
                 Yangi korpus qo'shish
@@ -173,45 +173,45 @@ export default function OrgStructurePage() {
 
           {tab === 'Kafedralar' && (
             <div className="space-y-4">
-              <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+              <p className="text-xs leading-relaxed text-slate-500">
                 Kafedra — bino ichidagi tashkiliy birlik. Monitoring sahifasida kameralar avval bino,
                 so&apos;ngra kafedra bo&apos;yicha filtrlanadi, shuning uchun har bir kafedra o&apos;z
                 binosiga biriktirilgani ma&apos;qul.
               </p>
-              <div className="overflow-x-auto rounded-xl border border-white/70 dark:border-white/10">
+              <div className="overflow-x-auto rounded-xl border border-white/70">
                 <table className="w-full text-left text-sm">
                   <thead>
-                    <tr className="bg-white/50 dark:bg-white/5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    <tr className="bg-white/50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                       <th className="px-4 py-3">Kafedra</th>
                       <th className="px-4 py-3">Bino</th>
                       <th className="px-4 py-3">Kameralar</th>
                       <th className="px-4 py-3">Amallar</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-white/60 dark:divide-white/5">
+                  <tbody className="divide-y divide-white/60">
                     {departments.length === 0 && (
                       <tr>
-                        <td colSpan={4} className="px-4 py-8 text-center text-xs text-slate-400 dark:text-slate-500">
+                        <td colSpan={4} className="px-4 py-8 text-center text-xs text-slate-400">
                           Hozircha kafedra qo&apos;shilmagan.
                         </td>
                       </tr>
                     )}
                     {departments.map((d) => (
-                      <tr key={d.id} className="transition-colors hover:bg-white/40 dark:hover:bg-white/5">
-                        <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">
+                      <tr key={d.id} className="transition-colors hover:bg-white/40">
+                        <td className="px-4 py-3 font-medium text-slate-900">
                           <span className="flex items-center gap-2">
                             <Landmark size={14} className="text-indigo-500" />
                             {d.name}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
+                        <td className="px-4 py-3 text-slate-600">
                           {d.buildingName || <span className="text-slate-400">— ko&apos;rsatilmagan</span>}
                         </td>
-                        <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{d.cameraCount}</td>
+                        <td className="px-4 py-3 text-slate-600">{d.cameraCount}</td>
                         <td className="px-4 py-3">
                           <button
                             onClick={() => handleDeleteDepartment(d.id)}
-                            className="flex items-center gap-1 text-xs font-semibold text-red-500 dark:text-red-400 hover:underline"
+                            className="flex items-center gap-1 text-xs font-semibold text-red-500 hover:underline"
                           >
                             <Trash2 size={12} />
                             O&apos;chirish
@@ -231,33 +231,33 @@ export default function OrgStructurePage() {
 
           {tab === 'Fakultetlar va Kurslar' && (
             <div className="space-y-4">
-              <div className="overflow-x-auto rounded-xl border border-white/70 dark:border-white/10">
+              <div className="overflow-x-auto rounded-xl border border-white/70">
                 <table className="w-full text-left text-sm">
                   <thead>
-                    <tr className="bg-white/50 dark:bg-white/5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    <tr className="bg-white/50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                       <th className="px-4 py-3">Fakultet</th>
                       <th className="px-4 py-3">Kurslar soni</th>
                       <th className="px-4 py-3">Talabalar soni</th>
                       <th className="px-4 py-3">Amallar</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-white/60 dark:divide-white/5">
+                  <tbody className="divide-y divide-white/60">
                     {faculties.map((f) => (
-                      <tr key={f.id} className="transition-colors hover:bg-white/40 dark:hover:bg-white/5">
-                        <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">
+                      <tr key={f.id} className="transition-colors hover:bg-white/40">
+                        <td className="px-4 py-3 font-medium text-slate-900">
                           <span className="flex items-center gap-2">
                             <BookOpen size={14} className="text-indigo-500" />
                             {f.name}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{f.courseCount}</td>
-                        <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
+                        <td className="px-4 py-3 text-slate-600">{f.courseCount}</td>
+                        <td className="px-4 py-3 text-slate-600">
                           {f.studentCount.toLocaleString('ru-RU')}
                         </td>
                         <td className="px-4 py-3">
                           <button
                             onClick={() => handleDeleteFaculty(f.id)}
-                            className="flex items-center gap-1 text-xs font-semibold text-red-500 dark:text-red-400 hover:underline"
+                            className="flex items-center gap-1 text-xs font-semibold text-red-500 hover:underline"
                           >
                             <Trash2 size={12} />
                             O'chirish
@@ -280,10 +280,10 @@ export default function OrgStructurePage() {
 
           {tab === "Guruhlar ro'yxati" && (
             <div className="space-y-4">
-              <div className="overflow-x-auto rounded-xl border border-white/70 dark:border-white/10">
+              <div className="overflow-x-auto rounded-xl border border-white/70">
                 <table className="w-full text-left text-sm">
                   <thead>
-                    <tr className="bg-white/50 dark:bg-white/5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    <tr className="bg-white/50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                       <th className="px-4 py-3">Guruh</th>
                       <th className="px-4 py-3">Fakultet</th>
                       <th className="px-4 py-3">Kurs</th>
@@ -291,22 +291,22 @@ export default function OrgStructurePage() {
                       <th className="px-4 py-3">Amallar</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-white/60 dark:divide-white/5">
+                  <tbody className="divide-y divide-white/60">
                     {groups.map((g) => (
-                      <tr key={g.id} className="transition-colors hover:bg-white/40 dark:hover:bg-white/5">
-                        <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">
+                      <tr key={g.id} className="transition-colors hover:bg-white/40">
+                        <td className="px-4 py-3 font-medium text-slate-900">
                           <span className="flex items-center gap-2">
                             <Users2 size={14} className="text-indigo-500" />
                             {g.name}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{g.faculty}</td>
-                        <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{g.course}-kurs</td>
-                        <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{g.studentCount}</td>
+                        <td className="px-4 py-3 text-slate-600">{g.faculty}</td>
+                        <td className="px-4 py-3 text-slate-600">{g.course}-kurs</td>
+                        <td className="px-4 py-3 text-slate-600">{g.studentCount}</td>
                         <td className="px-4 py-3">
                           <button
                             onClick={() => handleDeleteGroup(g.id)}
-                            className="flex items-center gap-1 text-xs font-semibold text-red-500 dark:text-red-400 hover:underline"
+                            className="flex items-center gap-1 text-xs font-semibold text-red-500 hover:underline"
                           >
                             <Trash2 size={12} />
                             O'chirish

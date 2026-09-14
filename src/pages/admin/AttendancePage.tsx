@@ -28,11 +28,11 @@ interface CalendarCell {
 }
 
 const STATUS_STYLE: Record<CellStatus, string> = {
-  keldi: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400',
-  kech_keldi: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400',
-  kelmadi: 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400',
-  dam_olish: 'bg-slate-100 text-slate-400 dark:bg-white/5 dark:text-slate-500',
-  malumotYoq: 'bg-slate-50 text-slate-300 dark:bg-white/[0.03] dark:text-slate-600',
+  keldi: 'bg-emerald-100 text-emerald-700',
+  kech_keldi: 'bg-amber-100 text-amber-700',
+  kelmadi: 'bg-red-100 text-red-700',
+  dam_olish: 'bg-slate-100 text-slate-400',
+  malumotYoq: 'bg-slate-50 text-slate-300',
 };
 
 const STATUS_LABEL: Record<CellStatus, string> = {
@@ -197,7 +197,7 @@ export default function AttendancePage() {
         <select
           value={personId}
           onChange={(e) => setPersonId(e.target.value)}
-          className="rounded-xl border border-white/80 bg-white/60 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-indigo-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-100"
+          className="rounded-xl border border-white/80 bg-white/60 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-indigo-300"
         >
           {people.map((p) => (
             <option key={p.id} value={p.id}>
@@ -209,16 +209,16 @@ export default function AttendancePage() {
         <div className="ml-auto flex items-center gap-2">
           <button
             onClick={() => shiftMonth(-1)}
-            className="glass-deep rounded-xl p-2 text-slate-500 transition-colors hover:text-indigo-500 dark:text-slate-400"
+            className="glass-deep rounded-xl p-2 text-slate-500 transition-colors hover:text-indigo-500"
           >
             <ChevronLeft size={16} />
           </button>
-          <span className="w-36 text-center text-sm font-bold text-slate-900 dark:text-slate-100">
+          <span className="w-36 text-center text-sm font-bold text-slate-900">
             {MONTH_NAMES[viewMonth]} {viewYear}
           </span>
           <button
             onClick={() => shiftMonth(1)}
-            className="glass-deep rounded-xl p-2 text-slate-500 transition-colors hover:text-indigo-500 dark:text-slate-400"
+            className="glass-deep rounded-xl p-2 text-slate-500 transition-colors hover:text-indigo-500"
           >
             <ChevronRight size={16} />
           </button>
@@ -226,7 +226,7 @@ export default function AttendancePage() {
       </div>
 
       {error && (
-        <p className="mb-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600 dark:bg-red-500/10 dark:text-red-400">
+        <p className="mb-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
           {error}
         </p>
       )}
@@ -245,7 +245,7 @@ export default function AttendancePage() {
         </div>
       ) : (
         <div className="glass-deep p-4">
-          <div className="mb-2 grid grid-cols-7 gap-2 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+          <div className="mb-2 grid grid-cols-7 gap-2 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-400">
             {WEEKDAY_LABELS.map((w) => (
               <span key={w}>{w}</span>
             ))}
@@ -265,7 +265,7 @@ export default function AttendancePage() {
                   className={`group relative flex aspect-square flex-col items-center justify-center rounded-lg text-xs font-semibold ${STATUS_STYLE[day.status]} ${clickable ? 'cursor-pointer transition-transform hover:scale-[1.04]' : ''}`}
                 >
                   {day.earlyLeave && (
-                    <span className="absolute -left-1 -top-1 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-white dark:ring-slate-900" />
+                    <span className="absolute -left-1 -top-1 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-white" />
                   )}
                   <span>{dayNum}</span>
                   {day.checkIn && <span className="text-[9px] font-normal opacity-80">{day.checkIn}</span>}
@@ -276,7 +276,7 @@ export default function AttendancePage() {
                         setDeleting({ date: day.date, status: day.status as AttendanceDayStatus, checkIn: day.checkIn });
                       }}
                       title="Yozuvni o'chirish"
-                      className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-white text-slate-500 opacity-0 shadow-sm ring-1 ring-slate-200 transition-opacity hover:!opacity-100 hover:text-red-600 group-hover:opacity-100 dark:bg-slate-800 dark:text-slate-400 dark:ring-white/10 dark:hover:text-red-400"
+                      className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-white text-slate-500 opacity-0 shadow-sm ring-1 ring-slate-200 transition-opacity hover:!opacity-100 hover:text-red-600 group-hover:opacity-100"
                     >
                       <Trash2 size={9} />
                     </button>
@@ -286,7 +286,7 @@ export default function AttendancePage() {
             })}
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-3 border-t border-white/70 pt-3 text-xs text-slate-500 dark:border-white/10 dark:text-slate-400">
+          <div className="mt-4 flex flex-wrap gap-3 border-t border-white/70 pt-3 text-xs text-slate-500">
             {(Object.keys(STATUS_LABEL) as CellStatus[]).map((s) => (
               <span key={s} className="flex items-center gap-1.5">
                 <span className={`h-2.5 w-2.5 rounded-sm ${STATUS_STYLE[s].split(' ')[0]}`} />
@@ -308,7 +308,7 @@ export default function AttendancePage() {
       <Modal open={!!selectedDay} onClose={() => setSelectedDay(null)} title={person?.fullName} maxWidth="max-w-sm">
         {selectedDay && (
           <div className="flex flex-col gap-4">
-            <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+            <div className="flex items-center gap-2 text-sm text-slate-500">
               <CalendarDays size={15} />
               {formatFullDate(selectedDay.date)}
             </div>
@@ -319,33 +319,33 @@ export default function AttendancePage() {
 
             {selectedDay.isRecord ? (
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl bg-white/60 p-3 dark:bg-white/5">
-                  <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                <div className="rounded-xl bg-white/60 p-3">
+                  <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                     <LogIn size={12} />
                     Keldi
                   </div>
-                  <p className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                  <p className="text-lg font-bold text-slate-900">
                     {selectedDay.checkIn ?? '—'}
                   </p>
                 </div>
-                <div className="rounded-xl bg-white/60 p-3 dark:bg-white/5">
-                  <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                <div className="rounded-xl bg-white/60 p-3">
+                  <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                     <LogOut size={12} />
                     Ketdi
                   </div>
-                  <p className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                  <p className="text-lg font-bold text-slate-900">
                     {selectedDay.checkOut ?? '—'}
                   </p>
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-slate-400 dark:text-slate-500">
+              <p className="text-sm text-slate-400">
                 Bu kun uchun kamera orqali qayd etilgan davomat yozuvi yo'q.
               </p>
             )}
 
             {selectedDay.earlyLeave && (
-              <p className="flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400">
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-amber-600">
                 <LogOut size={13} />
                 Erta ketgan — belgilangan ish vaqtidan oldin chiqib ketgan
               </p>

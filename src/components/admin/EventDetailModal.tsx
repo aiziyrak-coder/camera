@@ -69,36 +69,36 @@ export default function EventDetailModal({
 
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div className="glass-deep px-3 py-2.5">
-              <p className="text-[11px] text-slate-400 dark:text-slate-500">Kamera</p>
-              <p className="font-medium text-slate-800 dark:text-slate-200">{event.cameraName}</p>
+              <p className="text-[11px] text-slate-400">Kamera</p>
+              <p className="font-medium text-slate-800">{event.cameraName}</p>
             </div>
             <div className="glass-deep px-3 py-2.5">
-              <p className="text-[11px] text-slate-400 dark:text-slate-500">Joylashuv</p>
-              <p className="font-medium text-slate-800 dark:text-slate-200">{event.building}</p>
+              <p className="text-[11px] text-slate-400">Joylashuv</p>
+              <p className="font-medium text-slate-800">{event.building}</p>
             </div>
             <div className="glass-deep px-3 py-2.5">
-              <p className="text-[11px] text-slate-400 dark:text-slate-500">Kriteriya kodi</p>
-              <p className="font-medium text-slate-800 dark:text-slate-200">№{event.moduleCode}</p>
+              <p className="text-[11px] text-slate-400">Kriteriya kodi</p>
+              <p className="font-medium text-slate-800">№{event.moduleCode}</p>
             </div>
             {event.personName && (
               <div className="glass-deep flex items-center gap-2 px-3 py-2.5">
                 <User size={14} className="text-slate-400" />
                 <div>
-                  <p className="text-[11px] text-slate-400 dark:text-slate-500">Shaxs</p>
-                  <p className="font-medium text-slate-800 dark:text-slate-200">{event.personName}</p>
+                  <p className="text-[11px] text-slate-400">Shaxs</p>
+                  <p className="font-medium text-slate-800">{event.personName}</p>
                 </div>
               </div>
             )}
             {event.reviewedBy && (
               <div className="glass-deep px-3 py-2.5">
-                <p className="text-[11px] text-slate-400 dark:text-slate-500">Ko'rib chiqdi</p>
-                <p className="font-medium text-slate-800 dark:text-slate-200">{event.reviewedBy}</p>
+                <p className="text-[11px] text-slate-400">Ko'rib chiqdi</p>
+                <p className="font-medium text-slate-800">{event.reviewedBy}</p>
               </div>
             )}
           </div>
 
           {event.status === 'yangi' && (
-            <div className="rounded-xl bg-indigo-50 p-3 text-xs text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300">
+            <div className="rounded-xl bg-indigo-50 p-3 text-xs text-indigo-700">
               AI signal — bu "dalil" emas, "ko'rsatkich". Yakuniy qarorni yuqoridagi kadrni ko'rib chiqqan
               holda inson qabul qiladi (human-in-the-loop).
             </div>
@@ -108,7 +108,7 @@ export default function EventDetailModal({
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => onReview(event.id, 'rad_etilgan')}
-                className="flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100 dark:border-red-900/50 dark:bg-red-950/40 dark:hover:bg-red-950/60"
+                className="flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100"
               >
                 <X size={14} />
                 Rad etish

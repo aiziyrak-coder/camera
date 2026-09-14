@@ -17,7 +17,6 @@ import {
   Menu,
   X,
 } from 'lucide-react';
-import ThemeToggle from '../components/ThemeToggle';
 import { useAuth } from '../lib/auth';
 import { usePermissions, type PermissionKey } from '../lib/permissions';
 import { useLiveEvents } from '../lib/realtime';
@@ -66,7 +65,7 @@ export default function AdminLayout() {
   }
 
   return (
-    <div className="flex min-h-screen bg-canvas dark:bg-[#0a0f1e]">
+    <div className="flex min-h-screen bg-canvas">
       {mobileNavOpen && (
         <div
           onClick={() => setMobileNavOpen(false)}
@@ -81,15 +80,15 @@ export default function AdminLayout() {
       >
         <div className="mb-6 flex items-center justify-between px-1">
           <div>
-            <p className="text-sm font-extrabold leading-tight text-slate-900 dark:text-slate-100">
+            <p className="text-sm font-extrabold leading-tight text-slate-900">
               Farg'ona JSSTI
             </p>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Situatsion Markaz</p>
+            <p className="text-xs text-slate-500">Situatsion Markaz</p>
           </div>
           <button
             onClick={() => setMobileNavOpen(false)}
             aria-label="Menyuni yopish"
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-white/60 hover:text-slate-700 dark:hover:bg-white/10 lg:hidden"
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-white/60 hover:text-slate-700 lg:hidden"
           >
             <X size={18} />
           </button>
@@ -113,13 +112,13 @@ export default function AdminLayout() {
         </nav>
 
         {userName && role && (
-          <div className="mb-2 flex items-center gap-2 rounded-xl bg-white/50 px-3 py-2 text-xs dark:bg-white/5">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-[11px] font-bold text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-400">
+          <div className="mb-2 flex items-center gap-2 rounded-xl bg-white/50 px-3 py-2 text-xs">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-[11px] font-bold text-indigo-600">
               {userName.slice(0, 2).toUpperCase()}
             </div>
             <div className="min-w-0">
-              <p className="truncate font-semibold text-slate-800 dark:text-slate-200">{userName}</p>
-              <p className="text-slate-400 dark:text-slate-500">{ROLE_LABEL[role]}</p>
+              <p className="truncate font-semibold text-slate-800">{userName}</p>
+              <p className="text-slate-400">{ROLE_LABEL[role]}</p>
             </div>
           </div>
         )}
@@ -136,14 +135,14 @@ export default function AdminLayout() {
             <button
               onClick={() => setMobileNavOpen(true)}
               aria-label="Menyuni ochish"
-              className="glass-deep shrink-0 rounded-xl p-2 text-slate-500 hover:text-indigo-500 dark:text-slate-400 dark:hover:text-indigo-400 lg:hidden"
+              className="glass-deep shrink-0 rounded-xl p-2 text-slate-500 hover:text-indigo-500 lg:hidden"
             >
               <Menu size={18} />
             </button>
             <AdminBreadcrumb items={visibleItems} />
           </div>
           <div className="flex items-center gap-3">
-            <span className="hidden items-center gap-1.5 rounded-full bg-emerald-100/80 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 sm:inline-flex">
+            <span className="hidden items-center gap-1.5 rounded-full bg-emerald-100/80 px-3 py-1 text-xs font-semibold text-emerald-700 sm:inline-flex">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
               Tizim faol
             </span>
@@ -159,17 +158,16 @@ export default function AdminLayout() {
             <Link
               to="/"
               title="Video monitoring markazi"
-              className="glass-deep flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:text-indigo-500 dark:text-slate-300 dark:hover:text-indigo-400"
+              className="glass-deep flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:text-indigo-500"
             >
               <Video size={16} />
               <span className="hidden sm:inline">Kamera</span>
             </Link>
-            <ThemeToggle />
             <button
               onClick={handleBellClick}
               aria-label={unreadEvents > 0 ? `${unreadEvents} ta yangi hodisa` : 'Bildirishnomalar'}
               title={unreadEvents > 0 ? `${unreadEvents} ta yangi hodisa` : 'Bildirishnomalar'}
-              className="relative glass-deep rounded-xl p-2 text-slate-500 transition-colors hover:text-indigo-500 dark:text-slate-400 dark:hover:text-indigo-400"
+              className="relative glass-deep rounded-xl p-2 text-slate-500 transition-colors hover:text-indigo-500"
             >
               <Bell size={18} />
               {unreadEvents > 0 && (
@@ -196,10 +194,10 @@ function AdminBreadcrumb({ items }: { items: typeof NAV_ITEMS }) {
     items[0];
 
   return (
-    <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+    <div className="flex items-center gap-2 text-sm text-slate-500">
       <span>Farg'ona JSSTI</span>
       <span>/</span>
-      <span className="font-semibold text-slate-900 dark:text-slate-100">{current?.label}</span>
+      <span className="font-semibold text-slate-900">{current?.label}</span>
     </div>
   );
 }

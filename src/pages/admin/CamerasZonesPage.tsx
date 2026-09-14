@@ -120,7 +120,7 @@ export default function CamerasZonesPage() {
       </div>
 
       {error && (
-        <p className="mb-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600 dark:bg-red-500/10 dark:text-red-400">
+        <p className="mb-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
           {error}
         </p>
       )}
@@ -131,13 +131,13 @@ export default function CamerasZonesPage() {
             key={f}
             onClick={() => setStatusFilter(f)}
             className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
-              statusFilter === f ? 'bg-indigo-600 text-white' : 'bg-white/60 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-white/90 dark:hover:bg-white/10'
+              statusFilter === f ? 'bg-indigo-600 text-white' : 'bg-white/60 text-slate-600 hover:bg-white/90'
             }`}
           >
             {f}
           </button>
         ))}
-        <span className="mx-1 w-px self-stretch bg-white/80 dark:bg-white/10" />
+        <span className="mx-1 w-px self-stretch bg-white/80" />
         {buildings.map((b) => (
           <button
             key={b.id}
@@ -146,7 +146,7 @@ export default function CamerasZonesPage() {
               setZoneFilter(null);
             }}
             className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
-              buildingFilter === b.name ? 'bg-indigo-600 text-white' : 'bg-white/60 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-white/90 dark:hover:bg-white/10'
+              buildingFilter === b.name ? 'bg-indigo-600 text-white' : 'bg-white/60 text-slate-600 hover:bg-white/90'
             }`}
           >
             {b.name}
@@ -156,7 +156,7 @@ export default function CamerasZonesPage() {
 
       {zones.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-2 text-xs">
-          <span className="flex items-center px-1 font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+          <span className="flex items-center px-1 font-semibold uppercase tracking-wide text-slate-400">
             Xona/Zona:
           </span>
           {zones.map((z) => (
@@ -166,7 +166,7 @@ export default function CamerasZonesPage() {
               className={`rounded-lg px-2.5 py-1 font-medium transition-colors ${
                 zoneFilter === z.zone
                   ? 'bg-indigo-600 text-white'
-                  : 'bg-white/60 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-white/90 dark:hover:bg-white/10'
+                  : 'bg-white/60 text-slate-600 hover:bg-white/90'
               }`}
             >
               {z.zone} ({z.cameraCount})
@@ -180,14 +180,14 @@ export default function CamerasZonesPage() {
           <Loader2 size={20} className="animate-spin" />
         </div>
       ) : cameras.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-slate-300 dark:border-white/10 p-10 text-center text-sm text-slate-400 dark:text-slate-500">
+        <p className="rounded-xl border border-dashed border-slate-300 p-10 text-center text-sm text-slate-400">
           Filtrlarga mos kamera topilmadi
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-white/70 dark:border-white/10">
+        <div className="overflow-x-auto rounded-xl border border-white/70">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="bg-white/50 dark:bg-white/5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <tr className="bg-white/50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-3">Kamera nomi</th>
                 <th className="px-4 py-3">IP / RTSP</th>
                 <th className="px-4 py-3">Bino</th>
@@ -199,17 +199,17 @@ export default function CamerasZonesPage() {
                 <th className="px-4 py-3">Amallar</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/60 dark:divide-white/5">
+            <tbody className="divide-y divide-white/60">
               {cameras.map((c) => {
                 const moduleSummary =
                   moduleOptions.length > 0 ? formatModuleSummary(moduleOptions, c) : '—';
                 const hasCustomModules = (c.excludedModuleCodes?.length ?? 0) > 0;
                 return (
-                  <tr key={c.id} className="transition-colors hover:bg-white/40 dark:hover:bg-white/5">
-                    <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">{c.name}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-400">{c.ip}</td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{c.building}</td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{c.zone}</td>
+                  <tr key={c.id} className="transition-colors hover:bg-white/40">
+                    <td className="px-4 py-3 font-medium text-slate-900">{c.name}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-slate-600">{c.ip}</td>
+                    <td className="px-4 py-3 text-slate-600">{c.building}</td>
+                    <td className="px-4 py-3 text-slate-600">{c.zone}</td>
                     <td className="px-4 py-3">
                       <button
                         type="button"
@@ -217,14 +217,14 @@ export default function CamerasZonesPage() {
                         title="AI modullarni sozlash"
                         className={`text-xs font-semibold hover:underline ${
                           hasCustomModules
-                            ? 'text-amber-600 dark:text-amber-400'
-                            : 'text-slate-600 dark:text-slate-400'
+                            ? 'text-amber-600'
+                            : 'text-slate-600'
                         }`}
                       >
                         {moduleSummary}
                       </button>
                     </td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
+                    <td className="px-4 py-3 text-slate-600">
                       {c.resolution} / {c.fps ? `${c.fps} fps` : '—'}
                     </td>
                     <td className="px-4 py-3">
@@ -232,7 +232,7 @@ export default function CamerasZonesPage() {
                     </td>
                     <td className="px-4 py-3">
                       {c.status !== 'faol' ? (
-                        <span className="text-xs text-slate-400 dark:text-slate-500">—</span>
+                        <span className="text-xs text-slate-400">—</span>
                       ) : (
                         <span
                           title={
@@ -242,8 +242,8 @@ export default function CamerasZonesPage() {
                           }
                           className={`flex items-center gap-1.5 text-xs font-semibold ${
                             c.isReachable
-                              ? 'text-emerald-600 dark:text-emerald-400'
-                              : 'text-red-500 dark:text-red-400'
+                              ? 'text-emerald-600'
+                              : 'text-red-500'
                           }`}
                         >
                           <span
@@ -259,14 +259,14 @@ export default function CamerasZonesPage() {
                       <div className="flex flex-wrap items-center gap-3">
                         <button
                           onClick={() => setViewing(c)}
-                          className="flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+                          className="flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:underline"
                         >
                           <Eye size={12} />
                           Ko'rish
                         </button>
                         <button
                           onClick={() => setEditing(c)}
-                          className="flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+                          className="flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:underline"
                         >
                           <Settings2 size={12} />
                           Sozlash
@@ -276,8 +276,8 @@ export default function CamerasZonesPage() {
                           title="Taqiqlangan zonani belgilash"
                           className={`flex items-center gap-1 text-xs font-semibold hover:underline ${
                             c.restrictedZonePolygon && c.restrictedZonePolygon.length > 0
-                              ? 'text-red-600 dark:text-red-400'
-                              : 'text-indigo-600 dark:text-indigo-400'
+                              ? 'text-red-600'
+                              : 'text-indigo-600'
                           }`}
                         >
                           <MapPinned size={12} />
@@ -288,8 +288,8 @@ export default function CamerasZonesPage() {
                           title="AI modullarni sozlash"
                           className={`flex items-center gap-1 text-xs font-semibold hover:underline ${
                             hasCustomModules
-                              ? 'text-amber-600 dark:text-amber-400'
-                              : 'text-indigo-600 dark:text-indigo-400'
+                              ? 'text-amber-600'
+                              : 'text-indigo-600'
                           }`}
                         >
                           <Cpu size={12} />

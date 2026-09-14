@@ -11,11 +11,11 @@ const SHADOW: Record<Tone, string> = {
 };
 
 const ICON_BG: Record<Tone, string> = {
-  indigo: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-400',
-  green: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400',
-  red: 'bg-red-100 text-red-600 dark:bg-red-500/15 dark:text-red-400',
-  amber: 'bg-amber-100 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400',
-  slate: 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-400',
+  indigo: 'bg-indigo-100 text-indigo-600',
+  green: 'bg-emerald-100 text-emerald-600',
+  red: 'bg-red-100 text-red-600',
+  amber: 'bg-amber-100 text-amber-600',
+  slate: 'bg-slate-100 text-slate-500',
 };
 
 interface StatCardProps {
@@ -33,9 +33,9 @@ export default function StatCard({ icon, value, label, sublabel, tone = 'indigo'
         {icon}
       </div>
       <div className="min-w-0">
-        <p className="truncate text-xl font-extrabold text-slate-900 dark:text-slate-100">{value}</p>
-        <p className="truncate text-sm font-medium text-slate-600 dark:text-slate-400">{label}</p>
-        {sublabel && <p className="truncate text-xs text-slate-400 dark:text-slate-500">{sublabel}</p>}
+        <p className="truncate text-xl font-extrabold text-slate-900">{value}</p>
+        <p className="truncate text-sm font-medium text-slate-600">{label}</p>
+        {sublabel && <p className="truncate text-xs text-slate-400">{sublabel}</p>}
       </div>
     </div>
   );

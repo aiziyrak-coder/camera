@@ -20,7 +20,7 @@ const QUICK_LINKS = [
 export default function QuickAccessBar() {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+      <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
         Tezkor kirish
       </span>
       {QUICK_LINKS.map(({ to, label, icon: Icon }) => (

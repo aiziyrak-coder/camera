@@ -9,9 +9,9 @@ interface FieldWrapperProps {
 function FieldWrapper({ label, error, children }: FieldWrapperProps) {
   return (
     <div>
-      <label className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">{label}</label>
+      <label className="mb-1.5 block text-xs font-semibold text-slate-600">{label}</label>
       {children}
-      {error && <p className="mt-1 text-xs font-medium text-red-500 dark:text-red-400">{error}</p>}
+      {error && <p className="mt-1 text-xs font-medium text-red-500">{error}</p>}
     </div>
   );
 }
@@ -27,10 +27,10 @@ export function TextField({ label, error, className, ...rest }: TextFieldProps) 
       <input
         {...rest}
         aria-invalid={!!error}
-        className={`w-full rounded-xl border bg-white/60 px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 dark:bg-white/5 dark:text-slate-100 dark:placeholder:text-slate-500 ${
+        className={`w-full rounded-xl border bg-white/60 px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 ${
           error
-            ? 'border-red-300 focus:border-red-400 dark:border-red-800'
-            : 'border-white/80 focus:border-indigo-300 dark:border-white/10 dark:focus:border-indigo-500'
+            ? 'border-red-300 focus:border-red-400'
+            : 'border-white/80 focus:border-indigo-300'
         } ${className ?? ''}`}
       />
     </FieldWrapper>
@@ -50,10 +50,10 @@ export function SelectField({ label, error, options, placeholder, className, ...
       <select
         {...rest}
         aria-invalid={!!error}
-        className={`w-full rounded-xl border bg-white/60 px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors dark:bg-white/5 dark:text-slate-100 ${
+        className={`w-full rounded-xl border bg-white/60 px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors ${
           error
-            ? 'border-red-300 focus:border-red-400 dark:border-red-800'
-            : 'border-white/80 focus:border-indigo-300 dark:border-white/10 dark:focus:border-indigo-500'
+            ? 'border-red-300 focus:border-red-400'
+            : 'border-white/80 focus:border-indigo-300'
         } ${className ?? ''}`}
       >
         {placeholder && <option value="">{placeholder}</option>}

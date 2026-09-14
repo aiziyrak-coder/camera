@@ -59,7 +59,7 @@ export default function EnrollmentRegisterForm({
   }, []);
 
   const inputClass =
-    'w-full rounded-xl border border-white/80 bg-white/60 px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-indigo-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:placeholder:text-slate-500';
+    'w-full rounded-xl border border-white/80 bg-white/60 px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-indigo-300';
 
   return (
     <form
@@ -77,13 +77,13 @@ export default function EnrollmentRegisterForm({
       }}
       className="flex flex-col gap-4"
     >
-      <div className="rounded-xl bg-amber-50 p-3 text-sm leading-relaxed text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
+      <div className="rounded-xl bg-amber-50 p-3 text-sm leading-relaxed text-amber-700">
         Bu raqam bo&apos;yicha tizimda yozuv topilmadi. Ma&apos;lumotlaringizni kiriting — ro&apos;yxatdan
         o&apos;tkazamiz.
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">F.I.SH.</label>
+        <label className="mb-1 block text-xs font-semibold text-slate-500">F.I.SH.</label>
         <input
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
@@ -95,7 +95,7 @@ export default function EnrollmentRegisterForm({
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">Kim sifatida</label>
+        <label className="mb-1 block text-xs font-semibold text-slate-500">Kim sifatida</label>
         <div className="grid grid-cols-2 gap-2">
           {(['talaba', 'xodim'] as const).map((value) => (
             <button
@@ -105,7 +105,7 @@ export default function EnrollmentRegisterForm({
               className={`rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors ${
                 type === value
                   ? 'bg-indigo-600 text-white shadow-btn'
-                  : 'bg-white/60 text-slate-600 hover:bg-white/90 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10'
+                  : 'bg-white/60 text-slate-600 hover:bg-white/90'
               }`}
             >
               {value === 'talaba' ? 'Talaba' : 'Xodim'}
@@ -115,7 +115,7 @@ export default function EnrollmentRegisterForm({
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">
+        <label className="mb-1 block text-xs font-semibold text-slate-500">
           {type === 'talaba' ? 'Guruh' : 'Lavozim'}
         </label>
         <input
@@ -129,7 +129,7 @@ export default function EnrollmentRegisterForm({
 
       {faculties.length > 0 && (
         <div>
-          <label className="mb-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">
+          <label className="mb-1 block text-xs font-semibold text-slate-500">
             Fakultet <span className="font-normal text-slate-400">(ixtiyoriy)</span>
           </label>
           <select value={facultyId} onChange={(e) => setFacultyId(e.target.value)} className={inputClass}>
@@ -143,9 +143,9 @@ export default function EnrollmentRegisterForm({
         </div>
       )}
 
-      <div className="rounded-xl bg-slate-50 px-3 py-2.5 text-xs text-slate-500 dark:bg-white/5 dark:text-slate-400">
+      <div className="rounded-xl bg-slate-50 px-3 py-2.5 text-xs text-slate-500">
         {pinfl ? 'JSHSHIR: ' : 'Pasport: '}
-        <span className="font-semibold text-slate-700 dark:text-slate-200">
+        <span className="font-semibold text-slate-700">
           {pinfl || `${passportSeries} ${passportNumber}`}
         </span>
       </div>
@@ -162,7 +162,7 @@ export default function EnrollmentRegisterForm({
       <button
         type="button"
         onClick={onCancel}
-        className="text-xs font-medium text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+        className="text-xs font-medium text-slate-400 hover:text-slate-600"
       >
         Boshqa raqam bilan qayta urinish
       </button>

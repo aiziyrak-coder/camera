@@ -59,10 +59,10 @@ export default function ForgotPasswordModal({
       {sent ? (
         <div className="flex flex-col items-center gap-3 py-2 text-center">
           <CheckCircle2 size={32} className="text-emerald-500" />
-          <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+          <p className="text-sm font-semibold text-slate-800">
             So'rov qabul qilindi
           </p>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
+          <p className="text-xs text-slate-500">
             Agar bunday hisob mavjud bo'lsa va unga elektron pochta biriktirilgan bo'lsa, parolni
             tiklash havolasi shu manzilga yuborildi. Email topilmasa, tizim administratoriga
             murojaat qiling.
@@ -73,14 +73,14 @@ export default function ForgotPasswordModal({
         </div>
       ) : (
         <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-          <p className="text-xs text-slate-500 dark:text-slate-400">
+          <p className="text-xs text-slate-500">
             Hisobingizga bog'langan loginni kiriting — agar unga elektron pochta manzili
             biriktirilgan bo'lsa, tiklash havolasi shu manzilga yuboriladi.
           </p>
           <div className="relative">
             <Mail
               size={16}
-              className="pointer-events-none absolute left-3 top-[34px] text-slate-400 dark:text-slate-500"
+              className="pointer-events-none absolute left-3 top-[34px] text-slate-400"
             />
             <TextField
               label="Login"

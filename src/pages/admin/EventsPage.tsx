@@ -144,13 +144,13 @@ export default function EventsPage() {
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative w-full max-w-xs">
-          <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+          <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Kriteriya bo'yicha qidiruv..."
             aria-label="Hodisalarni qidirish"
-            className="w-full rounded-xl border border-white/80 bg-white/60 py-2 pl-9 pr-3 text-sm outline-none placeholder:text-slate-400 focus:border-indigo-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:placeholder:text-slate-500"
+            className="w-full rounded-xl border border-white/80 bg-white/60 py-2 pl-9 pr-3 text-sm outline-none placeholder:text-slate-400 focus:border-indigo-300"
           />
         </div>
 
@@ -162,13 +162,13 @@ export default function EventsPage() {
               className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
                 severityFilter === f
                   ? 'bg-indigo-600 text-white'
-                  : 'bg-white/60 text-slate-600 hover:bg-white/90 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10'
+                  : 'bg-white/60 text-slate-600 hover:bg-white/90'
               }`}
             >
               {f}
             </button>
           ))}
-          <span className="mx-1 w-px self-stretch bg-white/80 dark:bg-white/10" />
+          <span className="mx-1 w-px self-stretch bg-white/80" />
           {STATUS_FILTERS.map((f) => (
             <button
               key={f}
@@ -176,7 +176,7 @@ export default function EventsPage() {
               className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
                 statusFilter === f
                   ? 'bg-indigo-600 text-white'
-                  : 'bg-white/60 text-slate-600 hover:bg-white/90 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10'
+                  : 'bg-white/60 text-slate-600 hover:bg-white/90'
               }`}
             >
               {f}
@@ -186,7 +186,7 @@ export default function EventsPage() {
       </div>
 
       {error && (
-        <p className="mb-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600 dark:bg-red-500/10 dark:text-red-400">
+        <p className="mb-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
           {error}
         </p>
       )}
@@ -196,14 +196,14 @@ export default function EventsPage() {
           <Loader2 size={20} className="animate-spin" />
         </div>
       ) : events.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-slate-300 p-10 text-center text-sm text-slate-400 dark:border-white/10 dark:text-slate-500">
+        <p className="rounded-xl border border-dashed border-slate-300 p-10 text-center text-sm text-slate-400">
           Filtrlarga mos hodisa topilmadi
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-white/70 dark:border-white/10">
+        <div className="overflow-x-auto rounded-xl border border-white/70">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="bg-white/50 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:bg-white/5 dark:text-slate-400">
+              <tr className="bg-white/50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-3">Vaqt</th>
                 <th className="px-4 py-3">Kriteriya</th>
                 <th className="px-4 py-3">Kamera / Bino</th>
@@ -213,23 +213,23 @@ export default function EventsPage() {
                 <th className="px-4 py-3">Amallar</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/60 dark:divide-white/5">
+            <tbody className="divide-y divide-white/60">
               {events.map((e) => (
-                <tr key={e.id} className="transition-colors hover:bg-white/40 dark:hover:bg-white/5">
-                  <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-400">
+                <tr key={e.id} className="transition-colors hover:bg-white/40">
+                  <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-600">
                     {e.timestamp}
                   </td>
                   <td className="px-4 py-3">
-                    <p className="font-medium text-slate-900 dark:text-slate-100">{e.moduleName}</p>
+                    <p className="font-medium text-slate-900">{e.moduleName}</p>
                     {e.personName && (
-                      <p className="text-xs text-slate-500 dark:text-slate-400">{e.personName}</p>
+                      <p className="text-xs text-slate-500">{e.personName}</p>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
+                  <td className="px-4 py-3 text-slate-600">
                     {e.cameraName}
-                    <p className="text-xs text-slate-400 dark:text-slate-500">{e.building}</p>
+                    <p className="text-xs text-slate-400">{e.building}</p>
                   </td>
-                  <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">{e.confidence}%</td>
+                  <td className="px-4 py-3 font-semibold text-slate-900">{e.confidence}%</td>
                   <td className="px-4 py-3">
                     <Badge tone={SEVERITY_TONE[e.severity]}>{SEVERITY_LABEL[e.severity]}</Badge>
                   </td>
@@ -240,14 +240,14 @@ export default function EventsPage() {
                     <div className="flex items-center gap-3">
                       <button
                         onClick={() => setSelected(e)}
-                        className="text-xs font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
+                        className="text-xs font-semibold text-indigo-600 hover:underline"
                       >
                         Ko'rish
                       </button>
                       <button
                         onClick={() => setDeleting(e)}
                         title="O'chirish"
-                        className="text-slate-400 transition-colors hover:text-red-600 dark:text-slate-500 dark:hover:text-red-400"
+                        className="text-slate-400 transition-colors hover:text-red-600"
                       >
                         <Trash2 size={14} />
                       </button>

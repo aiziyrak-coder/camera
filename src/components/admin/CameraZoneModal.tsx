@@ -98,19 +98,19 @@ export default function CameraZoneModal({
           </div>
 
           {hasStream && (
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-slate-500">
               Video ustiga bosib ko'pburchak nuqtalarini belgilang (kamida 3 ta). Nuqtalar oq nuqta bilan
               ko'rsatiladi, zona qizil rangda to'ldiriladi.
             </p>
           )}
 
           {error && (
-            <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600 dark:bg-red-500/10 dark:text-red-400">
+            <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
               {error}
             </p>
           )}
 
-          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+          <div className="flex items-center justify-between text-xs text-slate-500">
             <span>{points.length} ta nuqta belgilandi</span>
             <div className="flex gap-2">
               <button
@@ -140,7 +140,7 @@ export default function CameraZoneModal({
                 type="button"
                 onClick={handleClear}
                 disabled={saving}
-                className="btn-glass flex items-center gap-1.5 !text-red-600 dark:!text-red-400 disabled:cursor-not-allowed disabled:opacity-50"
+                className="btn-glass flex items-center gap-1.5 !text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Ban size={14} />
                 Zonani olib tashlash

@@ -5,6 +5,9 @@ ular uchun ro'yxatdan o'tishning yagona yo'li shu raqam. Bu testlar aynan
 o'sha yo'lni va uning himoyasini qo'riqlaydi.
 """
 
+import io
+
+import openpyxl
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -180,20 +183,75 @@ class TestFilteringAndExport:
         assert resp.status_code == 200
         assert [r["fullName"] for r in resp.json()["items"]] == ["Tasdiqlamagan Odam"]
 
-    async def test_export_keeps_the_same_filter_as_the_screen(self, client: AsyncClient):
+    async def _download(self, client, query: str):
+        headers = await auth_headers(client, "admin", "admin123")
+        resp = await client.get(f"/api/students-staff/export?{query}", headers=headers)
+        assert resp.status_code == 200, resp.text
+        assert "spreadsheetml" in resp.headers["content-type"]
+        assert "attachment" in resp.headers["content-disposition"]
+        return openpyxl.load_workbook(io.BytesIO(resp.content))
+
+    async def test_the_people_list_keeps_the_same_filter_as_the_screen(self, client: AsyncClient):
         """Yuklab olingan fayl ekranda ko'rilgan narsaning nusxasi bo'lishi
         kerak — aks holda u hisobot sifatida ishonchsiz."""
-        headers = await auth_headers(client, "admin", "admin123")
-        resp = await client.get("/api/students-staff/export?biometricsStatus=yoq", headers=headers)
-        assert resp.status_code == 200
-        assert "text/csv" in resp.headers["content-type"]
-        assert "attachment" in resp.headers["content-disposition"]
+        wb = await self._download(client, "kind=people&biometricsStatus=yoq")
+        ws = wb["Ro'yxat"]
+        names = [ws.cell(row=r, column=2).value for r in range(5, ws.max_row + 1)]
+        assert "Tasdiqlamagan Odam" in names
+        assert "Tasdiqlagan Odam" not in names
+        assert "Tasdiqlanmagan" in ws["A2"].value  # fayl qaysi filtr bilan tuzilganini aytadi
 
-        text = resp.content.decode("utf-8")
-        assert text.startswith("﻿")  # Excel uchun BOM
-        assert "Tasdiqlamagan Odam" in text
-        assert "Tasdiqlagan Odam" not in text
-        assert "42222222222222" in text  # JSHSHIR ustuni
+    async def test_columns_are_real_spreadsheet_columns(self, client: AsyncClient):
+        """CSV da ustun ajratgichini Excel lokalga qarab TAXMIN qilardi va
+        qatorlar bitta katakka aralashib tushardi. .xlsx da har bir qiymat
+        o'z katagida."""
+        wb = await self._download(client, "kind=people")
+        ws = wb["Ro'yxat"]
+        header = [ws.cell(row=4, column=c).value for c in range(1, 8)]
+        assert header == ["№", "F.I.SH.", "JSHSHIR", "Turi", "Fakultet", "Kafedra / Bo'lim", "Yuz holati"]
+
+    async def test_pinfl_is_stored_as_text_with_leading_zeros(self, client: AsyncClient, db_session):
+        """Son sifatida yozilsa Excel 14 xonali raqamni 3,03E+13 qilib
+        ko'rsatadi, nol bilan boshlanganini esa shunchaki 0 ga aylantiradi."""
+        faculty = (await db_session.execute(select(Faculty))).scalars().first()
+        db_session.add(StudentStaff(
+            full_name="Nolli Raqam", type="xodim", pinfl="00000000000000",
+            faculty_id=faculty.id, group_or_position="Sinov", biometrics_status="yoq",
+        ))
+        await db_session.commit()
+
+        wb = await self._download(client, "kind=people&search=00000000000000")
+        cell = wb["Ro'yxat"].cell(row=5, column=3)
+        assert cell.value == "00000000000000"
+        assert cell.number_format == "@"
+
+    async def test_the_statistics_file_counts_by_faculty_and_unit(self, client: AsyncClient):
+        wb = await self._download(client, "kind=stats")
+        assert wb.sheetnames == ["Umumiy statistika", "Kafedra va bo'limlar"]
+
+        summary = wb["Umumiy statistika"]
+        values = {summary.cell(row=r, column=1).value: summary.cell(row=r, column=2).value
+                  for r in range(4, 9)}
+        assert values["Jami ro'yxatda"] == 2
+        assert values["Yuzi tasdiqlangan"] == 1
+        assert values["Yuzi tasdiqlanmagan"] == 1
+        assert values["Qamrov"] == pytest.approx(0.5)
+
+        units = wb["Kafedra va bo'limlar"]
+        unit_names = {units.cell(row=r, column=2).value for r in range(5, units.max_row + 1)}
+        assert {"Kafedra A", "Kafedra B"} <= unit_names
+
+    async def test_statistics_ignore_the_list_filters(self, client: AsyncClient):
+        """"Umumiy statistika" bitta holatga qisqartirilsa o'z nomiga zid
+        bo'lardi: yuz holati filtri faqat ro'yxatga tegishli."""
+        wb = await self._download(client, "kind=stats&biometricsStatus=yoq")
+        summary = wb["Umumiy statistika"]
+        assert summary.cell(row=4, column=2).value == 2
+
+    async def test_an_unknown_export_kind_is_rejected(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        resp = await client.get("/api/students-staff/export?kind=pdf", headers=headers)
+        assert resp.status_code == 422
 
     async def test_export_requires_permission(self, client: AsyncClient):
         resp = await client.get("/api/students-staff/export")

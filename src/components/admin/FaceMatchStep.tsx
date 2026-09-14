@@ -44,22 +44,22 @@ export default function FaceMatchStep({
           <img
             src={capturedFaceUrl}
             alt="Jonli surat"
-            className="h-32 w-24 rounded-xl border border-white/80 dark:border-white/10 object-cover shadow-btn"
+            className="h-32 w-24 rounded-xl border border-white/80 object-cover shadow-btn"
           />
-          <span className="text-[11px] text-slate-400 dark:text-slate-500">Jonli surat</span>
+          <span className="text-[11px] text-slate-400">Jonli surat</span>
         </div>
         <div className="flex flex-col items-center gap-1.5">
           <img
             src={passportPhotoUrl}
             alt="Pasport sahifasi"
-            className="h-32 w-24 rounded-xl border border-white/80 dark:border-white/10 object-cover shadow-btn"
+            className="h-32 w-24 rounded-xl border border-white/80 object-cover shadow-btn"
           />
-          <span className="text-[11px] text-slate-400 dark:text-slate-500">Pasport</span>
+          <span className="text-[11px] text-slate-400">Pasport</span>
         </div>
       </div>
 
       {score === null ? (
-        <div className="flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400">
+        <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
           <Loader2 size={16} className="animate-spin" />
           Yuzlar solishtirilmoqda...
         </div>
@@ -67,7 +67,7 @@ export default function FaceMatchStep({
         <div className="flex flex-col items-center gap-2">
           <div
             className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold ${
-              passed ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400'
+              passed ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'
             }`}
           >
             {passed ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
@@ -75,7 +75,7 @@ export default function FaceMatchStep({
           </div>
           {!passed && (
             <>
-              <p className="max-w-xs text-center text-xs text-slate-500 dark:text-slate-400">
+              <p className="max-w-xs text-center text-xs text-slate-500">
                 {result?.message
                   ? "Pasport yoki jonli suratda aniq ko'rinadigan yuz yo'q — yorug'likni yaxshilab qayta urinib ko'ring"
                   : "Jonli surat pasportdagi rasm bilan yetarlicha mos kelmadi. Yorug'likni yaxshilab, yuzni oval markaziga joylashtirib qayta urinib ko'ring"}

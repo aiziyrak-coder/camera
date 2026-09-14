@@ -58,9 +58,9 @@ export default function UsersRolesPage() {
           }
         />
 
-        <h3 className="mb-3 text-sm font-bold text-slate-700 dark:text-slate-300">Faol foydalanuvchilar</h3>
+        <h3 className="mb-3 text-sm font-bold text-slate-700">Faol foydalanuvchilar</h3>
         {error && (
-          <p className="mb-3 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600 dark:bg-red-500/10 dark:text-red-400">
+          <p className="mb-3 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
             {error}
           </p>
         )}
@@ -72,25 +72,25 @@ export default function UsersRolesPage() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {users.map((u) => (
               <div key={u.id} className="glass-deep flex items-center gap-3 p-4">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-500/15 text-xs font-bold text-indigo-600">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-600">
                   {u.initials}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">{u.name}</p>
-                  <p className="truncate text-xs text-slate-500 dark:text-slate-400">Oxirgi kirish: {u.lastLogin}</p>
+                  <p className="truncate text-sm font-bold text-slate-900">{u.name}</p>
+                  <p className="truncate text-xs text-slate-500">Oxirgi kirish: {u.lastLogin}</p>
                 </div>
                 <Badge tone={u.role === 'Super Admin' ? 'indigo' : 'slate'}>{u.role}</Badge>
                 <button
                   onClick={() => setEditing(u)}
                   title="Tahrirlash"
-                  className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/60 hover:text-indigo-600 dark:text-slate-500 dark:hover:bg-white/10 dark:hover:text-indigo-400"
+                  className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/60 hover:text-indigo-600"
                 >
                   <Pencil size={14} />
                 </button>
                 <button
                   onClick={() => setDeleting(u)}
                   title="O'chirish"
-                  className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/60 hover:text-red-600 dark:text-slate-500 dark:hover:bg-white/10 dark:hover:text-red-400"
+                  className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/60 hover:text-red-600"
                 >
                   <Trash2 size={14} />
                 </button>
@@ -113,27 +113,27 @@ export default function UsersRolesPage() {
 
       <section className="glass p-6">
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">Huquqlar matritsasi</h3>
+          <h3 className="text-sm font-bold text-slate-700">Huquqlar matritsasi</h3>
           {!canEdit && (
-            <span className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
+            <span className="flex items-center gap-1.5 text-xs text-slate-400">
               <Info size={13} />
               Faqat Super Admin tahrirlashi mumkin
             </span>
           )}
         </div>
-        <div className="overflow-x-auto rounded-xl border border-white/70 dark:border-white/10">
+        <div className="overflow-x-auto rounded-xl border border-white/70">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="bg-white/50 dark:bg-white/5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <tr className="bg-white/50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-3">Huquq / Ruxsat</th>
                 <th className="px-4 py-3 text-center">Super Admin</th>
                 <th className="px-4 py-3 text-center">Admin</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/60 dark:divide-white/5">
+            <tbody className="divide-y divide-white/60">
               {PERMISSION_KEYS.map((key) => (
-                <tr key={key} className="transition-colors hover:bg-white/40 dark:hover:bg-white/5">
-                  <td className="px-4 py-3 font-medium text-slate-800 dark:text-slate-200">
+                <tr key={key} className="transition-colors hover:bg-white/40">
+                  <td className="px-4 py-3 font-medium text-slate-800">
                     {PERMISSION_LABELS[key]}
                   </td>
                   <td className="px-4 py-3 text-center">
@@ -150,7 +150,7 @@ export default function UsersRolesPage() {
             </tbody>
           </table>
         </div>
-        <p className="mt-3 text-[11px] text-slate-400 dark:text-slate-500">
+        <p className="mt-3 text-[11px] text-slate-400">
           Bu yerdagi sozlamalar navigatsiya menyusi va eksport tugmalarini haqiqatda
           cheklaydi — "Admin" sifatida kirsangiz, o'chirilgan bo'limlar sidebar'da
           ko'rinmaydi.
@@ -170,7 +170,7 @@ function PermissionMark({
   onToggle?: () => void;
 }) {
   const icon = granted ? (
-    <Check size={16} className="text-emerald-600 dark:text-emerald-400" />
+    <Check size={16} className="text-emerald-600" />
   ) : (
     <X size={16} className="text-red-400" />
   );
@@ -183,7 +183,7 @@ function PermissionMark({
     <button
       onClick={onToggle}
       title="Bosib o'zgartiring"
-      className="mx-auto flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-white/60 dark:hover:bg-white/10"
+      className="mx-auto flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-white/60"
     >
       {icon}
     </button>

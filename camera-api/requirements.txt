@@ -17,6 +17,9 @@ redis==5.2.1
 # Install faiss-gpu instead on GPU servers if needed.
 faiss-cpu==1.15.0
 python-json-logger==4.1.0
+# Talabalar va xodimlar ro'yxatini .xlsx ga chiqarish — app/services/staff_export.py.
+# CSV ustunlari Excel'da lokalga qarab aralashib ochilardi.
+openpyxl==3.1.5
 boto3==1.43.62
 httpx==0.28.1
 insightface==1.0.1

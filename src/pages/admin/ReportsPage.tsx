@@ -77,7 +77,7 @@ export default function ReportsPage() {
             <select
               value={generatePeriod}
               onChange={(e) => setGeneratePeriod(e.target.value as (typeof GENERATE_PERIODS)[number])}
-              className="rounded-xl border border-white/80 bg-white/60 px-3 py-2 text-sm outline-none dark:border-white/10 dark:bg-white/5 dark:text-slate-100"
+              className="rounded-xl border border-white/80 bg-white/60 px-3 py-2 text-sm outline-none"
             >
               {GENERATE_PERIODS.map((p) => (
                 <option key={p} value={p}>
@@ -102,12 +102,12 @@ export default function ReportsPage() {
       />
 
       {generateError && (
-        <p className="mb-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600 dark:bg-red-500/10 dark:text-red-400">
+        <p className="mb-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
           {generateError}
         </p>
       )}
       {error && (
-        <p className="mb-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600 dark:bg-red-500/10 dark:text-red-400">
+        <p className="mb-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
           {error}
         </p>
       )}
@@ -118,7 +118,7 @@ export default function ReportsPage() {
             key={f}
             onClick={() => setFilter(f)}
             className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
-              filter === f ? 'bg-indigo-600 text-white' : 'bg-white/60 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-white/90 dark:hover:bg-white/10'
+              filter === f ? 'bg-indigo-600 text-white' : 'bg-white/60 text-slate-600 hover:bg-white/90'
             }`}
           >
             {f}
@@ -148,12 +148,12 @@ export default function ReportsPage() {
                         'Rule-based'
                       )}
                     </Badge>
-                    <span className="flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500">
+                    <span className="flex items-center gap-1 text-xs text-slate-400">
                       <Calendar size={11} />
                       {r.periodLabel}
                     </span>
                   </div>
-                  <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">{r.summary}</p>
+                  <p className="truncate text-sm font-medium text-slate-800">{r.summary}</p>
                 </div>
 
                 <div className="flex shrink-0 items-center gap-2">
@@ -167,7 +167,7 @@ export default function ReportsPage() {
                     onClick={() => exportReportAsCsv(r)}
                     disabled={!canExport}
                     title={canExport ? 'Excel (CSV)' : "Eksport huquqi yo'q"}
-                    className="rounded-lg p-2 text-slate-500 dark:text-slate-400 transition-colors hover:bg-white/70 dark:hover:bg-white/10 hover:text-indigo-600 dark:hover:text-indigo-400 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500"
+                    className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-white/70 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500"
                   >
                     <FileSpreadsheet size={16} />
                   </button>
@@ -175,27 +175,27 @@ export default function ReportsPage() {
                     onClick={() => exportReportAsPdf(r)}
                     disabled={!canExport}
                     title={canExport ? 'PDF' : "Eksport huquqi yo'q"}
-                    className="rounded-lg p-2 text-slate-500 dark:text-slate-400 transition-colors hover:bg-white/70 dark:hover:bg-white/10 hover:text-indigo-600 dark:hover:text-indigo-400 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500"
+                    className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-white/70 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500"
                   >
                     <FileText size={16} />
                   </button>
                   <button
                     onClick={() => setDeleting(r)}
                     title="O'chirish"
-                    className="rounded-lg p-2 text-slate-500 dark:text-slate-400 transition-colors hover:bg-white/70 dark:hover:bg-white/10 hover:text-red-600 dark:hover:text-red-400"
+                    className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-white/70 hover:text-red-600"
                   >
                     <Trash2 size={16} />
                   </button>
                 </div>
               </div>
 
-              <div className="mt-3 flex flex-wrap gap-2 border-t border-white/70 dark:border-white/10 pt-3">
+              <div className="mt-3 flex flex-wrap gap-2 border-t border-white/70 pt-3">
                 {r.stats.map((s) => (
                   <span
                     key={s.label}
-                    className="rounded-lg bg-white/70 dark:bg-white/10 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-slate-400"
+                    className="rounded-lg bg-white/70 px-2.5 py-1 text-[11px] font-medium text-slate-600"
                   >
-                    {s.label}: <span className="font-bold text-slate-900 dark:text-slate-100">{s.value}</span>
+                    {s.label}: <span className="font-bold text-slate-900">{s.value}</span>
                   </span>
                 ))}
               </div>
@@ -203,7 +203,7 @@ export default function ReportsPage() {
           ))}
 
           {reports.length === 0 && (
-            <p className="rounded-xl border border-dashed border-slate-300 dark:border-white/10 p-10 text-center text-sm text-slate-400 dark:text-slate-500">
+            <p className="rounded-xl border border-dashed border-slate-300 p-10 text-center text-sm text-slate-400">
               Bu davr uchun hisobot topilmadi
             </p>
           )}

@@ -109,7 +109,7 @@ export default function EditUserModal({
         <div className="flex flex-col gap-5">
           <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
             {errors.form && (
-              <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600 dark:bg-red-500/10 dark:text-red-400">
+              <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
                 {errors.form}
               </p>
             )}
@@ -157,28 +157,28 @@ export default function EditUserModal({
             </div>
           </form>
 
-          <div className="border-t border-white/70 pt-4 dark:border-white/10">
+          <div className="border-t border-white/70 pt-4">
             {!resetting ? (
               <button
                 type="button"
                 onClick={() => setResetting(true)}
-                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-400 dark:hover:bg-amber-950/60"
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100"
               >
                 <KeyRound size={13} />
                 Parolni tiklash
               </button>
             ) : resetDone ? (
-              <p className="text-center text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+              <p className="text-center text-xs font-semibold text-emerald-600">
                 Parol yangilandi — foydalanuvchining barcha eski sessiyalari tugatildi.
               </p>
             ) : (
               <form onSubmit={handleResetPassword} noValidate className="flex flex-col gap-2">
-                <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                <p className="text-[11px] text-slate-400">
                   Foydalanuvchi uchun yangi parol darhol o'rnatiladi (email talab qilinmaydi) —
                   barcha eski sessiyalari avtomatik tugatiladi.
                 </p>
                 {resetError && (
-                  <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 dark:bg-red-500/10 dark:text-red-400">
+                  <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-600">
                     {resetError}
                   </p>
                 )}

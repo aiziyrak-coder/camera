@@ -242,7 +242,7 @@ export default function EnrollmentFaceCapture({
   if (cameraError) {
     return (
       <div className="flex flex-col gap-4">
-        <div className="flex items-start gap-2 rounded-xl bg-red-50 p-4 text-sm text-red-600 dark:bg-red-500/10 dark:text-red-400">
+        <div className="flex items-start gap-2 rounded-xl bg-red-50 p-4 text-sm text-red-600">
           <VideoOff size={18} className="mt-0.5 shrink-0" />
           <div>
             <p className="font-semibold">Kamera ochilmadi</p>
@@ -267,10 +267,10 @@ export default function EnrollmentFaceCapture({
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+        <p className="text-sm font-semibold text-slate-900">
           Yuzingizni kamera orqali tasdiqlang
         </p>
-        <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+        <p className="mt-1 text-xs leading-relaxed text-slate-500">
           Uch bosqich: to&apos;g&apos;riga qarang, so&apos;ng boshingizni chapga va o&apos;ngga
           buring. Yorug&apos; joyda turing, ko&apos;zoynak va niqobni oling.
         </p>
@@ -286,7 +286,7 @@ export default function EnrollmentFaceCapture({
               ? 'border-emerald-400'
               : finished
                 ? 'border-emerald-500'
-                : 'border-white/70 dark:border-white/20'
+                : 'border-white/70'
           }`}
         >
           <video
@@ -319,18 +319,18 @@ export default function EnrollmentFaceCapture({
       {/* Bosqich va maslahat */}
       <div className="text-center">
         {finished ? (
-          <p className="flex items-center justify-center gap-1.5 text-sm font-bold text-emerald-600 dark:text-emerald-400">
+          <p className="flex items-center justify-center gap-1.5 text-sm font-bold text-emerald-600">
             <Check size={16} />
             Uchala bosqich bajarildi
           </p>
         ) : (
           <>
-            <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
+            <p className="text-sm font-bold text-slate-900">
               {stepIndex + 1}/{total} — {ui?.title}
             </p>
             <p
               className={`mt-1 text-xs font-medium transition-colors ${
-                matching ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'
+                matching ? 'text-emerald-600' : 'text-slate-500'
               }`}
             >
               {hint || ui?.hint}
@@ -346,7 +346,7 @@ export default function EnrollmentFaceCapture({
             <div
               key={s}
               className={`h-14 w-14 overflow-hidden rounded-xl border-2 ${
-                captured[i] ? 'border-emerald-400' : 'border-dashed border-slate-300 dark:border-white/15'
+                captured[i] ? 'border-emerald-400' : 'border-dashed border-slate-300'
               }`}
             >
               {captured[i] ? (
@@ -362,14 +362,14 @@ export default function EnrollmentFaceCapture({
       )}
 
       {externalError && (
-        <div className="flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
+        <div className="flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-700">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
           <span>{externalError} Bosqichlar boshidan boshlandi.</span>
         </div>
       )}
 
       {submitting && (
-        <p className="text-center text-xs font-medium text-indigo-600 dark:text-indigo-400">
+        <p className="text-center text-xs font-medium text-indigo-600">
           Yuz saqlanmoqda...
         </p>
       )}
@@ -378,7 +378,7 @@ export default function EnrollmentFaceCapture({
         <button
           type="button"
           onClick={restart}
-          className="mx-auto flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+          className="mx-auto flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-slate-600"
         >
           <RotateCcw size={13} />
           Boshidan boshlash
@@ -415,7 +415,7 @@ function ProgressRing({ done, total, active }: { done: number; total: number; ac
                 ? 'stroke-emerald-400'
                 : isActive
                   ? 'stroke-indigo-400 animate-pulse'
-                  : 'stroke-slate-300 dark:stroke-white/15'
+                  : 'stroke-slate-300'
             }
           />
         );

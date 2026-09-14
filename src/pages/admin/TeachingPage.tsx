@@ -146,11 +146,11 @@ export default function TeachingPage() {
               <Plus size={14} />
               Yangi dars rejalashtirish
             </button>
-            <span className="mx-1 w-px self-stretch bg-white/80 dark:bg-white/10" />
+            <span className="mx-1 w-px self-stretch bg-white/80" />
             <button
               onClick={() => setGroupFilter(null)}
               className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
-                !groupFilter ? 'bg-indigo-600 text-white' : 'bg-white/60 text-slate-600 hover:bg-white/90 dark:bg-white/5 dark:text-slate-300'
+                !groupFilter ? 'bg-indigo-600 text-white' : 'bg-white/60 text-slate-600 hover:bg-white/90'
               }`}
             >
               Barcha guruhlar
@@ -160,13 +160,13 @@ export default function TeachingPage() {
                 key={g}
                 onClick={() => setGroupFilter(g)}
                 className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
-                  groupFilter === g ? 'bg-indigo-600 text-white' : 'bg-white/60 text-slate-600 hover:bg-white/90 dark:bg-white/5 dark:text-slate-300'
+                  groupFilter === g ? 'bg-indigo-600 text-white' : 'bg-white/60 text-slate-600 hover:bg-white/90'
                 }`}
               >
                 {g}
               </button>
             ))}
-            <span className="mx-1 w-px self-stretch bg-white/80 dark:bg-white/10" />
+            <span className="mx-1 w-px self-stretch bg-white/80" />
             {(
               [
                 ['all', 'Barchasi'],
@@ -181,7 +181,7 @@ export default function TeachingPage() {
                 className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
                   scheduleFilter === key
                     ? 'bg-emerald-600 text-white'
-                    : 'bg-white/60 text-slate-600 hover:bg-white/90 dark:bg-white/5 dark:text-slate-300'
+                    : 'bg-white/60 text-slate-600 hover:bg-white/90'
                 }`}
               >
                 {label}
@@ -192,7 +192,7 @@ export default function TeachingPage() {
       />
 
       {error && (
-        <p className="mb-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600 dark:bg-red-500/10 dark:text-red-400">
+        <p className="mb-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
           {error}
         </p>
       )}
@@ -212,7 +212,7 @@ export default function TeachingPage() {
         <>
           <div className="mb-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
             <div className="glass-deep p-4">
-              <h3 className="mb-3 text-sm font-bold text-slate-800 dark:text-slate-200">
+              <h3 className="mb-3 text-sm font-bold text-slate-800">
                 Diqqat balli trendi
               </h3>
               <div className="h-56">
@@ -238,7 +238,7 @@ export default function TeachingPage() {
             </div>
 
             <div className="glass-deep p-4">
-              <h3 className="mb-3 text-sm font-bold text-slate-800 dark:text-slate-200">
+              <h3 className="mb-3 text-sm font-bold text-slate-800">
                 O'qituvchilar bo'yicha faollik
               </h3>
               <div className="h-56">
@@ -266,14 +266,14 @@ export default function TeachingPage() {
           </div>
 
           {filtered.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-slate-300 dark:border-white/10 p-10 text-center text-sm text-slate-400 dark:text-slate-500">
+            <p className="rounded-xl border border-dashed border-slate-300 p-10 text-center text-sm text-slate-400">
               Hali dars monitoring yozuvlari yo'q
             </p>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-white/70 dark:border-white/10">
+            <div className="overflow-x-auto rounded-xl border border-white/70">
               <table className="w-full text-left text-sm">
                 <thead>
-                  <tr className="bg-white/50 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:bg-white/5 dark:text-slate-400">
+                  <tr className="bg-white/50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                     <th className="px-4 py-3">Sana</th>
                     <th className="px-4 py-3">Guruh</th>
                     <th className="px-4 py-3">Fan</th>
@@ -287,20 +287,20 @@ export default function TeachingPage() {
                     <th className="px-4 py-3">Amallar</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/60 dark:divide-white/5">
+                <tbody className="divide-y divide-white/60">
                   {filtered.map((s) => (
-                    <tr key={s.id} className="transition-colors hover:bg-white/40 dark:hover:bg-white/5">
-                      <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-400">
+                    <tr key={s.id} className="transition-colors hover:bg-white/40">
+                      <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-600">
                         {s.date}
                       </td>
-                      <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{s.group}</td>
-                      <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{s.subject}</td>
-                      <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{s.teacher}</td>
-                      <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">
+                      <td className="px-4 py-3 text-slate-700">{s.group}</td>
+                      <td className="px-4 py-3 text-slate-700">{s.subject}</td>
+                      <td className="px-4 py-3 text-slate-700">{s.teacher}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-900">
                         {s.attentionScore}%
                       </td>
-                      <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{s.sleepIncidents}</td>
-                      <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">
+                      <td className="px-4 py-3 text-slate-600">{s.sleepIncidents}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-900">
                         {s.teacherActivityScore}%
                       </td>
                       <td className="px-4 py-3">
@@ -308,7 +308,7 @@ export default function TeachingPage() {
                           {s.teacherOnTime ? 'Ha' : "Yo'q"}
                         </Badge>
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
+                      <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-600">
                         {formatLessonScheduleTime(s.scheduledStartTime)}
                       </td>
                       <td className="px-4 py-3">
@@ -323,8 +323,8 @@ export default function TeachingPage() {
                             title={s.scheduledStartTime ? 'Jadvalni tahrirlash' : 'Jadval belgilash'}
                             className={`flex items-center gap-1 text-xs font-semibold hover:underline ${
                               s.scheduledStartTime
-                                ? 'text-emerald-600 dark:text-emerald-400'
-                                : 'text-indigo-600 dark:text-indigo-400'
+                                ? 'text-emerald-600'
+                                : 'text-indigo-600'
                             }`}
                           >
                             <CalendarClock size={12} />
@@ -333,7 +333,7 @@ export default function TeachingPage() {
                           <button
                             onClick={() => setDeleting(s)}
                             title="O'chirish"
-                            className="text-slate-400 transition-colors hover:text-red-600 dark:text-slate-500 dark:hover:text-red-400"
+                            className="text-slate-400 transition-colors hover:text-red-600"
                           >
                             <Trash2 size={14} />
                           </button>

@@ -27,13 +27,13 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
       <div className="flex min-h-screen items-center justify-center bg-canvas p-4">
         <div className="glass flex max-w-md flex-col items-center gap-3 p-8 text-center">
           <AlertOctagon size={32} className="text-red-500" />
-          <h1 className="text-base font-extrabold text-slate-900 dark:text-slate-100">
+          <h1 className="text-base font-extrabold text-slate-900">
             Kutilmagan xatolik yuz berdi
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
+          <p className="text-sm text-slate-500">
             Sahifani qayta yuklab ko'ring. Muammo davom etsa, tizim administratoriga murojaat qiling.
           </p>
-          <p className="w-full overflow-x-auto rounded-lg bg-slate-900/5 p-2 text-left font-mono text-[11px] text-slate-500 dark:bg-white/5 dark:text-slate-400">
+          <p className="w-full overflow-x-auto rounded-lg bg-slate-900/5 p-2 text-left font-mono text-[11px] text-slate-500">
             {this.state.error.message}
           </p>
           <button

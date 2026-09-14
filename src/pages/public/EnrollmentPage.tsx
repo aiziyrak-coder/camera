@@ -99,11 +99,11 @@ export default function EnrollmentPage() {
       <div className="glass rounded-2xl p-6">
         <div className="mb-5 flex items-center gap-2">
           <ScanFace size={20} className="text-indigo-500" />
-          <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">Yuzni ro'yxatdan o'tkazish</h2>
+          <h2 className="text-base font-bold text-slate-900">Yuzni ro'yxatdan o'tkazish</h2>
         </div>
 
         {error && (
-          <div className="mb-4 flex items-start gap-2 rounded-xl bg-red-50 p-3 text-sm text-red-600 dark:bg-red-500/10 dark:text-red-400">
+          <div className="mb-4 flex items-start gap-2 rounded-xl bg-red-50 p-3 text-sm text-red-600">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" />
             <span>{error}</span>
           </div>
@@ -111,7 +111,7 @@ export default function EnrollmentPage() {
 
         {step === 'identify' && (
           <form onSubmit={handleLookup} className="flex flex-col gap-4">
-            <p className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+            <p className="text-sm leading-relaxed text-slate-500">
               Tizimda mavjud yozuvingizni topish uchun JSHSHIR raqamingizni kiriting. U pasportingizning
               ma&apos;lumot sahifasida, 14 raqamdan iborat.
             </p>
@@ -131,7 +131,7 @@ export default function EnrollmentPage() {
                   className={`rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${
                     method === value
                       ? 'bg-indigo-600 text-white shadow-btn'
-                      : 'bg-white/60 text-slate-600 hover:bg-white/90 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10'
+                      : 'bg-white/60 text-slate-600 hover:bg-white/90'
                   }`}
                 >
                   {label}
@@ -141,7 +141,7 @@ export default function EnrollmentPage() {
 
             {method === 'pinfl' ? (
               <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">
+                <label className="mb-1 block text-xs font-semibold text-slate-500">
                   JSHSHIR (14 raqam)
                 </label>
                 <input
@@ -151,34 +151,34 @@ export default function EnrollmentPage() {
                   inputMode="numeric"
                   required
                   minLength={13}
-                  className="w-full rounded-xl border border-white/80 bg-white/60 px-3 py-2.5 font-mono text-sm tracking-wide text-slate-900 outline-none transition-colors placeholder:font-sans placeholder:tracking-normal placeholder:text-slate-400 focus:border-indigo-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:placeholder:text-slate-500"
+                  className="w-full rounded-xl border border-white/80 bg-white/60 px-3 py-2.5 font-mono text-sm tracking-wide text-slate-900 outline-none transition-colors placeholder:font-sans placeholder:tracking-normal placeholder:text-slate-400 focus:border-indigo-300"
                 />
-                <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+                <p className="mt-1 text-[11px] text-slate-400">
                   Kiritilgan: {pinfl.length}/14 raqam
                 </p>
               </div>
             ) : (
               <div className="grid grid-cols-3 gap-2">
                 <div className="col-span-1">
-                  <label className="mb-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">Seriya</label>
+                  <label className="mb-1 block text-xs font-semibold text-slate-500">Seriya</label>
                   <input
                     value={series}
                     onChange={(e) => setSeries(e.target.value.toUpperCase())}
                     placeholder="AD"
                     maxLength={4}
                     required
-                    className="w-full rounded-xl border border-white/80 bg-white/60 px-3 py-2.5 text-sm uppercase text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-indigo-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:placeholder:text-slate-500"
+                    className="w-full rounded-xl border border-white/80 bg-white/60 px-3 py-2.5 text-sm uppercase text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-indigo-300"
                   />
                 </div>
                 <div className="col-span-2">
-                  <label className="mb-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">Raqam</label>
+                  <label className="mb-1 block text-xs font-semibold text-slate-500">Raqam</label>
                   <input
                     value={number}
                     onChange={(e) => setNumber(e.target.value.replace(/\D/g, ''))}
                     placeholder="1234567"
                     maxLength={10}
                     required
-                    className="w-full rounded-xl border border-white/80 bg-white/60 px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-indigo-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:placeholder:text-slate-500"
+                    className="w-full rounded-xl border border-white/80 bg-white/60 px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-indigo-300"
                   />
                 </div>
               </div>
@@ -197,23 +197,23 @@ export default function EnrollmentPage() {
 
         {step === 'confirm' && found && (
           <div className="flex flex-col gap-4">
-            <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-4 dark:bg-white/5">
+            <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-4">
               <UserCheck size={22} className="shrink-0 text-emerald-500" />
               <div>
-                <p className="text-sm font-bold text-slate-900 dark:text-slate-100">{found.fullName}</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
+                <p className="text-sm font-bold text-slate-900">{found.fullName}</p>
+                <p className="text-xs text-slate-500">
                   {found.typeLabel} · {found.groupOrPosition}
                 </p>
               </div>
             </div>
 
             {found.alreadyEnrolled ? (
-              <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
+              <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-700">
                 Siz allaqachon ro'yxatdan o'tgansiz. O'zgartirish kerak bo'lsa, administratorga murojaat qiling.
               </p>
             ) : (
               <>
-                <p className="text-sm text-slate-500 dark:text-slate-400">
+                <p className="text-sm text-slate-500">
                   Bu siz ekanligingizni tasdiqlab, yuzingizni skanerlashga o'ting.
                 </p>
                 <button
@@ -232,7 +232,7 @@ export default function EnrollmentPage() {
                 setStep('identify');
                 setFound(null);
               }}
-              className="text-xs font-medium text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              className="text-xs font-medium text-slate-400 hover:text-slate-600"
             >
               Boshqa ma'lumot bilan qayta urinish
             </button>
@@ -264,8 +264,8 @@ export default function EnrollmentPage() {
         {step === 'success' && found && (
           <div className="flex flex-col items-center gap-3 py-6 text-center">
             <CheckCircle2 size={40} className="text-emerald-500" />
-            <p className="text-sm font-bold text-slate-900 dark:text-slate-100">Muvaffaqiyatli saqlandi!</p>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
+            <p className="text-sm font-bold text-slate-900">Muvaffaqiyatli saqlandi!</p>
+            <p className="text-sm text-slate-500">
               {found.fullName}, yuzingiz endi kameralar orqali tanib olinadi.
             </p>
           </div>

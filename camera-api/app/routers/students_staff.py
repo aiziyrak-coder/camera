@@ -1,12 +1,10 @@
 import asyncio
-import csv
-import io
 import json
 import logging
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -26,6 +24,15 @@ from app.schemas.student_staff import (
 from app.schemas.student_staff_import import StudentStaffImportResultOut
 from app.services.face_matching import invalidate_candidate_matrix_cache
 from app.services.face_recognition import NoFaceDetectedError, extract_embedding
+from app.services.staff_export import (
+    STATUS_LABELS,
+    XLSX_MIME,
+    Bucket,
+    CoverageData,
+    PersonRow,
+    build_people_workbook,
+    build_stats_workbook,
+)
 from app.services.student_import import import_students_staff_csv
 from app.storage import delete_files_quietly, presigned_url, upload_file
 from app.timezone import local_now
@@ -174,51 +181,96 @@ async def biometrics_coverage(
     )
 
 
+async def _coverage_data(db: AsyncSession, type: str | None) -> CoverageData:
+    """Fakultet va kafedra kesimidagi holatlar — bitta GROUP BY so'rov bilan."""
+    stmt = (
+        select(Faculty.name, StudentStaff.group_or_position, StudentStaff.biometrics_status,
+               func.count(StudentStaff.id))
+        .select_from(StudentStaff)
+        .outerjoin(Faculty, StudentStaff.faculty_id == Faculty.id)
+        .group_by(Faculty.name, StudentStaff.group_or_position, StudentStaff.biometrics_status)
+    )
+    if type:
+        stmt = stmt.where(StudentStaff.type == type)
+
+    data = CoverageData()
+    for faculty_name, unit, bio_status, count in (await db.execute(stmt)).all():
+        fac = faculty_name or NO_FACULTY_LABEL
+        data.totals.add(bio_status, count)
+        data.by_faculty.setdefault(fac, Bucket()).add(bio_status, count)
+        data.by_unit.setdefault((fac, unit or "—"), Bucket()).add(bio_status, count)
+    return data
+
+
+def _filter_label(type: str | None, faculty: str | None, search: str | None,
+                  biometrics: str | None) -> str:
+    """Faylga qaysi filtr bilan tuzilgani yoziladi — keyin ochgan odam
+    "bu to'liq ro'yxatmi yoki bir qismimi" deb adashmasligi uchun."""
+    parts = []
+    if type:
+        parts.append(f"Turi: {'Talaba' if type == 'talaba' else 'Xodim'}")
+    if faculty == NO_FACULTY_KEY:
+        parts.append(f"Fakultet: {NO_FACULTY_LABEL}")
+    elif faculty:
+        parts.append(f"Fakultet: {faculty}")
+    if biometrics:
+        parts.append(f"Yuz holati: {STATUS_LABELS.get(biometrics, biometrics)}")
+    if search and search.strip():
+        parts.append(f"Qidiruv: «{search.strip()}»")
+    return "Filtr: " + "; ".join(parts) if parts else "Filtr qo'llanmagan — to'liq ro'yxat"
+
+
 @router.get("/export")
 async def export_students_staff(
     db: Annotated[AsyncSession, Depends(get_db)],
     _: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
+    kind: Annotated[Literal["people", "stats"], Query()] = "people",
     type: Annotated[str | None, Query()] = None,
     faculty: Annotated[str | None, Query()] = None,
     search: Annotated[str | None, Query()] = None,
     biometrics: Annotated[str | None, Query(alias="biometricsStatus")] = None,
-) -> StreamingResponse:
-    """Ro'yxatni ismlari bilan CSV qilib yuklab olish.
+) -> Response:
+    """Excel (.xlsx) fayl — ikki xil.
 
-    Ekrandagi filtr AYNAN saqlanadi: "Pediatriya fakulteti, yuzi
-    tasdiqlanmaganlar" tanlangan bo'lsa, faylga ham aynan o'shalar
-    tushadi. Bu hisobot uchun printsipial — yuklab olingan fayl
-    ekranda ko'rilgan narsaning nusxasi bo'lishi kerak.
+    kind=people — har bir odam alohida qator. Ekrandagi filtr AYNAN
+    saqlanadi: "Pediatriya, yuzi tasdiqlanmaganlar" tanlangan bo'lsa,
+    faylga ham aynan o'shalar tushadi — yuklab olingan fayl ekranda
+    ko'rilgan narsaning nusxasi bo'lishi kerak.
 
-    Excel uchun BOM qo'shiladi: usiz o'zbek harflari (o', g', sh)
-    Excel da buzilib ochiladi va fayl yaroqsiz bo'lib qoladi."""
-    records = (await db.execute(_filtered_query(type, faculty, search, biometrics))).scalars().all()
+    kind=stats — fakultet va kafedra kesimidagi qamrov. Bu yerda faqat
+    "turi" filtri qo'llanadi: statistika butun manzarani ko'rsatish
+    uchun, va bitta fakultetga qisqartirilgan "umumiy statistika" o'z
+    nomiga zid bo'lardi.
 
-    status_labels = {
-        "tasdiqlangan": "Tasdiqlangan",
-        "kutilmoqda": "Kutilmoqda",
-        "yoq": "Tasdiqlanmagan",
-    }
+    CSV nima uchun almashtirilgani — app/services/staff_export.py
+    docstringida."""
+    now = local_now()
+    stamp = now.strftime("%Y-%m-%d")
 
-    buffer = io.StringIO()
-    writer = csv.writer(buffer, delimiter=";")
-    writer.writerow(["№", "F.I.SH.", "JSHSHIR", "Turi", "Fakultet", "Kafedra / Bo'lim", "Yuz holati"])
-    for i, r in enumerate(records, 1):
-        writer.writerow([
-            i,
-            r.full_name,
-            r.pinfl or "",
-            "Talaba" if r.type == "talaba" else "Xodim",
-            r.faculty.name if r.faculty else NO_FACULTY_LABEL,
-            r.group_or_position,
-            status_labels.get(r.biometrics_status, r.biometrics_status),
-        ])
+    if kind == "stats":
+        data = await _coverage_data(db, type)
+        scope = f"Turi: {'Talaba' if type == 'talaba' else 'Xodim'}" if type else "Barcha turdagi shaxslar"
+        content = build_stats_workbook(data, scope, now)
+        filename = f"yuz-tasdiqlash-statistikasi-{stamp}.xlsx"
+    else:
+        records = (await db.execute(_filtered_query(type, faculty, search, biometrics))).scalars().all()
+        rows = [
+            PersonRow(
+                full_name=r.full_name,
+                pinfl=r.pinfl or "",
+                type=r.type,
+                faculty=r.faculty.name if r.faculty else NO_FACULTY_LABEL,
+                unit=r.group_or_position,
+                biometrics_status=r.biometrics_status,
+            )
+            for r in records
+        ]
+        content = build_people_workbook(rows, _filter_label(type, faculty, search, biometrics), now)
+        filename = f"royxat-{stamp}.xlsx"
 
-    payload = "\ufeff" + buffer.getvalue()
-    filename = f"xodimlar-{local_now().strftime('%Y-%m-%d')}.csv"
-    return StreamingResponse(
-        iter([payload.encode("utf-8")]),
-        media_type="text/csv; charset=utf-8",
+    return Response(
+        content=content,
+        media_type=XLSX_MIME,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 

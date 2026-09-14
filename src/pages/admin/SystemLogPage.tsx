@@ -124,7 +124,7 @@ export default function SystemLogPage() {
           ) : (
             <span
               title="Eksport huquqi yo'q — Foydalanuvchilar va Rollar bo'limida yoqish mumkin"
-              className="flex cursor-not-allowed items-center gap-1.5 rounded-xl border border-white/[.88] bg-white/30 px-3 py-2 text-[12.5px] font-semibold text-slate-400 dark:border-white/10 dark:bg-white/5 dark:text-slate-500"
+              className="flex cursor-not-allowed items-center gap-1.5 rounded-xl border border-white/[.88] bg-white/30 px-3 py-2 text-[12.5px] font-semibold text-slate-400"
             >
               <Download size={14} />
               CSV yuklab olish
@@ -145,19 +145,19 @@ export default function SystemLogPage() {
             key={f}
             onClick={() => setStatusFilter(f)}
             className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
-              statusFilter === f ? 'bg-indigo-600 text-white' : 'bg-white/60 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-white/90 dark:hover:bg-white/10'
+              statusFilter === f ? 'bg-indigo-600 text-white' : 'bg-white/60 text-slate-600 hover:bg-white/90'
             }`}
           >
             {f}
           </button>
         ))}
-        <span className="mx-1 w-px self-stretch bg-white/80 dark:bg-white/10" />
+        <span className="mx-1 w-px self-stretch bg-white/80" />
         {MODULE_FILTERS.map((f) => (
           <button
             key={f}
             onClick={() => setModuleFilter((cur) => (cur === f ? null : f))}
             className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
-              moduleFilter === f ? 'bg-indigo-600 text-white' : 'bg-white/60 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-white/90 dark:hover:bg-white/10'
+              moduleFilter === f ? 'bg-indigo-600 text-white' : 'bg-white/60 text-slate-600 hover:bg-white/90'
             }`}
           >
             {f}
@@ -166,7 +166,7 @@ export default function SystemLogPage() {
       </div>
 
       {error && (
-        <p className="mb-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600 dark:bg-red-500/10 dark:text-red-400">
+        <p className="mb-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
           {error}
         </p>
       )}
@@ -176,14 +176,14 @@ export default function SystemLogPage() {
           <Loader2 size={20} className="animate-spin" />
         </div>
       ) : entries.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-slate-300 dark:border-white/10 p-10 text-center text-sm text-slate-400 dark:text-slate-500">
+        <p className="rounded-xl border border-dashed border-slate-300 p-10 text-center text-sm text-slate-400">
           Filtrlarga mos yozuv topilmadi
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-white/70 dark:border-white/10">
+        <div className="overflow-x-auto rounded-xl border border-white/70">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="bg-white/50 dark:bg-white/5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <tr className="bg-white/50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-3">Vaqt</th>
                 <th className="px-4 py-3">Foydalanuvchi</th>
                 <th className="px-4 py-3">Amal</th>
@@ -192,19 +192,19 @@ export default function SystemLogPage() {
                 <th className="px-4 py-3">IP manzil</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/60 dark:divide-white/5">
+            <tbody className="divide-y divide-white/60">
               {entries.map((l) => (
-                <tr key={l.id} className="transition-colors hover:bg-white/40 dark:hover:bg-white/5">
-                  <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-400">
+                <tr key={l.id} className="transition-colors hover:bg-white/40">
+                  <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-600">
                     {l.timestamp}
                   </td>
-                  <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">{l.user}</td>
-                  <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{l.action}</td>
-                  <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{l.module}</td>
+                  <td className="px-4 py-3 font-medium text-slate-900">{l.user}</td>
+                  <td className="px-4 py-3 text-slate-600">{l.action}</td>
+                  <td className="px-4 py-3 text-slate-600">{l.module}</td>
                   <td className="px-4 py-3">
                     <Badge tone={STATUS_TONE[l.status]}>{STATUS_LABEL[l.status]}</Badge>
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{l.ip}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-500">{l.ip}</td>
                 </tr>
               ))}
             </tbody>

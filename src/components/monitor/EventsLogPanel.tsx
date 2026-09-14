@@ -52,13 +52,13 @@ export default function EventsLogPanel() {
 
   return (
     <div className="glass p-4">
-      <h3 className="mb-3 flex items-center gap-1.5 text-sm font-extrabold text-slate-900 dark:text-slate-100">
+      <h3 className="mb-3 flex items-center gap-1.5 text-sm font-extrabold text-slate-900">
         <ListChecks size={15} className="text-indigo-500" />
         Hodisalar jurnali
       </h3>
 
       {!token ? (
-        <p className="flex items-center gap-1.5 rounded-lg bg-white/60 px-3 py-2.5 text-xs text-slate-500 dark:bg-white/5 dark:text-slate-400">
+        <p className="flex items-center gap-1.5 rounded-lg bg-white/60 px-3 py-2.5 text-xs text-slate-500">
           <LogIn size={13} />
           Ko&apos;rish uchun tizimga kiring
         </p>
@@ -67,9 +67,9 @@ export default function EventsLogPanel() {
           <Loader2 size={16} className="animate-spin" />
         </div>
       ) : error ? (
-        <p className="text-[11px] font-medium text-red-600 dark:text-red-400">{error}</p>
+        <p className="text-[11px] font-medium text-red-600">{error}</p>
       ) : events.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-slate-300 px-3 py-6 text-center text-[11px] leading-relaxed text-slate-400 dark:border-white/10 dark:text-slate-500">
+        <p className="rounded-lg border border-dashed border-slate-300 px-3 py-6 text-center text-[11px] leading-relaxed text-slate-400">
           Tasdiqlangan hodisa yo&apos;q.
           <br />
           Yangi signallar Hodisalar sahifasida ko&apos;rib chiqiladi.
@@ -77,19 +77,19 @@ export default function EventsLogPanel() {
       ) : (
         <ul className="space-y-2">
           {events.map((e) => (
-            <li key={e.id} className="rounded-lg bg-white/60 p-2.5 text-xs dark:bg-white/5">
+            <li key={e.id} className="rounded-lg bg-white/60 p-2.5 text-xs">
               <div className="mb-0.5 flex items-center justify-between gap-2">
-                <span className="truncate font-semibold text-slate-800 dark:text-slate-200">{e.moduleName}</span>
+                <span className="truncate font-semibold text-slate-800">{e.moduleName}</span>
                 <Badge tone={SEVERITY_TONE[e.severity]}>{e.confidence}%</Badge>
               </div>
               <div className="flex items-center justify-between gap-2">
-                <p className="truncate text-slate-500 dark:text-slate-400">
+                <p className="truncate text-slate-500">
                   {e.cameraName} · {e.timestamp}
                 </p>
                 <button
                   type="button"
                   onClick={() => setSelected(e)}
-                  className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-500/10"
+                  className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-indigo-600 transition-colors hover:bg-indigo-50"
                 >
                   <Eye size={12} />
                   Ko&apos;rish

@@ -58,7 +58,7 @@ export default function AddGroupModal({
     <Modal open={open} onClose={onClose} title="Yangi guruh qo'shish" maxWidth="max-w-sm">
       <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
         {errors.form && (
-          <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600 dark:bg-red-500/10 dark:text-red-400">
+          <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
             {errors.form}
           </p>
         )}

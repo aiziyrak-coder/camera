@@ -57,13 +57,13 @@ export default function AddDepartmentModal({
   }
 
   const selectClass =
-    'w-full rounded-xl border border-white/80 bg-white/60 px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-indigo-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-100';
+    'w-full rounded-xl border border-white/80 bg-white/60 px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-indigo-300';
 
   return (
     <Modal open={open} onClose={onClose} title="Yangi kafedra qo'shish" maxWidth="max-w-sm">
       <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
         {errors.form && (
-          <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600 dark:bg-red-500/10 dark:text-red-400">
+          <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
             {errors.form}
           </p>
         )}
@@ -75,7 +75,7 @@ export default function AddDepartmentModal({
           error={errors.name}
         />
         <div>
-          <label className="mb-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">
+          <label className="mb-1 block text-xs font-semibold text-slate-500">
             Qaysi binoda
           </label>
           <select value={buildingId} onChange={(e) => setBuildingId(e.target.value)} className={selectClass}>
@@ -86,7 +86,7 @@ export default function AddDepartmentModal({
               </option>
             ))}
           </select>
-          <p className="mt-1 text-[11px] leading-relaxed text-slate-400 dark:text-slate-500">
+          <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
             Monitoring sahifasidagi filtr avval bino, keyin kafedra bo&apos;yicha ishlaydi — binosi
             ko&apos;rsatilmagan kafedra bino tanlangach ro&apos;yxatda ko&apos;rinmaydi.
           </p>

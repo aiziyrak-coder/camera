@@ -48,20 +48,20 @@ export default function CampusMap() {
           return (
             <div key={b.id} className="glass-deep flex flex-col gap-3 p-4">
               <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-400">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600">
                   <Building2 size={15} />
                 </div>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">
+                  <p className="truncate text-sm font-bold text-slate-900">
                     {b.name}
                   </p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                  <p className="text-xs text-slate-500">
                     {cameras.length} ta kamera
                   </p>
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-1.5 rounded-xl bg-slate-100/60 p-3 dark:bg-white/5">
+              <div className="flex flex-wrap gap-1.5 rounded-xl bg-slate-100/60 p-3">
                 {cameras.length === 0 ? (
                   <span className="text-xs text-slate-400">Kamera biriktirilmagan</span>
                 ) : (
@@ -80,7 +80,7 @@ export default function CampusMap() {
         })}
       </div>
 
-      <div className="flex flex-wrap gap-4 text-xs text-slate-500 dark:text-slate-400">
+      <div className="flex flex-wrap gap-4 text-xs text-slate-500">
         <span className="flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />
           Faol
@@ -93,7 +93,7 @@ export default function CampusMap() {
           <span className="h-2.5 w-2.5 rounded-sm bg-slate-400" />
           Nofaol
         </span>
-        <span className="text-slate-400 dark:text-slate-500">(kamerani bosing — batafsil)</span>
+        <span className="text-slate-400">(kamerani bosing — batafsil)</span>
       </div>
 
       <CameraConfigDetailModal camera={selected} onClose={() => setSelected(null)} />

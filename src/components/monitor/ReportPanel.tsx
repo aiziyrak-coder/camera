@@ -36,7 +36,7 @@ export default function ReportPanel() {
 
   return (
     <div className="glass p-4">
-      <h3 className="mb-3 flex items-center gap-1.5 text-sm font-extrabold text-slate-900 dark:text-slate-100">
+      <h3 className="mb-3 flex items-center gap-1.5 text-sm font-extrabold text-slate-900">
         <FileText size={15} className="text-indigo-500" />
         Hisobot
       </h3>
@@ -50,7 +50,7 @@ export default function ReportPanel() {
             className={`rounded-lg px-2 py-1.5 text-[11px] font-semibold transition-colors ${
               period === p
                 ? 'bg-indigo-600 text-white'
-                : 'bg-white/60 text-slate-600 hover:bg-white/90 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10'
+                : 'bg-white/60 text-slate-600 hover:bg-white/90'
             }`}
           >
             {p}
@@ -68,10 +68,10 @@ export default function ReportPanel() {
         {generating ? 'Tayyorlanmoqda...' : `${period} hisobotni PDF qilib yuklash`}
       </button>
 
-      {error && <p className="mt-2 text-[11px] font-medium text-red-600 dark:text-red-400">{error}</p>}
+      {error && <p className="mt-2 text-[11px] font-medium text-red-600">{error}</p>}
 
       {lastReport && !error && (
-        <p className="mt-2 truncate text-[11px] text-slate-500 dark:text-slate-400">
+        <p className="mt-2 truncate text-[11px] text-slate-500">
           Oxirgi: {lastReport.periodLabel} · {lastReport.generatedAt}
         </p>
       )}

@@ -72,19 +72,19 @@ export default function AiModuleModal({
       {form && module && (
         <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
           <div className="glass-deep space-y-1 p-4">
-            <p className="text-sm font-bold text-slate-900 dark:text-slate-100">{module.name}</p>
-            <p className="text-xs text-slate-500 dark:text-slate-400">{module.description}</p>
-            <p className="text-[11px] text-slate-400 dark:text-slate-500">{module.method}</p>
+            <p className="text-sm font-bold text-slate-900">{module.name}</p>
+            <p className="text-xs text-slate-500">{module.description}</p>
+            <p className="text-[11px] text-slate-400">{module.method}</p>
           </div>
 
           {error && (
-            <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600 dark:bg-red-500/10 dark:text-red-400">
+            <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
               {error}
             </p>
           )}
 
           <div>
-            <label className="mb-1.5 flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-400">
+            <label className="mb-1.5 flex items-center justify-between text-xs font-semibold text-slate-600">
               <span>Threshold</span>
               <span className="font-mono text-indigo-600">{form.threshold}%</span>
             </label>
@@ -110,7 +110,7 @@ export default function AiModuleModal({
           />
 
           <label
-            className={`flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-400 ${
+            className={`flex items-center gap-2 text-sm font-medium text-slate-600 ${
               !module.hasDetector ? 'opacity-50' : ''
             }`}
           >
@@ -119,12 +119,12 @@ export default function AiModuleModal({
               checked={form.active}
               disabled={!module.hasDetector}
               onChange={(e) => set('active', e.target.checked)}
-              className="rounded border-slate-300 dark:border-white/10"
+              className="rounded border-slate-300"
             />
             Modul faol
           </label>
           {!module.hasDetector && (
-            <p className="text-[11px] text-slate-400 dark:text-slate-500">
+            <p className="text-[11px] text-slate-400">
               Bu modul uchun hali aniqlash logikasi yozilmagan — faollashtirib bo'lmaydi.
             </p>
           )}

@@ -79,20 +79,20 @@ export default function CameraConfigDetailModal({
 
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div className="glass-deep px-3 py-2.5">
-              <p className="text-[11px] text-slate-400 dark:text-slate-500">IP manzil</p>
-              <p className="font-mono font-medium text-slate-800 dark:text-slate-200">{camera.ip}</p>
+              <p className="text-[11px] text-slate-400">IP manzil</p>
+              <p className="font-mono font-medium text-slate-800">{camera.ip}</p>
             </div>
             <div className="glass-deep px-3 py-2.5">
-              <p className="text-[11px] text-slate-400 dark:text-slate-500">Bino</p>
-              <p className="font-medium text-slate-800 dark:text-slate-200">{camera.building}</p>
+              <p className="text-[11px] text-slate-400">Bino</p>
+              <p className="font-medium text-slate-800">{camera.building}</p>
             </div>
             <div className="glass-deep px-3 py-2.5">
-              <p className="text-[11px] text-slate-400 dark:text-slate-500">Zona</p>
-              <p className="font-medium text-slate-800 dark:text-slate-200">{camera.zone}</p>
+              <p className="text-[11px] text-slate-400">Zona</p>
+              <p className="font-medium text-slate-800">{camera.zone}</p>
             </div>
             <div className="glass-deep px-3 py-2.5">
-              <p className="text-[11px] text-slate-400 dark:text-slate-500">Ruxsat / FPS</p>
-              <p className="font-medium text-slate-800 dark:text-slate-200">
+              <p className="text-[11px] text-slate-400">Ruxsat / FPS</p>
+              <p className="font-medium text-slate-800">
                 {camera.resolution} {camera.fps ? `/ ${camera.fps} fps` : ''}
               </p>
             </div>
@@ -100,12 +100,12 @@ export default function CameraConfigDetailModal({
 
           <div className="glass-deep flex items-center justify-between gap-3 px-3 py-2.5">
             <div>
-              <p className="text-[11px] text-slate-400 dark:text-slate-500">AI modullar</p>
-              <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
+              <p className="text-[11px] text-slate-400">AI modullar</p>
+              <p className="text-sm font-medium text-slate-800">
                 {moduleSummary ?? 'Yuklanmoqda...'}
               </p>
               {(camera.excludedModuleCodes?.length ?? 0) > 0 && (
-                <p className="mt-0.5 text-[10px] text-amber-600 dark:text-amber-400">
+                <p className="mt-0.5 text-[10px] text-amber-600">
                   Maxsus sozlama — ba&apos;zi kriteriyalar o‘chirilgan
                 </p>
               )}
@@ -123,7 +123,7 @@ export default function CameraConfigDetailModal({
           </div>
 
           {camera.restrictedZonePolygon && camera.restrictedZonePolygon.length > 0 && (
-            <p className="text-xs text-red-600 dark:text-red-400">
+            <p className="text-xs text-red-600">
               Taqiqlangan zona belgilangan ({camera.restrictedZonePolygon.length} nuqta)
             </p>
           )}

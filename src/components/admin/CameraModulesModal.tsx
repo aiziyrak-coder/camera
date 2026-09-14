@@ -86,13 +86,13 @@ export default function CameraModulesModal({
     <Modal open={open} onClose={onClose} title={camera ? `AI modullar — ${camera.name}` : ''} maxWidth="max-w-xl">
       {camera && (
         <div className="space-y-4">
-          <div className="glass-deep space-y-2 p-3 text-xs text-slate-500 dark:text-slate-400">
+          <div className="glass-deep space-y-2 p-3 text-xs text-slate-500">
             <p>
               Belgilangan modullar shu kamerada ishlaydi. Belgini olib tashlasangiz, AI kriteriyasi shu kameraga
               tegishli bo‘lmaydi — server yuki kamayadi.
             </p>
             {stats && (
-              <p className="font-semibold text-indigo-600 dark:text-indigo-400">
+              <p className="font-semibold text-indigo-600">
                 {stats.enabled} / {stats.runnable} ishlaydigan modul yoqilgan
                 {excluded.size > 0 ? ` · ${excluded.size} ta maxsus o‘chirilgan` : ' · standart (hammasi)'}
               </p>
@@ -111,7 +111,7 @@ export default function CameraModulesModal({
                   type="button"
                   title={p.description}
                   onClick={() => applyPreset(p.id)}
-                  className="rounded-lg bg-white/70 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-700 dark:bg-white/5 dark:text-slate-400 dark:hover:bg-indigo-500/10 dark:hover:text-indigo-300"
+                  className="rounded-lg bg-white/70 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-700"
                 >
                   {p.label}
                 </button>
@@ -133,12 +133,12 @@ export default function CameraModulesModal({
           )}
 
           {error && (
-            <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600 dark:bg-red-500/10 dark:text-red-400">
+            <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
               {error}
             </p>
           )}
 
-          <div className="flex justify-end gap-2 border-t border-white/60 pt-3 dark:border-white/10">
+          <div className="flex justify-end gap-2 border-t border-white/60 pt-3">
             <button type="button" onClick={onClose} className="btn-glass">
               Bekor qilish
             </button>

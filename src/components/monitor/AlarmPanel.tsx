@@ -57,13 +57,13 @@ export default function AlarmPanel({
 
   return (
     <div className="glass p-4">
-      <h3 className="mb-3 flex items-center gap-1.5 text-sm font-extrabold text-slate-900 dark:text-slate-100">
+      <h3 className="mb-3 flex items-center gap-1.5 text-sm font-extrabold text-slate-900">
         <Siren size={15} className="text-red-500" />
         Alarm
       </h3>
 
       {!token ? (
-        <p className="flex items-center gap-1.5 rounded-lg bg-white/60 px-3 py-2.5 text-xs text-slate-500 dark:bg-white/5 dark:text-slate-400">
+        <p className="flex items-center gap-1.5 rounded-lg bg-white/60 px-3 py-2.5 text-xs text-slate-500">
           <LogIn size={13} />
           Ko'rish uchun tizimga kiring
         </p>
@@ -72,9 +72,9 @@ export default function AlarmPanel({
           <Loader2 size={16} className="animate-spin" />
         </div>
       ) : error ? (
-        <p className="text-[11px] font-medium text-red-600 dark:text-red-400">{error}</p>
+        <p className="text-[11px] font-medium text-red-600">{error}</p>
       ) : events.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-slate-300 py-6 text-center text-[11px] text-slate-400 dark:border-white/10 dark:text-slate-500">
+        <p className="rounded-lg border border-dashed border-slate-300 py-6 text-center text-[11px] text-slate-400">
           Faol signal yo'q
         </p>
       ) : (
@@ -84,12 +84,12 @@ export default function AlarmPanel({
               <button
                 type="button"
                 onClick={() => handleClick(e)}
-                className="flex w-full items-start gap-2 rounded-lg bg-red-50/80 p-2.5 text-left text-xs transition-colors hover:bg-red-100/80 dark:bg-red-500/10 dark:hover:bg-red-500/15"
+                className="flex w-full items-start gap-2 rounded-lg bg-red-50/80 p-2.5 text-left text-xs transition-colors hover:bg-red-100/80"
               >
                 <AlertTriangle size={14} className="mt-0.5 shrink-0 text-red-500" />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-semibold text-red-700 dark:text-red-400">{e.cameraName}</p>
-                  <p className="truncate text-red-600/80 dark:text-red-400/70">
+                  <p className="truncate font-semibold text-red-700">{e.cameraName}</p>
+                  <p className="truncate text-red-600/80">
                     {e.moduleName} · {e.timestamp}
                   </p>
                 </div>

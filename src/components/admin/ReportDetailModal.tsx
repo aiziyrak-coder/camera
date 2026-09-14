@@ -26,20 +26,20 @@ export default function ReportDetailModal({
             <Badge tone={report.source === 'llm' ? 'green' : 'slate'}>
               {report.source === 'llm' ? 'Claude API (LLM)' : 'Qoida-asosida'}
             </Badge>
-            <span className="text-xs text-slate-400 dark:text-slate-500">Generatsiya: {report.generatedAt}</span>
+            <span className="text-xs text-slate-400">Generatsiya: {report.generatedAt}</span>
           </div>
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {report.stats.map((s) => (
               <div key={s.label} className="glass-deep px-3 py-2.5 text-center">
-                <p className="text-base font-extrabold text-slate-900 dark:text-slate-100">{s.value}</p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">{s.label}</p>
+                <p className="text-base font-extrabold text-slate-900">{s.value}</p>
+                <p className="text-[11px] text-slate-500">{s.label}</p>
               </div>
             ))}
           </div>
 
           <div className="glass-deep p-4">
-            <p className="whitespace-pre-line text-sm leading-relaxed text-slate-700 dark:text-slate-300">
+            <p className="whitespace-pre-line text-sm leading-relaxed text-slate-700">
               {report.body}
             </p>
           </div>
@@ -50,28 +50,28 @@ export default function ReportDetailModal({
               maydon qo'shilishidan oldingi hisobotlarda u yo'q. */}
           {(report.sections ?? []).map((section) => (
             <div key={section.title} className="glass-deep p-4">
-              <h4 className="mb-2 text-xs font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <h4 className="mb-2 text-xs font-extrabold uppercase tracking-wide text-slate-500">
                 {section.title}
               </h4>
               <dl className="space-y-1">
                 {section.rows.map((row) => (
                   <div key={row.label} className="flex items-baseline justify-between gap-3 text-sm">
-                    <dt className="min-w-0 truncate text-slate-600 dark:text-slate-300">{row.label}</dt>
-                    <dd className="shrink-0 font-semibold tabular-nums text-slate-900 dark:text-slate-100">
+                    <dt className="min-w-0 truncate text-slate-600">{row.label}</dt>
+                    <dd className="shrink-0 font-semibold tabular-nums text-slate-900">
                       {row.value}
                     </dd>
                   </div>
                 ))}
               </dl>
               {section.note && (
-                <p className="mt-2 text-[11px] leading-relaxed text-slate-400 dark:text-slate-500">{section.note}</p>
+                <p className="mt-2 text-[11px] leading-relaxed text-slate-400">{section.note}</p>
               )}
             </div>
           ))}
 
           <div className="flex items-center justify-end gap-2">
             {!canExport && (
-              <span className="text-[11px] text-slate-400 dark:text-slate-500">Eksport huquqi yo'q</span>
+              <span className="text-[11px] text-slate-400">Eksport huquqi yo'q</span>
             )}
             <button
               onClick={() => exportReportAsCsv(report)}

@@ -119,9 +119,9 @@ export default function FaceCapture({ onConfirm }: FaceCaptureProps) {
 
   if (error) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-xl bg-red-50 dark:bg-red-500/10 p-6 text-center">
-        <AlertTriangle size={24} className="text-red-500 dark:text-red-400" />
-        <p className="text-sm font-semibold text-red-600 dark:text-red-400">{error}</p>
+      <div className="flex flex-col items-center gap-3 rounded-xl bg-red-50 p-6 text-center">
+        <AlertTriangle size={24} className="text-red-500" />
+        <p className="text-sm font-semibold text-red-600">{error}</p>
         <p className="text-xs text-red-400">
           Brauzer sozlamalaridan kamera ruxsatini bering va qayta urinib ko'ring
         </p>
@@ -143,7 +143,7 @@ export default function FaceCapture({ onConfirm }: FaceCaptureProps) {
         <img
           src={captured}
           alt="Suratga olingan yuz"
-          className="h-56 w-44 rounded-2xl border border-white/80 dark:border-white/10 object-cover shadow-btn"
+          className="h-56 w-44 rounded-2xl border border-white/80 object-cover shadow-btn"
         />
         <div className="flex gap-2">
           <button type="button" onClick={handleRetake} className="btn-glass flex items-center gap-1.5">
@@ -179,7 +179,7 @@ export default function FaceCapture({ onConfirm }: FaceCaptureProps) {
           </div>
         )}
       </div>
-      <p className="text-center text-xs text-slate-500 dark:text-slate-400">
+      <p className="text-center text-xs text-slate-500">
         Yuzingizni oval ichiga joylashtiring va yorug' joyda turing, so'ng suratga oling
       </p>
       <button

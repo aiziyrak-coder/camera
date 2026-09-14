@@ -52,13 +52,13 @@ export default function ConfirmDialog({
   return (
     <Modal open={open} onClose={onCancel} maxWidth="max-w-sm">
       <div className="flex flex-col items-center gap-3 text-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-600">
           <AlertTriangle size={22} />
         </div>
-        <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">{title}</h3>
-        <p className="text-sm text-slate-500 dark:text-slate-400">{message}</p>
+        <h3 className="text-base font-bold text-slate-900">{title}</h3>
+        <p className="text-sm text-slate-500">{message}</p>
         {error && (
-          <p className="w-full rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600 dark:bg-red-500/10 dark:text-red-400">
+          <p className="w-full rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
             {error}
           </p>
         )}
