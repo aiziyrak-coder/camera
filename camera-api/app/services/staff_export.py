@@ -14,18 +14,27 @@ bilan boshlanadigan raqam (masalan sinov hisobi 00000000000000) esa
 shunchaki 0 bo'lib qoladi. Shuning uchun JSHSHIR katagi matn formatida
 yoziladi.
 
+TALABA VA XODIM ALOHIDA. Ikkalasi bitta jadvalda aralash turganda
+talabaning kursi va guruhi "2-kurs, DI-1625" degan bitta matn bo'lib,
+xodimning kafedrasi bilan bir ustunga tushardi — na kurs bo'yicha
+saralab, na filtrlab bo'lardi. Endi har bir tur o'z ustunlari bilan
+chiqadi: talabada Kurs va Guruh, xodimda Kafedra / Bo'lim.
+
 Ikki xil fayl bor va ular turli savolga javob beradi:
 
-  build_people_workbook — "kim": har bir odam alohida qator, ekrandagi
-  filtr bo'yicha. Kafedra mudiriga "sizdan kim qoldi" deb yuborish uchun.
+  build_people_workbook — "kim": har bir odam alohida qator, tanlangan
+  filtr bo'yicha. Guruh rahbariga "guruhingizdan kim qoldi" deb yuborish
+  uchun.
 
-  build_stats_workbook — "qancha": fakultet va kafedra kesimida qamrov.
-  Rahbariyatga "jarayon qayerda orqada" deb ko'rsatish uchun.
+  build_stats_workbook — "qancha": fakultet, kurs, guruh yoki kafedra
+  kesimida qamrov. Rahbariyatga "jarayon qayerda orqada" deb ko'rsatish
+  uchun.
 """
 
 from __future__ import annotations
 
 import io
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -53,12 +62,35 @@ STATUS_FILLS = {
     "yoq": "FBE0E0",
 }
 
+NO_FACULTY_LABEL = "Fakultetsiz"
+COURSE_UNKNOWN_LABEL = "Kurs ko'rsatilmagan"
+
 _thin = Side(style="thin", color=BORDER_COLOR)
 _BORDER = Border(left=_thin, right=_thin, top=_thin, bottom=_thin)
 _HEADER_FONT = Font(bold=True, color="FFFFFF", size=11)
 _HEADER_FILL = PatternFill("solid", fgColor=NAVY)
 _WRAP = Alignment(vertical="center", wrap_text=True)
 _CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+_COURSE_RE = re.compile(r"^\s*(\d{1,2})\s*-\s*kurs\b\s*,?\s*(.*)$", re.IGNORECASE)
+
+
+def split_course(group_or_position: str | None) -> tuple[int | None, str]:
+    """"2-kurs, DI-1625" -> (2, "DI-1625"); "4-kurs" -> (4, "");
+    kurs ko'rsatilmagan matn -> (None, o'zi).
+
+    Talaba importi kurs va guruhni group_or_position'ga shu shaklda
+    yozadi (scripts/import_talabalar.py). Alohida ustun qo'shish o'rniga
+    shu yerda ajratiladi: qo'lda kiritilgan eski yozuvlar ham buzilmaydi."""
+    text = (group_or_position or "").strip()
+    match = _COURSE_RE.match(text)
+    if not match:
+        return None, text
+    return int(match.group(1)), match.group(2).strip()
+
+
+def course_label(course: int | None) -> str:
+    return f"{course}-kurs" if course else COURSE_UNKNOWN_LABEL
 
 
 # ─────────────────────────────────────────── umumiy yordamchilar
@@ -122,59 +154,103 @@ class PersonRow:
     pinfl: str
     type: str
     faculty: str
-    unit: str
+    unit: str  # group_or_position — talabada "2-kurs, DI-1625", xodimda kafedra
     biometrics_status: str
+    confirmed_at: str = ""  # "14.09.2026 13:57", Toshkent vaqti; bo'sh — yozilmagan
 
 
-def build_people_workbook(rows: list[PersonRow], filter_label: str, now: datetime) -> bytes:
-    """Har bir odam alohida qator — ekrandagi filtr bilan AYNAN bir xil."""
+def person_sort_key(row: PersonRow) -> tuple:
+    """Fakultet (fakultetsizlar oxirida) -> kurs -> guruh/kafedra -> ism.
+    Faylni guruhlarga bo'lib tarqatish shu tartibda qulay."""
+    course, group = split_course(row.unit)
+    return (
+        row.faculty == NO_FACULTY_LABEL,
+        row.faculty.lower(),
+        course or 99,
+        group.lower(),
+        row.full_name.lower(),
+    )
+
+
+def _people_columns(person_type: str | None):
+    """(varaq nomi, sarlavhalar, kengliklar, qiymat funksiyasi, markazlanadigan ustunlar)."""
+    def status(r: PersonRow) -> str:
+        return STATUS_LABELS.get(r.biometrics_status, r.biometrics_status)
+
+    if person_type == "talaba":
+        def values(r: PersonRow) -> list:
+            course, group = split_course(r.unit)
+            return [r.full_name, r.pinfl, r.faculty, course_label(course) if course else "—",
+                    group or "—", status(r), r.confirmed_at or "—"]
+
+        return ("Talabalar",
+                ["№", "F.I.SH.", "JSHSHIR", "Fakultet", "Kurs", "Guruh", "Yuz holati", "Tasdiqlagan vaqti"],
+                [6, 38, 18, 34, 10, 26, 16, 19], values, {1, 3, 5, 7, 8})
+
+    if person_type == "xodim":
+        def values(r: PersonRow) -> list:
+            return [r.full_name, r.pinfl, r.faculty, r.unit or "—", status(r), r.confirmed_at or "—"]
+
+        return ("Xodimlar",
+                ["№", "F.I.SH.", "JSHSHIR", "Fakultet", "Kafedra / Bo'lim", "Yuz holati", "Tasdiqlagan vaqti"],
+                [6, 38, 18, 34, 42, 16, 19], values, {1, 3, 6, 7})
+
+    def values(r: PersonRow) -> list:
+        return [r.full_name, r.pinfl, "Talaba" if r.type == "talaba" else "Xodim", r.faculty,
+                r.unit or "—", status(r), r.confirmed_at or "—"]
+
+    return ("Ro'yxat",
+            ["№", "F.I.SH.", "JSHSHIR", "Turi", "Fakultet", "Kurs / Guruh / Bo'lim", "Yuz holati",
+             "Tasdiqlagan vaqti"],
+            [6, 38, 18, 10, 34, 40, 16, 19], values, {1, 3, 4, 7, 8})
+
+
+def build_people_workbook(
+    rows: list[PersonRow],
+    filter_label: str,
+    now: datetime,
+    person_type: str | None = None,
+    title: str = "Talabalar va xodimlar ro'yxati",
+) -> bytes:
+    """Har bir odam alohida qator — tanlangan filtr bilan AYNAN bir xil."""
+    sheet_name, headers, widths, values_of, centered = _people_columns(person_type)
     wb = Workbook()
     ws = wb.active
-    ws.title = "Ro'yxat"
+    ws.title = sheet_name
 
-    headers = ["№", "F.I.SH.", "JSHSHIR", "Turi", "Fakultet", "Kafedra / Bo'lim", "Yuz holati"]
     confirmed = sum(1 for r in rows if r.biometrics_status == "tasdiqlangan")
     _title(
         ws,
-        "Talabalar va xodimlar ro'yxati",
-        f"{filter_label}   •   Jami: {len(rows)} ta, shundan yuzi tasdiqlangan: {confirmed} ta"
-        f"   •   Tuzilgan sana: {_stamp(now)}",
+        title,
+        f"{filter_label}   •   Jami: {len(rows)} ta, shundan yuzi tasdiqlangan: {confirmed} ta, "
+        f"tasdiqlanmagan: {len(rows) - confirmed} ta   •   Tuzilgan sana: {_stamp(now)} (Toshkent vaqti)",
         len(headers),
     )
 
     header_row = 4
     _header(ws, header_row, headers)
+    status_col = headers.index("Yuz holati") + 1
 
     for i, r in enumerate(rows, 1):
         row = header_row + i
-        values = [
-            i,
-            r.full_name,
-            r.pinfl,
-            "Talaba" if r.type == "talaba" else "Xodim",
-            r.faculty,
-            r.unit,
-            STATUS_LABELS.get(r.biometrics_status, r.biometrics_status),
-        ]
         zebra = PatternFill("solid", fgColor=ZEBRA) if i % 2 == 0 else None
-        for col, value in enumerate(values, 1):
+        for col, value in enumerate([i, *values_of(r)], 1):
             cell = ws.cell(row=row, column=col, value=value)
             cell.border = _BORDER
-            cell.alignment = _CENTER if col in (1, 3, 4, 7) else _WRAP
+            cell.alignment = _CENTER if col in centered else _WRAP
             if zebra is not None:
                 cell.fill = zebra
 
-        pinfl_cell = ws.cell(row=row, column=3)
-        pinfl_cell.number_format = "@"  # matn — yuqoridagi izohga qarang
+        ws.cell(row=row, column=3).number_format = "@"  # JSHSHIR matn — yuqoridagi izohga qarang
 
-        status_cell = ws.cell(row=row, column=7)
+        status_cell = ws.cell(row=row, column=status_col)
         fill = STATUS_FILLS.get(r.biometrics_status)
         if fill:
             status_cell.fill = PatternFill("solid", fgColor=fill)
             status_cell.font = Font(bold=True)
 
-    _widths(ws, [6, 38, 18, 10, 34, 40, 16])
-    ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
+    _widths(ws, widths)
+    ws.freeze_panes = ws.cell(row=header_row + 1, column=3)
     if rows:
         ws.auto_filter.ref = f"A{header_row}:{get_column_letter(len(headers))}{header_row + len(rows)}"
     _landscape(ws, header_row)
@@ -211,6 +287,19 @@ class CoverageData:
     totals: Bucket = field(default_factory=Bucket)
     by_faculty: dict[str, Bucket] = field(default_factory=dict)
     by_unit: dict[tuple[str, str], Bucket] = field(default_factory=dict)
+    # Faqat talabalar uchun to'ldiriladi
+    by_course: dict[int | None, Bucket] = field(default_factory=dict)
+    by_group: dict[tuple[str, int | None, str], Bucket] = field(default_factory=dict)
+
+    def add(self, person_type: str | None, faculty: str, unit: str | None, status: str, count: int) -> None:
+        self.totals.add(status, count)
+        self.by_faculty.setdefault(faculty, Bucket()).add(status, count)
+        if person_type == "talaba":
+            course, group = split_course(unit)
+            self.by_course.setdefault(course, Bucket()).add(status, count)
+            self.by_group.setdefault((faculty, course, group or "—"), Bucket()).add(status, count)
+        else:
+            self.by_unit.setdefault((faculty, unit or "—"), Bucket()).add(status, count)
 
 
 def _pct_cell(cell, value: float | None) -> None:
@@ -249,20 +338,37 @@ def _bucket_row(ws: Worksheet, row: int, labels: list[str], b: Bucket, *, bold: 
     _pct_cell(pct, b.coverage())
 
 
-def build_stats_workbook(data: CoverageData, scope_label: str, now: datetime) -> bytes:
-    """Fakultet va kafedra kesimidagi yuzni tasdiqlash qamrovi."""
+_COUNT_HEADERS = ["Jami", "Tasdiqlangan", "Kutilmoqda", "Tasdiqlanmagan", "Qamrov"]
+
+
+def _table_sheet(wb: Workbook, name: str, title: str, subtitle: str, label_headers: list[str],
+                 label_widths: list[float], items: list[tuple[list[str], Bucket]]) -> None:
+    ws = wb.create_sheet(name)
+    headers = [*label_headers, *_COUNT_HEADERS]
+    _title(ws, title, subtitle, len(headers))
+    header_row = 4
+    _header(ws, header_row, headers)
+    for i, (labels, bucket) in enumerate(items, 1):
+        _bucket_row(ws, header_row + i, labels, bucket, zebra=i % 2 == 0)
+    _widths(ws, [*label_widths, 10, 15, 14, 17, 12])
+    ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
+    if items:
+        ws.auto_filter.ref = f"A{header_row}:{get_column_letter(len(headers))}{header_row + len(items)}"
+    _landscape(ws, header_row)
+
+
+def build_stats_workbook(data: CoverageData, scope_label: str, now: datetime,
+                         person_type: str | None = None) -> bytes:
+    """Yuzni tasdiqlash qamrovi. Talabalar uchun kurs va guruh kesimi,
+    xodimlar (va aralash ro'yxat) uchun kafedra va bo'limlar kesimi."""
     wb = Workbook()
+    stamp = f"Tuzilgan sana: {_stamp(now)} (Toshkent vaqti)"
 
     # ── 1-varaq: umumiy ko'rsatkichlar va fakultetlar
     ws = wb.active
     ws.title = "Umumiy statistika"
-    fac_headers = ["Fakultet", "Jami", "Tasdiqlangan", "Kutilmoqda", "Tasdiqlanmagan", "Qamrov"]
-    _title(
-        ws,
-        "Yuzni tasdiqlash statistikasi",
-        f"{scope_label}   •   Tuzilgan sana: {_stamp(now)}",
-        len(fac_headers),
-    )
+    fac_headers = ["Fakultet", *_COUNT_HEADERS]
+    _title(ws, "Yuzni tasdiqlash statistikasi", f"{scope_label}   •   {stamp}", len(fac_headers))
 
     t = data.totals
     summary = [
@@ -293,7 +399,7 @@ def build_stats_workbook(data: CoverageData, scope_label: str, now: datetime) ->
     section.font = Font(bold=True, size=12, color=NAVY)
     _header(ws, header_row, fac_headers)
 
-    ordered = sorted(data.by_faculty.items(), key=lambda kv: (kv[0] == "Fakultetsiz", kv[0]))
+    ordered = sorted(data.by_faculty.items(), key=lambda kv: (kv[0] == NO_FACULTY_LABEL, kv[0]))
     row = header_row
     for i, (name, bucket) in enumerate(ordered, 1):
         row = header_row + i
@@ -303,35 +409,34 @@ def build_stats_workbook(data: CoverageData, scope_label: str, now: datetime) ->
     _widths(ws, [44, 12, 15, 14, 17, 12])
     _landscape(ws, header_row)
 
-    # ── 2-varaq: kafedra va bo'limlar
-    ws2 = wb.create_sheet("Kafedra va bo'limlar")
-    unit_headers = ["Fakultet", "Kafedra / Bo'lim", "Jami", "Tasdiqlangan", "Kutilmoqda",
-                    "Tasdiqlanmagan", "Qamrov"]
-    _title(
-        ws2,
-        "Kafedra va bo'limlar kesimida",
-        f"{scope_label}   •   Qamrovi eng past bo'lganlar har fakultet ichida yuqorida   •   "
-        f"Tuzilgan sana: {_stamp(now)}",
-        len(unit_headers),
-    )
-    unit_header_row = 4
-    _header(ws2, unit_header_row, unit_headers)
-
-    # Fakultet bo'yicha guruhlab, har guruh ichida qamrovi eng past bo'lgan
-    # kafedra yuqorida — "kimga eslatish kerak" degan savolga javob tartibda.
-    units = sorted(
-        data.by_unit.items(),
-        key=lambda kv: (kv[0][0] == "Fakultetsiz", kv[0][0], kv[1].coverage() or 0.0, kv[0][1]),
-    )
-    for i, ((faculty, unit), bucket) in enumerate(units, 1):
-        _bucket_row(ws2, unit_header_row + i, [faculty, unit], bucket, zebra=i % 2 == 0)
-
-    _widths(ws2, [36, 44, 10, 15, 14, 17, 12])
-    ws2.freeze_panes = ws2.cell(row=unit_header_row + 1, column=1)
-    if units:
-        ws2.auto_filter.ref = (
-            f"A{unit_header_row}:{get_column_letter(len(unit_headers))}{unit_header_row + len(units)}"
+    if person_type == "talaba":
+        courses = sorted(data.by_course.items(), key=lambda kv: (kv[0] is None, kv[0] or 0))
+        _table_sheet(
+            wb, "Kurslar", "Kurslar kesimida", f"{scope_label}   •   {stamp}",
+            ["Kurs"], [22], [([course_label(course)], bucket) for course, bucket in courses],
         )
-    _landscape(ws2, unit_header_row)
+        groups = sorted(
+            data.by_group.items(),
+            key=lambda kv: (kv[0][0] == NO_FACULTY_LABEL, kv[0][0], kv[0][1] is None, kv[0][1] or 0, kv[0][2]),
+        )
+        _table_sheet(
+            wb, "Guruhlar", "Guruhlar kesimida",
+            f"{scope_label}   •   Fakultet, kurs va guruh tartibida   •   {stamp}",
+            ["Fakultet", "Kurs", "Guruh"], [34, 12, 30],
+            [([faculty, course_label(course), group], bucket) for (faculty, course, group), bucket in groups],
+        )
+    else:
+        # Fakultet bo'yicha guruhlab, har guruh ichida qamrovi eng past bo'lgan
+        # kafedra yuqorida — "kimga eslatish kerak" degan savolga javob tartibda.
+        units = sorted(
+            data.by_unit.items(),
+            key=lambda kv: (kv[0][0] == NO_FACULTY_LABEL, kv[0][0], kv[1].coverage() or 0.0, kv[0][1]),
+        )
+        _table_sheet(
+            wb, "Kafedra va bo'limlar", "Kafedra va bo'limlar kesimida",
+            f"{scope_label}   •   Qamrovi eng past bo'lganlar har fakultet ichida yuqorida   •   {stamp}",
+            ["Fakultet", "Kafedra / Bo'lim"], [36, 44],
+            [([faculty, unit], bucket) for (faculty, unit), bucket in units],
+        )
 
     return _to_bytes(wb)

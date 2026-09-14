@@ -207,8 +207,9 @@ class TestFilteringAndExport:
         o'z katagida."""
         wb = await self._download(client, "kind=people")
         ws = wb["Ro'yxat"]
-        header = [ws.cell(row=4, column=c).value for c in range(1, 8)]
-        assert header == ["№", "F.I.SH.", "JSHSHIR", "Turi", "Fakultet", "Kafedra / Bo'lim", "Yuz holati"]
+        header = [ws.cell(row=4, column=c).value for c in range(1, 9)]
+        assert header == ["№", "F.I.SH.", "JSHSHIR", "Turi", "Fakultet", "Kurs / Guruh / Bo'lim", "Yuz holati",
+                          "Tasdiqlagan vaqti"]
 
     async def test_pinfl_is_stored_as_text_with_leading_zeros(self, client: AsyncClient, db_session):
         """Son sifatida yozilsa Excel 14 xonali raqamni 3,03E+13 qilib

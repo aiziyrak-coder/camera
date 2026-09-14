@@ -16,6 +16,11 @@ class StudentStaffOut(CamelModel):
     biometrics_status: Literal["tasdiqlangan", "kutilmoqda", "yoq"]
     initials: str
     biometric_photo_url: str | None = None
+    # Faqat talabada: group_or_position "2-kurs, DI-1625" dan ajratilgan
+    course: int | None = None
+    group: str | None = None
+    # "14.09.2026 13:57" — yuz tasdiqlangan payt, Toshkent vaqti
+    confirmed_label: str | None = None
 
 
 class StudentStaffCreateIn(CamelModel):
@@ -54,6 +59,18 @@ class BiometricsFacultyRowOut(CamelModel):
     yo'qligi. Ikkalasi turli xulosaga olib keladi."""
 
 
+class BiometricsCourseRowOut(CamelModel):
+    """Talabalar — bitta kurs bo'yicha qamrov."""
+
+    course: str  # "2-kurs" yoki "Kurs ko'rsatilmagan"
+    course_number: int | None = None
+    total: int
+    confirmed: int
+    pending: int
+    missing: int
+    percent: float | None = None
+
+
 class BiometricsCoverageOut(CamelModel):
     """Yuzni tasdiqlash qamrovi — kim tasdiqladi, kim yo'q."""
 
@@ -63,6 +80,8 @@ class BiometricsCoverageOut(CamelModel):
     missing: int
     percent: float | None = None
     by_faculty: list[BiometricsFacultyRowOut]
+    by_course: list[BiometricsCourseRowOut] = []
+    """Faqat type=talaba so'ralganda to'ldiriladi."""
 
 
 class BiometricsConfirmationOut(StudentStaffOut):

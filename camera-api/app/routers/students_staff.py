@@ -18,6 +18,7 @@ from app.models import Faculty, StudentStaff
 from app.pagination import Page, PageParams, build_page, paginate
 from app.schemas.student_staff import (
     BiometricsConfirmationOut,
+    BiometricsCourseRowOut,
     BiometricsCoverageOut,
     BiometricsFacultyRowOut,
     StudentStaffCreateIn,
@@ -35,10 +36,13 @@ from app.services.staff_export import (
     PersonRow,
     build_people_workbook,
     build_stats_workbook,
+    course_label,
+    person_sort_key,
+    split_course,
 )
 from app.services.student_import import import_students_staff_csv
 from app.storage import delete_files_quietly, object_last_modified, presigned_url, upload_file
-from app.timezone import local_now, uz_datetime_parts
+from app.timezone import local_now, to_local, uz_datetime_parts
 from app.utils import compute_initials
 
 router = APIRouter(prefix="/api/students-staff", tags=["students-staff"])
@@ -56,7 +60,17 @@ async def _resolve_faculty(db: AsyncSession, faculty_name: str) -> Faculty:
     return faculty
 
 
+def _confirmed_label(record: StudentStaff) -> str | None:
+    """"14.09.2026 13:57" — Toshkent vaqti. Faqat yozilgan vaqt: eski
+    tasdiqlashlar uchun rasm vaqtidan tiklash har qatorga ombor so'rovi
+    bo'lardi, u "Aniqlash" oynasida bittalab qilinadi."""
+    if record.biometrics_confirmed_at is None:
+        return None
+    return to_local(record.biometrics_confirmed_at).strftime("%d.%m.%Y %H:%M")
+
+
 def _to_out(record: StudentStaff, faculty_name: str) -> StudentStaffOut:
+    course, group = split_course(record.group_or_position) if record.type == "talaba" else (None, None)
     return StudentStaffOut(
         id=str(record.id),
         full_name=record.full_name,
@@ -66,6 +80,9 @@ def _to_out(record: StudentStaff, faculty_name: str) -> StudentStaffOut:
         biometrics_status=record.biometrics_status,
         initials=compute_initials(record.full_name),
         biometric_photo_url=presigned_url(record.biometric_photo_key) if record.biometric_photo_key else None,
+        course=course,
+        group=group or None,
+        confirmed_label=_confirmed_label(record),
     )
 
 
@@ -89,8 +106,23 @@ def _search_words(search: str | None) -> list[str]:
     return text.split()
 
 
+# "Ro'yxatdan o'tmaganlar" — yuzi tasdiqlanmagan HAR KIM: "yo'q" ham,
+# "kutilmoqda" ham. Faqat "yoq" bo'yicha filtrlansa, kutilmoqda
+# holatidagilar ikkala ro'yxatdan ham tushib qolardi.
+UNCONFIRMED_FILTER = "tasdiqlanmagan"
+
+BIOMETRICS_FILTER_LABELS = {
+    "tasdiqlangan": "Ro'yxatdan o'tganlar (yuzi tasdiqlangan)",
+    UNCONFIRMED_FILTER: "Ro'yxatdan o'tmaganlar (yuzi tasdiqlanmagan)",
+}
+
+
 def _filtered_query(
-    type: str | None, faculty: str | None, search: str | None, biometrics: str | None
+    type: str | None,
+    faculty: str | None,
+    search: str | None,
+    biometrics: str | None,
+    course: int | None = None,
 ):
     """Ro'yxat va eksport AYNAN bir xil filtrdan foydalanadi.
 
@@ -117,8 +149,16 @@ def _filtered_query(
         stmt = stmt.where(
             or_(StudentStaff.full_name.ilike(term), StudentStaff.pinfl.ilike(term))
         )
-    if biometrics:
+    if biometrics == UNCONFIRMED_FILTER:
+        stmt = stmt.where(StudentStaff.biometrics_status != "tasdiqlangan")
+    elif biometrics:
         stmt = stmt.where(StudentStaff.biometrics_status == biometrics)
+    if course:
+        # Kurs group_or_position boshida yoziladi ("2-kurs, DI-1625") —
+        # qarang staff_export.split_course. "1-kurs%" "11-kurs" ga mos kelmaydi.
+        stmt = stmt.where(StudentStaff.type == "talaba").where(
+            StudentStaff.group_or_position.ilike(f"{course}-kurs%")
+        )
     return stmt
 
 
@@ -131,8 +171,9 @@ async def list_students_staff(
     faculty: Annotated[str | None, Query()] = None,
     search: Annotated[str | None, Query()] = None,
     biometrics: Annotated[str | None, Query(alias="biometricsStatus")] = None,
+    course: Annotated[int | None, Query(ge=1, le=10)] = None,
 ) -> Page[StudentStaffOut]:
-    stmt = _filtered_query(type, faculty, search, biometrics)
+    stmt = _filtered_query(type, faculty, search, biometrics, course)
 
     records, total = await paginate(db, stmt, page_params)
     items = [_to_out(r, r.faculty.name if r.faculty else "") for r in records]
@@ -194,11 +235,40 @@ async def biometrics_coverage(
         missing=totals["yoq"],
         percent=round(totals["tasdiqlangan"] * 100 / grand, 1) if grand else None,
         by_faculty=rows,
+        by_course=await _course_rows(db) if type == "talaba" else [],
     )
 
 
+async def _course_rows(db: AsyncSession) -> list[BiometricsCourseRowOut]:
+    """Talabalar kurslar kesimida. Guruhlar soni bir necha yuz — ularni
+    Python'da kursga yig'ish SQL'da matnni kesishdan soddaroq va
+    staff_export.split_course bilan AYNAN bir xil qoidada ishlaydi."""
+    stmt = (
+        select(StudentStaff.group_or_position, StudentStaff.biometrics_status, func.count(StudentStaff.id))
+        .where(StudentStaff.type == "talaba")
+        .group_by(StudentStaff.group_or_position, StudentStaff.biometrics_status)
+    )
+    buckets: dict[int | None, Bucket] = {}
+    for unit, bio_status, count in (await db.execute(stmt)).all():
+        course, _group = split_course(unit)
+        buckets.setdefault(course, Bucket()).add(bio_status, count)
+
+    return [
+        BiometricsCourseRowOut(
+            course=course_label(course),
+            course_number=course,
+            total=bucket.total,
+            confirmed=bucket.confirmed,
+            pending=bucket.pending,
+            missing=bucket.missing,
+            percent=round(bucket.confirmed * 100 / bucket.total, 1) if bucket.total else None,
+        )
+        for course, bucket in sorted(buckets.items(), key=lambda kv: (kv[0] is None, kv[0] or 0))
+    ]
+
+
 async def _coverage_data(db: AsyncSession, type: str | None) -> CoverageData:
-    """Fakultet va kafedra kesimidagi holatlar — bitta GROUP BY so'rov bilan."""
+    """Fakultet, kurs/guruh yoki kafedra kesimidagi holatlar — bitta GROUP BY so'rov bilan."""
     stmt = (
         select(Faculty.name, StudentStaff.group_or_position, StudentStaff.biometrics_status,
                func.count(StudentStaff.id))
@@ -211,15 +281,27 @@ async def _coverage_data(db: AsyncSession, type: str | None) -> CoverageData:
 
     data = CoverageData()
     for faculty_name, unit, bio_status, count in (await db.execute(stmt)).all():
-        fac = faculty_name or NO_FACULTY_LABEL
-        data.totals.add(bio_status, count)
-        data.by_faculty.setdefault(fac, Bucket()).add(bio_status, count)
-        data.by_unit.setdefault((fac, unit or "—"), Bucket()).add(bio_status, count)
+        data.add(type, faculty_name or NO_FACULTY_LABEL, unit, bio_status, count)
     return data
 
 
+PERSON_TYPE_TITLES = {"talaba": "Talabalar", "xodim": "Xodimlar"}
+PERSON_TYPE_SLUGS = {"talaba": "talabalar", "xodim": "xodimlar"}
+
+
+def _people_title(type: str | None, biometrics: str | None) -> str:
+    base = f"{PERSON_TYPE_TITLES[type]} ro'yxati" if type in PERSON_TYPE_TITLES else "Talabalar va xodimlar ro'yxati"
+    if biometrics == "tasdiqlangan":
+        return f"{base} — ro'yxatdan o'tganlar"
+    if biometrics in (UNCONFIRMED_FILTER, "yoq"):
+        return f"{base} — ro'yxatdan o'tmaganlar"
+    if biometrics == "kutilmoqda":
+        return f"{base} — tasdiqlash kutilmoqda"
+    return base
+
+
 def _filter_label(type: str | None, faculty: str | None, search: str | None,
-                  biometrics: str | None) -> str:
+                  biometrics: str | None, course: int | None = None) -> str:
     """Faylga qaysi filtr bilan tuzilgani yoziladi — keyin ochgan odam
     "bu to'liq ro'yxatmi yoki bir qismimi" deb adashmasligi uchun."""
     parts = []
@@ -229,8 +311,11 @@ def _filter_label(type: str | None, faculty: str | None, search: str | None,
         parts.append(f"Fakultet: {NO_FACULTY_LABEL}")
     elif faculty:
         parts.append(f"Fakultet: {faculty}")
+    if course:
+        parts.append(f"Kurs: {course_label(course)}")
     if biometrics:
-        parts.append(f"Yuz holati: {STATUS_LABELS.get(biometrics, biometrics)}")
+        label = BIOMETRICS_FILTER_LABELS.get(biometrics) or STATUS_LABELS.get(biometrics, biometrics)
+        parts.append(f"Yuz holati: {label}")
     if search and search.strip():
         parts.append(f"Qidiruv: «{search.strip()}»")
     return "Filtr: " + "; ".join(parts) if parts else "Filtr qo'llanmagan — to'liq ro'yxat"
@@ -241,48 +326,61 @@ async def export_students_staff(
     db: Annotated[AsyncSession, Depends(get_db)],
     _: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
     kind: Annotated[Literal["people", "stats"], Query()] = "people",
-    type: Annotated[str | None, Query()] = None,
+    type: Annotated[Literal["talaba", "xodim"] | None, Query()] = None,
     faculty: Annotated[str | None, Query()] = None,
     search: Annotated[str | None, Query()] = None,
     biometrics: Annotated[str | None, Query(alias="biometricsStatus")] = None,
+    course: Annotated[int | None, Query(ge=1, le=10)] = None,
 ) -> Response:
     """Excel (.xlsx) fayl — ikki xil.
 
-    kind=people — har bir odam alohida qator. Ekrandagi filtr AYNAN
-    saqlanadi: "Pediatriya, yuzi tasdiqlanmaganlar" tanlangan bo'lsa,
-    faylga ham aynan o'shalar tushadi — yuklab olingan fayl ekranda
-    ko'rilgan narsaning nusxasi bo'lishi kerak.
+    kind=people — har bir odam alohida qator, tanlangan filtr bo'yicha:
+    turi (talaba/xodim), fakultet, kurs, yuz holati ("tasdiqlanmagan" —
+    ro'yxatdan o'tmagan har kim) va qidiruv. Talabalar faylida Kurs va
+    Guruh, xodimlar faylida Kafedra alohida ustunda; qatorlar fakultet,
+    kurs, guruh va ism bo'yicha tartiblangan.
 
-    kind=stats — fakultet va kafedra kesimidagi qamrov. Bu yerda faqat
-    "turi" filtri qo'llanadi: statistika butun manzarani ko'rsatish
-    uchun, va bitta fakultetga qisqartirilgan "umumiy statistika" o'z
-    nomiga zid bo'lardi.
+    kind=stats — qamrov statistikasi. Faqat "turi" filtri qo'llanadi:
+    statistika butun manzarani ko'rsatish uchun, va bitta fakultetga
+    qisqartirilgan "umumiy statistika" o'z nomiga zid bo'lardi. Talabalar
+    uchun kurs va guruh kesimi, xodimlar uchun kafedra kesimi.
 
     CSV nima uchun almashtirilgani — app/services/staff_export.py
     docstringida."""
     now = local_now()
     stamp = now.strftime("%Y-%m-%d")
+    slug = PERSON_TYPE_SLUGS.get(type, "talabalar-va-xodimlar")
 
     if kind == "stats":
         data = await _coverage_data(db, type)
-        scope = f"Turi: {'Talaba' if type == 'talaba' else 'Xodim'}" if type else "Barcha turdagi shaxslar"
-        content = build_stats_workbook(data, scope, now)
-        filename = f"yuz-tasdiqlash-statistikasi-{stamp}.xlsx"
+        scope = f"Turi: {PERSON_TYPE_TITLES[type]}" if type else "Barcha turdagi shaxslar"
+        content = build_stats_workbook(data, scope, now, type)
+        filename = f"{slug}-statistika-{stamp}.xlsx"
     else:
-        records = (await db.execute(_filtered_query(type, faculty, search, biometrics))).scalars().all()
-        rows = [
-            PersonRow(
-                full_name=r.full_name,
-                pinfl=r.pinfl or "",
-                type=r.type,
-                faculty=r.faculty.name if r.faculty else NO_FACULTY_LABEL,
-                unit=r.group_or_position,
-                biometrics_status=r.biometrics_status,
-            )
-            for r in records
-        ]
-        content = build_people_workbook(rows, _filter_label(type, faculty, search, biometrics), now)
-        filename = f"royxat-{stamp}.xlsx"
+        records = (await db.execute(_filtered_query(type, faculty, search, biometrics, course))).scalars().all()
+        rows = sorted(
+            (
+                PersonRow(
+                    full_name=r.full_name,
+                    pinfl=r.pinfl or "",
+                    type=r.type,
+                    faculty=r.faculty.name if r.faculty else NO_FACULTY_LABEL,
+                    unit=r.group_or_position,
+                    biometrics_status=r.biometrics_status,
+                    confirmed_at=_confirmed_label(r) or "",
+                )
+                for r in records
+            ),
+            key=person_sort_key,
+        )
+        content = build_people_workbook(
+            rows,
+            _filter_label(type, faculty, search, biometrics, course),
+            now,
+            person_type=type,
+            title=_people_title(type, biometrics),
+        )
+        filename = f"{slug}-{stamp}.xlsx"
 
     return Response(
         content=content,

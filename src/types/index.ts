@@ -76,6 +76,11 @@ export interface StudentStaffRecord {
   biometricsStatus: 'tasdiqlangan' | 'kutilmoqda' | 'yoq';
   initials: string;
   biometricPhotoUrl?: string | null;
+  /** Faqat talabada — groupOrPosition "2-kurs, DI-1625" dan ajratilgan. */
+  course?: number | null;
+  group?: string | null;
+  /** "14.09.2026 13:57" — yuz tasdiqlangan payt (Toshkent vaqti). */
+  confirmedLabel?: string | null;
 }
 
 /** "Aniqlash" oynasi — odam yuzini aniq qachon tasdiqlagani.
@@ -116,6 +121,16 @@ export interface BiometricsFacultyRow {
   percent: number | null;
 }
 
+export interface BiometricsCourseRow {
+  course: string;
+  courseNumber: number | null;
+  total: number;
+  confirmed: number;
+  pending: number;
+  missing: number;
+  percent: number | null;
+}
+
 export interface BiometricsCoverage {
   total: number;
   confirmed: number;
@@ -123,6 +138,8 @@ export interface BiometricsCoverage {
   missing: number;
   percent: number | null;
   byFaculty: BiometricsFacultyRow[];
+  /** Faqat talabalar uchun to'ldiriladi. */
+  byCourse: BiometricsCourseRow[];
 }
 
 export interface Building {
