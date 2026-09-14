@@ -135,7 +135,9 @@ main() {
     fail "API konteyneri yo'q — rejalashtirgichni tekshirib bo'lmaydi"
   else
     # Fayl BOSHI: ishga tushish yozuvi shu yerda; head yetgach o'qish to'xtaydi
-    started_line=$(timeout 30 docker logs "$API_CID" 2>&1 | head -5000 | grep -F "AI scheduler started" | tail -1)
+    # Logda nol baytlar bor: grep ularni ko'rib faylni "binary" deb qatorni
+    # chop etmasdi — shuning uchun avval tozalanadi va -a qo'yiladi.
+    started_line=$(timeout 30 docker logs "$API_CID" 2>&1 | head -5000 | tr -d '\000' | grep -aF "AI scheduler started" | tail -1)
     if [ -z "$started_line" ]; then
       warn "Rejalashtirgichning ishga tushish yozuvi logning boshida topilmadi (log aylantirilgan bo'lishi mumkin)"
     else
@@ -159,7 +161,7 @@ main() {
     fi
 
     # Fayl OXIRI: bir marta o'qiladi va 4- hamda 9-bo'limda qayta ishlatiladi
-    RECENT_LOGS=$(timeout 60 docker logs --tail "$LOG_TAIL" "$API_CID" 2>&1)
+    RECENT_LOGS=$(timeout 60 docker logs --tail "$LOG_TAIL" "$API_CID" 2>&1 | tr -d '\000')
     span=$(echo "$RECENT_LOGS" | grep -o '"timestamp": *"[^"]*"' | sed -n '1p;$p' | sed 's/.*"\([^"]*\)"$/\1/' | cut -c12-16 | tr '\n' ' ')
     info "Tahlil qilingan log: oxirgi $LOG_TAIL qator (${span:-vaqt oraligi aniqlanmadi})"
 

@@ -300,6 +300,15 @@ class Settings(BaseSettings):
     pose_detection_model_path: str = "pose_landmarker_lite.task"
     pose_detection_inference_concurrency: int = 2
     pose_detection_max_poses: int = 5
+    # "auto" — mediapipe, agar protsessor AVX ni qo'llasa; AVX yo'q bo'lsa
+    # YOLOv8-pose (production serverdagi holat). "mediapipe"/"yolo" — majburan.
+    pose_detection_backend: str = "auto"
+    pose_detection_yolo_model_path: str = "yolov8n-pose.pt"
+    pose_detection_yolo_confidence: float = 0.4
+    # Ketma-ket shuncha marta mediapipe ishchi jarayoni yiqilsa, jarayon
+    # umrining oxirigacha YOLOv8-pose ga o'tiladi (qayta-qayta yiqilib CPU
+    # yeyish o'rniga).
+    pose_detection_max_worker_crashes: int = 3
 
     # TT kriteriya 10 ("Oq xalat kiyilganligi") — app/jobs/dress_code_ai.py
     # / app/services/coat_detection.py. Classical HSV heuristic, not a
