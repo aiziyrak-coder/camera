@@ -2,8 +2,9 @@
 
 Skript odam yozuvini O'CHIRADI, shuning uchun eng muhim shartlar:
 yuzi tasdiqlangan yozuv va uning identifikatori saqlanishi, hech qanday
-davomat yoki dars bog'lanishi yo'qolmasligi, va shubhali (namesake)
-holatlarga umuman tegilmasligi.
+davomat yoki dars bog'lanishi yo'qolmasligi, noaniq juftliklar faqat
+aniq ruxsat (--qisman) bilan birlashtirilishi, va bir xil ism-familiyali
+BOSHQA odamlarning hech qachon qo'shilib ketmasligi.
 """
 
 from datetime import date
@@ -12,13 +13,17 @@ import pytest
 from sqlalchemy import func, select
 
 from app.models import AttendanceRecord, AuditLog, Faculty, LessonAttendance, LessonSession, StudentStaff
-from scripts.merge_duplicate_people import name_key, run
+from scripts.merge_duplicate_people import name_key, name_tokens, names_match, run
 from tests.conftest import TestSessionLocal
 
 
-def _imported(name, pinfl, faculty_id, unit="Biotibbiyot muhandisligi kafedrasi", type="xodim"):
-    return StudentStaff(full_name=name, type=type, pinfl=pinfl, faculty_id=faculty_id,
-                        group_or_position=unit, biometrics_status="yoq")
+def _imported(name, pinfl, faculty_id, unit="Biotibbiyot muhandisligi kafedrasi", type="xodim", confirmed=False):
+    record = StudentStaff(full_name=name, type=type, pinfl=pinfl, faculty_id=faculty_id,
+                          group_or_position=unit, biometrics_status="yoq")
+    if confirmed:
+        record.biometrics_status = "tasdiqlangan"
+        record.biometric_embedding = "[0.2]"
+    return record
 
 
 def _manual(name, unit="Katta o'qituvchi", type="xodim"):
@@ -37,11 +42,40 @@ async def _people(db_session) -> list[StudentStaff]:
     return list((await db_session.execute(select(StudentStaff).order_by(StudentStaff.full_name))).scalars().all())
 
 
-def test_name_key_ignores_case_spacing_and_apostrophe_style():
-    assert name_key("G‘aniyev  Aziz O‘G‘LI") == name_key("g'aniyev aziz o'g'li")
+class TestNameMatching:
+    def test_exact_key_ignores_case_spacing_and_apostrophe_style(self):
+        assert name_key("G‘aniyev  Aziz O‘G‘LI") == name_key("g'aniyev aziz o'g'li")
+
+    @pytest.mark.parametrize(
+        ("typed", "official"),
+        [
+            ("Ismoilov Sanjarbek Salohiddin o'g'li", "Ismoilov Sanjarbek Saloxiddin o'g'li"),
+            ("Saydullaeva Kamila Mirshodovna", "Saydullayeva Kamila Mirshodovna"),
+            ("Arslonbek Ikromiy Ilxomjon o‘g‘li", "Ikromiy Arslonbek Ilxomjon o'g'li"),
+            ("Махаматова Умидахон Рахмонжоновна", "Maxamatova Umidaxon Raxmonjonovna"),
+            ("Kurbonova Aziza", "Kurbonova Aziza Anvarovna"),
+            ("Mamadaliyev Nemat Qaxorovich", "Mamadaliyev Nemat Koxorovich"),
+            ("Imomov Farxodjon Toshqo 'ziyevich", "Imomov Farxodjon Toshkuziyevich"),
+            ("Xaydarov Axrorjon Gayratjonb ogli", "Xaydarov Axrorjon G'ayratjon o'g'li"),
+        ],
+    )
+    def test_same_person_written_differently(self, typed, official):
+        assert names_match(name_tokens(typed), name_tokens(official))
+
+    @pytest.mark.parametrize(
+        ("a", "b"),
+        [
+            ("Karimov Aziz Olimovich", "Karimov Aziz Botirovich"),  # boshqa ota — boshqa odam
+            ("Karimov Aziz Olimovich", "Karimov Anvar Olimovich"),  # boshqa ism
+            ("Karimova Aziza", "Rahimova Aziza"),  # boshqa familiya
+            ("Yigitaliyeva", "Yigitaliyeva Nodira"),  # bitta so'z — moslab bo'lmaydi
+        ],
+    )
+    def test_different_people_never_match(self, a, b):
+        assert not names_match(name_tokens(a), name_tokens(b))
 
 
-class TestMerge:
+class TestExactMerge:
     async def test_the_confirmed_record_keeps_its_face_and_receives_the_imported_data(self, db_session, faculty):
         source = _imported("Nosirov Nodirbek Valijonovich", "30000000000047", faculty.id)
         keep = _manual("Nosirov Nodirbek Valijonovich")
@@ -53,27 +87,15 @@ class TestMerge:
         assert len(plan.pairs) == 1
 
         (person,) = await _people(db_session)
-        assert person.id == keep_id  # yuz tanish shu identifikatorga bog'langan
+        assert person.id == keep_id
         assert person.pinfl == "30000000000047"
         assert person.faculty_id == faculty.id
         assert person.group_or_position == "Biotibbiyot muhandisligi kafedrasi"
-        assert person.biometrics_status == "tasdiqlangan"
         assert person.biometric_embedding == "[0.1]"
 
         audit = (await db_session.execute(select(AuditLog).where(AuditLog.user_name == "Dublikatlarni birlashtirish"))).scalars().all()
         assert len(audit) == 1
-        assert "30000000000047" not in audit[0].action  # jurnalda JSHSHIR to'liq yozilmaydi
-
-    async def test_apostrophe_and_case_differences_still_match(self, db_session, faculty):
-        db_session.add_all([
-            _imported("G‘aniyev Aziz Olim o‘g‘li", "30000000000048", faculty.id),
-            _manual("g'aniyev  aziz olim o'g'li"),
-        ])
-        await db_session.commit()
-        await run(session_factory=TestSessionLocal)
-        (person,) = await _people(db_session)
-        assert person.full_name == "G‘aniyev Aziz Olim o‘g‘li"  # rasmiy ro'yxatdagi yozilish
-        assert person.pinfl == "30000000000048"
+        assert "30000000000047" not in audit[0].action
 
     async def test_links_to_the_removed_copy_move_to_the_kept_record(self, db_session, faculty):
         source = _imported("Gasanova Nigora Muxtorovna", "40000000000037", faculty.id)
@@ -92,7 +114,7 @@ class TestMerge:
         db_session.add_all([
             AttendanceRecord(student_staff_id=source.id, date=date(2026, 9, 12), status="keldi"),
             AttendanceRecord(student_staff_id=source.id, date=date(2026, 9, 13), status="kech_keldi"),
-            AttendanceRecord(student_staff_id=keep.id, date=date(2026, 9, 13), status="keldi"),  # to'qnashuv
+            AttendanceRecord(student_staff_id=keep.id, date=date(2026, 9, 13), status="keldi"),
             LessonAttendance(lesson_session_id=other_lesson.id, student_staff_id=source.id, sightings=4),
         ])
         await db_session.commit()
@@ -101,17 +123,10 @@ class TestMerge:
         await run(session_factory=TestSessionLocal)
         db_session.expire_all()
 
-        days = {
-            r.date: r.status
-            for r in (await db_session.execute(select(AttendanceRecord))).scalars().all()
-        }
-        assert days == {date(2026, 9, 12): "keldi", date(2026, 9, 13): "keldi"}  # to'qnashuvda tasdiqlangandagisi
-        assert all(
-            r.student_staff_id == keep_id
-            for r in (await db_session.execute(select(AttendanceRecord))).scalars().all()
-        )
-        moved = (await db_session.execute(select(LessonAttendance))).scalar_one()
-        assert moved.student_staff_id == keep_id
+        rows = (await db_session.execute(select(AttendanceRecord))).scalars().all()
+        assert {r.date: r.status for r in rows} == {date(2026, 9, 12): "keldi", date(2026, 9, 13): "keldi"}
+        assert all(r.student_staff_id == keep_id for r in rows)
+        assert (await db_session.execute(select(LessonAttendance))).scalar_one().student_staff_id == keep_id
         assert (await db_session.get(LessonSession, lesson_id)).teacher_id == keep_id
 
     async def test_dry_run_changes_nothing(self, db_session, faculty):
@@ -128,8 +143,46 @@ class TestMerge:
         await db_session.commit()
         await run(session_factory=TestSessionLocal)
         plan = await run(session_factory=TestSessionLocal)
-        assert plan.pairs == []
+        assert plan.pairs == [] and plan.partial == []
         assert len(await _people(db_session)) == 1
+
+
+class TestPartialMerge:
+    async def test_partial_pairs_wait_for_explicit_permission(self, db_session, faculty):
+        db_session.add_all([
+            _imported("Ismoilov Sanjarbek Saloxiddin o'g'li", "30000000000061", faculty.id),
+            _manual("Ismoilov Sanjarbek Salohiddin o'g'li", unit="Tizim administratori"),
+        ])
+        await db_session.commit()
+
+        plan = await run(session_factory=TestSessionLocal)
+        assert len(plan.partial) == 1
+        assert len(await _people(db_session)) == 2  # --qisman berilmagan
+
+        await run(include_partial=True, session_factory=TestSessionLocal)
+        (person,) = await _people(db_session)
+        assert person.pinfl == "30000000000061"
+        assert person.biometric_embedding == "[0.1]"
+        assert person.full_name == "Ismoilov Sanjarbek Saloxiddin o'g'li"
+
+    async def test_when_both_records_are_confirmed_the_official_one_stays(self, db_session, faculty):
+        official = _imported("Oribjonova Hadisaxon Abdumutallib qizi", "40000000000029", faculty.id,
+                             unit="Gospital terapiya (laboratoriya)", confirmed=True)
+        manual = _manual("Oribjonova Hadisaxon Abdumutalib qizi", unit="Assistent")
+        db_session.add_all([official, manual])
+        await db_session.flush()
+        db_session.add(AttendanceRecord(student_staff_id=manual.id, date=date(2026, 9, 11), status="keldi"))
+        await db_session.commit()
+        official_id = official.id
+
+        plan = await run(include_partial=True, session_factory=TestSessionLocal)
+        assert [p.kind for p in plan.partial] == ["ikkalasi_tasdiqlangan"]
+
+        (person,) = await _people(db_session)
+        assert person.id == official_id
+        assert person.pinfl == "40000000000029"
+        assert person.group_or_position == "Gospital terapiya (laboratoriya)"
+        assert (await db_session.execute(select(AttendanceRecord))).scalar_one().student_staff_id == official_id
 
 
 class TestSuspiciousCasesAreLeftAlone:
@@ -140,20 +193,32 @@ class TestSuspiciousCasesAreLeftAlone:
             _manual("Karimov Aziz Olimovich"),
         ])
         await db_session.commit()
-        plan = await run(session_factory=TestSessionLocal)
-        assert plan.pairs == []
+        plan = await run(include_partial=True, session_factory=TestSessionLocal)
+        assert plan.pairs == [] and plan.partial == []
         assert len(plan.ambiguous) == 1
         assert len(await _people(db_session)) == 3
 
-    async def test_partial_name_is_reported_not_merged(self, db_session, faculty):
+    async def test_two_confirmed_manual_copies_are_not_guessed(self, db_session, faculty):
         db_session.add_all([
-            _imported("Nosirov Nodirbek Valijonovich", "30000000000047", faculty.id),
-            _manual("Nosirov Nodirbek"),
+            _imported("Yusupov Abdulaziz Adxamjonovich", "30000000000071", faculty.id),
+            _manual("Yusupov Abdulaziz Adxamjonovich", unit="Tyutor"),
+            _manual("Yusupov Abdulaziz Adxamjonovich", unit="Tyutor"),
         ])
         await db_session.commit()
-        plan = await run(session_factory=TestSessionLocal)
-        assert plan.pairs == []
-        assert len(plan.partial) == 1
+        plan = await run(include_partial=True, session_factory=TestSessionLocal)
+        assert plan.pairs == [] and plan.partial == []
+        assert len(plan.ambiguous) == 1
+        assert len(await _people(db_session)) == 3
+
+    async def test_a_namesake_with_another_father_is_not_merged(self, db_session, faculty):
+        db_session.add_all([
+            _imported("Karimov Aziz Olimovich", "30000000000001", faculty.id),
+            _manual("Karimov Aziz Botirovich"),
+        ])
+        await db_session.commit()
+        plan = await run(include_partial=True, session_factory=TestSessionLocal)
+        assert plan.partial == []
+        assert len(plan.not_found) == 1
         assert len(await _people(db_session)) == 2
 
     async def test_a_student_and_a_staff_member_are_never_merged(self, db_session, faculty):
@@ -163,9 +228,18 @@ class TestSuspiciousCasesAreLeftAlone:
             _manual("Rahimova Dilnoza Oybek qizi"),
         ])
         await db_session.commit()
-        plan = await run(session_factory=TestSessionLocal)
-        assert plan.pairs == []
+        plan = await run(include_partial=True, session_factory=TestSessionLocal)
+        assert plan.pairs == [] and plan.partial == []
         assert len(plan.cross_type) == 1
+        assert len(await _people(db_session)) == 2
+
+    async def test_a_single_word_name_is_reported(self, db_session, faculty):
+        db_session.add_all([_imported("Yigitaliyeva Nodira Ahmadovna", "40000000000081", faculty.id),
+                            _manual("Yigitaliyeva")])
+        await db_session.commit()
+        plan = await run(include_partial=True, session_factory=TestSessionLocal)
+        assert len(plan.incomplete) == 1
+        assert len(await _people(db_session)) == 2
 
     async def test_two_real_people_with_their_own_pinfl_are_untouched(self, db_session, faculty):
         confirmed_with_pinfl = _manual("Aliyev Vali Karimovich")
@@ -173,7 +247,5 @@ class TestSuspiciousCasesAreLeftAlone:
         db_session.add_all([confirmed_with_pinfl,
                             _imported("Aliyev Vali Karimovich", "30000000000010", faculty.id)])
         await db_session.commit()
-        plan = await run(session_factory=TestSessionLocal)
-        assert plan.pairs == []
-        count = await db_session.scalar(select(func.count()).select_from(StudentStaff))
-        assert count == 2
+        await run(include_partial=True, session_factory=TestSessionLocal)
+        assert await db_session.scalar(select(func.count()).select_from(StudentStaff)) == 2
