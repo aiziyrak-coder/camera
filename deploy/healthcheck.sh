@@ -1,37 +1,51 @@
 #!/usr/bin/env bash
 # Situatsion Markaz — serverdagi barcha qismlarning sog'liq tekshiruvi.
 #
-# Ishga tushirish (serverda):
-#     cd /opt/camera && bash deploy/healthcheck.sh
+# Ishga tushirish — FONDA (terminal band bo'lmaydi):
+#     cd /opt/camera && nohup bash deploy/healthcheck.sh </dev/null >/tmp/hc.txt 2>&1 &
+# Natijani ko'rish (1-2 daqiqadan keyin; tugamagan bo'lsa qayerdaligi ko'rinadi):
+#     cat /tmp/hc.txt
 #
-# Hech narsani o'zgartirmaydi — faqat o'qiydi. Har bir tekshiruv bitta
-# qatorda [ OK ] / [ !! ] / [XATO] bilan chiqadi; to'liq hisobot
-# /tmp/healthcheck-*.txt fayliga ham yoziladi.
+# Hech narsani o'zgartirmaydi — faqat o'qiydi.
+#
+# NIMA UCHUN LOG O'QISH CHEGARALANGAN. Birinchi versiya API logini
+# boshidan oxirigacha o'qirdi va serverda jim qotib qoldi: 107 kamera
+# tinimsiz JSON log yozadi, fayl ulkan, docker esa uni ketma-ket
+# skanerlaydi. Hozir log faqat ikki joydan o'qiladi:
+#   * OXIRIDAN cheklangan qator (--tail) — docker buni fayl oxiridan
+#     tez o'qiydi; xatolar va AI o'tishlari shu yerdan sanaladi;
+#   * BOSHIDAN birinchi qatorlar (| head) — ishga tushish yozuvi fayl
+#     boshida turadi, head yetgach o'qish darhol to'xtaydi.
+# --since ishlatilmaydi: u vaqtni topish uchun faylni baribir boshidan
+# skanerlaydi.
 #
 # Baholashdagi ikki nozik joy — ular ataylab "xato" deb hisoblanmaydi:
-#
-#   * AI o'tishi natija bermasa logga YOZMAYDI (ai_scheduler.py). Ya'ni
-#     logda ko'rinmagan modul ishlamayapti degani emas. Ishonchli signal
-#     — "scheduler sweep failed" yozuvi: u faqat haqiqiy xatoda chiqadi.
-#
+#   * AI o'tishi natija bermasa logga YOZMAYDI (ai_scheduler.py). Ishonchli
+#     signal — faqat "scheduler sweep failed".
 #   * Video shlyuz yo'llari talab bo'yicha ochiladi: hech kim ko'rmayotgan
-#     kamera "ready" bo'lmaydi. Kamera tasvir berayotganini tekshirishning
-#     to'g'ri joyi — cameras.last_frame_at.
+#     kamera "ready" bo'lmaydi. Tasvir cameras.last_frame_at orqali
+#     tekshiriladi.
 
 set -u
+# Hech bir ichki buyruq terminaldan o'qishga urinmasin: fonda ishlaganda
+# terminal o'qishga uringan jarayon to'xtatib qo'yiladi (SIGTTIN) va
+# skript cheksiz kutib qoladi.
+exec </dev/null
+
 cd "$(dirname "$0")/../camera-api" || { echo "camera-api papkasi topilmadi"; exit 1; }
 
 DC="docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.mediamtx-shard.yml"
 REPORT="/tmp/healthcheck-$(date +%Y%m%d-%H%M%S).txt"
 RETIRED_MODULES="4,5,11,16,18,24,25"
 EXPECTED_STAFF=688
+LOG_TAIL=20000
 
 OK=0; WARN=0; FAIL=0
 ok()      { echo "  [ OK ]  $*"; OK=$((OK + 1)); }
 warn()    { echo "  [ !! ]  $*"; WARN=$((WARN + 1)); }
 fail()    { echo "  [XATO]  $*"; FAIL=$((FAIL + 1)); }
 info()    { echo "          $*"; }
-section() { echo; echo "━━ $* ━━"; }
+section() { echo; echo "━━ $* ━━  ($(date +%H:%M:%S))"; }
 
 sql() {
   timeout 20 $DC exec -T db psql -U camera_api -d camera_api -At -F '|' -c "$1" 2>/dev/null
@@ -48,7 +62,7 @@ main() {
   section "1. Konteynerlar"
   API_CID=""
   for svc in db redis minio api mediamtx-0 mediamtx-1 mediamtx-2; do
-    cid=$($DC ps -q "$svc" 2>/dev/null | head -1)
+    cid=$(timeout 20 $DC ps -q "$svc" 2>/dev/null | head -1)
     if [ -z "$cid" ]; then
       fail "$svc: konteyner topilmadi"
       continue
@@ -85,7 +99,7 @@ main() {
   fi
 
   cur=$(sql "SELECT version_num FROM alembic_version")
-  head=$(timeout 90 $DC exec -T api alembic heads 2>/dev/null | awk '{print $1}' | head -1)
+  head=$(timeout 45 $DC exec -T api alembic heads 2>/dev/null | awk '{print $1}' | head -1)
   if [ -z "$cur" ]; then
     fail "Migratsiya versiyasini o'qib bo'lmadi"
   elif [ -n "$head" ] && [ "$cur" = "$head" ]; then
@@ -116,12 +130,14 @@ main() {
 
   # ─────────────────────────────────────────── 4
   section "4. Rejalashtirgich va AI o'tishlari"
+  RECENT_LOGS=""
   if [ -z "$API_CID" ]; then
     fail "API konteyneri yo'q — rejalashtirgichni tekshirib bo'lmaydi"
   else
-    started_line=$(docker logs "$API_CID" 2>&1 | grep -F "AI scheduler started" | tail -1)
+    # Fayl BOSHI: ishga tushish yozuvi shu yerda; head yetgach o'qish to'xtaydi
+    started_line=$(timeout 30 docker logs "$API_CID" 2>&1 | head -5000 | grep -F "AI scheduler started" | tail -1)
     if [ -z "$started_line" ]; then
-      fail "Rejalashtirgich ishga tushmagan (\"AI scheduler started\" logi yo'q)"
+      warn "Rejalashtirgichning ishga tushish yozuvi logning boshida topilmadi (log aylantirilgan bo'lishi mumkin)"
     else
       ok "Rejalashtirgich ishga tushgan"
       registered=$(echo "$started_line" | grep -o '"[a-z_]*"' | tr -d '"' | tr '\n' ' ')
@@ -142,28 +158,32 @@ main() {
       fi
     fi
 
-    logs60=$(docker logs --since 60m "$API_CID" 2>&1)
-    failed=$(echo "$logs60" | grep -F "scheduler sweep failed" | grep -o '"sweep": *"[a-z_]*"' \
+    # Fayl OXIRI: bir marta o'qiladi va 4- hamda 9-bo'limda qayta ishlatiladi
+    RECENT_LOGS=$(timeout 60 docker logs --tail "$LOG_TAIL" "$API_CID" 2>&1)
+    span=$(echo "$RECENT_LOGS" | grep -o '"timestamp": *"[^"]*"' | sed -n '1p;$p' | sed 's/.*"\([^"]*\)"$/\1/' | cut -c12-16 | tr '\n' ' ')
+    info "Tahlil qilingan log: oxirgi $LOG_TAIL qator (${span:-vaqt oraligi aniqlanmadi})"
+
+    failed=$(echo "$RECENT_LOGS" | grep -F "scheduler sweep failed" | grep -o '"sweep": *"[a-z_]*"' \
              | sed 's/.*"\([a-z_]*\)"$/\1/' | sort | uniq -c | sort -rn)
-    tick_failed=$(echo "$logs60" | grep -cF "AI scheduler tick failed")
+    tick_failed=$(echo "$RECENT_LOGS" | grep -cF "AI scheduler tick failed")
     if [ -z "$failed" ] && [ "$tick_failed" = "0" ]; then
-      ok "So'nggi 60 daqiqada birorta AI o'tishi xato bermadi"
+      ok "Birorta AI o'tishi xato bermagan"
     else
       [ "$tick_failed" != "0" ] && fail "Rejalashtirgich tsikli $tick_failed marta yiqilgan"
       if [ -n "$failed" ]; then
-        fail "Xato bergan o'tishlar (so'nggi 60 daqiqa):"
+        fail "Xato bergan o'tishlar:"
         echo "$failed" | while read -r n name; do info "$name — $n marta"; done
       fi
     fi
 
-    active_sweeps=$(echo "$logs60" | grep -F "scheduler sweep completed" | grep -o '"sweep": *"[a-z_]*"' \
+    active_sweeps=$(echo "$RECENT_LOGS" | grep -F "scheduler sweep completed" | grep -o '"sweep": *"[a-z_]*"' \
                     | sed 's/.*"\([a-z_]*\)"$/\1/' | sort | uniq -c | sort -rn | awk '{printf "%s(%s) ", $2, $1}')
-    # Standart qiymat ${var:-...} ichida apostrof ishlatilmaydi: bash uni
+    # ${var:-...} standart qiymati ichida apostrof ishlatilmaydi: bash uni
     # qo'shtirnoq ichida ham tirnoq deb o'qiydi va skript buziladi.
     if [ -n "$active_sweeps" ]; then
-      info "Natija bergan o'tishlar (60 daq): $active_sweeps"
+      info "Natija bergan o'tishlar: $active_sweeps"
     else
-      info "Natija bergan o'tishlar (60 daq): hozircha yo'q — bu xato emas, natija bo'lmasa log yozilmaydi"
+      info "Natija bergan o'tishlar: hozircha yo'q — bu xato emas, natija bo'lmasa log yozilmaydi"
     fi
   fi
 
@@ -172,7 +192,7 @@ main() {
   r=$(sql "SELECT count(*), count(*) FILTER (WHERE status = 'faol'), count(*) FILTER (WHERE last_seen_at > now() - interval '10 minutes'), count(*) FILTER (WHERE last_frame_at > now() - interval '10 minutes') FROM cameras")
   IFS='|' read -r cam_total cam_active cam_online cam_video <<< "$r"
   if [ "${cam_total:-0}" = "0" ]; then
-    fail "Bazada kamera yo'q"
+    fail "Bazada kamera yo'q (yoki bazaga ulanib bo'lmadi)"
   else
     info "Jami: $cam_total | faol: $cam_active | tarmoqda: $cam_online | tasvir berayotgan: $cam_video"
     if [ "$cam_online" -ge "$cam_active" ]; then
@@ -226,12 +246,12 @@ main() {
   if [ "${staff:-0}" -ge "$EXPECTED_STAFF" ]; then
     ok "JSHSHIRli xodimlar: $staff ta (kutilgan $EXPECTED_STAFF)"
   else
-    fail "JSHSHIRli xodimlar $staff ta — kutilgan $EXPECTED_STAFF (import to'liq emas)"
+    fail "JSHSHIRli xodimlar ${staff:-?} ta — kutilgan $EXPECTED_STAFF (import to'liq emas)"
   fi
   if [ "${enrolled:-0}" -ge 10 ]; then
     ok "Yuzi tasdiqlanganlar: $enrolled ta"
   else
-    warn "Yuzi tasdiqlanganlar: $enrolled ta — 10 tagacha #1 (begona shaxs) o'zini o'chirib turadi"
+    warn "Yuzi tasdiqlanganlar: ${enrolled:-?} ta — 10 tagacha #1 (begona shaxs) o'zini o'chirib turadi"
   fi
   [ "${testuser:-0}" != "0" ] && warn "Sinov hisobi (JSHSHIR 00000000000000) hali o'chirilmagan"
   today=$(sql "SELECT count(*) FROM attendance_records WHERE date = (now() AT TIME ZONE 'Asia/Tashkent')::date")
@@ -261,9 +281,9 @@ main() {
   fi
 
   # ─────────────────────────────────────────── 9
-  section "9. Xatolar (so'nggi 60 daqiqa)"
-  if [ -n "$API_CID" ]; then
-    errs=$(docker logs --since 60m "$API_CID" 2>&1 | grep -E '"level": *"(ERROR|CRITICAL)"')
+  section "9. Xatolar (4-bo'limdagi o'sha log qismi)"
+  if [ -n "$RECENT_LOGS" ]; then
+    errs=$(echo "$RECENT_LOGS" | grep -E '"level": *"(ERROR|CRITICAL)"')
     n=$(printf '%s' "$errs" | grep -c . || true)
     if [ "$n" = "0" ]; then
       ok "API logida xato yo'q"
@@ -272,6 +292,8 @@ main() {
       echo "$errs" | grep -o '"message": *"[^"]*"' | sed 's/"message": *//' | sort | uniq -c | sort -rn | head -5 \
         | while read -r line; do info "$line"; done
     fi
+  else
+    info "Log o'qilmadi — tekshiruv o'tkazib yuborildi"
   fi
 
   # ─────────────────────────────────────────── 10
@@ -282,14 +304,17 @@ main() {
   [ "$disk" -lt 85 ] && ok "Disk: ${disk}% band" || warn "Disk: ${disk}% band — joy tugashiga yaqin"
   [ "$mem" -lt 90 ] && ok "Operativ xotira: ${mem}% band" || warn "Operativ xotira: ${mem}% band"
   info "Yuklama: $load ($cores yadro)"
-  [ -n "$API_CID" ] && info "API konteyneri: $(docker stats --no-stream --format 'CPU {{.CPUPerc}}, xotira {{.MemUsage}}' "$API_CID")"
+  if [ -n "$API_CID" ]; then
+    stats=$(timeout 15 docker stats --no-stream --format 'CPU {{.CPUPerc}}, xotira {{.MemUsage}}' "$API_CID" 2>/dev/null)
+    info "API konteyneri: ${stats:-oqib bolmadi}"
+  fi
 
   # ─────────────────────────────────────────── Xulosa
   echo
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo "  XULOSA:  $OK ta OK   |   $WARN ta ogohlantirish   |   $FAIL ta xato"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  TEKSHIRUV TUGADI"
 }
 
 main 2>&1 | tee "$REPORT"
-echo "To'liq hisobot: $REPORT"
