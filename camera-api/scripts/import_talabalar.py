@@ -27,6 +27,19 @@ IKKI BOSQICH:
          docker compose exec -T api python scripts/import_talabalar.py import /tmp/talabalar.json --dry-run
          docker compose exec -T api python scripts/import_talabalar.py import /tmp/talabalar.json
 
+SHIFRLANGAN TO'PLAM (serverga fayl o'tkazmasdan). JSON'ni serverga
+qo'lda o'tkazish qiyin bo'lsa, u shifrlangan .py faylga joylanadi va
+git orqali boradi:
+
+         python scripts/import_talabalar.py pack talabalar.json scripts/talabalar_malumot.py
+
+  Repozitoriyda faqat AES-256-GCM bilan shifrlangan matn turadi; kalit
+  (parol so'z) repoga yozilmaydi va ishga tushirishda so'raladi. Serverda:
+
+         docker compose exec api python scripts/talabalar_malumot.py --dry-run
+         docker compose exec api python scripts/talabalar_malumot.py
+         docker compose exec api python scripts/talabalar_malumot.py --kurs 2
+
 KURS. Fayllar o'tgan (2025-2026) o'quv yili bo'yicha tuzilgan: "1-kurs"
 faylidagilar hozir 2-kursda, "5 kurslar" faylidagilar esa 6-kursda.
 Kurs fayl nomidagi raqamga COURSE_SHIFT qo'shib aniqlanadi. Guruh
@@ -58,7 +71,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
+import getpass
 import json
+import lzma
 import os
 import re
 import sys
@@ -488,6 +504,153 @@ def _report(records, problems, stats, staff_conflicts, groups_written, in_db, dr
         print("\n[dry-run] Bazaga hech narsa yozilmadi.")
 
 
+# ── shifrlangan to'plam ───────────────────────────────────────────────────
+#
+# Repozitoriy ochiq, shuning uchun talabalar ro'yxati unga faqat shifrlangan
+# holda tushadi. AES-256-GCM: shifrlaydi va butunligini tekshiradi — kalit
+# noto'g'ri yoki matn buzilgan bo'lsa ochilmaydi, "yarim to'g'ri" ma'lumot
+# bazaga yozilib ketmaydi. Kalit parol so'zdan scrypt bilan hosil qilinadi:
+# u ataylab sekin, ya'ni parolni tanlab topish qimmat.
+
+BUNDLE_FORMAT = 1
+KEY_ENV = "TALABALAR_KALIT"
+_SCRYPT_N, _SCRYPT_R, _SCRYPT_P = 2**15, 8, 1
+_SALT_LEN, _NONCE_LEN = 16, 12
+
+
+class WrongPassphraseError(Exception):
+    pass
+
+
+def _normalize_passphrase(passphrase: str) -> str:
+    """Kalit serverda qo'lda teriladi: bo'shliq, chiziqcha va harf kattaligi
+    xatoga sabab bo'lmasin."""
+    return re.sub(r"[\s\-]", "", passphrase or "").upper()
+
+
+def _derive_key(passphrase: str, salt: bytes) -> bytes:
+    from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
+
+    normalized = _normalize_passphrase(passphrase)
+    if not normalized:
+        raise WrongPassphraseError("Kalit kiritilmadi")
+    return Scrypt(salt=salt, length=32, n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P).derive(normalized.encode("utf-8"))
+
+
+def seal(payload: dict, passphrase: str) -> str:
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    salt, nonce = os.urandom(_SALT_LEN), os.urandom(_NONCE_LEN)
+    header = bytes([BUNDLE_FORMAT])
+    plain = lzma.compress(json.dumps(payload, ensure_ascii=False).encode("utf-8"), preset=9)
+    cipher = AESGCM(_derive_key(passphrase, salt)).encrypt(nonce, plain, header)
+    return base64.b64encode(header + salt + nonce + cipher).decode("ascii")
+
+
+def unseal(blob: str, passphrase: str) -> dict:
+    from cryptography.exceptions import InvalidTag
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    raw = base64.b64decode("".join(blob.split()))
+    header = raw[:1]
+    if not header or header[0] != BUNDLE_FORMAT:
+        raise ValueError("Noma'lum to'plam formati")
+    salt = raw[1 : 1 + _SALT_LEN]
+    nonce = raw[1 + _SALT_LEN : 1 + _SALT_LEN + _NONCE_LEN]
+    cipher = raw[1 + _SALT_LEN + _NONCE_LEN :]
+    try:
+        plain = AESGCM(_derive_key(passphrase, salt)).decrypt(nonce, cipher, header)
+    except InvalidTag:
+        raise WrongPassphraseError("Kalit noto'g'ri") from None
+    return json.loads(lzma.decompress(plain).decode("utf-8"))
+
+
+def pack(json_path: str | Path, out_py: str | Path, passphrase: str) -> dict[int, int]:
+    """talabalar.json -> shifrlangan, git'ga qo'yish mumkin bo'lgan .py fayl.
+    Faylda ochiq holda faqat kurslar bo'yicha sonlar turadi."""
+    payload = json.loads(Path(json_path).read_text(encoding="utf-8"))
+    rows = payload["rows"]
+    per_course = dict(sorted(Counter(int(r["file_course"]) + COURSE_SHIFT for r in rows).items()))
+    blob = seal({"generated_at": payload.get("generated_at"), "rows": rows}, passphrase)
+    body = "\n".join(f'    "{blob[i:i + 100]}"' for i in range(0, len(blob), 100))
+    courses_text = "\n".join(f"    {course}-kurs: {count} ta" for course, count in per_course.items())
+
+    source = (
+        "# -*- coding: utf-8 -*-\n"
+        f'"""Talabalar kontingenti — {len(rows)} ta talaba, SHIFRLANGAN.\n'
+        "\n"
+        "Kurslar (yangi o'quv yili):\n"
+        f"{courses_text}\n"
+        "\n"
+        "Ma'lumot AES-256-GCM bilan shifrlangan: repozitoriy ochiq, JSHSHIR va\n"
+        "pasport raqamlari unda ochiq holda turmasligi kerak. Kalit bu faylda ham,\n"
+        "repozitoriyda ham YO'Q — ishga tushirilganda so'raladi.\n"
+        "\n"
+        "ISHGA TUSHIRISH (server, /opt/camera/camera-api):\n"
+        "\n"
+        "    docker compose cp scripts/import_talabalar.py api:/app/scripts/import_talabalar.py\n"
+        "    docker compose cp scripts/talabalar_malumot.py api:/app/scripts/talabalar_malumot.py\n"
+        "    docker compose exec api python scripts/talabalar_malumot.py --dry-run   # sinov, bazaga yozmaydi\n"
+        "    docker compose exec api python scripts/talabalar_malumot.py             # haqiqiy import\n"
+        "    docker compose exec api python scripts/talabalar_malumot.py --kurs 2    # faqat bitta kurs\n"
+        "\n"
+        "Qayta ishga tushirish xavfsiz: takror yaratmaydi, tasdiqlangan yuzga tegmaydi\n"
+        "(qarang scripts/import_talabalar.py).\n"
+        f'"""\n'
+        "\n"
+        "import os\n"
+        "import sys\n"
+        "\n"
+        "sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))\n"
+        "\n"
+        "from scripts.import_talabalar import run_bundle_cli  # noqa: E402\n"
+        "\n"
+        f'YARATILGAN = "{payload.get("generated_at") or ""}"\n'
+        f"KURSLAR = {per_course!r}\n"
+        "MALUMOT = (\n"
+        f"{body}\n"
+        ")\n"
+        "\n"
+        'if __name__ == "__main__":\n'
+        '    sys.stdout.reconfigure(encoding="utf-8", errors="replace")\n'
+        "    sys.exit(run_bundle_cli(MALUMOT, KURSLAR))\n"
+    )
+    Path(out_py).write_text(source, encoding="utf-8")
+    return per_course
+
+
+def run_bundle_cli(blob: str, courses: dict[int, int]) -> int:
+    return asyncio.run(run_bundle(blob, courses))
+
+
+async def run_bundle(
+    blob: str,
+    courses: dict[int, int],
+    argv: list[str] | None = None,
+    session_factory: async_sessionmaker[AsyncSession] = SessionLocal,
+) -> int:
+    parser = argparse.ArgumentParser(description="Shifrlangan talabalar ro'yxatini bazaga kiritish")
+    parser.add_argument("--dry-run", action="store_true", help="faqat tekshirish, bazaga yozmaydi")
+    parser.add_argument("--kurs", type=int, action="append", choices=sorted(courses),
+                        help="faqat shu kurs(lar)ni kiritish; bir necha marta berish mumkin")
+    args = parser.parse_args(argv)
+
+    print("Talabalar ro'yxati: " + ", ".join(f"{c}-kurs {n} ta" for c, n in sorted(courses.items())))
+    passphrase = os.environ.get(KEY_ENV) or getpass.getpass("Kalitni kiriting (yozganda ko'rinmaydi): ")
+    try:
+        payload = unseal(blob, passphrase)
+    except WrongPassphraseError as exc:
+        print(f"\n{exc}. Bazaga hech narsa yozilmadi. Kalitni tekshirib, qayta urinib ko'ring.")
+        return 2
+
+    rows = payload["rows"]
+    if args.kurs:
+        wanted = set(args.kurs)
+        rows = [r for r in rows if int(r["file_course"]) + COURSE_SHIFT in wanted]
+        print("Tanlangan: " + ", ".join(f"{c}-kurs" for c in sorted(wanted)) + f" — {len(rows)} ta talaba")
+    return await run(rows, dry_run=args.dry_run, session_factory=session_factory)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Talabalarni Excel kontingentidan tizimga kiritish")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -497,10 +660,19 @@ def main(argv: list[str] | None = None) -> int:
     imp = sub.add_parser("import", help="JSON'dan bazaga yozish (serverda)")
     imp.add_argument("json_path")
     imp.add_argument("--dry-run", action="store_true")
+    pck = sub.add_parser("pack", help="JSON'ni shifrlangan .py faylga joylash (kompyuterda)")
+    pck.add_argument("json_path")
+    pck.add_argument("out_py")
     args = parser.parse_args(argv)
 
     if args.command == "export":
         export_excel(args.excel_dir, args.out)
+        return 0
+    if args.command == "pack":
+        passphrase = os.environ.get(KEY_ENV) or getpass.getpass("Shifrlash kaliti: ")
+        for course, count in pack(args.json_path, args.out_py, passphrase).items():
+            print(f"  {course}-kurs: {count} ta")
+        print(f"  -> {args.out_py}")
         return 0
     payload = json.loads(Path(args.json_path).read_text(encoding="utf-8"))
     return asyncio.run(run(payload["rows"], dry_run=args.dry_run))
