@@ -15,14 +15,14 @@ from sqlalchemy import select
 from app.models import Faculty, StudentStaff
 from tests.conftest import auth_headers
 
-PINFL = "30302654150047"
+PINFL = "30000000000047"
 
 
 @pytest.fixture
 async def a_staff_member(db_session, seeded) -> StudentStaff:
     faculty = (await db_session.execute(select(Faculty))).scalars().first()
     person = StudentStaff(
-        full_name="Qayumov G'anisher Olimovich",
+        full_name="Sinovov Sardor Aliyevich",
         type="xodim",
         pinfl=PINFL,
         faculty_id=faculty.id,
@@ -41,7 +41,7 @@ class TestLookupByPinfl:
         resp = await client.post("/api/public/enrollment/lookup", json={"pinfl": PINFL})
         assert resp.status_code == 200
         body = resp.json()
-        assert body["fullName"] == "Qayumov G'anisher Olimovich"
+        assert body["fullName"] == "Sinovov Sardor Aliyevich"
         assert body["typeLabel"] == "Xodim"
         assert body["alreadyEnrolled"] is False
 
@@ -50,10 +50,10 @@ class TestLookupByPinfl:
         qolishi juda tez-tez uchraydi. Ularni tozalamasak, raqami to'g'ri
         bo'lgan xodim "topilmadi" javobini olardi va sababini tushunmasdi."""
         resp = await client.post(
-            "/api/public/enrollment/lookup", json={"pinfl": " 3030-2654 1500-47 "}
+            "/api/public/enrollment/lookup", json={"pinfl": " 3000-0000 0000-47 "}
         )
         assert resp.status_code == 200
-        assert resp.json()["fullName"] == "Qayumov G'anisher Olimovich"
+        assert resp.json()["fullName"] == "Sinovov Sardor Aliyevich"
 
     async def test_an_unknown_pinfl_is_not_found(self, client: AsyncClient, a_staff_member):
         resp = await client.post("/api/public/enrollment/lookup", json={"pinfl": "99999999999999"})
@@ -112,12 +112,12 @@ class TestBiometricsCoverage:
         faculty = (await db_session.execute(select(Faculty))).scalars().first()
         db_session.add_all([
             StudentStaff(
-                full_name="Tasdiqlagan Xodim", type="xodim", pinfl="30302654150048",
+                full_name="Tasdiqlagan Xodim", type="xodim", pinfl="30000000000048",
                 faculty_id=faculty.id, group_or_position="Kafedra",
                 biometrics_status="tasdiqlangan",
             ),
             StudentStaff(
-                full_name="Fakultetsiz Xodim", type="xodim", pinfl="30302654150049",
+                full_name="Fakultetsiz Xodim", type="xodim", pinfl="30000000000049",
                 group_or_position="Rektorat", biometrics_status="yoq",
             ),
         ])

@@ -8,6 +8,12 @@ __pycache__/
 # real data — DB dumps, uploaded photos/passports — never commit them.
 backups/
 
+# Talabalar kontingenti (scripts/import_talabalar.py export) — JSHSHIR va
+# pasport raqamlari. Repozitoriy ochiq: bu fayllar hech qachon commit
+# qilinmasin.
+talabalar*.json
+*.xlsx
+
 # Pretrained model weights — downloaded on demand by ultralytics (see
 # app/services/object_detection.py) and mediapipe (see
 # app/services/pose_detection.py), not source; large binaries don't
