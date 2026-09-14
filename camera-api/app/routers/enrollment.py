@@ -38,6 +38,7 @@ via the existing /api/students-staff/{id}/biometrics endpoint.
 
 import asyncio
 import json
+from datetime import datetime, timezone
 import logging
 from typing import Annotated
 
@@ -433,6 +434,7 @@ async def submit_enrollment(
     record.biometric_photo_key = key
     record.biometric_embedding = json.dumps(embedding)
     record.biometrics_status = "tasdiqlangan"
+    record.biometrics_confirmed_at = datetime.now(timezone.utc)
 
     await db.commit()
     if previous_key and previous_key != key:

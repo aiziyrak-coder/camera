@@ -14,6 +14,7 @@ tripping "late" only by coincidence (any arrival between local 9:00 AM
 and 2:00 PM was silently misclassified in one direction or the other).
 """
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -33,6 +34,36 @@ def to_local(moment: datetime) -> datetime:
     clock time — use this before extracting .date()/.time() to compare
     against a config setting like attendance_ai_late_cutoff."""
     return moment.astimezone(INSTITUTE_TZ)
+
+
+UZ_MONTHS = (
+    "yanvar", "fevral", "mart", "aprel", "may", "iyun",
+    "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr",
+)
+UZ_WEEKDAYS = ("dushanba", "seshanba", "chorshanba", "payshanba", "juma", "shanba", "yakshanba")
+
+
+@dataclass(frozen=True)
+class LocalMoment:
+    """Bir payt — institut vaqtida, odam o'qiydigan ko'rinishda."""
+
+    iso: str  # "2026-09-14T13:57:54+05:00"
+    date: str  # "14-sentabr, 2026-yil"
+    weekday: str  # "dushanba"
+    time: str  # "13:57:54"
+
+
+def uz_datetime_parts(moment: datetime) -> LocalMoment:
+    """Vaqt serverda formatlanadi, brauzerda emas: brauzer soati boshqa
+    mintaqaga sozlangan kompyuterda xuddi shu payt boshqa soat bo'lib
+    ko'rinardi, savol esa aynan "Toshkent vaqti bilan soat nechida"."""
+    local = to_local(moment)
+    return LocalMoment(
+        iso=local.isoformat(timespec="seconds"),
+        date=f"{local.day}-{UZ_MONTHS[local.month - 1]}, {local.year}-yil",
+        weekday=UZ_WEEKDAYS[local.weekday()],
+        time=local.strftime("%H:%M:%S"),
+    )
 
 
 def local_date(column: ColumnElement) -> ColumnElement:

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { BarChart3, ChevronDown, Download, Loader2, Plus, ScanFace, Search, Users } from 'lucide-react';
+import { BarChart3, ChevronDown, Clock, Download, Loader2, Plus, ScanFace, Search, Users } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import Badge from '../../components/Badge';
 import Pagination from '../../components/Pagination';
 import AddStudentStaffModal from '../../components/admin/AddStudentStaffModal';
 import EditStudentStaffModal from '../../components/admin/EditStudentStaffModal';
+import BiometricsTimeLookupModal from '../../components/admin/BiometricsTimeLookupModal';
 import { useServerPage } from '../../lib/useServerPage';
 import { useFaculties } from '../../lib/useFaculties';
 import { api } from '../../lib/apiClient';
@@ -89,6 +90,7 @@ export default function StudentsStaffPage() {
   const menuRef = useRef<HTMLDivElement>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<StudentStaffRecord | null>(null);
+  const [lookupOpen, setLookupOpen] = useState(false);
 
   const {
     items: records,
@@ -187,7 +189,17 @@ export default function StudentsStaffPage() {
         title="Talabalar va Xodimlar"
         subtitle="Shaxsiy ma'lumotlar va biometriya boshqaruvi"
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setLookupOpen(true)}
+              disabled={!token}
+              title="Odam yuzini aniq qachon tasdiqlaganini topish"
+              className="btn-glass flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Clock size={14} />
+              Aniqlash
+            </button>
             <div ref={menuRef} className="relative">
               <button
                 type="button"
@@ -446,6 +458,7 @@ export default function StudentsStaffPage() {
         </div>
       )}
 
+      <BiometricsTimeLookupModal open={lookupOpen} onClose={() => setLookupOpen(false)} />
       <AddStudentStaffModal open={modalOpen} onClose={() => setModalOpen(false)} onAdd={() => reload()} />
       <EditStudentStaffModal
         record={editing}

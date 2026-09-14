@@ -78,6 +78,18 @@ export interface StudentStaffRecord {
   biometricPhotoUrl?: string | null;
 }
 
+/** "Aniqlash" oynasi — odam yuzini aniq qachon tasdiqlagani.
+ *  Vaqt maydonlari serverda Toshkent vaqtida formatlanadi. */
+export interface BiometricsConfirmation extends StudentStaffRecord {
+  confirmedAt: string | null;
+  confirmedDate: string | null;
+  confirmedWeekday: string | null;
+  confirmedTime: string | null;
+  /** tizim — tasdiqlashda yozilgan; rasm — yuz rasmi saqlangan paytdan
+   *  tiklangan; nomalum — vaqtni aniqlab bo'lmadi; tasdiqlanmagan. */
+  source: 'tizim' | 'rasm' | 'nomalum' | 'tasdiqlanmagan';
+}
+
 export interface Faculty {
   id: string;
   name: string;

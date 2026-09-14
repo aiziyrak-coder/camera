@@ -8,8 +8,10 @@ import asyncio
 import logging
 import uuid
 from collections.abc import Iterable
+from datetime import datetime
 
 import boto3
+from botocore.exceptions import ClientError
 
 from app.config import settings
 
@@ -70,6 +72,19 @@ def presigned_url(key: str) -> str:
         Params={"Bucket": settings.s3_bucket, "Key": key},
         ExpiresIn=PRESIGNED_URL_TTL_SECONDS,
     )
+
+
+def object_last_modified(key: str) -> datetime | None:
+    """Obyekt omborga yozilgan payt (timezone-aware, UTC). Obyekt yo'q
+    bo'lsa None; ombor bilan aloqa xatosi esa chaqiruvchiga ko'tariladi —
+    "rasm yo'q" va "ombor javob bermadi" turli xulosaga olib keladi."""
+    try:
+        head = _s3.head_object(Bucket=settings.s3_bucket, Key=key)
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") in ("404", "NoSuchKey", "NotFound"):
+            return None
+        raise
+    return head.get("LastModified")
 
 
 def delete_file(key: str) -> None:

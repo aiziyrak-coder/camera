@@ -56,6 +56,11 @@ class StudentStaff(Base):
     # (e.g. a real "search by face" feature) rather than queried today.
     biometric_photo_key: Mapped[str | None] = mapped_column(String, nullable=True)
     biometric_embedding: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Yuz tasdiqlangan aniq payt. Ochiq ro'yxatdan o'tish sahifasi ham,
+    # admin paneli ham tasdiqlaganda yozadi. Bu ustun paydo bo'lishidan
+    # oldin tasdiqlaganlarda NULL — ular uchun vaqt yuz rasmining
+    # saqlangan paytidan tiklanadi (students_staff.biometrics_confirmation).
+    biometrics_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     faculty: Mapped[Faculty | None] = relationship("Faculty", lazy="joined")

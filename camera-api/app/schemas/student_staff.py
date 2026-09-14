@@ -63,3 +63,20 @@ class BiometricsCoverageOut(CamelModel):
     missing: int
     percent: float | None = None
     by_faculty: list[BiometricsFacultyRowOut]
+
+
+class BiometricsConfirmationOut(StudentStaffOut):
+    """"Aniqlash" oynasi: odam yuzini aniq qachon tasdiqlagani.
+
+    Vaqt Toshkent vaqtida, tayyor matn ko'rinishida keladi — qarang
+    app/timezone.py uz_datetime_parts."""
+
+    confirmed_at: str | None = None
+    confirmed_date: str | None = None
+    confirmed_weekday: str | None = None
+    confirmed_time: str | None = None
+    source: Literal["tizim", "rasm", "nomalum", "tasdiqlanmagan"]
+    """tizim — tasdiqlash paytida yozilgan; rasm — bu yozuv paydo
+    bo'lishidan oldingi tasdiqlash, vaqt yuz rasmi saqlangan paytdan
+    tiklangan; nomalum — tasdiqlangan, lekin vaqtni aniqlab bo'lmadi;
+    tasdiqlanmagan — odam hali yuzini tasdiqlamagan."""

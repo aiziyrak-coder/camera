@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+import uuid
+from datetime import datetime, timezone
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
@@ -15,6 +17,7 @@ from app.dependencies import CurrentUser, require_permission
 from app.models import Faculty, StudentStaff
 from app.pagination import Page, PageParams, build_page, paginate
 from app.schemas.student_staff import (
+    BiometricsConfirmationOut,
     BiometricsCoverageOut,
     BiometricsFacultyRowOut,
     StudentStaffCreateIn,
@@ -34,8 +37,8 @@ from app.services.staff_export import (
     build_stats_workbook,
 )
 from app.services.student_import import import_students_staff_csv
-from app.storage import delete_files_quietly, presigned_url, upload_file
-from app.timezone import local_now
+from app.storage import delete_files_quietly, object_last_modified, presigned_url, upload_file
+from app.timezone import local_now, uz_datetime_parts
 from app.utils import compute_initials
 
 router = APIRouter(prefix="/api/students-staff", tags=["students-staff"])
@@ -74,6 +77,17 @@ def _to_out(record: StudentStaff, faculty_name: str) -> StudentStaffOut:
 NO_FACULTY_KEY = "__none__"
 NO_FACULTY_LABEL = "Fakultetsiz"
 
+# Import qilingan ismlarda tutuq belgisi oddiy "'" bilan saqlanadi, odam
+# esa klaviaturaga qarab o‘, o`, oʻ yozadi.
+_APOSTROPHES = "‘’`ʻʼ´"
+
+
+def _search_words(search: str | None) -> list[str]:
+    text = search or ""
+    for ch in _APOSTROPHES:
+        text = text.replace(ch, "'")
+    return text.split()
+
 
 def _filtered_query(
     type: str | None, faculty: str | None, search: str | None, biometrics: str | None
@@ -94,10 +108,12 @@ def _filtered_query(
         stmt = stmt.where(StudentStaff.faculty_id.is_(None))
     elif faculty:
         stmt = stmt.join(Faculty).where(Faculty.name == faculty)
-    if search:
-        # JSHSHIR bo'yicha ham qidiriladi: kadrlar bo'limi odamni
-        # ko'pincha aynan raqami bilan izlaydi.
-        term = f"%{search.strip()}%"
+    # JSHSHIR bo'yicha ham qidiriladi: kadrlar bo'limi odamni ko'pincha
+    # aynan raqami bilan izlaydi. Har bir so'z alohida mos kelishi kerak,
+    # tartibi esa muhim emas: bazada "Familiya Ism", odam esa ko'pincha
+    # "Ism Familiya" deb yozadi.
+    for word in _search_words(search):
+        term = f"%{word}%"
         stmt = stmt.where(
             or_(StudentStaff.full_name.ilike(term), StudentStaff.pinfl.ilike(term))
         )
@@ -351,6 +367,70 @@ async def update_student_staff(
     return _to_out(record, faculty.name)
 
 
+@router.get("/{record_id}/biometrics-confirmation", response_model=BiometricsConfirmationOut)
+async def biometrics_confirmation(
+    record_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
+) -> BiometricsConfirmationOut:
+    """Odam yuzini aniq qachon tasdiqlagani — Toshkent vaqtida."""
+    try:
+        record_uuid = uuid.UUID(record_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Yozuv topilmadi") from None
+    result = await db.execute(
+        select(StudentStaff).options(selectinload(StudentStaff.faculty)).where(StudentStaff.id == record_uuid)
+    )
+    record = result.scalar_one_or_none()
+    if record is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Yozuv topilmadi")
+
+    moment, source = await _confirmation_moment(record)
+    parts = uz_datetime_parts(moment) if moment is not None else None
+    base = _to_out(record, record.faculty.name if record.faculty else "")
+    return BiometricsConfirmationOut(
+        id=base.id,
+        full_name=base.full_name,
+        type=base.type,
+        faculty=base.faculty,
+        group_or_position=base.group_or_position,
+        biometrics_status=base.biometrics_status,
+        initials=base.initials,
+        biometric_photo_url=base.biometric_photo_url,
+        confirmed_at=parts.iso if parts else None,
+        confirmed_date=parts.date if parts else None,
+        confirmed_weekday=parts.weekday if parts else None,
+        confirmed_time=parts.time if parts else None,
+        source=source,
+    )
+
+
+async def _confirmation_moment(record: StudentStaff) -> tuple[datetime | None, str]:
+    """Tasdiqlash vaqti va u qayerdan olingani.
+
+    biometrics_confirmed_at ustuni paydo bo'lishidan oldin tasdiqlaganlar
+    uchun eng aniq manba — yuz rasmi omborga yozilgan payt: rasm aynan
+    tasdiqlash so'rovi ichida saqlanadi. Qayta tasdiqlashda rasm
+    almashtiriladi, ya'ni bu har doim OXIRGI tasdiqlash vaqti — ustun
+    ham xuddi shunday ishlaydi. Tiklangan vaqt bazaga yozilmaydi: u
+    boshqa manbadan olingani javobda ko'rinib turishi kerak."""
+    if record.biometrics_status != "tasdiqlangan":
+        return None, "tasdiqlanmagan"
+    if record.biometrics_confirmed_at is not None:
+        return record.biometrics_confirmed_at, "tizim"
+    if record.biometric_photo_key:
+        try:
+            moment = await asyncio.to_thread(object_last_modified, record.biometric_photo_key)
+        except Exception:
+            logger.warning(
+                "could not read biometric photo timestamp", extra={"record_id": str(record.id)}, exc_info=True
+            )
+            moment = None
+        if moment is not None:
+            return moment, "rasm"
+    return None, "nomalum"
+
+
 @router.post("/{record_id}/biometrics", response_model=StudentStaffOut)
 async def enroll_biometrics(
     record_id: str,
@@ -390,6 +470,7 @@ async def enroll_biometrics(
     record.biometric_photo_key = key
     record.biometric_embedding = json.dumps(embedding)
     record.biometrics_status = "tasdiqlangan"
+    record.biometrics_confirmed_at = datetime.now(timezone.utc)
 
     await log_action(db, request, current_user.id, f"Biometrik ma'lumot saqlandi: {record.full_name}", "Talabalar")
     await db.commit()
