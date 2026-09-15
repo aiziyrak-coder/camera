@@ -1,225 +1,322 @@
-import { useState } from 'react';
-import {
-  Bot,
-  Calendar,
-  FileSpreadsheet,
-  FileText,
-  Loader2,
-  Sparkles,
-  Trash2,
-} from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { ArrowLeft, FileDown, FileSpreadsheet, Loader2, RefreshCw, Save } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
-import Badge from '../../components/Badge';
-import Pagination from '../../components/Pagination';
-import ConfirmDialog from '../../components/ConfirmDialog';
-import ReportDetailModal from '../../components/admin/ReportDetailModal';
-import { exportReportAsCsv, exportReportAsPdf } from '../../lib/reportExport';
-import { ApiError, api } from '../../lib/apiClient';
+import SegmentedControl from '../../components/ui/SegmentedControl';
+import ErrorState from '../../components/ui/ErrorState';
+import { SkeletonBlock, SkeletonCards } from '../../components/ui/Skeleton';
+import { useToast } from '../../components/ui/Toast';
+import PeriodPicker, { type PeriodValue } from '../../components/reports/PeriodPicker';
+import ReportView from '../../components/reports/ReportView';
+import ArchiveList from '../../components/reports/ArchiveList';
+import LegacyReportView from '../../components/reports/LegacyReportView';
+import { ApiError, api, buildQuery, isAbortError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { usePermissions } from '../../lib/permissions';
-import { useServerPage } from '../../lib/useServerPage';
-import type { Report } from '../../types';
+import { downloadBlob } from '../../lib/download';
+import { isFixedPreset, resolvePreset, validateRange } from '../../lib/reportPeriods';
+import { invalidateServerPageCache } from '../../lib/useServerPage';
+import type { ReportAnalytics, ReportDetail } from '../../types';
 
-const PERIOD_FILTERS = ['Barchasi', 'Kunlik', 'Haftalik', 'Oylik'] as const;
-const GENERATE_PERIODS = ['Kunlik', 'Haftalik', 'Oylik'] as const;
+type Tab = 'tahlil' | 'arxiv';
+
+const TABS: { value: Tab; label: string }[] = [
+  { value: 'tahlil', label: 'Tahlil' },
+  { value: 'arxiv', label: 'Arxiv' },
+];
+
+const CACHE_MS = 60_000;
+const analyticsCache = new Map<string, { at: number; data: ReportAnalytics }>();
+
+function readPeriod(params: URLSearchParams): PeriodValue {
+  const raw = params.get('davr');
+  if (raw === 'custom') {
+    const fallback = resolvePreset('last7');
+    return { preset: 'custom', from: params.get('from') ?? fallback.from, to: params.get('to') ?? fallback.to };
+  }
+  const preset = isFixedPreset(raw) ? raw : 'last7';
+  return { preset, ...resolvePreset(preset) };
+}
+
+function errorText(err: unknown): string {
+  return err instanceof ApiError ? err.message : "Tarmoq xatosi — server bilan bog'lanib bo'lmadi";
+}
+
+function ReportSkeleton() {
+  return (
+    <div className="space-y-6" aria-busy="true" aria-label="Hisobot tayyorlanmoqda">
+      <div className="grid gap-3 md:grid-cols-2">
+        <SkeletonBlock className="h-24" />
+        <SkeletonBlock className="h-24" />
+      </div>
+      <SkeletonCards count={6} className="xl:grid-cols-3" />
+      <div className="grid gap-4 xl:grid-cols-2">
+        <SkeletonBlock className="h-72" />
+        <SkeletonBlock className="h-72" />
+      </div>
+    </div>
+  );
+}
 
 export default function ReportsPage() {
-  const { token } = useAuth();
-  const [filter, setFilter] = useState<(typeof PERIOD_FILTERS)[number]>('Barchasi');
-  const [generatePeriod, setGeneratePeriod] = useState<(typeof GENERATE_PERIODS)[number]>('Kunlik');
-  const [generating, setGenerating] = useState(false);
-  const [generateError, setGenerateError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Report | null>(null);
-  const [deleting, setDeleting] = useState<Report | null>(null);
-  const { role } = useAuth();
+  const { token, role, userName } = useAuth();
   const { can } = usePermissions();
   const canExport = can('exportData', role);
+  const toast = useToast();
+  const [params, setParams] = useSearchParams();
 
-  const {
-    items: reports,
-    page,
-    setPage,
-    totalPages,
-    total,
-    pageSize,
-    loading,
-    error,
-    reload,
-  } = useServerPage<Report>('/api/reports', { period: filter === 'Barchasi' ? undefined : filter }, 10);
+  const tab: Tab = params.get('tab') === 'arxiv' ? 'arxiv' : 'tahlil';
+  const period = readPeriod(params);
+  const rangeError = validateRange(period.from, period.to);
 
-  async function handleGenerate() {
-    setGenerating(true);
-    setGenerateError(null);
+  const [analytics, setAnalytics] = useState<ReportAnalytics | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const lastNonce = useRef(0);
+  const [busy, setBusy] = useState<'save' | 'pdf' | 'xlsx' | null>(null);
+  const [opened, setOpened] = useState<ReportDetail | null>(null);
+  const [opening, setOpening] = useState<string | null>(null);
+  const viewRef = useRef<HTMLDivElement>(null);
+
+  const updateParams = useCallback(
+    (next: Record<string, string | null>) => {
+      setParams(
+        (prev) => {
+          const p = new URLSearchParams(prev);
+          for (const [key, value] of Object.entries(next)) {
+            if (value === null) p.delete(key);
+            else p.set(key, value);
+          }
+          return p;
+        },
+        { replace: true },
+      );
+    },
+    [setParams],
+  );
+
+  useEffect(() => {
+    if (tab !== 'tahlil' || !token || rangeError) return;
+    const key = `${period.from}|${period.to}`;
+    const forced = lastNonce.current !== reloadNonce;
+    lastNonce.current = reloadNonce;
+    const cached = analyticsCache.get(key);
+    if (cached && !forced) {
+      setAnalytics(cached.data);
+      setError(null);
+      if (Date.now() - cached.at < CACHE_MS) return;
+    }
+
+    const controller = new AbortController();
+    setLoading(true);
+    api
+      .get<ReportAnalytics>(`/api/reports/analytics${buildQuery({ from: period.from, to: period.to })}`, token, {
+        signal: controller.signal,
+      })
+      .then((data) => {
+        analyticsCache.set(key, { at: Date.now(), data });
+        setAnalytics(data);
+        setError(null);
+      })
+      .catch((err: unknown) => {
+        if (!isAbortError(err)) setError(errorText(err));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [tab, token, period.from, period.to, rangeError, reloadNonce]);
+
+  const current =
+    analytics && analytics.period.start === period.from && analytics.period.end === period.to ? analytics : null;
+
+  async function saveToArchive() {
+    if (!current) return;
+    setBusy('save');
     try {
-      await api.post<Report>('/api/reports/generate', { period: generatePeriod }, token);
-      reload();
+      await api.post<ReportDetail>('/api/reports', { from: period.from, to: period.to }, token);
+      invalidateServerPageCache('/api/reports');
+      toast.success(`"${current.period.label}" hisoboti arxivga saqlandi`);
     } catch (err) {
-      setGenerateError(err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi");
+      toast.error(errorText(err));
     } finally {
-      setGenerating(false);
+      setBusy(null);
     }
   }
 
-  async function handleDelete() {
-    if (!deleting) return;
-    await api.del(`/api/reports/${deleting.id}`, token);
-    setDeleting(null);
-    reload();
+  async function exportPdf(data: ReportAnalytics, title?: string) {
+    setBusy('pdf');
+    try {
+      const { exportAnalyticsPdf } = await import('../../lib/reportPdf');
+      await exportAnalyticsPdf(data, { preparedBy: userName, root: viewRef.current, title });
+    } catch (err) {
+      toast.error(`PDF tayyorlab bo'lmadi: ${err instanceof Error ? err.message : "noma'lum xato"}`);
+    } finally {
+      setBusy(null);
+    }
   }
+
+  async function exportXlsx() {
+    setBusy('xlsx');
+    try {
+      const blob = await api.blob(`/api/reports/analytics.xlsx${buildQuery({ from: period.from, to: period.to })}`, token);
+      downloadBlob(blob, `hisobot-${period.from}_${period.to}.xlsx`);
+    } catch (err) {
+      toast.error(errorText(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function openReport(id: string) {
+    setOpening(id);
+    try {
+      setOpened(await api.get<ReportDetail>(`/api/reports/${id}`, token));
+    } catch (err) {
+      toast.error(errorText(err));
+    } finally {
+      setOpening(null);
+    }
+  }
+
+  const exportButtons = (onPdf: () => void, withExcel: boolean, ready: boolean) =>
+    canExport && (
+      <>
+        {withExcel && (
+          <button
+            type="button"
+            onClick={exportXlsx}
+            disabled={!ready || busy !== null}
+            className="btn-glass flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {busy === 'xlsx' ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+            Excel
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onPdf}
+          disabled={!ready || busy !== null}
+          className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-[12.5px] font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busy === 'pdf' ? <Loader2 size={14} className="animate-spin" /> : <FileDown size={14} />}
+          PDF hisobot
+        </button>
+      </>
+    );
 
   return (
     <section className="glass p-6">
       <PageHeader
         title="Hisobotlar"
-        subtitle="Avtomatik generatsiya qilingan kunlik/haftalik/oylik xulosalar (qoidaga asoslangan tahlil)"
+        subtitle="Institut faoliyati tahlili: davomat, xavfsizlik, darslar va tizim holati"
         action={
-          <div className="flex items-center gap-2">
-            <select
-              value={generatePeriod}
-              onChange={(e) => setGeneratePeriod(e.target.value as (typeof GENERATE_PERIODS)[number])}
-              className="rounded-xl border border-white/80 bg-white/60 px-3 py-2 text-sm outline-none"
-            >
-              {GENERATE_PERIODS.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={handleGenerate}
-              disabled={generating}
-              className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {generating ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <Sparkles size={14} />
-              )}
-              {generating ? 'Generatsiya qilinmoqda...' : 'Yangi hisobot generatsiya qilish'}
-            </button>
-          </div>
+          <SegmentedControl
+            options={TABS}
+            value={tab}
+            ariaLabel="Hisobot bo'limi"
+            onChange={(next) => {
+              setOpened(null);
+              updateParams({ tab: next === 'arxiv' ? 'arxiv' : null });
+            }}
+          />
         }
       />
 
-      {generateError && (
-        <p className="mb-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
-          {generateError}
-        </p>
-      )}
-      {error && (
-        <p className="mb-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
-          {error}
-        </p>
-      )}
-
-      <div className="mb-4 flex flex-wrap gap-2 text-sm">
-        {PERIOD_FILTERS.map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
-              filter === f ? 'bg-indigo-600 text-white' : 'bg-white/60 text-slate-600 hover:bg-white/90'
-            }`}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
-
-      {loading && reports.length === 0 ? (
-        <div className="flex items-center justify-center py-10 text-slate-400">
-          <Loader2 size={20} className="animate-spin" />
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {reports.map((r) => (
-            <div key={r.id} className="glass-deep p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="mb-1 flex flex-wrap items-center gap-2">
-                    <Badge tone="indigo">{r.period}</Badge>
-                    <Badge tone={r.source === 'llm' ? 'green' : 'slate'}>
-                      {r.source === 'llm' ? (
-                        <span className="flex items-center gap-1">
-                          <Bot size={11} />
-                          LLM
-                        </span>
-                      ) : (
-                        'Rule-based'
-                      )}
-                    </Badge>
-                    <span className="flex items-center gap-1 text-xs text-slate-400">
-                      <Calendar size={11} />
-                      {r.periodLabel}
-                    </span>
-                  </div>
-                  <p className="truncate text-sm font-medium text-slate-800">{r.summary}</p>
-                </div>
-
-                <div className="flex shrink-0 items-center gap-2">
-                  <button
-                    onClick={() => setSelected(r)}
-                    className="btn-glass text-xs"
-                  >
-                    Ko'rish
-                  </button>
-                  <button
-                    onClick={() => exportReportAsCsv(r)}
-                    disabled={!canExport}
-                    title={canExport ? 'Excel (CSV)' : "Eksport huquqi yo'q"}
-                    className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-white/70 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500"
-                  >
-                    <FileSpreadsheet size={16} />
-                  </button>
-                  <button
-                    onClick={() => exportReportAsPdf(r)}
-                    disabled={!canExport}
-                    title={canExport ? 'PDF' : "Eksport huquqi yo'q"}
-                    className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-white/70 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500"
-                  >
-                    <FileText size={16} />
-                  </button>
-                  <button
-                    onClick={() => setDeleting(r)}
-                    title="O'chirish"
-                    className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-white/70 hover:text-red-600"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </div>
-
-              <div className="mt-3 flex flex-wrap gap-2 border-t border-white/70 pt-3">
-                {r.stats.map((s) => (
-                  <span
-                    key={s.label}
-                    className="rounded-lg bg-white/70 px-2.5 py-1 text-[11px] font-medium text-slate-600"
-                  >
-                    {s.label}: <span className="font-bold text-slate-900">{s.value}</span>
-                  </span>
-                ))}
-              </div>
+      {tab === 'tahlil' ? (
+        <>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/70 bg-white/50 p-3">
+            <PeriodPicker
+              value={period}
+              onChange={(next) =>
+                updateParams(
+                  next.preset === 'custom'
+                    ? { davr: 'custom', from: next.from, to: next.to }
+                    : { davr: next.preset, from: null, to: null },
+                )
+              }
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setReloadNonce((n) => n + 1)}
+                disabled={loading || !!rangeError}
+                aria-label="Ma'lumotni yangilash"
+                title="Yangilash"
+                className="btn-glass flex items-center !px-2.5 disabled:opacity-50"
+              >
+                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+              </button>
+              <button
+                type="button"
+                onClick={saveToArchive}
+                disabled={!current || busy !== null}
+                className="btn-glass flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {busy === 'save' ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                Arxivga saqlash
+              </button>
+              {exportButtons(() => current && exportPdf(current), true, !!current)}
             </div>
-          ))}
+          </div>
 
-          {reports.length === 0 && (
-            <p className="rounded-xl border border-dashed border-slate-300 p-10 text-center text-sm text-slate-400">
-              Bu davr uchun hisobot topilmadi
+          {current && (
+            <p className="mb-5 text-xs text-slate-500">
+              Davr: <span className="font-semibold text-slate-700">{current.period.label}</span> · {current.period.days} kun ·
+              solishtiriladi: {current.previousPeriod.label} · ma&apos;lumot {current.generatedAt.slice(11)} holatiga
+              {loading && <Loader2 size={12} className="ml-1.5 inline animate-spin" aria-label="Yangilanmoqda" />}
             </p>
           )}
 
-          <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onChange={setPage} />
-        </div>
+          {rangeError ? (
+            <ErrorState title="Davr noto'g'ri tanlangan" message={rangeError} />
+          ) : error && !current ? (
+            <ErrorState message={error} onRetry={() => setReloadNonce((n) => n + 1)} />
+          ) : !current ? (
+            <ReportSkeleton />
+          ) : (
+            <div ref={viewRef}>
+              <ReportView analytics={current} />
+            </div>
+          )}
+        </>
+      ) : opened ? (
+        <>
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/70 bg-white/50 p-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setOpened(null)}
+                className="btn-glass flex items-center gap-1.5"
+              >
+                <ArrowLeft size={14} />
+                Arxiv
+              </button>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold text-slate-900">{opened.periodLabel}</p>
+                <p className="text-[11px] text-slate-500">
+                  Saqlangan: {opened.generatedAt}
+                  {opened.createdBy ? ` · ${opened.createdBy}` : ''}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {opened.analytics &&
+                exportButtons(() => opened.analytics && exportPdf(opened.analytics, `Tahliliy hisobot: ${opened.periodLabel}`), false, true)}
+            </div>
+          </div>
+          {opened.analytics ? (
+            <div ref={viewRef}>
+              <ReportView analytics={opened.analytics} />
+            </div>
+          ) : (
+            <LegacyReportView report={opened} />
+          )}
+        </>
+      ) : (
+        <ArchiveList onOpen={openReport} opening={opening} />
       )}
-
-      <ReportDetailModal report={selected} onClose={() => setSelected(null)} />
-      <ConfirmDialog
-        open={!!deleting}
-        title="Hisobotni o'chirish"
-        message={deleting ? `"${deleting.periodLabel}" hisobotini o'chirishni tasdiqlaysizmi? Bu amalni ortga qaytarib bo'lmaydi.` : ''}
-        onCancel={() => setDeleting(null)}
-        onConfirm={handleDelete}
-      />
     </section>
   );
 }

@@ -1,7 +1,7 @@
 import uuid
-from datetime import datetime
+from datetime import date as date_type, datetime
 
-from sqlalchemy import CheckConstraint, DateTime, String
+from sqlalchemy import CheckConstraint, Date, DateTime, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -37,3 +37,10 @@ class Report(Base):
     # yozish uni SOXTALASHTIRISH bo'lardi: o'sha paytdagi ma'lumot
     # allaqachon o'zgargan.
     sections: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # Jonli tahlil tuzilmasi (app/services/analytics.py) — arxivdagi hisobot
+    # sahifada ko'ringan hisobot bilan aynan bir xil ochilishi uchun. Eski
+    # hisobotlarda NULL: ular "eski format" sifatida ko'rsatiladi.
+    payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    range_start: Mapped[date_type | None] = mapped_column(Date, nullable=True)
+    range_end: Mapped[date_type | None] = mapped_column(Date, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String, nullable=True)

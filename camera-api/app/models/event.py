@@ -20,6 +20,10 @@ class Event(Base):
         # Every AI sweep's _recently_flagged() dedup query:
         # WHERE camera_id = ? AND module_code = ? AND occurred_at >= ?
         Index("ix_events_camera_module_occurred", "camera_id", "module_code", "occurred_at"),
+        # Hodisalar jurnali filtrlari va hisobot agregatlari (e6f7a8b9c0d1).
+        Index("ix_events_status_occurred", "status", "occurred_at"),
+        Index("ix_events_severity_occurred", "severity", "occurred_at"),
+        Index("ix_events_module_occurred", "module_code", "occurred_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())

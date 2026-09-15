@@ -14,6 +14,13 @@ interface RequestOptions {
   body?: unknown;
   token?: string | null;
   isForm?: boolean;
+  /** Eskirgan so'rovni bekor qilish (filtr o'zgarganda, sahifadan chiqilganda). */
+  signal?: AbortSignal;
+  responseType?: 'json' | 'blob';
+}
+
+export interface CallOptions {
+  signal?: AbortSignal;
 }
 
 /**
@@ -61,7 +68,10 @@ export function setAuthTokenGetter(getter: TokenGetter | null): void {
   getAuthToken = getter;
 }
 
-async function request<T>(path: string, { method = 'GET', body, token, isForm }: RequestOptions = {}): Promise<T> {
+async function request<T>(
+  path: string,
+  { method = 'GET', body, token, isForm, signal, responseType = 'json' }: RequestOptions = {},
+): Promise<T> {
   const headers: Record<string, string> = {};
   const authToken = token ?? getAuthToken?.() ?? null;
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
@@ -71,6 +81,7 @@ async function request<T>(path: string, { method = 'GET', body, token, isForm }:
     method,
     headers,
     body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
+    signal,
   });
 
   if (!res.ok) {
@@ -92,17 +103,29 @@ async function request<T>(path: string, { method = 'GET', body, token, isForm }:
   }
 
   if (res.status === 204) return undefined as T;
+  if (responseType === 'blob') return (await res.blob()) as T;
   return res.json() as Promise<T>;
 }
 
 export const api = {
-  get: <T>(path: string, token?: string | null) => request<T>(path, { method: 'GET', token }),
-  post: <T>(path: string, body: unknown, token?: string | null) => request<T>(path, { method: 'POST', body, token }),
-  patch: <T>(path: string, body: unknown, token?: string | null) => request<T>(path, { method: 'PATCH', body, token }),
-  del: (path: string, token?: string | null) => request<void>(path, { method: 'DELETE', token }),
-  postForm: <T>(path: string, form: FormData, token?: string | null) =>
-    request<T>(path, { method: 'POST', body: form, token, isForm: true }),
+  get: <T>(path: string, token?: string | null, opts: CallOptions = {}) =>
+    request<T>(path, { method: 'GET', token, signal: opts.signal }),
+  post: <T>(path: string, body: unknown, token?: string | null, opts: CallOptions = {}) =>
+    request<T>(path, { method: 'POST', body, token, signal: opts.signal }),
+  patch: <T>(path: string, body: unknown, token?: string | null, opts: CallOptions = {}) =>
+    request<T>(path, { method: 'PATCH', body, token, signal: opts.signal }),
+  del: (path: string, token?: string | null, opts: CallOptions = {}) =>
+    request<void>(path, { method: 'DELETE', token, signal: opts.signal }),
+  postForm: <T>(path: string, form: FormData, token?: string | null, opts: CallOptions = {}) =>
+    request<T>(path, { method: 'POST', body: form, token, isForm: true, signal: opts.signal }),
+  /** Fayl (Excel) — xato bo'lsa JSON'dagi `detail` bilan ApiError. */
+  blob: (path: string, token?: string | null, opts: CallOptions = {}) =>
+    request<Blob>(path, { method: 'GET', token, signal: opts.signal, responseType: 'blob' }),
 };
+
+export function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === 'AbortError';
+}
 
 export interface Page<T> {
   items: T[];

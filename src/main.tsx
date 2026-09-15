@@ -6,6 +6,7 @@ import App from './App.tsx'
 import { AuthProvider } from './lib/auth.tsx'
 import { PermissionsProvider } from './lib/permissions.tsx'
 import ErrorBoundary from './components/ErrorBoundary.tsx'
+import { ToastProvider } from './components/ui/Toast.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -13,7 +14,9 @@ createRoot(document.getElementById('root')!).render(
       <BrowserRouter>
         <AuthProvider>
           <PermissionsProvider>
-            <App />
+            <ToastProvider>
+              <App />
+            </ToastProvider>
           </PermissionsProvider>
         </AuthProvider>
       </BrowserRouter>

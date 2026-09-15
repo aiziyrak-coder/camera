@@ -393,6 +393,183 @@ export interface Report {
   /** Sarlavhali jadvallar — modul/kamera/vaqt bo'yicha taqsimotlar.
       Bu ustun qo'shilishidan oldingi hisobotlarda bo'lmaydi. */
   sections?: ReportSection[];
+  rangeStart?: string | null;
+  rangeEnd?: string | null;
+  createdBy?: string | null;
+  /** Yangi format: sahifadagi tahlil to'liq saqlangan. */
+  hasAnalytics?: boolean;
+  kpis?: ReportKpi[];
+}
+
+export interface ReportDetail extends Report {
+  analytics: ReportAnalytics | null;
+}
+
+/** GET /api/reports/analytics — app/services/analytics.py */
+export interface ReportDateRange {
+  start: string;
+  end: string;
+  days: number;
+  label: string;
+}
+
+export interface ReportKpi {
+  key: string;
+  label: string;
+  value: number | null;
+  display: string;
+  unit: string;
+  previous: number | null;
+  previousDisplay: string | null;
+  delta: number | null;
+  deltaDisplay: string | null;
+  better: 'up' | 'down' | 'none';
+  trend: (number | null)[];
+  note: string | null;
+  reliable: boolean;
+}
+
+export interface ReportInsight {
+  level: 'critical' | 'warning' | 'info' | 'ok';
+  title: string;
+  text: string;
+  actionLabel: string | null;
+  actionHref: string | null;
+}
+
+export interface DailyAttendance {
+  date: string;
+  label: string;
+  keldi: number;
+  kechKeldi: number;
+  kelmadi: number;
+  rate: number | null;
+}
+
+export interface GroupRate {
+  name: string;
+  total: number;
+  present: number;
+  late: number;
+  rate: number | null;
+}
+
+export interface HistogramBin {
+  label: string;
+  count: number;
+}
+
+export interface AttendancePopulation {
+  type: 'xodim' | 'talaba';
+  label: string;
+  enrolled: number;
+  population: number;
+  records: number;
+  present: number;
+  late: number;
+  absent: number;
+  rate: number | null;
+  lateShare: number | null;
+  avgArrival: string | null;
+  byDay: DailyAttendance[];
+  byFaculty: GroupRate[];
+  arrivalHistogram: HistogramBin[];
+  reliability: { reliable: boolean; short: string | null; warnings: string[] };
+}
+
+export interface SecurityDay {
+  date: string;
+  label: string;
+  past: number;
+  orta: number;
+  yuqori: number;
+  total: number;
+}
+
+export interface ModuleRow {
+  code: number;
+  name: string;
+  count: number;
+  share: number;
+  confirmed: number;
+  rejected: number;
+  unreviewed: number;
+  precision: number | null;
+}
+
+export interface CameraRow {
+  name: string;
+  building: string;
+  count: number;
+  share: number;
+}
+
+export interface SecurityAnalytics {
+  total: number;
+  serious: number;
+  past: number;
+  orta: number;
+  yuqori: number;
+  confirmed: number;
+  rejected: number;
+  unreviewed: number;
+  precision: number | null;
+  night: number;
+  byDay: SecurityDay[];
+  heatmap: number[][];
+  heatmapMax: number;
+  topModules: ModuleRow[];
+  topCameras: CameraRow[];
+  oldestUnreviewedHours: number | null;
+  staleSeriousUnreviewed: number;
+}
+
+export interface LessonDay {
+  date: string;
+  label: string;
+  sessions: number;
+  attention: number | null;
+  sleep: number;
+}
+
+export interface LessonsAnalytics {
+  sessions: number;
+  analyzedSessions: number;
+  avgAttention: number | null;
+  avgTeacherActivity: number | null;
+  sleepIncidents: number;
+  checkedSessions: number;
+  teacherOnTimeRate: number | null;
+  byDay: LessonDay[];
+}
+
+export interface CoverageStat {
+  type: 'xodim' | 'talaba';
+  label: string;
+  total: number;
+  confirmed: number;
+  percent: number | null;
+}
+
+export interface SystemAnalytics {
+  camerasTotal: number;
+  camerasActive: number;
+  camerasLive: number;
+  liveRate: number | null;
+  coverage: CoverageStat[];
+}
+
+export interface ReportAnalytics {
+  period: ReportDateRange;
+  previousPeriod: ReportDateRange;
+  generatedAt: string;
+  workingDays: number;
+  kpis: ReportKpi[];
+  insights: ReportInsight[];
+  attendance: { staff: AttendancePopulation; students: AttendancePopulation };
+  security: SecurityAnalytics;
+  lessons: LessonsAnalytics;
+  system: SystemAnalytics;
 }
 
 export interface ReportSection {

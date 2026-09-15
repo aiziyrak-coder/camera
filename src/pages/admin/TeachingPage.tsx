@@ -20,12 +20,11 @@ import LessonImportModal from '../../components/admin/LessonImportModal';
 import { api, fetchAllPages } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { formatLessonScheduleTime, isLessonScheduleComplete } from '../../lib/lessonSchedule';
+import { AXIS_COLOR, GRID_COLOR } from '../../lib/chartTheme';
 import type { LessonSession } from '../../types';
 
 type ScheduleFilter = 'all' | 'scheduled' | 'pending' | 'ai_ready';
 
-const AXIS_COLOR = '#94a3b8';
-const GRID_COLOR = 'rgba(148,163,184,0.25)';
 
 export default function TeachingPage() {
   const { token } = useAuth();

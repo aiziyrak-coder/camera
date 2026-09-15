@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -21,6 +21,7 @@ import {
 import { useAuth } from '../lib/auth';
 import { usePermissions, type PermissionKey } from '../lib/permissions';
 import { useLiveEvents } from '../lib/realtime';
+import { PageSkeleton } from '../components/ui/Skeleton';
 
 const NAV_ITEMS: {
   to: string;
@@ -182,7 +183,10 @@ export default function AdminLayout() {
         </header>
 
         <main className="min-w-0 flex-1 p-3">
-          <Outlet />
+          {/* Sahifa bo'lagi yuklanayotganda menyu va sarlavha joyida qoladi. */}
+          <Suspense fallback={<PageSkeleton />}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </div>
