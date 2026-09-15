@@ -82,18 +82,18 @@ class Settings(BaseSettings):
     # higher false-accept risk than the 1:1 verification used at enrollment
     # time (face_recognition.MATCH_THRESHOLD=0.45) — deliberately stricter.
     attendance_ai_match_threshold: float = 0.55
-    # "HH:MM" — fallback lateness cutoff used ONLY when no LessonSession is
-    # currently relevant for this person (see attendance_ai.py's
-    # _relevant_lesson_start) — a gap between classes, a weekend, staff
-    # with no teaching duties right now. When a relevant lesson exists,
-    # its own scheduled_start_time + attendance_late_to_lesson_grace_minutes
-    # is used instead — see that setting.
+    # "HH:MM" — kunlik davomatda kech qolish chegarasi (mahalliy vaqt).
+    # Kunlik davomat dars jadvaliga BOG'LIQ EMAS: odamning birinchi
+    # ko'rinishi shu vaqtdan keyin bo'lsa — "kech_keldi". Darsga
+    # bog'liqlik alohida ko'rsatiladi (app/routers/presence.py).
     attendance_ai_late_cutoff: str = "09:00"
-    # Minutes after a scheduled lesson's start a face-recognized sighting
-    # is still considered "keldi" rather than "kech_keldi" — a small grace
-    # window for walking from the entrance to the actual classroom, not a
-    # statement that arriving after the bell is fine.
+    # Faqat DARS bo'yicha davomat va o'qituvchilar kuzatuvida: dars
+    # boshlanganidan necha daqiqagacha kirish "o'z vaqtida" hisoblanadi
+    # (kirish eshigidan auditoriyagacha yurish uchun).
     attendance_late_to_lesson_grace_minutes: int = 5
+    # Bir kamerada shu daqiqadan qisqa tanaffus bilan ketma-ket yuz
+    # tanishlar bitta "tashrif"ga birlashtiriladi (app/models/presence_visit.py).
+    presence_visit_gap_minutes: int = 10
     # TT kriteriya 9 ("Darsdan/ishdan erta ketish") — pure rule-based, no
     # extra model needed: a day's check_out (already tracked as "last seen"
     # by upsert_attendance_from_recognition above) earlier than this is

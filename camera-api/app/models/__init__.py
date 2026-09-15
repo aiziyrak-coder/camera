@@ -9,6 +9,7 @@ from app.models.lesson_session import LessonSession
 from app.models.org import Building, Department, Faculty, StudentGroup
 from app.models.password_reset_token import PasswordResetToken
 from app.models.permission import Permission
+from app.models.presence_visit import PresenceVisit
 from app.models.report import Report
 from app.models.revoked_token import RevokedToken
 from app.models.student_staff import StudentStaff
@@ -30,6 +31,7 @@ __all__ = [
     "AttendanceRecord",
     "LessonSession",
     "LessonAttendance",
+    "PresenceVisit",
     "Report",
     "RevokedToken",
     "PasswordResetToken",

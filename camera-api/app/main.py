@@ -38,6 +38,7 @@ from app.services.pose_detection import shutdown_pose_detection_pool
 from app.services.stream_cache import shutdown_stream_cache, stream_cache_reaper_loop
 from app.storage import check_bucket
 from app.routers import (
+    presence,
     ai_modules,
     attendance,
     audit_log,
@@ -195,6 +196,7 @@ app.include_router(reports.router)
 app.include_router(system.router)
 app.include_router(public.router)
 app.include_router(enrollment.router)
+app.include_router(presence.router)
 
 
 @app.get("/health")

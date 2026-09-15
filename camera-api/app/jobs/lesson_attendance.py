@@ -110,6 +110,21 @@ async def record_sightings(
     return len(student_ids)
 
 
+def group_member_clause(group_name: str):
+    """Talaba shu guruhdami — SQL shart.
+
+    Talabalar importi group_or_position'ga kurs bilan yozadi: "2-kurs,
+    DI-1625" (scripts/import_talabalar.py), dars jadvalida esa guruh
+    "DI-1625". Oddiy tenglik bilan import qilingan birorta talaba darsga
+    bog'lanmasdi — dars davomati ham, diqqat balli ham ularni ko'rmasdi."""
+    from sqlalchemy import or_
+
+    return or_(
+        StudentStaff.group_or_position == group_name,
+        StudentStaff.group_or_position.like(f"%-kurs, {group_name}"),
+    )
+
+
 async def _group_roster(db: AsyncSession, group_name: str) -> list[StudentStaff]:
     """Guruhning baholanadigan talabalari — biometrikasi tasdiqlanganlari.
 
@@ -118,7 +133,7 @@ async def _group_roster(db: AsyncSession, group_name: str) -> list[StudentStaff]
     result = await db.execute(
         select(StudentStaff)
         .where(StudentStaff.type == "talaba")
-        .where(StudentStaff.group_or_position == group_name)
+        .where(group_member_clause(group_name))
         .where(StudentStaff.biometrics_status == "tasdiqlangan")
     )
     return list(result.scalars().all())

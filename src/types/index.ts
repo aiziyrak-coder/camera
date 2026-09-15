@@ -121,6 +121,103 @@ export interface BiometricsFacultyRow {
   percent: number | null;
 }
 
+/** O'qituvchilar kuzatuvi — app/routers/presence.py */
+export type LessonRelation = 'oz_darsi' | 'boshqa_dars' | 'darsi_boshqa_joyda' | 'darsdan_tashqari' | 'jadval_yoq';
+
+export interface LessonLink {
+  relation: LessonRelation;
+  label: string;
+  subject?: string | null;
+  groupName?: string | null;
+  teacher?: string | null;
+  startsAt?: string | null;
+  endsAt?: string | null;
+}
+
+export interface PresenceVisitItem {
+  camera: string;
+  building: string;
+  zone: string;
+  cameraRole: string;
+  firstSeen: string;
+  lastSeen: string;
+  durationMinutes: number;
+  sightings: number;
+  lesson: LessonLink;
+}
+
+export interface ScheduledLesson {
+  subject: string;
+  groupName: string;
+  startsAt: string;
+  endsAt: string;
+  camera: string | null;
+  building: string | null;
+  attended: boolean;
+  arrivedAt: string | null;
+  late: boolean;
+}
+
+export interface PersonDay {
+  id: string;
+  fullName: string;
+  type: 'talaba' | 'xodim';
+  faculty: string;
+  unit: string;
+  date: string;
+  attendanceStatus: string | null;
+  checkIn: string | null;
+  checkOut: string | null;
+  firstSeen: string | null;
+  lastSeen: string | null;
+  buildings: string[];
+  visits: PresenceVisitItem[];
+  lessons: ScheduledLesson[];
+}
+
+export interface TeacherDaySummary {
+  id: string;
+  fullName: string;
+  faculty: string;
+  unit: string;
+  attendanceStatus: string | null;
+  firstSeen: string | null;
+  lastSeen: string | null;
+  visits: number;
+  buildings: string[];
+  lessonsScheduled: number;
+  lessonsAttended: number;
+}
+
+export interface AttendanceCamera {
+  id: string;
+  name: string;
+  building: string;
+  zone: string;
+  role: string;
+  checkIntervalSeconds: number | null;
+  attendanceEnabled: boolean;
+  disabledReason: string | null;
+  online: boolean;
+  video: boolean;
+  recognizedToday: number;
+  lastRecognition: string | null;
+}
+
+export interface AttendanceCameras {
+  staffModuleActive: boolean;
+  studentModuleActive: boolean;
+  total: number;
+  attendanceEnabled: number;
+  entrance: number;
+  exit: number;
+  online: number;
+  video: number;
+  recognizingToday: number;
+  peopleRecognizedToday: number;
+  cameras: AttendanceCamera[];
+}
+
 export interface BiometricsCourseRow {
   course: string;
   courseNumber: number | null;

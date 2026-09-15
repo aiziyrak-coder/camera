@@ -18,6 +18,7 @@ import ReportsPage from './pages/admin/ReportsPage';
 import EventsPage from './pages/admin/EventsPage';
 import AttendancePage from './pages/admin/AttendancePage';
 import TeachingPage from './pages/admin/TeachingPage';
+import PresencePage from './pages/admin/PresencePage';
 
 export default function App() {
   return (
@@ -45,6 +46,7 @@ export default function App() {
           <Route path="events" element={<EventsPage />} />
           <Route path="students-staff" element={<StudentsStaffPage />} />
           <Route path="attendance" element={<AttendancePage />} />
+          <Route path="presence" element={<PresencePage />} />
           <Route path="teaching" element={<TeachingPage />} />
           <Route path="org-structure" element={<OrgStructurePage />} />
           <Route path="cameras" element={<CamerasZonesPage />} />

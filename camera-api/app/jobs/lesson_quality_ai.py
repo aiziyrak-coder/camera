@@ -77,7 +77,7 @@ from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import any_module_active, is_module_active
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
-from app.jobs.lesson_attendance import STUDENT_ATTENDANCE_MODULE_CODE, record_sightings
+from app.jobs.lesson_attendance import STUDENT_ATTENDANCE_MODULE_CODE, group_member_clause, record_sightings
 from app.models import LessonSession, StudentStaff
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
@@ -143,7 +143,7 @@ async def _group_student_ids(db: AsyncSession, group_name: str) -> set[str]:
     result = await db.execute(
         select(StudentStaff.id)
         .where(StudentStaff.type == "talaba")
-        .where(StudentStaff.group_or_position == group_name)
+        .where(group_member_clause(group_name))
     )
     return {str(row) for row in result.scalars().all()}
 
