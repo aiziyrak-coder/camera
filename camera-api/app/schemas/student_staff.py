@@ -32,6 +32,9 @@ class StudentStaffCreateIn(CamelModel):
     faculty: str
     group_or_position: str = Field(min_length=1)
     biometrics_status: Literal["tasdiqlangan", "kutilmoqda", "yoq"] = "yoq"
+    # Bazada o'xshash ismli odam bo'lsa ham yaratish — admin "bu boshqa odam"
+    # deb aniq tasdiqlaganda. Aks holda 409 (students_staff.create).
+    allow_duplicate: bool = False
 
 
 class StudentStaffUpdateIn(CamelModel):

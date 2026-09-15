@@ -27,6 +27,7 @@ from app.schemas.student_staff import (
 )
 from app.schemas.student_staff_import import StudentStaffImportResultOut
 from app.services.face_matching import invalidate_candidate_matrix_cache
+from app.services.name_matching import name_key, name_tokens, names_match
 from app.services.face_recognition import NoFaceDetectedError, extract_embedding
 from app.services.staff_export import (
     STATUS_LABELS,
@@ -389,6 +390,45 @@ async def export_students_staff(
     )
 
 
+SIMILAR_LIMIT = 10
+
+
+async def _find_similar(db: AsyncSession, full_name: str, type: str | None) -> list[StudentStaff]:
+    """Bazadagi shu (yoki boshqacha yozilgan) ismli odamlar — rasmiy JSHSHIRli
+    yozuvlar birinchi. Qoida app/services/name_matching.py da, dublikatlarni
+    birlashtiruvchi skript bilan bir xil."""
+    key, tokens = name_key(full_name), name_tokens(full_name)
+    stmt = select(StudentStaff.id, StudentStaff.full_name)
+    if type:
+        stmt = stmt.where(StudentStaff.type == type)
+    ids = [
+        row_id
+        for row_id, name in (await db.execute(stmt)).all()
+        if name_key(name) == key or names_match(tokens, name_tokens(name))
+    ]
+    if not ids:
+        return []
+    records = (
+        await db.execute(select(StudentStaff).options(selectinload(StudentStaff.faculty)).where(StudentStaff.id.in_(ids[:50])))
+    ).scalars().all()
+    return sorted(records, key=lambda r: (r.pinfl is None, r.biometrics_status != "tasdiqlangan", r.full_name))[:SIMILAR_LIMIT]
+
+
+@router.get("/similar", response_model=list[StudentStaffOut])
+async def similar_people(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
+    full_name: Annotated[str, Query(alias="fullName", min_length=2, max_length=200)],
+    type: Annotated[Literal["talaba", "xodim"] | None, Query()] = None,
+) -> list[StudentStaffOut]:
+    """"Yangi biriktirish" 1-qadamida: bu odam bazada allaqachon bormi.
+
+    Import qilingan xodimlarning bir qismi shu oyna orqali qayta qo'shilgan
+    va yuzi yangi (JSHSHIRsiz) yozuvda tasdiqlangan edi — natijada bir odam
+    ikki marta sanalardi (scripts/merge_duplicate_people.py)."""
+    return [_to_out(r, r.faculty.name if r.faculty else "") for r in await _find_similar(db, full_name, type)]
+
+
 @router.post("", response_model=StudentStaffOut, status_code=status.HTTP_201_CREATED)
 async def create_student_staff(
     body: StudentStaffCreateIn,
@@ -396,6 +436,18 @@ async def create_student_staff(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
 ) -> StudentStaffOut:
+    # Oynadagi ogohlantirish chetlab o'tilsa ham (eski sahifa, to'g'ridan-
+    # to'g'ri so'rov) dublikat jimgina yaratilmasin: admin "bu boshqa odam"
+    # deb aniq tasdiqlagandagina (allowDuplicate) yaratiladi.
+    if not body.allow_duplicate:
+        similar = await _find_similar(db, body.full_name, body.type)
+        if similar:
+            listed = "; ".join(f"{r.full_name} ({r.group_or_position})" for r in similar[:3])
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"Bazada shu ismli {'talaba' if body.type == 'talaba' else 'xodim'} bor: {listed}. "
+                "Mavjud yozuvga yuz biriktiring yoki bu boshqa odam ekanini tasdiqlang.",
+            )
     faculty = await _resolve_faculty(db, body.faculty)
     record = StudentStaff(
         full_name=body.full_name,

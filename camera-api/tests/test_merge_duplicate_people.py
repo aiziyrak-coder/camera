@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.models import AttendanceRecord, AuditLog, Faculty, LessonAttendance, LessonSession, StudentStaff
-from scripts.merge_duplicate_people import name_key, name_tokens, names_match, run
+from scripts.merge_duplicate_people import name_key, name_tokens, names_match, run, run_pair
 from tests.conftest import TestSessionLocal
 
 
@@ -69,6 +69,9 @@ class TestNameMatching:
             ("Karimov Aziz Olimovich", "Karimov Anvar Olimovich"),  # boshqa ism
             ("Karimova Aziza", "Rahimova Aziza"),  # boshqa familiya
             ("Yigitaliyeva", "Yigitaliyeva Nodira"),  # bitta so'z — moslab bo'lmaydi
+            # Otasining ismi yo'q — familiyadagi har qanday farq boshqa odam bo'lishi mumkin
+            ("Ismoiljanova Nilufar", "Ismoilova Nilufar Ikrom qizi"),
+            ("Kurbonova Aziza", "Qurbonboyeva Aziza Muzaffar qizi"),
         ],
     )
     def test_different_people_never_match(self, a, b):
@@ -183,6 +186,68 @@ class TestPartialMerge:
         assert person.pinfl == "40000000000029"
         assert person.group_or_position == "Gospital terapiya (laboratoriya)"
         assert (await db_session.execute(select(AttendanceRecord))).scalar_one().student_staff_id == official_id
+
+
+class TestManualPair:
+    async def test_two_confirmed_manual_copies_then_the_official_record(self, db_session, faculty):
+        """Yusupov holati: qo'lda ikki marta qo'shilgan + import qilingan.
+        Avval admin keraksiz nusxani ko'rsatadi, qolgani oddiy ishga tushirishda birlashadi."""
+        official = _imported("Yusupov Abdulaziz Adxamjonovich", "30000000000071", faculty.id, unit="Anatomiya")
+        older = _manual("Yusupov Abdulaziz Adxamjonovich", unit="Tyutor")
+        newer = _manual("Yusupov Abdulaziz Adxamjonovich", unit="Tyutor")
+        db_session.add_all([official, older, newer])
+        await db_session.commit()
+        newer_id = newer.id
+
+        pair = await run_pair(str(newer.id)[:8], str(older.id)[:8], session_factory=TestSessionLocal)
+        assert pair.take_identity is False
+        assert len(await _people(db_session)) == 2
+
+        plan = await run(session_factory=TestSessionLocal)
+        assert len(plan.pairs) == 1
+        (person,) = await _people(db_session)
+        assert person.id == newer_id
+        assert person.pinfl == "30000000000071"
+
+    async def test_manual_pair_takes_the_pinfl_when_the_kept_record_has_none(self, db_session, faculty):
+        official = _imported("Xaydarov Voxidjon Obitovich", "30000000000017", faculty.id)
+        manual = _manual("Xaydarov Voxidjon Obitovich", unit="Tyutor")
+        db_session.add_all([official, manual])
+        await db_session.commit()
+        pair = await run_pair(str(manual.id)[:8], str(official.id)[:8], session_factory=TestSessionLocal)
+        assert pair.take_identity is True
+        (person,) = await _people(db_session)
+        assert person.pinfl == "30000000000017"
+
+    async def test_manual_pair_dry_run_changes_nothing(self, db_session, faculty):
+        a, b = _manual("Aliyev Vali"), _manual("Aliyev Vali")
+        db_session.add_all([a, b])
+        await db_session.commit()
+        await run_pair(str(a.id)[:8], str(b.id)[:8], dry_run=True, session_factory=TestSessionLocal)
+        assert len(await _people(db_session)) == 2
+
+    async def test_staff_and_student_are_refused(self, db_session, faculty):
+        a = _manual("Aliyev Vali")
+        b = _imported("Aliyev Vali", "60000000000099", faculty.id, type="talaba")
+        db_session.add_all([a, b])
+        await db_session.commit()
+        with pytest.raises(SystemExit):
+            await run_pair(str(a.id)[:8], str(b.id)[:8], session_factory=TestSessionLocal)
+        assert len(await _people(db_session)) == 2
+
+
+class TestSameTypePreference:
+    async def test_a_student_namesake_does_not_block_the_staff_match(self, db_session, faculty):
+        db_session.add_all([
+            _manual("Kurbonova Aziza Anvarovna"),
+            _imported("Kurbonova Aziza Anvarovna", "40000000000013", faculty.id, unit="Laboratoriya",
+                      confirmed=True),
+            _imported("Kurbonova Aziza Anvar qizi", "60000000000071", faculty.id, unit="3-kurs", type="talaba"),
+        ])
+        await db_session.commit()
+        plan = await run(include_partial=True, session_factory=TestSessionLocal)
+        assert [p.kind for p in plan.partial] == ["ikkalasi_tasdiqlangan"]
+        assert plan.ambiguous == []
 
 
 class TestSuspiciousCasesAreLeftAlone:

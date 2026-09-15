@@ -6,7 +6,7 @@ import { required, minLength } from '../../lib/validation';
 import PassportUploadStep from './PassportUploadStep';
 import FaceCapture from './FaceCapture';
 import FaceMatchStep from './FaceMatchStep';
-import { ApiError, api } from '../../lib/apiClient';
+import { ApiError, api, buildQuery } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { useFaculties } from '../../lib/useFaculties';
 import type { StudentStaffRecord } from '../../types';
@@ -80,9 +80,21 @@ export default function AddStudentStaffModal({
   const [matchResult, setMatchResult] = useState<{ score: number; passed: boolean } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Dublikatdan himoya: bazada o'xshash ismli odamlar, tanlangan mavjud yozuv
+  // va "bu boshqa odam" tasdig'i. Ro'yxatdagi xodimni qayta qo'shish bitta
+  // odamni ikki yozuvga bo'lib yuborardi (scripts/merge_duplicate_people.py).
+  const [similar, setSimilar] = useState<StudentStaffRecord[] | null>(null);
+  const [existing, setExisting] = useState<StudentStaffRecord | null>(null);
+  const [allowDuplicate, setAllowDuplicate] = useState(false);
+  const [checking, setChecking] = useState(false);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
+    if (key === 'fullName' || key === 'type') {
+      setSimilar(null);
+      setExisting(null);
+      setAllowDuplicate(false);
+    }
   }
 
   function resetAll() {
@@ -94,6 +106,9 @@ export default function AddStudentStaffModal({
     setCapturedFace(null);
     setMatchResult(null);
     setSaveError(null);
+    setSimilar(null);
+    setExisting(null);
+    setAllowDuplicate(false);
   }
 
   function handleClose() {
@@ -112,26 +127,62 @@ export default function AddStudentStaffModal({
     return !Object.values(next).some(Boolean);
   }
 
-  function handleStep1Submit(e: FormEvent) {
+  async function handleStep1Submit(e: FormEvent) {
     e.preventDefault();
-    if (validateStep1()) setStep(2);
+    if (!validateStep1()) return;
+    if (existing || allowDuplicate) {
+      setStep(2);
+      return;
+    }
+    setChecking(true);
+    try {
+      const found = await api.get<StudentStaffRecord[]>(
+        `/api/students-staff/similar${buildQuery({ fullName: form.fullName.trim(), type: form.type })}`,
+        token,
+      );
+      if (found.length > 0) {
+        setSimilar(found);
+        return;
+      }
+    } catch {
+      // Tekshiruv ishlamasa ham davom etiladi — saqlashda backend baribir tekshiradi
+    } finally {
+      setChecking(false);
+    }
+    setStep(2);
+  }
+
+  function chooseExisting(record: StudentStaffRecord) {
+    setExisting(record);
+    setSimilar(null);
+    setStep(2);
+  }
+
+  function confirmNewPerson() {
+    setAllowDuplicate(true);
+    setSimilar(null);
+    setStep(2);
   }
 
   async function handleSave() {
     setSaving(true);
     setSaveError(null);
     try {
-      const record = await api.post<StudentStaffRecord>(
-        '/api/students-staff',
-        {
-          fullName: form.fullName.trim(),
-          type: form.type as 'talaba' | 'xodim',
-          faculty: form.faculty,
-          groupOrPosition: form.groupOrPosition.trim(),
-          biometricsStatus: matchResult?.passed ? 'tasdiqlangan' : 'kutilmoqda',
-        },
-        token,
-      );
+      // Mavjud odam tanlangan bo'lsa — yangi yozuv yaratilmaydi, yuz o'shanga biriktiriladi
+      const record =
+        existing ??
+        (await api.post<StudentStaffRecord>(
+          '/api/students-staff',
+          {
+            fullName: form.fullName.trim(),
+            type: form.type as 'talaba' | 'xodim',
+            faculty: form.faculty,
+            groupOrPosition: form.groupOrPosition.trim(),
+            biometricsStatus: matchResult?.passed ? 'tasdiqlangan' : 'kutilmoqda',
+            allowDuplicate,
+          },
+          token,
+        ));
 
       // Faqat mos kelgan yuz saqlanadi — "qo'lda tekshirish" yo'li orqali
       // yaratilgan yozuv uchun rasm/embedding hali yo'q, chunki mos kelish
@@ -198,18 +249,69 @@ export default function AddStudentStaffModal({
             error={errors.groupOrPosition}
           />
 
+          {similar && similar.length > 0 && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
+              <p className="text-sm font-bold text-amber-900">Bu odam bazada allaqachon bo&apos;lishi mumkin</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-amber-800">
+                Ro&apos;yxatdagi odamni qayta qo&apos;shsangiz, u ikki marta sanaladi. O&apos;zi bo&apos;lsa — yuzni
+                mavjud yozuvga biriktiring.
+              </p>
+              <ul className="mt-2 flex max-h-56 flex-col gap-1.5 overflow-y-auto">
+                {similar.map((person) => (
+                  <li
+                    key={person.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white px-3 py-2"
+                  >
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold text-slate-900">{person.fullName}</span>
+                      <span className="block text-xs text-slate-500">
+                        {[person.faculty, person.groupOrPosition].filter(Boolean).join(' · ')} ·{' '}
+                        {person.biometricsStatus === 'tasdiqlangan' ? 'yuzi tasdiqlangan' : 'yuzi tasdiqlanmagan'}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => chooseExisting(person)}
+                      className="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+                    >
+                      Shu odamga yuz biriktirish
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <button
+                type="button"
+                onClick={confirmNewPerson}
+                className="mt-2 text-xs font-semibold text-amber-900 underline hover:text-amber-950"
+              >
+                Bu boshqa odam — yangi yozuv yaratish
+              </button>
+            </div>
+          )}
+
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={handleClose} className="btn-glass">
               Bekor qilish
             </button>
-            <button
-              type="submit"
-              className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700"
-            >
-              Keyingi
-            </button>
+            {!(similar && similar.length > 0) && (
+              <button
+                type="submit"
+                disabled={checking}
+                className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {checking ? 'Tekshirilmoqda...' : 'Keyingi'}
+              </button>
+            )}
           </div>
         </form>
+      )}
+
+      {step > 1 && existing && (
+        <p className="mb-3 rounded-xl bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
+          Yangi yozuv yaratilmaydi — yuz mavjud yozuvga biriktiriladi:{' '}
+          <span className="font-semibold">{existing.fullName}</span> ({existing.groupOrPosition})
+          {existing.biometricsStatus === 'tasdiqlangan' && ' · oldingi yuz rasmi yangisiga almashtiriladi'}
+        </p>
       )}
 
       {step === 2 && (
@@ -285,7 +387,7 @@ export default function AddStudentStaffModal({
               Orqaga
             </button>
             <div className="flex items-center gap-3">
-              {matchResult && !matchResult.passed && (
+              {matchResult && !matchResult.passed && !existing && (
                 <button
                   type="button"
                   disabled={saving}
