@@ -13,6 +13,12 @@ from contextlib import asynccontextmanager
 from app.config import settings
 
 PRIORITY_LIVE = 0
+# Kirish/chiqish kameralaridagi davomat. Productionda CPU konteyner
+# chegarasida (cpus: 20) turganda eshik kadri 100+ xona kamerasini aylanib
+# chiqadigan unified_face bilan bitta navbatda kutardi — odam 2-3 soniyada
+# o'tib ketadi, xona kadri esa 30 s dan keyin ham yaroqli. Shuning uchun
+# jonli ko'rishdan keyin, fon tekshiruvlaridan oldin.
+PRIORITY_ATTENDANCE = 5
 PRIORITY_BACKGROUND = 10
 
 _counter = itertools.count()

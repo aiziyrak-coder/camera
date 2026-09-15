@@ -49,6 +49,7 @@ from app.models import AttendanceRecord, AuditLog, Camera, StudentStaff
 from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, find_best_match as _vectorized_find_best_match, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
+from app.services.inference_gate import PRIORITY_ATTENDANCE, PRIORITY_BACKGROUND
 from app.services.frame_grabber import grab_frame_for_camera, grab_frame_burst_for_camera
 from app.services import recognition_stats
 from app.services.presence import record_visit
@@ -252,6 +253,7 @@ async def process_camera_frame(
     staff_module_active: bool = True,
     student_module_active: bool = True,
     faces: list | None = None,
+    inference_priority: int = PRIORITY_BACKGROUND,
 ) -> list[AttendanceRecord]:
     """Checks EVERY face in the frame — not just the largest — and writes
     an attendance record for each one that matches an enrolled person.
@@ -281,7 +283,7 @@ async def process_camera_frame(
     `faces` lets app/jobs/unified_face_sweep.py pass pre-detected faces
     from a shared detect_faces() call — skips a redundant inference pass."""
     if faces is None:
-        faces = await detect_faces(frame_bytes)
+        faces = await detect_faces(frame_bytes, priority=inference_priority)
     if not faces:
         return []
 
@@ -538,6 +540,9 @@ async def run_entrance_exit_attendance_sweep_once(
                         off_hours_module_active=off_hours_module_active,
                         staff_module_active=staff_module_active,
                         student_module_active=student_module_active,
+                        # Eshik kadri xona kameralaridan oldin tahlil qilinsin
+                        # (app/services/inference_gate.py, PRIORITY_ATTENDANCE).
+                        inference_priority=PRIORITY_ATTENDANCE,
                     )
                     credited.update(str(r.student_staff_id) for r in records)
             recognition_stats.record_cycle(
