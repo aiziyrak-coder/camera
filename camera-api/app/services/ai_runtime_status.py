@@ -1,12 +1,17 @@
-"""Aggregated AI runtime snapshot for the admin dashboard."""
+"""Aggregated AI runtime snapshot for the admin dashboard.
+
+Sweep ko'rsatkichlari AI ishlayotgan (leader) jarayondan olinadi — so'rov
+boshqa API jarayoniga tushsa ham (app/services/runtime_snapshot.py).
+Konkurentlik/GPU/oqim qatorlari esa javob bergan jarayonning o'ziniki."""
 
 from datetime import datetime, timezone
 
 from app.config import settings
-from app.jobs.scheduler_metrics import get_scheduler_tick_stats, get_sweep_stats
+from app.jobs.scheduler_metrics import SweepRunStats, tick_from_sweeps
 from app.jobs.sweep_concurrency import entrance_exit_sweep_concurrency_snapshot, sweep_concurrency_snapshot
 from app.services.gpu_status import get_gpu_status
 from app.services.inference_gate import face_inference_gate
+from app.services.runtime_snapshot import load_sweep_stats
 from app.services.stream_cache import active_stream_reader_count
 
 
@@ -22,7 +27,7 @@ def _scheduler_module_lists() -> tuple[list[str], list[str]]:
     return critical, standard
 
 
-def _sweeps_payload() -> list[dict[str, object]]:
+def _sweeps_payload(sweeps: list[SweepRunStats]) -> list[dict[str, object]]:
     now = datetime.now(timezone.utc)
     return [
         {
@@ -38,12 +43,13 @@ def _sweeps_payload() -> list[dict[str, object]]:
             "last_error": s.last_error,
             "lagging": s.is_lagging(now),
         }
-        for s in get_sweep_stats()
+        for s in sweeps
     ]
 
 
-def build_ai_runtime_status() -> dict[str, object]:
-    tick = get_scheduler_tick_stats()
+async def build_ai_runtime_status() -> dict[str, object]:
+    sweeps = await load_sweep_stats()
+    tick = tick_from_sweeps(sweeps)
     gpu = get_gpu_status()
     critical, standard = _scheduler_module_lists()
     sweep = sweep_concurrency_snapshot()
@@ -65,7 +71,7 @@ def build_ai_runtime_status() -> dict[str, object]:
             "standard_ran": tick.standard_ran,
             "skipped_overlap": tick.skipped_overlap,
         },
-        "sweeps": _sweeps_payload(),
+        "sweeps": _sweeps_payload(sweeps),
         "gpu": gpu,
         "sweep_slots": sweep,
         "entrance_exit_sweep_slots": entrance_exit_sweep_concurrency_snapshot(),

@@ -97,7 +97,7 @@ async def get_system_resources(_: Annotated[CurrentUser, Depends(get_current_use
 
 @router.get("/ai-status", response_model=SystemAiStatusOut)
 async def get_ai_status(_: Annotated[CurrentUser, Depends(get_current_user)]) -> SystemAiStatusOut:
-    raw = build_ai_runtime_status()
+    raw = await build_ai_runtime_status()
     return SystemAiStatusOut(
         scheduler_enabled=bool(raw["scheduler_enabled"]),
         scheduler_poll_seconds=int(raw["scheduler_poll_seconds"]),

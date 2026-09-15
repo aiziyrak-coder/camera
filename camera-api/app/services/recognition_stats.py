@@ -161,6 +161,96 @@ def snapshot(camera_id: str) -> CameraRecognitionStats | None:
     return stats
 
 
+@dataclass
+class RecognitionView:
+    """Kamera statistikasining o'qish uchun nusxasi — jarayonlar o'rtasida
+    JSON orqali uzatiladi (app/services/runtime_snapshot.py). Maydon nomlari
+    CameraRecognitionStats bilan bir xil, shuning uchun o'quvchi kod farqni
+    bilmaydi."""
+
+    day: date
+    frames: int = 0
+    frames_with_faces: int = 0
+    faces: int = 0
+    small_faces: int = 0
+    strict: int = 0
+    relaxed_confirmed: int = 0
+    relaxed_pending: int = 0
+    best_similarity: float = -1.0
+    face_px_median: int | None = None
+    buckets: dict[str, int] = field(default_factory=dict)
+    last_frame_at: datetime | None = None
+    last_face_at: datetime | None = None
+    last_match_at: datetime | None = None
+
+
+def _iso(moment: datetime | None) -> str | None:
+    return moment.isoformat() if moment else None
+
+
+def _parse(value: str | None) -> datetime | None:
+    return datetime.fromisoformat(value) if value else None
+
+
+def export_snapshot() -> dict[str, dict]:
+    """Bugungi statistika — JSON'ga yaroqli ko'rinishda."""
+    today = local_now().date()
+    return {
+        camera_id: {
+            "day": s.day.isoformat(),
+            "frames": s.frames,
+            "frames_with_faces": s.frames_with_faces,
+            "faces": s.faces,
+            "small_faces": s.small_faces,
+            "strict": s.strict,
+            "relaxed_confirmed": s.relaxed_confirmed,
+            "relaxed_pending": s.relaxed_pending,
+            "best_similarity": s.best_similarity,
+            "face_px_median": s.face_px_median,
+            "buckets": dict(s.buckets),
+            "last_frame_at": _iso(s.last_frame_at),
+            "last_face_at": _iso(s.last_face_at),
+            "last_match_at": _iso(s.last_match_at),
+        }
+        for camera_id, s in _stats.items()
+        if s.day == today
+    }
+
+
+def view_from_dict(row: dict) -> RecognitionView | None:
+    """Boshqa kun (yarim tundan oldingi) surati — None."""
+    try:
+        day = date.fromisoformat(row["day"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if day != local_now().date():
+        return None
+    return RecognitionView(
+        day=day,
+        frames=int(row.get("frames", 0)),
+        frames_with_faces=int(row.get("frames_with_faces", 0)),
+        faces=int(row.get("faces", 0)),
+        small_faces=int(row.get("small_faces", 0)),
+        strict=int(row.get("strict", 0)),
+        relaxed_confirmed=int(row.get("relaxed_confirmed", 0)),
+        relaxed_pending=int(row.get("relaxed_pending", 0)),
+        best_similarity=float(row.get("best_similarity", -1.0)),
+        face_px_median=row.get("face_px_median"),
+        buckets={str(k): int(v) for k, v in (row.get("buckets") or {}).items()},
+        last_frame_at=_parse(row.get("last_frame_at")),
+        last_face_at=_parse(row.get("last_face_at")),
+        last_match_at=_parse(row.get("last_match_at")),
+    )
+
+
+def local_views() -> dict[str, RecognitionView]:
+    return {
+        camera_id: view
+        for camera_id, row in export_snapshot().items()
+        if (view := view_from_dict(row)) is not None
+    }
+
+
 def reset_for_tests() -> None:
     _stats.clear()
     _pending_relaxed.clear()

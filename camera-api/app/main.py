@@ -32,6 +32,7 @@ from app.logging_config import configure_logging
 from app.rate_limit import limiter
 from app.redis_bus import start_redis_listener, stop_redis_listener
 from app.services import video_gateway
+from app.services.runtime_snapshot import runtime_snapshot_loop
 from app.ws import manager
 from app.services.pose_detection import shutdown_pose_detection_pool
 from app.services.stream_cache import shutdown_stream_cache, stream_cache_reaper_loop
@@ -102,6 +103,9 @@ async def lifespan(app: FastAPI):
     if settings.redis_url.strip():
         await start_redis_listener(manager.deliver_from_redis)
     if is_leader:
+        # AI statistikasi faqat shu jarayon xotirasida — boshqa API
+        # jarayonlari uni Redis orqali ko'radi (app/services/runtime_snapshot.py).
+        tasks.append(asyncio.create_task(runtime_snapshot_loop()))
         stagger = settings.ai_loop_stagger_seconds
         if settings.ai_scheduler_enabled:
             tasks.append(asyncio.create_task(ai_scheduler_loop()))

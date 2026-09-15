@@ -16,8 +16,8 @@ class TestGpuStatus:
         assert isinstance(status["onnx_providers"], list)
         assert isinstance(status["recommendation"], str)
 
-    def test_build_ai_runtime_status_shape(self):
-        raw = build_ai_runtime_status()
+    async def test_build_ai_runtime_status_shape(self):
+        raw = await build_ai_runtime_status()
         assert raw["scheduler_enabled"] is not None
         assert "gpu" in raw
         assert "last_tick" in raw

@@ -33,7 +33,7 @@ from app.schemas.presence import (
     TeacherDaySummaryOut,
     VisitOut,
 )
-from app.services import recognition_stats
+from app.services import runtime_snapshot
 from app.services.camera_module_mapping import camera_allows_module_code
 from app.services.staff_export import split_course
 from app.timezone import INSTITUTE_TZ, local_now, to_local
@@ -390,6 +390,10 @@ async def attendance_cameras(
         select(func.count()).select_from(StudentStaff).where(StudentStaff.biometric_embedding.is_not(None))
     ) or 0
 
+    # AI ishlayotgan (leader) jarayonning statistikasi — so'rov boshqa API
+    # jarayoniga tushgan bo'lsa ham (app/services/runtime_snapshot.py).
+    live_views = await runtime_snapshot.load_recognition_views()
+
     rows: list[AttendanceCameraOut] = []
     for camera in cameras:
         allows_staff = camera_allows_module_code(camera.excluded_module_codes, STAFF_ATTENDANCE_CODE)
@@ -405,7 +409,7 @@ async def attendance_cameras(
             reason = None
         people, last = stats.get(camera.id, (0, None))
         security = camera.is_entrance or camera.is_exit
-        live = recognition_stats.snapshot(str(camera.id))
+        live = live_views.get(str(camera.id))
         rows.append(
             AttendanceCameraOut(
                 id=str(camera.id),
