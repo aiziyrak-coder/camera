@@ -431,6 +431,11 @@ function CamerasTab() {
                         {camera.bestSimilarityToday != null ? ` · max ${camera.bestSimilarityToday.toFixed(2)}` : ''}
                         {camera.relaxedPendingToday > 0 ? ` · ${camera.relaxedPendingToday} kutilmoqda` : ''}
                       </p>
+                      <p className="text-slate-400">
+                        {camera.lastCycleSeconds != null
+                          ? `aylanish ${Math.round(camera.lastCycleSeconds)} s (kadr ${Math.round(camera.lastGrabSeconds ?? 0)} s)`
+                          : ''}
+                      </p>
                     </>
                   ) : (
                     <span className="text-slate-400">{camera.lastChecked ?? '—'}</span>

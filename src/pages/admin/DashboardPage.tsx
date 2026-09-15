@@ -50,6 +50,7 @@ interface SystemAiStatus {
     lastResult: number;
     lastError: string | null;
     lagging: boolean;
+    paused?: boolean;
   }[];
   sweepSlots: { max: number; inUse: number };
   faceInferenceGate: { max: number; inUse: number; waiting: number };
@@ -346,12 +347,18 @@ export default function DashboardPage() {
                 const entrance = sweeps.find((s) => s.name === 'entrance_exit_attendance');
                 const lagging = sweeps.filter((s) => s.lagging);
                 const failing = sweeps.filter((s) => s.lastError);
+                const paused = sweeps.filter((s) => s.paused);
                 return (
                   <>
                     {entrance && (
                       <p>
                         Kirish/chiqish davomati: har {entrance.intervalSeconds} s, oxirgisi {entrance.lastDurationSeconds} s
                         davom etdi ({entrance.runs} marta ishladi)
+                      </p>
+                    )}
+                    {paused.length > 0 && (
+                      <p className="font-semibold text-indigo-700">
+                        Tirband soat — davomat ustuvor, pauzada: {paused.map((s) => s.name).join(', ')}
                       </p>
                     )}
                     {lagging.length > 0 && (

@@ -338,6 +338,12 @@ def _diagnose(enabled: bool, online: bool, live, recognized: int, enrolled: int)
         return "Bugun hali tekshirilmadi (AI navbati yetib kelmagan yoki kadr olinmayapti)"
     if recognized > 0 or live.strict or live.relaxed_confirmed:
         return None
+    cycle = live.last_cycle_seconds or 0
+    if cycle > 60:
+        return (
+            f"Kamera juda siyrak tekshirilyapti: bir aylanish {round(cycle)} s "
+            f"(shundan kadr olish {round(live.last_grab_seconds or 0)} s) — server yuklamasi yuqori"
+        )
     if live.faces == 0:
         return "Kadrlarda yuz topilmayapti — kamera burchagi/masofasi yuzni ko'rsatmaydi"
     median_px = live.face_px_median or 0
@@ -436,6 +442,9 @@ async def attendance_cameras(
                 relaxed_confirmed_today=live.relaxed_confirmed if live else 0,
                 relaxed_pending_today=live.relaxed_pending if live else 0,
                 last_checked=_hm(live.last_frame_at) if live else None,
+                cycles_today=live.cycles if live else 0,
+                last_cycle_seconds=live.last_cycle_seconds if live else None,
+                last_grab_seconds=live.last_grab_seconds if live else None,
                 diagnosis=_diagnose(enabled, is_reachable(camera.last_seen_at), live, people, enrolled),
             )
         )

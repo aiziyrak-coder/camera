@@ -36,10 +36,14 @@ class SweepRunStats:
     last_duration_seconds: float = 0.0
     last_result: int = 0
     last_error: str | None = None
+    # Tirband soatda davomat uchun ataylab to'xtatilgan (xato emas).
+    paused: bool = False
 
     def is_lagging(self, now: datetime) -> bool:
         """Sweep o'z intervalidan ancha kechikayaptimi (osilib qolgan yoki
         server yuklamasi ko'tara olmayapti)."""
+        if self.paused:
+            return False
         reference = self.last_finished_at or self.last_started_at
         if reference is None:
             return False
@@ -60,6 +64,12 @@ def record_sweep_started(name: str) -> None:
         return
     stats.running = True
     stats.last_started_at = datetime.now(timezone.utc)
+
+
+def record_sweep_paused(name: str, paused: bool) -> None:
+    stats = _sweeps.get(name)
+    if stats is not None:
+        stats.paused = paused
 
 
 def record_sweep_finished(name: str, *, duration_seconds: float, result: int, error: str | None = None) -> None:
@@ -96,6 +106,7 @@ def export_sweeps() -> list[dict]:
             "last_duration_seconds": s.last_duration_seconds,
             "last_result": s.last_result,
             "last_error": s.last_error,
+            "paused": s.paused,
         }
         for s in _sweeps.values()
     ]
@@ -118,6 +129,7 @@ def sweeps_from_dicts(rows: list[dict]) -> list[SweepRunStats]:
                     last_duration_seconds=float(row.get("last_duration_seconds", 0.0)),
                     last_result=int(row.get("last_result", 0)),
                     last_error=row.get("last_error"),
+                    paused=bool(row.get("paused", False)),
                 )
             )
         except (KeyError, TypeError, ValueError):

@@ -32,7 +32,7 @@ from typing import Any, Literal
 from app.config import settings
 from app.database import SessionLocal
 from app.jobs.absence_marker import run_absence_marking_once
-from app.jobs.attendance_ai import run_attendance_ai_sweep_once, run_entrance_exit_attendance_sweep_once
+from app.jobs.attendance_ai import run_attendance_ai_sweep_once, run_entrance_exit_attendance_dispatch_once
 from app.jobs.disorder_ai import run_disorder_ai_sweep_once
 from app.jobs.dress_code_ai import run_dress_code_ai_sweep_once
 from app.jobs.fight_ai import run_fight_ai_sweep_once
@@ -40,7 +40,8 @@ from app.jobs.fire_ai import run_fire_ai_sweep_once
 from app.jobs.lesson_attendance import run_lesson_attendance_finalization_once
 from app.jobs.lesson_quality_ai import run_lesson_quality_ai_sweep_once
 from app.jobs.ppe_ai import run_ppe_ai_sweep_once
-from app.jobs.scheduler_metrics import record_sweep_finished, record_sweep_started, register_sweep
+from app.jobs.module_status import is_within_attendance_priority_window
+from app.jobs.scheduler_metrics import record_sweep_finished, record_sweep_paused, record_sweep_started, register_sweep
 from app.jobs.smoking_ai import run_smoking_ai_sweep_once
 from app.jobs.teacher_punctuality_ai import run_teacher_punctuality_sweep_once
 from app.jobs.unauthorized_person_ai import run_unauthorized_person_ai_sweep_once
@@ -55,6 +56,22 @@ Tier = Literal["critical", "standard"]
 # Sweep juda tez tugasa ham (masalan kamera yo'q) keyingi boshlanishgacha
 # kamida shuncha kutiladi — bo'sh aylanib CPU yemasligi uchun.
 MIN_PAUSE_SECONDS = 1.0
+# Pauzadagi sweep tirband oyna tugaganini shuncha soniyada bir tekshiradi.
+PAUSE_RECHECK_SECONDS = 30.0
+
+
+def attendance_priority_sweeps() -> set[str]:
+    return {name.strip() for name in settings.attendance_priority_paused_sweeps.split(",") if name.strip()}
+
+
+def is_paused_for_attendance(name: str) -> bool:
+    """Tirband soatda og'ir evristika CPU'ni kirish kameralaridagi davomatga
+    bo'shatadimi (settings.attendance_priority_*)."""
+    return (
+        settings.attendance_priority_enabled
+        and name in attendance_priority_sweeps()
+        and is_within_attendance_priority_window()
+    )
 
 
 @dataclass
@@ -71,7 +88,9 @@ def _face_entries() -> list[tuple[str, int, Callable[..., Awaitable[Any]], Tier]
             (
                 "entrance_exit_attendance",
                 settings.entrance_exit_attendance_interval_seconds,
-                run_entrance_exit_attendance_sweep_once,
+                # Fon dispetcher: har kirish kamerasi o'z vazifasida, eng
+                # sekin kamera qolganlarini kutdirmaydi (attendance_ai.py).
+                run_entrance_exit_attendance_dispatch_once,
                 "critical",
             ),
             (
@@ -152,6 +171,11 @@ async def _sweep_loop(entry: _SweepEntry, initial_delay: float) -> None:
     if initial_delay > 0:
         await asyncio.sleep(initial_delay)
     while True:
+        if is_paused_for_attendance(entry.name):
+            record_sweep_paused(entry.name, True)
+            await asyncio.sleep(PAUSE_RECHECK_SECONDS)
+            continue
+        record_sweep_paused(entry.name, False)
         duration = await run_sweep_once(entry)
         await asyncio.sleep(next_pause(entry.interval_seconds, duration))
 

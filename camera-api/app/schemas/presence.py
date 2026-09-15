@@ -97,6 +97,9 @@ class AttendanceCameraOut(CamelModel):
     relaxed_confirmed_today: int = 0
     relaxed_pending_today: int = 0
     last_checked: str | None = None
+    cycles_today: int = 0
+    last_cycle_seconds: float | None = None
+    last_grab_seconds: float | None = None
     diagnosis: str | None = None
 
 

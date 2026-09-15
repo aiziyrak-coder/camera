@@ -48,6 +48,7 @@ class SweepStatusOut(CamelModel):
     last_result: int
     last_error: str | None
     lagging: bool
+    paused: bool = False
 
 
 class ConcurrencySlotOut(CamelModel):

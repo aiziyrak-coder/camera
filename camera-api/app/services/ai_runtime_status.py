@@ -42,6 +42,7 @@ def _sweeps_payload(sweeps: list[SweepRunStats]) -> list[dict[str, object]]:
             "last_result": s.last_result,
             "last_error": s.last_error,
             "lagging": s.is_lagging(now),
+            "paused": s.paused,
         }
         for s in sweeps
     ]

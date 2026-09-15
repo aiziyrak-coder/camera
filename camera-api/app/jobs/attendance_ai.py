@@ -32,6 +32,7 @@ originally structured to allow either.
 import asyncio
 import logging
 from datetime import datetime, time as time_type
+from time import monotonic
 
 import numpy as np
 from sqlalchemy import or_, select, update
@@ -458,6 +459,8 @@ async def run_attendance_ai_sweep_once(
 
 async def run_entrance_exit_attendance_sweep_once(
     session_factory: async_sessionmaker[AsyncSession] = SessionLocal,
+    *,
+    wait: bool = True,
 ) -> int:
     """Fast-cadence companion to unified_face_sweep.py's attendance check,
     scoped to ONLY is_entrance/is_exit cameras — registered separately in
@@ -509,13 +512,19 @@ async def run_entrance_exit_attendance_sweep_once(
         return 0
 
     async def _process_one(camera: Camera) -> int:
+        started = monotonic()
         async with entrance_exit_sweep_slot():
+            grab_started = monotonic()
             frames = await grab_frame_burst_for_camera(
                 camera,
                 settings.attendance_entrance_burst_frame_count,
                 settings.attendance_entrance_burst_gap_seconds,
             )
+            grab_seconds = monotonic() - grab_started
             if not frames:
+                recognition_stats.record_cycle(
+                    str(camera.id), total_seconds=monotonic() - started, grab_seconds=grab_seconds
+                )
                 return 0
 
             async with session_factory() as camera_db:
@@ -531,7 +540,13 @@ async def run_entrance_exit_attendance_sweep_once(
                         student_module_active=student_module_active,
                     )
                     credited.update(str(r.student_staff_id) for r in records)
-                return len(credited)
+            recognition_stats.record_cycle(
+                str(camera.id), total_seconds=monotonic() - started, grab_seconds=grab_seconds
+            )
+            return len(credited)
+
+    if not wait:
+        return _reconcile_entrance_tasks(cameras, _process_one)
 
     results = await asyncio.gather(*(_process_one(camera) for camera in cameras), return_exceptions=True)
 
@@ -544,6 +559,52 @@ async def run_entrance_exit_attendance_sweep_once(
             continue
         match_count += result
     return match_count
+
+
+# camera_id -> ishlab turgan tekshiruv vazifasi (fon rejimi).
+_entrance_tasks: dict[str, asyncio.Task] = {}
+
+
+def _reconcile_entrance_tasks(cameras, start) -> int:
+    """Tugagan vazifalar natijasini yig'adi va band bo'lmagan har kamera uchun
+    yangisini boshlaydi. Oldingi tekshiruvi tugamagan kamera o'tkazib
+    yuboriladi — vazifalar ustma-ust yig'ilmaydi.
+
+    Ilgari bitta sweep 11 kamerani gather qilib, ENG SEKIN kamera tugashini
+    kutardi (productionda 263 s): tez kameralar ham shuncha kutib turardi.
+    Endi har kamera o'z sur'atida — tugashi bilan keyingi dispetcherda
+    (entrance_exit_attendance_interval_seconds) qayta boshlanadi."""
+    matched = 0
+    for key, task in list(_entrance_tasks.items()):
+        if not task.done():
+            continue
+        del _entrance_tasks[key]
+        if task.cancelled():
+            continue
+        error = task.exception()
+        if error is not None:
+            logger.error(
+                "entrance/exit attendance camera task failed",
+                extra={"camera_id": key},
+                exc_info=(type(error), error, error.__traceback__),
+            )
+            continue
+        matched += int(task.result() or 0)
+
+    for camera in cameras:
+        key = str(camera.id)
+        if key in _entrance_tasks:
+            continue
+        _entrance_tasks[key] = asyncio.create_task(start(camera), name=f"entrance-attendance:{key}")
+    return matched
+
+
+async def run_entrance_exit_attendance_dispatch_once(
+    session_factory: async_sessionmaker[AsyncSession] = SessionLocal,
+) -> int:
+    """Rejalashtiruvchi uchun: kamera tekshiruvlarini fonda boshlaydi va
+    oldingi dispetcherdan beri TUGAGANLAR bergan mosliklar sonini qaytaradi."""
+    return await run_entrance_exit_attendance_sweep_once(session_factory, wait=False)
 
 
 async def attendance_ai_loop() -> None:

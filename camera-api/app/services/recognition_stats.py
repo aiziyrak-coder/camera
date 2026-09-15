@@ -58,6 +58,10 @@ class CameraRecognitionStats:
     last_face_at: datetime | None = None
     last_match_at: datetime | None = None
     buckets: dict[str, int] = field(default_factory=lambda: {name: 0 for name, _, _ in SIMILARITY_BUCKETS})
+    # Kamera bir marta to'liq tekshirilishi (kadr olish + tahlil) necha soniya.
+    cycles: int = 0
+    last_cycle_seconds: float | None = None
+    last_grab_seconds: float | None = None
     _face_heights: deque[int] = field(default_factory=lambda: deque(maxlen=500))
 
     @property
@@ -131,6 +135,17 @@ def record_credit(camera_id: str | None, grade: str) -> None:
     stats.last_match_at = local_now()
 
 
+def record_cycle(camera_id: str | None, *, total_seconds: float, grab_seconds: float) -> None:
+    """Kameraning bitta to'liq tekshiruvi qancha davom etdi — CPU yetishmasligi
+    kadr olishdami (oqim/dekodlash) yoki tahlildami, shu ikki raqamdan ko'rinadi."""
+    if camera_id is None:
+        return
+    stats = _camera_stats(camera_id)
+    stats.cycles += 1
+    stats.last_cycle_seconds = round(total_seconds, 1)
+    stats.last_grab_seconds = round(grab_seconds, 1)
+
+
 def confirm_relaxed(person_id: str, *, now: float | None = None) -> bool:
     """True — shu odam oynada allaqachon bir marta ko'ringan (tasdiqlandi).
     False — birinchi ko'rinish, eslab qolindi va keyingisi kutiladi."""
@@ -179,6 +194,9 @@ class RecognitionView:
     best_similarity: float = -1.0
     face_px_median: int | None = None
     buckets: dict[str, int] = field(default_factory=dict)
+    cycles: int = 0
+    last_cycle_seconds: float | None = None
+    last_grab_seconds: float | None = None
     last_frame_at: datetime | None = None
     last_face_at: datetime | None = None
     last_match_at: datetime | None = None
@@ -211,6 +229,9 @@ def export_snapshot() -> dict[str, dict]:
             "last_frame_at": _iso(s.last_frame_at),
             "last_face_at": _iso(s.last_face_at),
             "last_match_at": _iso(s.last_match_at),
+            "cycles": s.cycles,
+            "last_cycle_seconds": s.last_cycle_seconds,
+            "last_grab_seconds": s.last_grab_seconds,
         }
         for camera_id, s in _stats.items()
         if s.day == today
@@ -240,6 +261,9 @@ def view_from_dict(row: dict) -> RecognitionView | None:
         last_frame_at=_parse(row.get("last_frame_at")),
         last_face_at=_parse(row.get("last_face_at")),
         last_match_at=_parse(row.get("last_match_at")),
+        cycles=int(row.get("cycles", 0)),
+        last_cycle_seconds=row.get("last_cycle_seconds"),
+        last_grab_seconds=row.get("last_grab_seconds"),
     )
 
 

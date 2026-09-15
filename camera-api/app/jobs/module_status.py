@@ -54,6 +54,32 @@ def is_within_behaviour_hours(now: time_type | None = None) -> bool:
     return current >= start or current <= end
 
 
+def is_within_attendance_priority_window(now: time_type | None = None) -> bool:
+    """settings.attendance_priority_windows dagi oynalardan biri shu paytni
+    qamraydimi. Noto'g'ri yozilgan oyna e'tiborsiz qoldiriladi (logga yoziladi)
+    — xato sozlama modulni kun bo'yi to'xtatib qo'ymasligi kerak."""
+    current = now if now is not None else local_now().time()
+    for part in (settings.attendance_priority_windows or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            start_text, end_text = part.split("-", 1)
+            start_h, start_m = start_text.strip().split(":")
+            end_h, end_m = end_text.strip().split(":")
+            start = time_type(int(start_h), int(start_m))
+            end = time_type(int(end_h), int(end_m))
+        except ValueError:
+            logger.warning("invalid attendance priority window; ignored", extra={"value": part})
+            continue
+        if start <= end:
+            if start <= current <= end:
+                return True
+        elif current >= start or current <= end:
+            return True
+    return False
+
+
 async def is_module_active(db: AsyncSession, code: int) -> bool:
     result = await db.execute(select(AIModuleConfig.active).where(AIModuleConfig.code == code))
     if not bool(result.scalar_one_or_none()):

@@ -589,6 +589,15 @@ class Settings(BaseSettings):
     # per-module asyncio loops are NOT started; one coordinator dispatches sweeps.
     ai_scheduler_enabled: bool = False
     ai_scheduler_poll_seconds: int = 5
+    # Davomatga ustuvorlik (app/jobs/ai_scheduler.py). Productionda bitta
+    # AVX'siz CPU'da og'ir evristikalar (poza, optik oqim, rang) bilan kirish
+    # kameralaridagi yuz tanish talashardi: 6 s lik kirish tekshiruvi 263 s
+    # davom etgan. Odamlar ko'p o'tadigan soatlarda (mahalliy vaqt,
+    # "HH:MM-HH:MM" vergul bilan) quyidagi sweeplar pauza qiladi — CPU
+    # davomatga beriladi. Kun davomida hammasi odatdagidek ishlaydi.
+    attendance_priority_enabled: bool = True
+    attendance_priority_windows: str = "07:30-09:30,16:00-18:00"
+    attendance_priority_paused_sweeps: str = "fire,fight,disorder,dress_code,ppe"
 
     # GPU batch inference caps — detect_faces_batch / detect_objects_batch chunk size.
     face_recognition_batch_size: int = 4

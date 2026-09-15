@@ -219,6 +219,10 @@ export interface AttendanceCamera {
   relaxedConfirmedToday: number;
   relaxedPendingToday: number;
   lastChecked: string | null;
+  cyclesToday?: number;
+  /** Kameraning bitta to'liq tekshiruvi (kadr olish + tahlil), soniya. */
+  lastCycleSeconds?: number | null;
+  lastGrabSeconds?: number | null;
   /** Nima uchun kamera hech kimni davomatga yozmayotgani — oddiy tilda. */
   diagnosis: string | null;
 }
