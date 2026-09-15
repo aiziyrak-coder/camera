@@ -460,6 +460,17 @@ class Settings(BaseSettings):
     # the actual production GPU's memory and measured latency then, same
     # discipline.
     face_recognition_inference_concurrency: int = 24
+    # Bitta ONNX chaqiruvi ichidagi oqimlar soni (app/services/face_recognition.py
+    # _limit_session_threads). 0 — onnxruntime standarti: HOSTdagi barcha
+    # yadrolar, konteynerning `cpus` chegarasini hisobga OLMAYDI.
+    #
+    # Productionda o'lchandi (2026-09-15): 32 yadroli host, konteyner cpus: 20,
+    # inference_concurrency=24 va cheklanmagan oqimlar — yuklama 110, konteyner
+    # doim chegarada (2034%), 6 s lik kirish tekshiruvi 263 s. 24 ta parallel
+    # chaqiruvning har biri 32 oqimlik havza ishlatib, 20 yadroni kontekst
+    # almashtirishga sarflardi. Umumiy oqimlar ≈ concurrency × shu qiymat —
+    # cpus chegarasidan (ffmpeg o'quvchilari ham shu konteynerda!) oshmasin.
+    face_recognition_intra_op_threads: int = 2
 
     # Persistent per-camera frame cache (app/services/stream_cache.py) —
     # replaces spawning a fresh ffmpeg process on every single frame grab

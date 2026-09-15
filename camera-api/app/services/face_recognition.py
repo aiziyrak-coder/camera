@@ -76,6 +76,40 @@ class InconsistentFacesError(Exception):
 # and enrollment jump ahead of background AI sweeps.
 
 
+def _limit_session_threads(app: FaceAnalysis, providers: list[str]) -> None:
+    """Har bir InsightFace modelining ONNX sessiyasini cheklangan oqimlar bilan
+    qayta yaratadi (settings.face_recognition_intra_op_threads).
+
+    Nega bu yerda, FaceAnalysis(...) argumenti orqali emas: insightface 1.0.1
+    modellarga faqat providers/provider_options uzatadi, sess_options esa
+    yo'lda tushib qoladi (insightface/model_zoo/model_zoo.py, get_model).
+    Har bir model sessiyani `session`, faylni `model_file` da saqlaydi va
+    kirish/chiqish nomlarini fayldan oladi — o'sha fayldan qayta yaratilgan
+    sessiya bir xil ishlaydi."""
+    threads = settings.face_recognition_intra_op_threads
+    if threads <= 0:
+        return
+    import onnxruntime
+
+    for model in app.models.values():
+        model_file = getattr(model, "model_file", None)
+        if not model_file:
+            continue
+        options = onnxruntime.SessionOptions()
+        options.intra_op_num_threads = threads
+        options.inter_op_num_threads = 1
+        options.execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL
+        model.session = onnxruntime.InferenceSession(model_file, sess_options=options, providers=providers)
+    logger.info(
+        "InsightFace ONNX sessions limited",
+        extra={
+            "intra_op_threads": threads,
+            "inference_concurrency": settings.face_recognition_inference_concurrency,
+            "models": sorted(app.models),
+        },
+    )
+
+
 def _get_app() -> FaceAnalysis:
     global _app
     if _app is None:
@@ -95,6 +129,7 @@ def _get_app() -> FaceAnalysis:
             extra={"gpu_enabled": settings.face_recognition_gpu_enabled},
         )
         _app = FaceAnalysis(name="buffalo_l", providers=providers)
+        _limit_session_threads(_app, providers)
         # ctx_id=0 selects GPU device 0 when CUDAExecutionProvider is
         # active, and is harmless/ignored when it isn't (the CPU-only path
         # this codebase already ran and tested with before GPU support
