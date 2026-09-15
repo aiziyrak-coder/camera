@@ -1,9 +1,21 @@
 import { useEffect, useRef } from 'react';
 import { useAuth } from './auth';
 import { config, isBackendConfigured } from './config';
-import type { AIEvent } from '../types';
+import type { AIEvent, EventStatus } from '../types';
 
 export type LiveEventHandler = (event: AIEvent) => void;
+
+/** Bir nechta hodisa birdan ko'rib chiqilganda keladigan yig'ma xabar
+ *  (POST /api/events/review-bulk). Hodisa emas — shuning uchun alohida
+ *  ishlovchiga boradi: aks holda "yangi hodisa" hisoblagichi oshib ketardi. */
+export interface LiveReviewMessage {
+  kind: 'events_reviewed';
+  ids: string[];
+  status: Exclude<EventStatus, 'yangi'>;
+  reviewedBy?: string | null;
+}
+
+export type LiveReviewHandler = (message: LiveReviewMessage) => void;
 
 const RECONNECT_DELAY_MS = 3_000;
 
@@ -14,7 +26,7 @@ const RECONNECT_DELAY_MS = 3_000;
  * brauzer WebSocket API'si maxsus header o'rnatishga imkon bermaydi.
  * Ulanish uzilsa avtomatik qayta urinadi (masalan server qayta ishga tushsa).
  */
-function subscribeWebSocket(token: string, onEvent: LiveEventHandler): () => void {
+function subscribeWebSocket(token: string, onEvent: LiveEventHandler, onReviewed: LiveReviewHandler): () => void {
   let socket: WebSocket | null = null;
   let reconnectTimer: number | null = null;
   let cancelled = false;
@@ -26,7 +38,12 @@ function subscribeWebSocket(token: string, onEvent: LiveEventHandler): () => voi
 
     socket.onmessage = (e) => {
       try {
-        onEvent(JSON.parse(e.data) as AIEvent);
+        const data = JSON.parse(e.data);
+        if (data && data.kind === 'events_reviewed') {
+          onReviewed(data as LiveReviewMessage);
+          return;
+        }
+        onEvent(data as AIEvent);
       } catch {
         /* JSON bo'lmagan xabar — e'tiborsiz qoldiriladi */
       }
@@ -57,14 +74,20 @@ function subscribeWebSocket(token: string, onEvent: LiveEventHandler): () => voi
  * o'ylab topilgan bo'lmasligi kerak. Demo ma'lumot kerak bo'lsa, u
  * backend tomonda, ochiq belgilangan holda berilishi lozim.
  */
-export function useLiveEvents(onEvent: LiveEventHandler, enabled = true) {
+export function useLiveEvents(onEvent: LiveEventHandler, enabled = true, onReviewed?: LiveReviewHandler) {
   const { token } = useAuth();
   const handlerRef = useRef(onEvent);
   handlerRef.current = onEvent;
+  const reviewRef = useRef(onReviewed);
+  reviewRef.current = onReviewed;
 
   useEffect(() => {
     if (!enabled) return;
     if (!isBackendConfigured || !config.realtimeUrl || !token) return;
-    return subscribeWebSocket(token, (event) => handlerRef.current(event));
+    return subscribeWebSocket(
+      token,
+      (event) => handlerRef.current(event),
+      (message) => reviewRef.current?.(message),
+    );
   }, [enabled, token]);
 }

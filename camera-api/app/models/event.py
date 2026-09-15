@@ -41,6 +41,9 @@ class Event(Base):
     status: Mapped[str] = mapped_column(String, nullable=False, default="yangi")
     person_name: Mapped[str | None] = mapped_column(String, nullable=True)
     reviewed_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Operator qaror qilgan payt — "o'rtacha ko'rib chiqish vaqti" uchun
+    # (f7a8b9c0d1e2). Eski ko'rib chiqilgan hodisalarda NULL.
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # S3/MinIO object key for the frame that triggered this event (see
     # app/services/event_bus.py) — null for events raised without a frame
     # on hand (e.g. POST /api/events' generic path) or where the upload

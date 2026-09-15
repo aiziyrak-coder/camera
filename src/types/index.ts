@@ -618,6 +618,10 @@ export interface AIEvent {
   /** Aniqlanish paytida olingan kadr — app/services/event_bus.py.
    * Kadr saqlanmagan/yuklab bo'lmagan hodisalarda null. */
   snapshotUrl?: string | null;
+  /** ISO vaqt institut mintaqasi bilan — "12 daq oldin" uchun. */
+  occurredAt?: string | null;
+  /** Operator qaror qilgan payt ("2026-09-15 14:20"). */
+  reviewedAt?: string | null;
 }
 
 export type AttendanceDayStatus = 'keldi' | 'kelmadi' | 'kech_keldi' | 'dam_olish';
@@ -648,4 +652,29 @@ export interface LessonSession {
   teacherId?: string | null;
   cameraId?: string | null;
   scheduledStartTime?: string | null;
+}
+
+/** GET /api/events/summary — Hodisalar jurnalining tepa qatori va filtrlari. */
+export interface EventFacet {
+  value: string;
+  label: string;
+  count: number;
+}
+
+export interface EventSummary {
+  total: number;
+  unreviewed: number;
+  confirmed: number;
+  rejected: number;
+  unreviewedHigh: number;
+  unreviewedMedium: number;
+  unreviewedLow: number;
+  today: number;
+  todaySerious: number;
+  staleSeriousUnreviewed: number;
+  oldestUnreviewedHours: number | null;
+  avgReviewMinutes: number | null;
+  recentPrecision: number | null;
+  modules: EventFacet[];
+  buildings: EventFacet[];
 }

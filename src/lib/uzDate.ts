@@ -43,3 +43,28 @@ export function daysBetweenInclusive(from: string, to: string): number {
 export function formatCount(value: number | null | undefined): string {
   return value === null || value === undefined ? '—' : value.toLocaleString('ru-RU');
 }
+
+/** "hozirgina", "12 daq oldin", "3 soat oldin", "2 kun oldin" — bir haftadan
+ *  eskisi sana bilan. Kelajakdagi vaqt (soat farqi) "hozirgina" deb olinadi. */
+export function relativeTime(iso: string, now: Date = new Date()): string {
+  const seconds = Math.round((now.getTime() - new Date(iso).getTime()) / 1000);
+  if (Number.isNaN(seconds)) return '';
+  if (seconds < 45) return 'hozirgina';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} daq oldin`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} soat oldin`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days} kun oldin`;
+  return iso.slice(0, 10);
+}
+
+/** Davomiylik: 45 -> "45 daq", 150 -> "2,5 soat", 4320 -> "3 kun". */
+export function formatMinutes(minutes: number | null | undefined): string {
+  if (minutes === null || minutes === undefined) return '—';
+  if (minutes < 1) return '1 daq dan kam';
+  if (minutes < 60) return `${Math.round(minutes)} daq`;
+  const hours = minutes / 60;
+  if (hours < 48) return `${(Math.round(hours * 10) / 10).toString().replace('.', ',')} soat`;
+  return `${Math.round(hours / 24)} kun`;
+}
