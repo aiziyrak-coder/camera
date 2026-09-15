@@ -22,6 +22,8 @@ from app.services.inference_gate import PRIORITY_BACKGROUND, PRIORITY_LIVE, face
 logger = logging.getLogger("app.face_recognition")
 
 _app: FaceAnalysis | None = None
+# Tizim o'qiydigan InsightFace modellari — _get_app() izohiga qarang.
+REQUIRED_FACE_MODELS = ["detection", "recognition", "landmark_3d_68"]
 
 # Cosine similarity threshold for buffalo_l embeddings. This is a
 # reasonable starting point, not a validated production number — real
@@ -128,7 +130,14 @@ def _get_app() -> FaceAnalysis:
             "loading InsightFace buffalo_l model (first use)",
             extra={"gpu_enabled": settings.face_recognition_gpu_enabled},
         )
-        _app = FaceAnalysis(name="buffalo_l", providers=providers)
+        # Faqat tizim haqiqatan o'qiydigan modellar. buffalo_l standart
+        # bo'yicha 5 ta modelni HAR BIR YUZ uchun ishga tushiradi; kod esa
+        # faqat normed_embedding (recognition), bbox (detection) va
+        # landmark_3d_68 (uyqu, frontallik, liveness) ni ishlatadi.
+        # genderage va landmark_2d_106 hech qayerda o'qilmaydi — productionda
+        # kirish kamerasida kadrga ~21 yuz tushadi, ya'ni kadr boshiga ~42
+        # ta befoyda model chaqiruvi CPU chegarasida turgan konteynerda.
+        _app = FaceAnalysis(name="buffalo_l", providers=providers, allowed_modules=REQUIRED_FACE_MODELS)
         _limit_session_threads(_app, providers)
         # ctx_id=0 selects GPU device 0 when CUDAExecutionProvider is
         # active, and is harmless/ignored when it isn't (the CPU-only path

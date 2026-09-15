@@ -30,6 +30,13 @@ class TestOnnxThreadLimit:
             assert options.intra_op_num_threads == 2, name
             assert options.inter_op_num_threads == 1, name
 
+    def test_only_models_the_system_reads_are_loaded(self, fresh_app):
+        app = face_recognition._get_app()
+        assert set(app.models) == {"detection", "recognition", "landmark_3d_68"}
+        # Hech qayerda o'qilmaydi, lekin har yuz uchun CPU yerdi.
+        assert "genderage" not in app.models
+        assert "landmark_2d_106" not in app.models
+
     def test_zero_keeps_onnxruntime_default(self, fresh_app):
         fresh_app.setattr(settings, "face_recognition_intra_op_threads", 0)
         app = face_recognition._get_app()
