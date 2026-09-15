@@ -30,6 +30,7 @@ export default function KpiTile({
   trend = [],
   note,
   reliable = true,
+  previousLabel = 'Oldingi davr',
 }: {
   label: string;
   value: string;
@@ -40,6 +41,7 @@ export default function KpiTile({
   trend?: (number | null)[];
   note?: string | null;
   reliable?: boolean;
+  previousLabel?: string;
 }) {
   const t = tone(delta, better);
   const Icon = t === 'neutral' ? Minus : (delta ?? 0) > 0 ? ArrowUpRight : ArrowDownRight;
@@ -59,7 +61,7 @@ export default function KpiTile({
         )}
       </div>
       <p className="mt-0.5 text-[11px] text-slate-400">
-        {previous ? `Oldingi davr: ${previous}` : "Solishtirish uchun ma'lumot yo'q"}
+        {previous ? `${previousLabel}: ${previous}` : "Solishtirish uchun ma'lumot yo'q"}
       </p>
       {note && (
         <p className={`mt-2 text-[11px] font-semibold ${reliable ? 'text-slate-500' : 'text-amber-700'}`}>

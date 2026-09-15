@@ -635,6 +635,39 @@ export interface AttendanceDay {
   earlyLeave?: boolean;
 }
 
+/** Davomat sahifasidagi odam kartasi — GET /api/attendance/{id}/summary. */
+export interface AttendancePerson {
+  id: string;
+  fullName: string;
+  type: 'talaba' | 'xodim';
+  faculty: string;
+  unit: string;
+  biometricsStatus: 'tasdiqlangan' | 'kutilmoqda' | 'yoq';
+  initials: string;
+  biometricPhotoUrl: string | null;
+}
+
+/** Bir oy yig'indisi. Yozuv bo'lmasa rate va o'rtachalar null ("ma'lumot yo'q" ≠ 0). */
+export interface AttendanceMonth {
+  month: string;
+  recordedDays: number;
+  present: number;
+  late: number;
+  absent: number;
+  earlyLeave: number;
+  rate: number | null;
+  avgArrival: string | null;
+  avgPresenceMinutes: number | null;
+}
+
+export interface AttendanceSummary {
+  person: AttendancePerson;
+  /** Eskidan yangiga; oxirgisi — joriy oy. */
+  months: AttendanceMonth[];
+  /** ISO hafta kunlari (1 — dushanba) — serverdagi absence_marker qoidasi. */
+  workingWeekdays: number[];
+}
+
 export interface LessonSession {
   id: string;
   date: string;

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Camera as CameraIcon, Loader2, MapPin, Search, Users } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { CalendarCheck, Camera as CameraIcon, Loader2, MapPin, Search, Users } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import Badge from '../../components/Badge';
 import Modal from '../../components/Modal';
@@ -243,6 +244,13 @@ function PersonDayModal({
             {status && <Badge tone={status.tone}>{status.label}</Badge>}
             {data.checkIn && <span>Kelgan: {data.checkIn}</span>}
             {data.checkOut && <span>Eshikdan oxirgi chiqish: {data.checkOut}</span>}
+            <Link
+              to={`/admin/attendance?person=${data.id}&month=${data.date.slice(0, 7)}`}
+              className="ml-auto flex items-center gap-1 font-semibold text-indigo-600 hover:underline"
+            >
+              <CalendarCheck size={13} />
+              Davomat kalendari
+            </Link>
           </div>
 
           <div>

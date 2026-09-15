@@ -1,466 +1,573 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, LogOut, Loader2, LogIn, Search, Trash2, UserCheck, UserX, Clock3, TrendingUp, CalendarDays, AlertTriangle } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
-import StatCard from '../../components/StatCard';
-import Modal from '../../components/Modal';
 import Badge from '../../components/Badge';
-import ConfirmDialog from '../../components/ConfirmDialog';
-import { api, type Page } from '../../lib/apiClient';
+import EmptyState from '../../components/ui/EmptyState';
+import ErrorState from '../../components/ui/ErrorState';
+import KpiTile from '../../components/ui/KpiTile';
+import { SkeletonBlock } from '../../components/ui/Skeleton';
+import DayDrawer from '../../components/attendance/DayDrawer';
+import MonthTrend from '../../components/attendance/MonthTrend';
+import PersonPicker from '../../components/attendance/PersonPicker';
+import { api, isAbortError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
-import { toLocalDateString } from '../../lib/date';
-import type { AttendanceDay, AttendanceDayStatus, StudentStaffRecord } from '../../types';
+import {
+  CELL_STATUS_LABEL,
+  DEFAULT_WORKING_WEEKDAYS,
+  buildMonthGrid,
+  clockToMinutes,
+  dayLabel,
+  isValidMonth,
+  keyboardTarget,
+  leadingBlanks,
+  monthLabel,
+  monthOf,
+  monthStats,
+  shiftMonth,
+  type CalendarCell,
+  type CellStatus,
+} from '../../lib/attendanceCalendar';
+import { NO_FACULTY_LABEL } from '../../lib/peopleFilters';
+import { UZ_WEEKDAYS_SHORT, formatMinutes, todayInTashkent } from '../../lib/uzDate';
+import type { AttendanceDay, AttendancePerson, AttendanceSummary, StudentStaffRecord } from '../../types';
 
-const MONTH_NAMES = [
-  'Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun',
-  'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr',
-];
-const WEEKDAY_LABELS = ['Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh', 'Ya'];
+const SUMMARY_MONTHS = 6;
+const MONTH_TTL_MS = 60_000;
+const MONTH_CACHE_LIMIT = 60;
+const MIN_RELIABLE_DAYS = 5;
+/** Katakdagi "binoda bo'lish" chizig'i shu davomiylikda to'la bo'ladi. */
+const FULL_DAY_MINUTES = 9 * 60;
 
-type CellStatus = AttendanceDayStatus | 'malumotYoq';
+// Ko'rilgan oylar sahifadan chiqib qaytganda ham darhol chiziladi; bir
+// daqiqadan eskisi fonda yangilanadi. Kalit — odam va oy.
+const monthCache = new Map<string, { at: number; days: AttendanceDay[] }>();
 
-interface CalendarCell {
-  date: string;
-  status: CellStatus;
-  checkIn?: string;
-  checkOut?: string;
-  earlyLeave?: boolean;
-  isRecord: boolean;
+function cacheKey(personId: string, month: string): string {
+  return `${personId}:${month}`;
 }
 
-const STATUS_STYLE: Record<CellStatus, string> = {
-  keldi: 'bg-emerald-100 text-emerald-700',
-  kech_keldi: 'bg-amber-100 text-amber-700',
-  kelmadi: 'bg-red-100 text-red-700',
-  dam_olish: 'bg-slate-100 text-slate-400',
-  malumotYoq: 'bg-slate-50 text-slate-300',
-};
-
-const STATUS_LABEL: Record<CellStatus, string> = {
-  keldi: 'Keldi',
-  kech_keldi: 'Kech keldi',
-  kelmadi: 'Kelmadi',
-  dam_olish: 'Dam olish',
-  malumotYoq: "Ma'lumot yo'q",
-};
-
-const STATUS_BADGE_TONE: Record<CellStatus, 'green' | 'amber' | 'red' | 'slate'> = {
-  keldi: 'green',
-  kech_keldi: 'amber',
-  kelmadi: 'red',
-  dam_olish: 'slate',
-  malumotYoq: 'slate',
-};
-
-const WEEKDAY_FULL_NAMES = [
-  'Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba',
-];
-
-function formatFullDate(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number);
-  const date = new Date(y, m - 1, d);
-  return `${d}-${MONTH_NAMES[m - 1]} ${y}, ${WEEKDAY_FULL_NAMES[date.getDay()]}`;
+function rememberMonth(personId: string, month: string, days: AttendanceDay[]) {
+  if (monthCache.size >= MONTH_CACHE_LIMIT) monthCache.clear();
+  monthCache.set(cacheKey(personId, month), { at: Date.now(), days });
 }
 
-function mondayIndex(date: Date) {
-  return (date.getDay() + 6) % 7;
+async function fetchMonth(personId: string, month: string, token: string, signal?: AbortSignal) {
+  const days = await api.get<AttendanceDay[]>(`/api/attendance/${personId}?month=${month}`, token, { signal });
+  rememberMonth(personId, month, days);
+  return days;
 }
 
-/** Backenddan kelgan (kamdan-kam) yozuvlarni to'liq oy setkasiga to'ldiradi —
- * hafta oxiri/kelajak kunlar "Dam olish", yozuv topilmagan o'tgan ish kuni
- * esa haqiqatan ham "Ma'lumot yo'q" deb ko'rsatiladi (hali AI davomat moduli
- * ishlamayapti, shuning uchun bo'sh kunni soxta "Kelmadi" deb belgilamaymiz). */
-function buildMonthGrid(records: AttendanceDay[], year: number, month: number): CalendarCell[] {
-  const byDate = new Map(records.map((r) => [r.date, r]));
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+const CELL_STYLE: Record<CellStatus, string> = {
+  keldi: 'border-transparent bg-emerald-100 text-emerald-800',
+  kech_keldi: 'border-transparent bg-amber-100 text-amber-800',
+  kelmadi: 'border-transparent bg-red-100 text-red-700',
+  dam_olish: 'border-transparent bg-slate-100/80 text-slate-400',
+  malumot_yoq: 'border-dashed border-slate-300 bg-white/60 text-slate-500',
+  kelajak: 'border-transparent bg-transparent text-slate-300',
+};
 
-  const cells: CalendarCell[] = [];
-  for (let d = 1; d <= daysInMonth; d++) {
-    const date = new Date(year, month, d);
-    const iso = toLocalDateString(date);
-    const dow = date.getDay();
-    const record = byDate.get(iso);
+const LEGEND: CellStatus[] = ['keldi', 'kech_keldi', 'kelmadi', 'malumot_yoq', 'dam_olish'];
 
-    if (record) {
-      cells.push({
-        date: iso,
-        status: record.status,
-        checkIn: record.checkIn,
-        checkOut: record.checkOut,
-        earlyLeave: record.earlyLeave,
-        isRecord: true,
-      });
-    } else if (date > today || dow === 0 || dow === 6) {
-      cells.push({ date: iso, status: 'dam_olish', isRecord: false });
-    } else {
-      cells.push({ date: iso, status: 'malumotYoq', isRecord: false });
-    }
-  }
-  return cells;
+const BIOMETRICS: Record<AttendancePerson['biometricsStatus'], { label: string; tone: 'green' | 'amber' | 'slate' }> = {
+  tasdiqlangan: { label: 'Yuzi tasdiqlangan', tone: 'green' },
+  kutilmoqda: { label: 'Yuzi kutilmoqda', tone: 'amber' },
+  yoq: { label: "Yuzi yo'q", tone: 'slate' },
+};
+
+function signed(value: number, unit: string): string {
+  const rounded = Math.round(value * 10) / 10;
+  const text = String(Math.abs(rounded)).replace('.', ',');
+  return `${rounded > 0 ? '+' : rounded < 0 ? '−' : ''}${text}${unit}`;
+}
+
+function percent(value: number): string {
+  return `${String(value).replace('.', ',')}%`;
+}
+
+function PersonHeader({ person }: { person: AttendancePerson }) {
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const biometrics = BIOMETRICS[person.biometricsStatus];
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-white/70 bg-white/55 p-3">
+      {person.biometricPhotoUrl && !photoFailed ? (
+        <img
+          src={person.biometricPhotoUrl}
+          alt=""
+          onError={() => setPhotoFailed(true)}
+          className="h-12 w-12 shrink-0 rounded-xl object-cover ring-2 ring-white"
+        />
+      ) : (
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-sm font-bold text-indigo-700">
+          {person.initials}
+        </span>
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-base font-extrabold text-slate-900">{person.fullName}</p>
+        <p className="truncate text-xs text-slate-500">
+          {[person.type === 'talaba' ? 'Talaba' : 'Xodim', person.faculty || NO_FACULTY_LABEL, person.unit]
+            .filter(Boolean)
+            .join(' · ')}
+        </p>
+      </div>
+      <Badge tone={biometrics.tone}>{biometrics.label}</Badge>
+    </div>
+  );
+}
+
+function DayCell({
+  cell,
+  selected,
+  onOpen,
+}: {
+  cell: CalendarCell;
+  selected: boolean;
+  onOpen: (date: string) => void;
+}) {
+  const future = cell.status === 'kelajak';
+  const details = [
+    CELL_STATUS_LABEL[cell.status],
+    cell.checkIn ? `keldi ${cell.checkIn}` : null,
+    cell.checkOut ? `ketdi ${cell.checkOut}` : null,
+    cell.earlyLeave ? 'erta ketdi' : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
+  const fill = cell.presenceMinutes ? Math.min(cell.presenceMinutes / FULL_DAY_MINUTES, 1) : 0;
+
+  return (
+    <button
+      type="button"
+      data-date={cell.date}
+      disabled={future}
+      onClick={() => onOpen(cell.date)}
+      aria-label={`${dayLabel(cell.date)} — ${details}`}
+      title={details}
+      className={`relative flex min-h-[3rem] flex-col justify-between rounded-lg border p-1.5 text-left transition sm:min-h-[4.25rem] sm:p-2 ${
+        CELL_STYLE[cell.status]
+      } ${future ? 'cursor-default' : 'hover:brightness-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500'} ${
+        cell.isToday ? 'ring-2 ring-indigo-500' : ''
+      } ${selected ? 'shadow-[0_0_0_3px_rgba(79,70,229,0.35)]' : ''}`}
+    >
+      <span className="flex items-center justify-between gap-1">
+        <span className={`text-xs sm:text-sm ${cell.isToday ? 'font-extrabold' : 'font-bold'}`}>{cell.day}</span>
+        {cell.earlyLeave && <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />}
+      </span>
+      {cell.checkIn && (
+        <span className="hidden truncate text-[10px] font-semibold tabular-nums opacity-80 sm:block">
+          {cell.checkIn}
+          {cell.checkOut ? `–${cell.checkOut}` : ''}
+        </span>
+      )}
+      {fill > 0 && (
+        <span className="absolute inset-x-1.5 bottom-1 h-[3px] overflow-hidden rounded-full bg-black/5" aria-hidden="true">
+          <span className="block h-full rounded-full bg-current opacity-50" style={{ width: `${Math.round(fill * 100)}%` }} />
+        </span>
+      )}
+    </button>
+  );
 }
 
 export default function AttendancePage() {
   const { token } = useAuth();
-  // Ilgari sahifa ochilganda BARCHA ~8 000 odam sahifama-sahifa yuklanib
-  // <select> ga joylanardi — kalendar shu tugamaguncha ochilmasdi. Endi odam
-  // qidiruv orqali tanlanadi va faqat tanlangan odamning oyi yuklanadi.
-  const [person, setPerson] = useState<StudentStaffRecord | null>(null);
-  const personId = person?.id ?? '';
-  const [query, setQuery] = useState('');
-  const [suggestions, setSuggestions] = useState<StudentStaffRecord[]>([]);
-  const [searching, setSearching] = useState(false);
-  const now = new Date();
-  const [viewYear, setViewYear] = useState(now.getFullYear());
-  const [viewMonth, setViewMonth] = useState(now.getMonth());
-  const [records, setRecords] = useState<AttendanceDay[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState<AttendanceDay | null>(null);
-  const [selectedDay, setSelectedDay] = useState<CalendarCell | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
+  const [params, setParams] = useSearchParams();
+  const today = todayInTashkent();
+  const currentMonth = monthOf(today);
+  // Chuqur havola: ?person=<id>&month=YYYY-MM ("Talabalar va Xodimlar",
+  // "O'qituvchilar kuzatuvi" sahifalaridan). Kelajak oy joriy oyga qisqaradi.
+  const personId = params.get('person') ?? '';
+  const monthParam = params.get('month');
+  const month = isValidMonth(monthParam) && monthParam < currentMonth ? monthParam : currentMonth;
 
-  useEffect(() => {
-    const text = query.trim();
-    if (!token || text.length < 2 || (person && text === person.fullName)) {
-      setSuggestions([]);
-      setSearching(false);
-      return;
-    }
-    let cancelled = false;
-    setSearching(true);
-    const timer = window.setTimeout(() => {
-      // POST: qidiruv JSHSHIR bo'lishi mumkin — URL/access logga tushmasin.
-      api
-        .post<Page<StudentStaffRecord>>('/api/students-staff/search', { search: text, pageSize: 8 }, token)
-        .then((page) => !cancelled && setSuggestions(page.items))
-        .catch(() => !cancelled && setSuggestions([]))
-        .finally(() => !cancelled && setSearching(false));
-    }, 250);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [query, token, person]);
+  const [picked, setPicked] = useState<AttendancePerson | null>(null);
+  const [summary, setSummary] = useState<AttendanceSummary | null>(null);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [summaryVersion, setSummaryVersion] = useState(0);
+  const [records, setRecords] = useState<AttendanceDay[] | null>(null);
+  const [recordsError, setRecordsError] = useState<string | null>(null);
+  const [recordsVersion, setRecordsVersion] = useState(0);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
 
-  function choosePerson(next: StudentStaffRecord) {
-    setPerson(next);
-    setQuery(next.fullName);
-    setSuggestions([]);
-    setRecords([]);
-    setSelectedDay(null);
-  }
+  const activeSummary = summary && summary.person.id === personId ? summary : null;
+  const person = activeSummary?.person ?? (picked?.id === personId ? picked : null);
+  const workingWeekdays = activeSummary?.workingWeekdays ?? DEFAULT_WORKING_WEEKDAYS;
 
   useEffect(() => {
     if (!token || !personId) return;
-    let cancelled = false;
-    setLoading(true);
-    const month = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}`;
+    const controller = new AbortController();
+    setSummaryError(null);
     api
-      .get<AttendanceDay[]>(`/api/attendance/${personId}?month=${month}`, token)
-      .then((res) => {
-        if (!cancelled) {
-          setRecords(res);
-          setError(null);
-        }
+      .get<AttendanceSummary>(`/api/attendance/${personId}/summary?months=${SUMMARY_MONTHS}`, token, {
+        signal: controller.signal,
       })
-      .catch((err: Error) => {
-        if (!cancelled) setError(err.message);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+      .then(setSummary)
+      .catch((err: unknown) => {
+        if (!isAbortError(err)) setSummaryError(err instanceof Error ? err.message : "Ma'lumotni olib bo'lmadi");
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [token, personId, viewYear, viewMonth, reloadKey]);
+    return () => controller.abort();
+  }, [token, personId, summaryVersion]);
 
-  async function handleDelete() {
-    if (!deleting || !personId) return;
-    await api.del(`/api/attendance/${personId}/${deleting.date}`, token);
-    setDeleting(null);
-    setSelectedDay((cur) => (cur && cur.date === deleting.date ? null : cur));
-    setReloadKey((k) => k + 1);
+  useEffect(() => {
+    if (!token || !personId) return;
+    const cached = monthCache.get(cacheKey(personId, month));
+    setRecords(cached ? cached.days : null);
+    setRecordsError(null);
+    if (cached && Date.now() - cached.at < MONTH_TTL_MS) return;
+    const controller = new AbortController();
+    fetchMonth(personId, month, token, controller.signal)
+      .then(setRecords)
+      .catch((err: unknown) => {
+        if (!isAbortError(err)) setRecordsError(err instanceof Error ? err.message : "Davomatni olib bo'lmadi");
+      });
+    return () => controller.abort();
+  }, [token, personId, month, recordsVersion]);
+
+  // Qo'shni oylar oldindan yuklanadi — oy almashtirish tarmoqni kutmaydi.
+  const monthLoaded = records !== null;
+  useEffect(() => {
+    if (!token || !personId || !monthLoaded) return;
+    const neighbours = [shiftMonth(month, -1), shiftMonth(month, 1)].filter(
+      (candidate) => candidate <= currentMonth && !monthCache.has(cacheKey(personId, candidate)),
+    );
+    if (neighbours.length === 0) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      for (const candidate of neighbours) {
+        fetchMonth(personId, candidate, token, controller.signal).catch(() => undefined);
+      }
+    }, 300);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [token, personId, month, currentMonth, monthLoaded]);
+
+  const cells = useMemo(
+    () => buildMonthGrid(records ?? [], month, today, workingWeekdays),
+    [records, month, today, workingWeekdays],
+  );
+  const stats = useMemo(() => monthStats(cells), [cells]);
+  const selectedIndex = selectedDate ? cells.findIndex((cell) => cell.date === selectedDate) : -1;
+  const selectedCell = selectedIndex >= 0 ? cells[selectedIndex] : null;
+  const prevCell = selectedIndex > 0 ? cells[selectedIndex - 1] : null;
+  const nextCell =
+    selectedIndex >= 0 && selectedIndex < cells.length - 1 && cells[selectedIndex + 1].status !== 'kelajak'
+      ? cells[selectedIndex + 1]
+      : null;
+
+  const previous =
+    activeSummary?.months.find((m) => m.month === shiftMonth(month, -1) && m.recordedDays > 0) ?? null;
+  const rateDelta =
+    stats.rate !== null && previous?.rate != null ? Math.round((stats.rate - previous.rate) * 10) / 10 : null;
+  const arrivalDelta =
+    stats.avgArrival && previous?.avgArrival
+      ? Math.round(clockToMinutes(stats.avgArrival) - clockToMinutes(previous.avgArrival))
+      : null;
+  const presenceDelta =
+    stats.avgPresenceMinutes !== null && previous?.avgPresenceMinutes != null
+      ? stats.avgPresenceMinutes - previous.avgPresenceMinutes
+      : null;
+  const rateNote =
+    stats.recordedDays === 0
+      ? "Bu oyda yozuv yo'q"
+      : stats.recordedDays < MIN_RELIABLE_DAYS
+        ? `Faqat ${stats.recordedDays} ta yozuvli kun — xulosa uchun kam`
+        : `${stats.recordedDays} ta yozuvli kun`;
+
+  function choosePerson(record: StudentStaffRecord) {
+    setPicked({
+      id: record.id,
+      fullName: record.fullName,
+      type: record.type,
+      faculty: record.faculty,
+      unit: record.groupOrPosition,
+      biometricsStatus: record.biometricsStatus,
+      initials: record.initials,
+      biometricPhotoUrl: record.biometricPhotoUrl ?? null,
+    });
+    setSelectedDate(null);
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('person', record.id);
+      return next;
+    });
   }
 
-  const days = useMemo(() => buildMonthGrid(records, viewYear, viewMonth), [records, viewYear, viewMonth]);
-  const leadingBlanks = mondayIndex(new Date(viewYear, viewMonth, 1));
+  function goToMonth(target: string) {
+    setSelectedDate(null);
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (target >= currentMonth) next.delete('month');
+        else next.set('month', target);
+        return next;
+      },
+      { replace: true },
+    );
+  }
 
-  const stats = useMemo(() => {
-    const workDays = days.filter((d) => d.status !== 'dam_olish' && d.status !== 'malumotYoq');
-    const present = workDays.filter((d) => d.status === 'keldi').length;
-    const late = workDays.filter((d) => d.status === 'kech_keldi').length;
-    const absent = workDays.filter((d) => d.status === 'kelmadi').length;
-    const earlyLeave = workDays.filter((d) => d.earlyLeave).length;
-    const rate = workDays.length ? Math.round(((present + late) / workDays.length) * 100) : null;
-    return { present, late, absent, earlyLeave, rate, recordedDays: workDays.length };
-  }, [days]);
+  /** Saqlash/o'chirishdan keyin: keshdagi oy darhol yangilanadi, yig'indi qayta so'raladi. */
+  function applyDays(date: string, update: (days: AttendanceDay[]) => AttendanceDay[]) {
+    const monthKey = monthOf(date);
+    const base = monthCache.get(cacheKey(personId, monthKey))?.days ?? (monthKey === month ? (records ?? []) : []);
+    const next = update(base).sort((a, b) => a.date.localeCompare(b.date));
+    rememberMonth(personId, monthKey, next);
+    if (monthKey === month) setRecords(next);
+    setSummaryVersion((v) => v + 1);
+  }
 
-  function shiftMonth(delta: number) {
-    let m = viewMonth + delta;
-    let y = viewYear;
-    if (m < 0) {
-      m = 11;
-      y -= 1;
-    } else if (m > 11) {
-      m = 0;
-      y += 1;
+  function handleGridKey(event: KeyboardEvent<HTMLDivElement>) {
+    if (selectedDate) return;
+    const date = (event.target as HTMLElement).dataset.date;
+    const target = date ? keyboardTarget(date, event.key) : null;
+    if (!target || monthOf(target) !== month) return;
+    const button = gridRef.current?.querySelector<HTMLButtonElement>(`[data-date="${target}"]`);
+    if (button && !button.disabled) {
+      event.preventDefault();
+      button.focus();
     }
-    setViewMonth(m);
-    setViewYear(y);
   }
 
   return (
-    <section className="glass p-6">
+    <section className="glass p-4 sm:p-6">
       <PageHeader
         title="Davomat kalendari"
-        subtitle="Xodim/talaba bo'yicha kalendar ko'rinishida davomat tarixi"
+        subtitle="Odamning oylik davomati, har kuni qayerda ko'ringani va qo'lda tuzatish"
       />
 
-      <div className="mb-5 flex flex-wrap items-center gap-3">
-        <div className="relative w-full max-w-md">
-          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && suggestions.length) {
-                e.preventDefault();
-                choosePerson(suggestions[0]);
-              }
-            }}
-            placeholder="Ism-familiya yoki JSHSHIR bo'yicha qidiring"
-            aria-label="Odamni qidirish"
-            autoComplete="off"
-            className="w-full rounded-xl border border-white/80 bg-white/60 py-2.5 pl-9 pr-9 text-sm text-slate-900 outline-none focus:border-indigo-300"
-          />
-          {searching && (
-            <Loader2 size={15} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-slate-400" />
-          )}
-          {suggestions.length > 0 && (
-            <ul className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border border-white/80 bg-white p-1 shadow-lg">
-              {suggestions.map((p) => (
-                <li key={p.id}>
-                  <button
-                    type="button"
-                    onClick={() => choosePerson(p)}
-                    className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm hover:bg-indigo-50"
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate font-medium text-slate-900">{p.fullName}</span>
-                      <span className="block truncate text-xs text-slate-500">{p.groupOrPosition}</span>
-                    </span>
-                    {p.biometricsStatus !== 'tasdiqlangan' && (
-                      <span className="shrink-0 text-[11px] font-semibold text-amber-600">yuzi yo&apos;q</span>
-                    )}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            onClick={() => shiftMonth(-1)}
-            className="glass-deep rounded-xl p-2 text-slate-500 transition-colors hover:text-indigo-500"
-          >
-            <ChevronLeft size={16} />
-          </button>
-          <span className="w-36 text-center text-sm font-bold text-slate-900">
-            {MONTH_NAMES[viewMonth]} {viewYear}
-          </span>
-          <button
-            onClick={() => shiftMonth(1)}
-            className="glass-deep rounded-xl p-2 text-slate-500 transition-colors hover:text-indigo-500"
-          >
-            <ChevronRight size={16} />
-          </button>
-        </div>
-      </div>
-
-      {error && (
-        <p className="mb-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
-          {error}
-        </p>
-      )}
-
-      {!person && (
-        <p className="mb-4 rounded-xl bg-white/60 px-3 py-2.5 text-sm text-slate-500">
-          Davomat tarixini ko&apos;rish uchun yuqorida odamni qidirib tanlang.
-        </p>
-      )}
-
-      {person && person.biometricsStatus !== 'tasdiqlangan' && (
-        <div className="mb-4 flex gap-2 rounded-xl bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
-          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-          <p>
-            <span className="font-semibold">
-              {person.biometricsStatus === 'kutilmoqda' ? 'Yuzi tekshiruvda (tasdiqlanmagan).' : "Yuzi ro'yxatga olinmagan."}
-            </span>{' '}
-            Kameralar bu odamni taniy olmaydi, shuning uchun davomat avtomatik yozilmaydi va kalendardagi bo&apos;sh
-            kunlar &quot;kelmagan&quot; degani emas. Yuzni &quot;Talabalar va Xodimlar&quot; bo&apos;limida
-            &quot;Tahrirlash → Yuzni olish&quot; orqali yoki ro&apos;yxatdan o&apos;tish sahifasida qo&apos;shing.
-          </p>
-        </div>
-      )}
-
-      {person && stats.recordedDays > 0 && stats.present + stats.late === 0 && (
-        <div className="mb-4 flex gap-2 rounded-xl bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
-          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-          <p>
-            <span className="font-semibold">Bu oyda birorta ham &quot;Keldi&quot; yo&apos;q.</span> &quot;Kelmadi&quot; kun oxirida
-            kamera tanimagan har bir yuzi tasdiqlangan odamga avtomatik qo&apos;yiladi — bu odam haqiqatan kelmaganini
-            emas, kameralar uni tanimaganini ham bildirishi mumkin. &quot;O&apos;qituvchilar kuzatuvi → Davomat
-            kameralari&quot; bo&apos;limidagi tashxisni tekshiring.
-          </p>
-        </div>
-      )}
-
-      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <StatCard icon={<UserCheck size={20} />} value={stats.present} label="Keldi" tone="green" />
-        <StatCard icon={<Clock3 size={20} />} value={stats.late} label="Kech keldi" tone="amber" />
-        <StatCard icon={<UserX size={20} />} value={stats.absent} label="Kelmadi" tone="red" />
-        <StatCard icon={<LogOut size={20} />} value={stats.earlyLeave} label="Erta ketdi" tone="amber" />
-        <StatCard
-          icon={<TrendingUp size={20} />}
-          value={stats.rate === null ? '—' : `${stats.rate}%`}
-          label={stats.rate === null ? "Davomat (yozuv yo'q)" : `Davomat (${stats.recordedDays} kun)`}
-          tone="indigo"
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <PersonPicker
+          onSelect={choosePerson}
+          placeholder={personId ? 'Boshqa odamni qidirish...' : "Ism-familiya yoki JSHSHIR bo'yicha qidiring"}
         />
-      </div>
-
-      {loading && !person ? (
-        <div className="flex items-center justify-center py-10 text-slate-400">
-          <Loader2 size={20} className="animate-spin" />
-        </div>
-      ) : (
-        <div className="glass-deep p-4">
-          <div className="mb-2 grid grid-cols-7 gap-2 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-            {WEEKDAY_LABELS.map((w) => (
-              <span key={w}>{w}</span>
-            ))}
-          </div>
-          <div className="grid grid-cols-7 gap-2">
-            {Array.from({ length: leadingBlanks }).map((_, i) => (
-              <div key={`blank-${i}`} />
-            ))}
-            {days.map((day) => {
-              const dayNum = Number(day.date.slice(-2));
-              const clickable = day.status !== 'dam_olish';
-              return (
-                <div
-                  key={day.date}
-                  onClick={clickable ? () => setSelectedDay(day) : undefined}
-                  title={`${STATUS_LABEL[day.status]}${day.checkIn ? ` · ${day.checkIn}` : ''}${day.earlyLeave ? ' · Erta ketdi' : ''}`}
-                  className={`group relative flex aspect-square flex-col items-center justify-center rounded-lg text-xs font-semibold ${STATUS_STYLE[day.status]} ${clickable ? 'cursor-pointer transition-transform hover:scale-[1.04]' : ''}`}
-                >
-                  {day.earlyLeave && (
-                    <span className="absolute -left-1 -top-1 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-white" />
-                  )}
-                  <span>{dayNum}</span>
-                  {day.checkIn && <span className="text-[9px] font-normal opacity-80">{day.checkIn}</span>}
-                  {day.isRecord && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeleting({ date: day.date, status: day.status as AttendanceDayStatus, checkIn: day.checkIn });
-                      }}
-                      title="Yozuvni o'chirish"
-                      className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-white text-slate-500 opacity-0 shadow-sm ring-1 ring-slate-200 transition-opacity hover:!opacity-100 hover:text-red-600 group-hover:opacity-100"
-                    >
-                      <Trash2 size={9} />
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-3 border-t border-white/70 pt-3 text-xs text-slate-500">
-            {(Object.keys(STATUS_LABEL) as CellStatus[]).map((s) => (
-              <span key={s} className="flex items-center gap-1.5">
-                <span className={`h-2.5 w-2.5 rounded-sm ${STATUS_STYLE[s].split(' ')[0]}`} />
-                {STATUS_LABEL[s]}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <ConfirmDialog
-        open={!!deleting}
-        title="Davomat yozuvini o'chirish"
-        message={deleting ? `${person?.fullName ?? ''} uchun ${deleting.date} sanasidagi davomat yozuvini o'chirishni tasdiqlaysizmi?` : ''}
-        onCancel={() => setDeleting(null)}
-        onConfirm={handleDelete}
-      />
-
-      <Modal open={!!selectedDay} onClose={() => setSelectedDay(null)} title={person?.fullName} maxWidth="max-w-sm">
-        {selectedDay && (
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center gap-2 text-sm text-slate-500">
-              <CalendarDays size={15} />
-              {formatFullDate(selectedDay.date)}
-            </div>
-
-            <div>
-              <Badge tone={STATUS_BADGE_TONE[selectedDay.status]}>{STATUS_LABEL[selectedDay.status]}</Badge>
-            </div>
-
-            {selectedDay.isRecord ? (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl bg-white/60 p-3">
-                  <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                    <LogIn size={12} />
-                    Keldi
-                  </div>
-                  <p className="text-lg font-bold text-slate-900">
-                    {selectedDay.checkIn ?? '—'}
-                  </p>
-                </div>
-                <div className="rounded-xl bg-white/60 p-3">
-                  <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                    <LogOut size={12} />
-                    Ketdi
-                  </div>
-                  <p className="text-lg font-bold text-slate-900">
-                    {selectedDay.checkOut ?? '—'}
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm text-slate-400">
-                Bu kun uchun kamera orqali qayd etilgan davomat yozuvi yo'q.
-              </p>
-            )}
-
-            {selectedDay.earlyLeave && (
-              <p className="flex items-center gap-1.5 text-xs font-semibold text-amber-600">
-                <LogOut size={13} />
-                Erta ketgan — belgilangan ish vaqtidan oldin chiqib ketgan
-              </p>
-            )}
-
-            {selectedDay.isRecord && (
-              <button
-                onClick={() => {
-                  setDeleting({
-                    date: selectedDay.date,
-                    status: selectedDay.status as AttendanceDayStatus,
-                    checkIn: selectedDay.checkIn,
-                  });
-                  setSelectedDay(null);
-                }}
-                className="glass-btn-danger flex items-center justify-center gap-1.5 self-start !py-2"
-              >
-                <Trash2 size={13} />
-                Yozuvni o'chirish
+        {personId && (
+          <div className="flex items-center gap-1 sm:ml-auto">
+            <button
+              type="button"
+              onClick={() => goToMonth(shiftMonth(month, -1))}
+              aria-label="Oldingi oy"
+              className="rounded-xl bg-white/60 p-2 text-slate-500 transition-colors hover:bg-white hover:text-indigo-600"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span className="w-32 text-center text-sm font-bold text-slate-900" aria-live="polite">
+              {monthLabel(month)}
+            </span>
+            <button
+              type="button"
+              onClick={() => goToMonth(shiftMonth(month, 1))}
+              disabled={month >= currentMonth}
+              aria-label="Keyingi oy"
+              className="rounded-xl bg-white/60 p-2 text-slate-500 transition-colors hover:bg-white hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronRight size={16} />
+            </button>
+            {month !== currentMonth && (
+              <button type="button" onClick={() => goToMonth(currentMonth)} className="btn-glass ml-1 text-xs">
+                Joriy oy
               </button>
             )}
           </div>
         )}
-      </Modal>
+      </div>
+
+      {!personId ? (
+        <EmptyState
+          icon={<CalendarDays size={28} />}
+          title="Davomatini ko'rish uchun odamni tanlang"
+          description="Ism-familiya yoki JSHSHIR bo'yicha qidiring. «Talabalar va Xodimlar» sahifasidagi «Davomat» tugmasi ham shu yerga olib keladi."
+        />
+      ) : (
+        <>
+          {person ? (
+            <PersonHeader key={person.id} person={person} />
+          ) : summaryError ? (
+            <div className="mb-4">
+              <ErrorState message={summaryError} onRetry={() => setSummaryVersion((v) => v + 1)} />
+            </div>
+          ) : (
+            <SkeletonBlock className="mb-4 h-[74px] w-full rounded-2xl" />
+          )}
+
+          {person && person.biometricsStatus !== 'tasdiqlangan' && (
+            <div className="mb-4 flex gap-2 rounded-xl bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+              <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+              <p>
+                <span className="font-semibold">
+                  {person.biometricsStatus === 'kutilmoqda' ? 'Yuzi hali tasdiqlanmagan.' : "Yuzi ro'yxatga olinmagan."}
+                </span>{' '}
+                {
+                  "Kameralar bu odamni taniy olmaydi — davomat avtomatik yozilmaydi va bo'sh kunlar «kelmagan» degani emas. Yuzni «Talabalar va Xodimlar → Tahrirlash» orqali yoki ro'yxatdan o'tish sahifasida qo'shing."
+                }
+              </p>
+            </div>
+          )}
+
+          {stats.recordedDays > 0 && stats.present + stats.late === 0 && (
+            <div className="mb-4 flex gap-2 rounded-xl bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+              <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+              <p>
+                <span className="font-semibold">{"Bu oyda birorta ham «Keldi» yo'q."}</span>{' '}
+                {
+                  "«Kelmadi» kun oxirida kamera tanimagan yuzi tasdiqlangan odamga avtomatik qo'yiladi — bu kameralar uni tanimaganini ham bildirishi mumkin. «O'qituvchilar kuzatuvi → Davomat kameralari» bo'limidagi tashxisni tekshiring."
+                }
+              </p>
+            </div>
+          )}
+
+          {records === null && !recordsError ? (
+            <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+              {Array.from({ length: 6 }, (_, i) => (
+                <SkeletonBlock key={i} className="h-[104px] rounded-2xl" />
+              ))}
+            </div>
+          ) : (
+            <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+              <KpiTile
+                label="Davomat"
+                value={stats.rate === null ? '—' : percent(stats.rate)}
+                previousLabel="O'tgan oy"
+                previous={previous?.rate != null ? percent(previous.rate) : null}
+                delta={rateDelta}
+                deltaDisplay={rateDelta === null ? null : signed(rateDelta, ' f.p.')}
+                better="up"
+                trend={activeSummary?.months.map((m) => m.rate) ?? []}
+                note={rateNote}
+                reliable={stats.recordedDays === 0 || stats.recordedDays >= MIN_RELIABLE_DAYS}
+              />
+              <KpiTile
+                label="Kech keldi"
+                value={`${stats.late} kun`}
+                previousLabel="O'tgan oy"
+                previous={previous ? `${previous.late} kun` : null}
+              />
+              <KpiTile
+                label="Kelmadi"
+                value={`${stats.absent} kun`}
+                previousLabel="O'tgan oy"
+                previous={previous ? `${previous.absent} kun` : null}
+              />
+              <KpiTile
+                label="Erta ketdi"
+                value={`${stats.earlyLeave} kun`}
+                previousLabel="O'tgan oy"
+                previous={previous ? `${previous.earlyLeave} kun` : null}
+              />
+              <KpiTile
+                label="O'rtacha kelish"
+                value={stats.avgArrival ?? '—'}
+                previousLabel="O'tgan oy"
+                previous={previous?.avgArrival ?? null}
+                delta={arrivalDelta}
+                deltaDisplay={arrivalDelta === null ? null : signed(arrivalDelta, ' daq')}
+                better="down"
+              />
+              <KpiTile
+                label="Binoda o'rtacha"
+                value={formatMinutes(stats.avgPresenceMinutes)}
+                previousLabel="O'tgan oy"
+                previous={previous?.avgPresenceMinutes != null ? formatMinutes(previous.avgPresenceMinutes) : null}
+                delta={presenceDelta}
+                deltaDisplay={presenceDelta === null ? null : signed(presenceDelta, ' daq')}
+                better="up"
+              />
+            </div>
+          )}
+
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_19rem]">
+            <div className="rounded-2xl border border-white/70 bg-white/45 p-3 sm:p-4">
+              {recordsError ? (
+                <ErrorState message={recordsError} onRetry={() => setRecordsVersion((v) => v + 1)} />
+              ) : (
+                <>
+                  <div className="mb-1.5 grid grid-cols-7 gap-1 text-center text-[11px] font-semibold uppercase tracking-wide sm:gap-1.5">
+                    {UZ_WEEKDAYS_SHORT.map((label, index) => (
+                      <span
+                        key={label}
+                        className={workingWeekdays.includes(index + 1) ? 'text-slate-500' : 'text-slate-300'}
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                  {records === null ? (
+                    <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
+                      {Array.from({ length: 35 }, (_, i) => (
+                        <SkeletonBlock key={i} className="min-h-[3rem] rounded-lg sm:min-h-[4.25rem]" />
+                      ))}
+                    </div>
+                  ) : (
+                    <div
+                      ref={gridRef}
+                      role="group"
+                      aria-label={`${monthLabel(month)} — davomat kalendari`}
+                      onKeyDown={handleGridKey}
+                      className="grid grid-cols-7 gap-1 sm:gap-1.5"
+                    >
+                      {Array.from({ length: leadingBlanks(month) }, (_, i) => (
+                        <span key={`blank-${i}`} aria-hidden="true" />
+                      ))}
+                      {cells.map((cell) => (
+                        <DayCell
+                          key={cell.date}
+                          cell={cell}
+                          selected={cell.date === selectedDate}
+                          onOpen={setSelectedDate}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+
+              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-white/70 pt-3 text-[11px] text-slate-500">
+                {LEGEND.map((status) => (
+                  <span key={status} className="flex items-center gap-1.5">
+                    <span className={`h-3 w-3 rounded border ${CELL_STYLE[status]}`} aria-hidden="true" />
+                    {CELL_STATUS_LABEL[status]}
+                  </span>
+                ))}
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden="true" />
+                  Erta ketdi
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="h-[3px] w-4 rounded-full bg-slate-400/60" aria-hidden="true" />
+                  {"Binoda bo'lish (9 soat — to'liq)"}
+                </span>
+              </div>
+              {stats.missingWorkDays > 0 && (
+                <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
+                  {`«Ma'lumot yo'q» — o'tgan ish kunida yozuv yo'q (${stats.missingWorkDays} kun). Bu kelmagan degani emas: kamera tanimagan yoki davomat moduli o'chirilgan bo'lishi mumkin.`}
+                </p>
+              )}
+            </div>
+
+            {activeSummary ? (
+              <MonthTrend months={activeSummary.months} activeMonth={month} onPick={goToMonth} />
+            ) : summaryError ? (
+              <ErrorState message={summaryError} onRetry={() => setSummaryVersion((v) => v + 1)} />
+            ) : (
+              <SkeletonBlock className="h-72 rounded-2xl" />
+            )}
+          </div>
+        </>
+      )}
+
+      {personId && (
+        <DayDrawer
+          open={selectedCell !== null}
+          personId={personId}
+          personName={person?.fullName ?? ''}
+          cell={selectedCell}
+          onClose={() => setSelectedDate(null)}
+          onPrev={prevCell ? () => setSelectedDate(prevCell.date) : undefined}
+          onNext={nextCell ? () => setSelectedDate(nextCell.date) : undefined}
+          onSaved={(day) => applyDays(day.date, (days) => [...days.filter((d) => d.date !== day.date), day])}
+          onDeleted={(date) => applyDays(date, (days) => days.filter((d) => d.date !== date))}
+        />
+      )}
     </section>
   );
 }

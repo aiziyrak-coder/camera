@@ -9,24 +9,39 @@ through the same upsert-by-(person,date) shape, so a day's row never cares
 which one produced it.
 """
 
+import uuid
+from collections import defaultdict
 from datetime import date as date_type
 from datetime import datetime
 from datetime import time as time_type
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import extract, select
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.audit import log_action
 from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_user
 from app.models import AttendanceRecord, StudentStaff
-from app.schemas.attendance import AttendanceDayOut, AttendanceRecordIn
+from app.schemas.attendance import (
+    AttendanceDayOut,
+    AttendanceMonthOut,
+    AttendancePersonOut,
+    AttendanceRecordIn,
+    AttendanceSummaryOut,
+)
+from app.storage import presigned_url
+from app.timezone import local_now
+from app.utils import compute_initials
 
 router = APIRouter(prefix="/api/attendance", tags=["attendance"])
+
+PRESENT_STATUSES = ("keldi", "kech_keldi")
+MAX_SUMMARY_MONTHS = 12
 
 
 def _parse_time(value: str | None) -> time_type | None:
@@ -36,6 +51,31 @@ def _parse_time(value: str | None) -> time_type | None:
         return time_type.fromisoformat(value)
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"'{value}' — vaqt 'HH:MM' formatida bo'lishi kerak") from exc
+
+
+def _person_uuid(value: str) -> uuid.UUID:
+    """Noto'g'ri identifikator — bazaga yetib borib 500 bermasin, 404 bo'lsin."""
+    try:
+        return uuid.UUID(value)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Talaba/xodim topilmadi") from None
+
+
+def _month_start(month: str) -> date_type:
+    try:
+        year_part, month_part = month.split("-")
+        return date_type(int(year_part), int(month_part), 1)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "month 'YYYY-MM' formatida bo'lishi kerak") from exc
+
+
+def _add_months(first: date_type, count: int) -> date_type:
+    index = first.year * 12 + first.month - 1 + count
+    return date_type(index // 12, index % 12 + 1, 1)
+
+
+def _minutes(value: time_type) -> float:
+    return value.hour * 60 + value.minute + value.second / 60
 
 
 def _is_early_leave(record: AttendanceRecord) -> bool:
@@ -52,7 +92,7 @@ def _is_early_leave(record: AttendanceRecord) -> bool:
     them once, briefly, and never saw them again," not "present for a
     while, then genuinely left early." A real early-leave implies they
     were actually there for some stretch of the day first."""
-    if record.status not in ("keldi", "kech_keldi") or record.check_out is None or record.check_in is None:
+    if record.status not in PRESENT_STATUSES or record.check_out is None or record.check_in is None:
         return False
     cutoff = time_type.fromisoformat(settings.attendance_early_leave_cutoff)
     if record.check_out >= cutoff:
@@ -73,6 +113,31 @@ def _to_out(record: AttendanceRecord) -> AttendanceDayOut:
     )
 
 
+def _month_summary(month: str, records: list[AttendanceRecord]) -> AttendanceMonthOut:
+    counted = [r for r in records if r.status != "dam_olish"]
+    present = sum(r.status == "keldi" for r in counted)
+    late = sum(r.status == "kech_keldi" for r in counted)
+    attended = [r for r in counted if r.status in PRESENT_STATUSES]
+    arrivals = [_minutes(r.check_in) for r in attended if r.check_in]
+    stays = [
+        _minutes(r.check_out) - _minutes(r.check_in)
+        for r in attended
+        if r.check_in and r.check_out and r.check_out > r.check_in
+    ]
+    avg_arrival = round(sum(arrivals) / len(arrivals)) if arrivals else None
+    return AttendanceMonthOut(
+        month=month,
+        recorded_days=len(counted),
+        present=present,
+        late=late,
+        absent=sum(r.status == "kelmadi" for r in counted),
+        early_leave=sum(_is_early_leave(r) for r in counted),
+        rate=round((present + late) * 100 / len(counted), 1) if counted else None,
+        avg_arrival=f"{avg_arrival // 60:02d}:{avg_arrival % 60:02d}" if avg_arrival is not None else None,
+        avg_presence_minutes=round(sum(stays) / len(stays)) if stays else None,
+    )
+
+
 @router.get("/{student_staff_id}", response_model=list[AttendanceDayOut])
 async def get_attendance_calendar(
     student_staff_id: str,
@@ -80,20 +145,72 @@ async def get_attendance_calendar(
     _: Annotated[CurrentUser, Depends(get_current_user)],
     month: Annotated[str, Query(description="YYYY-MM")],
 ) -> list[AttendanceDayOut]:
-    try:
-        year_i, month_i = (int(p) for p in month.split("-"))
-    except ValueError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "month 'YYYY-MM' formatida bo'lishi kerak") from exc
-
+    person_id = _person_uuid(student_staff_id)
+    first = _month_start(month)
+    # Sana oralig'i: (odam, sana) unikal indeksi to'g'ridan-to'g'ri o'qiladi.
+    # extract(year/month) esa odamning har bir yozuvini hisoblab chiqardi.
     stmt = (
         select(AttendanceRecord)
-        .where(AttendanceRecord.student_staff_id == student_staff_id)
-        .where(extract("year", AttendanceRecord.date) == year_i)
-        .where(extract("month", AttendanceRecord.date) == month_i)
+        .where(AttendanceRecord.student_staff_id == person_id)
+        .where(AttendanceRecord.date >= first)
+        .where(AttendanceRecord.date < _add_months(first, 1))
         .order_by(AttendanceRecord.date)
     )
     result = await db.execute(stmt)
     return [_to_out(r) for r in result.scalars().all()]
+
+
+@router.get("/{student_staff_id}/summary", response_model=AttendanceSummaryOut)
+async def get_attendance_summary(
+    student_staff_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[CurrentUser, Depends(get_current_user)],
+    months: Annotated[int, Query(ge=1, le=MAX_SUMMARY_MONTHS)] = 6,
+) -> AttendanceSummaryOut:
+    """Odam kartasi va joriy oy bilan birga oxirgi N oy yig'indisi —
+    kalendar sahifasining tepasi va trend grafigi bitta so'rovda."""
+    from app.jobs.absence_marker import _working_weekdays
+
+    person = (
+        await db.execute(
+            select(StudentStaff)
+            .options(selectinload(StudentStaff.faculty))
+            .where(StudentStaff.id == _person_uuid(student_staff_id))
+        )
+    ).scalar_one_or_none()
+    if person is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Talaba/xodim topilmadi")
+
+    current = local_now().date().replace(day=1)
+    first = _add_months(current, -(months - 1))
+    records = (
+        await db.execute(
+            select(AttendanceRecord)
+            .where(AttendanceRecord.student_staff_id == person.id)
+            .where(AttendanceRecord.date >= first)
+            .where(AttendanceRecord.date < _add_months(current, 1))
+        )
+    ).scalars().all()
+
+    by_month: dict[str, list[AttendanceRecord]] = defaultdict(list)
+    for record in records:
+        by_month[record.date.strftime("%Y-%m")].append(record)
+    keys = [_add_months(first, i).strftime("%Y-%m") for i in range(months)]
+
+    return AttendanceSummaryOut(
+        person=AttendancePersonOut(
+            id=str(person.id),
+            full_name=person.full_name,
+            type=person.type,
+            faculty=person.faculty.name if person.faculty else "",
+            unit=person.group_or_position,
+            biometrics_status=person.biometrics_status,
+            initials=compute_initials(person.full_name),
+            biometric_photo_url=presigned_url(person.biometric_photo_key) if person.biometric_photo_key else None,
+        ),
+        months=[_month_summary(key, by_month.get(key, [])) for key in keys],
+        working_weekdays=sorted(_working_weekdays()),
+    )
 
 
 @router.post("", response_model=AttendanceDayOut, status_code=status.HTTP_201_CREATED)
@@ -103,7 +220,7 @@ async def record_attendance(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> AttendanceDayOut:
-    person = await db.get(StudentStaff, body.student_staff_id)
+    person = await db.get(StudentStaff, _person_uuid(body.student_staff_id))
     if person is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Talaba/xodim topilmadi")
 
@@ -150,6 +267,7 @@ async def delete_attendance_record(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> None:
+    person_id = _person_uuid(student_staff_id)
     try:
         date_value = date_type.fromisoformat(date)
     except ValueError as exc:
@@ -157,14 +275,14 @@ async def delete_attendance_record(
 
     result = await db.execute(
         select(AttendanceRecord)
-        .where(AttendanceRecord.student_staff_id == student_staff_id)
+        .where(AttendanceRecord.student_staff_id == person_id)
         .where(AttendanceRecord.date == date_value)
     )
     record = result.scalar_one_or_none()
     if record is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Davomat yozuvi topilmadi")
 
-    person = await db.get(StudentStaff, student_staff_id)
+    person = await db.get(StudentStaff, person_id)
     await log_action(
         db, request, current_user.id,
         f"Davomat yozuvini o'chirdi: {person.full_name if person else student_staff_id} ({date})", "Talabalar"
