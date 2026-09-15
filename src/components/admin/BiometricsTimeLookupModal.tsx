@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { ArrowLeft, Clock, Loader2, Search } from 'lucide-react';
 import Modal from '../Modal';
-import { ApiError, api, buildQuery, type Page } from '../../lib/apiClient';
+import { ApiError, api, type Page } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import type { BiometricsConfirmation, StudentStaffRecord } from '../../types';
 
@@ -83,8 +83,9 @@ export default function BiometricsTimeLookupModal({ open, onClose }: { open: boo
       const seq = ++requestSeq.current;
       setSearching(true);
       try {
-        const page = await api.get<Page<StudentStaffRecord>>(
-          `/api/students-staff${buildQuery({ search: text, pageSize: SUGGESTION_LIMIT })}`,
+        const page = await api.post<Page<StudentStaffRecord>>(
+          '/api/students-staff/search',
+          { search: text, pageSize: SUGGESTION_LIMIT },
           token,
         );
         if (seq !== requestSeq.current) return null;

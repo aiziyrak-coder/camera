@@ -1,7 +1,9 @@
 """Aggregated AI runtime snapshot for the admin dashboard."""
 
+from datetime import datetime, timezone
+
 from app.config import settings
-from app.jobs.scheduler_metrics import get_scheduler_tick_stats
+from app.jobs.scheduler_metrics import get_scheduler_tick_stats, get_sweep_stats
 from app.jobs.sweep_concurrency import entrance_exit_sweep_concurrency_snapshot, sweep_concurrency_snapshot
 from app.services.gpu_status import get_gpu_status
 from app.services.inference_gate import face_inference_gate
@@ -9,24 +11,35 @@ from app.services.stream_cache import active_stream_reader_count
 
 
 def _scheduler_module_lists() -> tuple[list[str], list[str]]:
-    if settings.unified_face_sweep_enabled:
-        critical = ["unified_face", "fire", "fall", "zone_entry", "fight"]
-    else:
-        critical = ["attendance", "vision_sleep", "unauthorized", "crowd", "fire", "fall", "zone_entry", "fight"]
-    standard = [
-        "teacher_punctuality",
-        "abandoned_object",
-        "disorder",
-        "dress_code",
-        "phone",
-        "badge",
-        "ppe",
-        "smoking",
-        "student_dress",
-        "vehicle",
-        "lesson_quality",
-    ]
+    """Haqiqatan ro'yxatdan o'tgan sweeplar (ai_scheduler._build_registry) —
+    ilgari bu yerda mavjud bo'lmagan modullar (phone, vehicle, crowd...) ham
+    qo'lda yozilgan edi."""
+    from app.jobs.ai_scheduler import _build_registry
+
+    registry = _build_registry()
+    critical = [e.name for e in registry if e.tier == "critical"]
+    standard = [e.name for e in registry if e.tier == "standard"]
     return critical, standard
+
+
+def _sweeps_payload() -> list[dict[str, object]]:
+    now = datetime.now(timezone.utc)
+    return [
+        {
+            "name": s.name,
+            "tier": s.tier,
+            "interval_seconds": s.interval_seconds,
+            "runs": s.runs,
+            "failures": s.failures,
+            "running": s.running,
+            "last_finished_at": s.last_finished_at.isoformat() if s.last_finished_at else None,
+            "last_duration_seconds": s.last_duration_seconds,
+            "last_result": s.last_result,
+            "last_error": s.last_error,
+            "lagging": s.is_lagging(now),
+        }
+        for s in get_sweep_stats()
+    ]
 
 
 def build_ai_runtime_status() -> dict[str, object]:
@@ -52,6 +65,7 @@ def build_ai_runtime_status() -> dict[str, object]:
             "standard_ran": tick.standard_ran,
             "skipped_overlap": tick.skipped_overlap,
         },
+        "sweeps": _sweeps_payload(),
         "gpu": gpu,
         "sweep_slots": sweep,
         "entrance_exit_sweep_slots": entrance_exit_sweep_concurrency_snapshot(),

@@ -38,6 +38,19 @@ interface SystemAiStatus {
     standardRan: number;
     skippedOverlap: boolean;
   };
+  sweeps?: {
+    name: string;
+    tier: string;
+    intervalSeconds: number;
+    runs: number;
+    failures: number;
+    running: boolean;
+    lastFinishedAt: string | null;
+    lastDurationSeconds: number;
+    lastResult: number;
+    lastError: string | null;
+    lagging: boolean;
+  }[];
   sweepSlots: { max: number; inUse: number };
   faceInferenceGate: { max: number; inUse: number; waiting: number };
   embeddingSweepCacheTtlSeconds: number;
@@ -219,11 +232,30 @@ export default function DashboardPage() {
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-                      Faol
-                    </span>
-                    <span className="w-12 text-right text-sm font-bold text-slate-900">
-                      {m.accuracy}%
+                    {m.maturity === 'sinov' ? (
+                      <span
+                        title={m.maturityNote}
+                        className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700"
+                      >
+                        Sinov rejimi
+                      </span>
+                    ) : m.maturity === 'sozlash_kerak' ? (
+                      <span
+                        title={m.maturityNote}
+                        className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700"
+                      >
+                        Sozlash kerak
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                        Faol
+                      </span>
+                    )}
+                    <span
+                      title="Operator ko'rib chiqqan signallar asosida"
+                      className="w-12 text-right text-sm font-bold tabular-nums text-slate-900"
+                    >
+                      {m.measuredPrecision != null ? `${m.measuredPrecision}%` : '—'}
                     </span>
                   </div>
                 </div>
@@ -305,10 +337,36 @@ export default function DashboardPage() {
                 </span>
               </div>
               <p>
-                Oxirgi tick: {aiStatus.lastTick.modulesRan} modul ({aiStatus.lastTick.criticalRan} critical,{' '}
-                {aiStatus.lastTick.standardRan} standard) — {aiStatus.lastTick.durationSeconds}s
-                {aiStatus.lastTick.skippedOverlap ? ' (overlap skip)' : ''}
+                Oxirgi daqiqada: {aiStatus.lastTick.modulesRan} modul ishladi ({aiStatus.lastTick.criticalRan} kritik,{' '}
+                {aiStatus.lastTick.standardRan} standart)
+                {aiStatus.lastTick.modulesRan > 0 ? ` — eng uzuni ${aiStatus.lastTick.durationSeconds} s` : ''}
               </p>
+              {(() => {
+                const sweeps = aiStatus.sweeps ?? [];
+                const entrance = sweeps.find((s) => s.name === 'entrance_exit_attendance');
+                const lagging = sweeps.filter((s) => s.lagging);
+                const failing = sweeps.filter((s) => s.lastError);
+                return (
+                  <>
+                    {entrance && (
+                      <p>
+                        Kirish/chiqish davomati: har {entrance.intervalSeconds} s, oxirgisi {entrance.lastDurationSeconds} s
+                        davom etdi ({entrance.runs} marta ishladi)
+                      </p>
+                    )}
+                    {lagging.length > 0 && (
+                      <p className="font-semibold text-amber-700">
+                        Kechikayotgan: {lagging.map((s) => s.name).join(', ')}
+                      </p>
+                    )}
+                    {failing.length > 0 && (
+                      <p className="font-semibold text-red-600" title={failing.map((s) => `${s.name}: ${s.lastError}`).join('\n')}>
+                        Xato bergan: {failing.map((s) => s.name).join(', ')}
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
               <p>
                 Inference: {aiStatus.faceInferenceGate.inUse}/{aiStatus.faceInferenceGate.max}
                 {aiStatus.faceInferenceGate.waiting > 0 ? ` (${aiStatus.faceInferenceGate.waiting} navbatda)` : ''}

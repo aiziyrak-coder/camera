@@ -82,6 +82,21 @@ class Settings(BaseSettings):
     # higher false-accept risk than the 1:1 verification used at enrollment
     # time (face_recognition.MATCH_THRESHOLD=0.45) — deliberately stricter.
     attendance_ai_match_threshold: float = 0.55
+    # "Yumshoq" moslik (app/services/face_matching.py graded_matches).
+    # CCTV kadridagi kichik/qiya yuz ro'yxatdagi odamning o'zi bo'lsa ham
+    # ko'pincha 0.45-0.55 oralig'ida qoladi va qat'iy chegara uni hech
+    # qachon tanimaydi. Shu oraliqda moslik faqat ikki shart bilan qabul
+    # qilinadi: eng yaqin nomzod ikkinchisidan kamida margin qadar uzoq VA
+    # xuddi shu odam confirm_window ichida yana bir kadrda mos kelgan
+    # (app/services/recognition_stats.py). 0 yoki >= match_threshold
+    # qiymati yumshoq moslikni butunlay o'chiradi.
+    attendance_ai_relaxed_threshold: float = 0.47
+    attendance_ai_relaxed_margin: float = 0.08
+    attendance_relaxed_confirm_window_seconds: int = 180
+    attendance_relaxed_min_gap_seconds: float = 0.5
+    # Bundan kichik (piksel balandligi) yuz uchun faqat qat'iy moslik:
+    # juda kichik yuzning vektori ishonchsiz.
+    attendance_min_face_px: int = 40
     # "HH:MM" — kunlik davomatda kech qolish chegarasi (mahalliy vaqt).
     # Kunlik davomat dars jadvaliga BOG'LIQ EMAS: odamning birinchi
     # ko'rinishi shu vaqtdan keyin bo'lsa — "kech_keldi". Darsga
@@ -673,17 +688,6 @@ class Settings(BaseSettings):
     # Bu ro'yxatga olish tugagach o'zi hal bo'ladi — modul avtomatik
     # ishlay boshlaydi, hech narsani qo'lda yoqish shart emas.
     unauthorized_min_enrolled: int = 10
-
-    # TT kriteriya 12 — ID-badge evristikasi
-    badge_ai_interval_seconds: int = 45
-    badge_dedup_minutes: int = 30
-    badge_min_landmark_visibility: float = 0.5
-    badge_chest_width_factor: float = 0.35
-    badge_chest_height_factor: float = 0.45
-    badge_min_rect_fraction: float = 0.02
-    badge_max_rect_fraction: float = 0.25
-    badge_min_aspect: float = 0.5
-    badge_max_aspect: float = 2.5
 
     # TT kriteriya 13 — SIZ
     ppe_ai_interval_seconds: int = 45

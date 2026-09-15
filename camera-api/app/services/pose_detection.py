@@ -4,7 +4,7 @@ and a visibility score), the third detection backbone alongside
 app/services/face_recognition.py (InsightFace, faces) and
 app/services/object_detection.py (YOLOv8, generic objects). Used by AI
 criteria that need body POSTURE/MOVEMENT rather than identity or object
-class (zone entry, fight, smoking, white coat, badge, teacher activity).
+class (zone entry, fight, smoking, white coat, teacher activity).
 
 Two interchangeable backends produce the SAME PoseLandmarks shape, so no
 consumer knows or cares which one ran:

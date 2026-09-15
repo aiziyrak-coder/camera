@@ -36,6 +36,20 @@ class SchedulerLastTickOut(CamelModel):
     skipped_overlap: bool
 
 
+class SweepStatusOut(CamelModel):
+    name: str
+    tier: str
+    interval_seconds: int
+    runs: int
+    failures: int
+    running: bool
+    last_finished_at: str | None
+    last_duration_seconds: float
+    last_result: int
+    last_error: str | None
+    lagging: bool
+
+
 class ConcurrencySlotOut(CamelModel):
     max: int
     in_use: int
@@ -52,6 +66,7 @@ class SystemAiStatusOut(CamelModel):
     critical_modules: list[str]
     standard_modules: list[str]
     last_tick: SchedulerLastTickOut
+    sweeps: list[SweepStatusOut] = []
     gpu: GpuStatusOut
     sweep_slots: ConcurrencySlotOut
     entrance_exit_sweep_slots: ConcurrencySlotOut

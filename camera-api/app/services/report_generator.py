@@ -87,6 +87,60 @@ async def _attendance(db: AsyncSession, start: date, end: date) -> tuple[int, in
     return total, present, by_status
 
 
+# Shundan kam yozuvdan chiqarilgan foiz "100% (1/1)" kabi chalg'itadi.
+MIN_ATTENDANCE_SAMPLE = 30
+
+
+def _working_days(start: date, end: date) -> int:
+    from app.jobs.absence_marker import is_working_day
+
+    days = 0
+    current = start
+    while current <= end:
+        if is_working_day(current):
+            days += 1
+        current += timedelta(days=1)
+    return days
+
+
+def _attendance_reliability(
+    total: int, present: int, by_status: dict[str, int], enrolled: int, population: int, working_days: int
+) -> tuple[str | None, list[str]]:
+    """(foiz yoniga qo'shiladigan qisqa izoh, batafsil ogohlantirishlar)."""
+    warnings: list[str] = []
+    short: str | None = None
+    expected = enrolled * working_days
+    if total and total < MIN_ATTENDANCE_SAMPLE:
+        short = "namuna juda kichik — ishonchsiz"
+        warnings.append(
+            f"Atigi {total} ta davomat yozuvi bor. {MIN_ATTENDANCE_SAMPLE} tadan kam yozuvdan chiqqan foiz "
+            "tasodifiy: bitta odam kelishi yoki kelmasligi uni 0% dan 100% gacha o'zgartiradi."
+        )
+    if total and present == 0:
+        short = "hech kim tanilmagan"
+        warnings.append(
+            f"Birorta ham \"keldi\" yozuvi yo'q ({by_status.get('kelmadi', 0)} ta \"kelmadi\"). Bu hamma kelmaganini "
+            "emas, kameralar hech kimni tanimaganini bildiradi: \"kelmadi\" kun oxirida yuzi tasdiqlangan, lekin "
+            "kun davomida tanilmagan har kimga avtomatik qo'yiladi. \"O'qituvchilar kuzatuvi → Davomat kameralari\" "
+            "bo'limidagi tashxisni tekshiring."
+        )
+    if expected:
+        coverage = round(min(total, expected) / expected * 100)
+        if coverage < 50:
+            warnings.append(
+                f"Kutilgan yozuvlarning faqat {coverage}% i bor ({total} / {expected}: {enrolled} kishi × "
+                f"{working_days} ish kuni)."
+            )
+    if population:
+        share = round(enrolled / population * 100)
+        if share < 50:
+            warnings.append(
+                f"Yuzi tasdiqlanganlar bazadagi {population} kishining atigi {share}% i ({enrolled} ta) — "
+                "davomat foizi butun institutni aks ettirmaydi."
+            )
+    return short, warnings
+
+
 async def generate_rule_based_report(db: AsyncSession, period: str, today: date | None = None) -> GeneratedReport:
     if period not in VALID_PERIODS:
         raise ValueError(f"period {VALID_PERIODS} dan biri bo'lishi kerak")
@@ -106,6 +160,10 @@ async def generate_rule_based_report(db: AsyncSession, period: str, today: date 
         select(func.count())
         .select_from(StudentStaff)
         .where(StudentStaff.biometrics_status == "tasdiqlangan")
+    )
+    population = await db.scalar(select(func.count()).select_from(StudentStaff)) or 0
+    reliability_short, reliability_warnings = _attendance_reliability(
+        total_records, present_records, attendance_by_status, enrolled or 0, population, _working_days(start, end)
     )
 
     total_events = await db.scalar(select(func.count()).select_from(Event).where(in_range))
@@ -164,7 +222,8 @@ async def generate_rule_based_report(db: AsyncSession, period: str, today: date 
     ).all()
 
     attendance_text = (
-        f"{attendance_pct}% ({present_records}/{total_records} yozuv asosida)"
+        f"{attendance_pct}% ({present_records}/{total_records} yozuv asosida"
+        f"{'; ' + reliability_short if reliability_short else ''})"
         if attendance_pct is not None
         else "hisoblanmadi — bu davr uchun davomat yozuvi yo'q"
     )
@@ -183,7 +242,14 @@ async def generate_rule_based_report(db: AsyncSession, period: str, today: date 
     )
 
     stats = [
-        {"label": "Davomat", "value": f"{attendance_pct}%" if attendance_pct is not None else "ma'lumot yo'q"},
+        {
+            "label": "Davomat",
+            "value": (
+                "ma'lumot yo'q"
+                if attendance_pct is None
+                else f"{attendance_pct}% ({reliability_short})" if reliability_short else f"{attendance_pct}%"
+            ),
+        },
         {"label": "AI signallar", "value": str(total_events)},
         {"label": "Ko'rilmagan signallar", "value": str(unreviewed_events)},
         {"label": "Tasdiqlangan", "value": str(confirmed_events)},
@@ -250,6 +316,15 @@ async def generate_rule_based_report(db: AsyncSession, period: str, today: date 
             ),
         )
     )
+
+    if reliability_warnings:
+        sections.append(
+            ReportSection(
+                title="Davomat ko'rsatkichining ishonchliligi",
+                rows=[{"label": f"{i}.", "value": text} for i, text in enumerate(reliability_warnings, start=1)],
+                note="Bu ogohlantirishlar bartaraf etilmaguncha davomat foizini xulosa uchun ishlatmang.",
+            )
+        )
 
     return GeneratedReport(
         period_label=period_label,

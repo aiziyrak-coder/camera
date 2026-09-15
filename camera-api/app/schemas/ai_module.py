@@ -18,6 +18,15 @@ class AIModuleOut(CamelModel):
     camera_count: int
     active: bool
     has_detector: bool
+    # Operator ko'rib chiqqan signallar asosida (oxirgi 90 kun):
+    # tasdiqlangan / (tasdiqlangan + rad etilgan). Namuna kichik bo'lsa None.
+    measured_precision: float | None = None
+    reviewed_events: int = 0
+    recent_events: int = 0  # oxirgi 90 kundagi barcha signallar
+    # asosiy — model asosidagi mezon; sinov — kalibrlanmagan evristika;
+    # sozlash_kerak — operatorlar signallarning yarmidan ko'pini rad etgan.
+    maturity: Literal["asosiy", "sinov", "sozlash_kerak"] = "sinov"
+    maturity_note: str = ""
 
 
 class AIModuleUpdateIn(CamelModel):

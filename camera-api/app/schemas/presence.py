@@ -85,6 +85,19 @@ class AttendanceCameraOut(CamelModel):
     video: bool
     recognized_today: int
     last_recognition: str | None = None  # "14:32"
+    # Xotiradagi tanish statistikasi (app/services/recognition_stats.py) —
+    # "kamera ko'rmayaptimi yoki tanimayaptimi" degan savolga javob.
+    frames_checked_today: int = 0
+    faces_seen_today: int = 0
+    face_px_median: int | None = None
+    small_faces_today: int = 0
+    best_similarity_today: float | None = None
+    similarity_buckets: dict[str, int] = {}
+    strict_matches_today: int = 0
+    relaxed_confirmed_today: int = 0
+    relaxed_pending_today: int = 0
+    last_checked: str | None = None
+    diagnosis: str | None = None
 
 
 class AttendanceCamerasOut(CamelModel):
@@ -98,4 +111,7 @@ class AttendanceCamerasOut(CamelModel):
     video: int
     recognizing_today: int
     people_recognized_today: int
+    enrolled_faces: int = 0
+    match_threshold: float = 0.55
+    relaxed_threshold: float | None = None
     cameras: list[AttendanceCameraOut]

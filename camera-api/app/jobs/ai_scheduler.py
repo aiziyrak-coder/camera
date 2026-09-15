@@ -1,18 +1,23 @@
-"""Central AI sweep coordinator (P2 #22, P0 parallel tick).
+"""Central AI sweep coordinator (P2 #22).
 
-When AI_SCHEDULER_ENABLED=true, individual per-module asyncio loops are
-NOT started (see app/main.py). This module polls every
-AI_SCHEDULER_POLL_SECONDS and runs each sweep's run_*_once function when
-its configured interval has elapsed.
+When AI_SCHEDULER_ENABLED=true, individual per-module loops in app/main.py
+are NOT started; this module runs every sweep instead.
 
-Due sweeps in the same tier run in PARALLEL (asyncio.gather) so a 30s
-interval means wall-clock ~30s, not (sum of all other modules). A global
-camera semaphore (app/jobs/sweep_concurrency.py) caps total concurrent
-camera pipelines across all modules.
+MUSTAQIL TSIKLLAR. Avval rejalashtiruvchi "tick" asosida ishlardi: har
+AI_SCHEDULER_POLL_SECONDS da muddati kelgan sweeplar yig'ilib gather
+qilinar, tick esa ENG SEKIN sweep tugashini kutardi. Productionda
+unified_face (100+ kamera, AVX'siz CPU) bir necha daqiqa davom etadi,
+shuning uchun 6 soniyalik kirish/chiqish davomati sweepi amalda bir necha
+daqiqada BIR MARTA ishlardi — odam eshikdan 2-3 soniyada o'tib ketadi va
+hech qachon kadrga tushmaydi. Davomatga hech kim tushmasligining asosiy
+sababi shu edi. Tick band bo'lganda keyingisi "overlap skip" deb 0 modul
+yozardi — boshqaruv panelidagi "Oxirgi tick: 0 modul" ham shundan.
 
-Critical-tier sweeps (fire, fall, fight, zone, face path) run before
-standard-tier sweeps in each tick so life-safety criteria aren't stuck
-behind dress-code/heuristic modules.
+Endi har bir sweep o'z asyncio vazifasida aylanadi: ishini tugatadi,
+intervalning qolgan qismini kutadi va qayta boshlaydi. Sekin sweep faqat
+o'zini kechiktiradi. Umumiy yuklama hali ham global semaforlar bilan
+cheklangan (app/jobs/sweep_concurrency.py, app/services/inference_gate.py),
+kirish/chiqish sweepi esa o'z alohida semaforida.
 
 camera_health_loop and cleanup_loop stay independent (different SLA).
 """
@@ -21,14 +26,13 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from app.config import settings
 from app.database import SessionLocal
 from app.jobs.absence_marker import run_absence_marking_once
 from app.jobs.attendance_ai import run_attendance_ai_sweep_once, run_entrance_exit_attendance_sweep_once
-from app.jobs.badge_ai import run_badge_ai_sweep_once
 from app.jobs.disorder_ai import run_disorder_ai_sweep_once
 from app.jobs.dress_code_ai import run_dress_code_ai_sweep_once
 from app.jobs.fight_ai import run_fight_ai_sweep_once
@@ -36,9 +40,8 @@ from app.jobs.fire_ai import run_fire_ai_sweep_once
 from app.jobs.lesson_attendance import run_lesson_attendance_finalization_once
 from app.jobs.lesson_quality_ai import run_lesson_quality_ai_sweep_once
 from app.jobs.ppe_ai import run_ppe_ai_sweep_once
+from app.jobs.scheduler_metrics import record_sweep_finished, record_sweep_started, register_sweep
 from app.jobs.smoking_ai import run_smoking_ai_sweep_once
-from app.jobs.scheduler_metrics import record_scheduler_skip, record_scheduler_tick
-from app.jobs.sweep_guard import SweepGuard
 from app.jobs.teacher_punctuality_ai import run_teacher_punctuality_sweep_once
 from app.jobs.unauthorized_person_ai import run_unauthorized_person_ai_sweep_once
 from app.jobs.unified_face_sweep import run_unified_face_sweep_once
@@ -47,9 +50,11 @@ from app.jobs.zone_entry_ai import run_zone_entry_ai_sweep_once
 
 logger = logging.getLogger("app.ai_scheduler")
 
-_guard = SweepGuard("ai_scheduler")
-
 Tier = Literal["critical", "standard"]
+
+# Sweep juda tez tugasa ham (masalan kamera yo'q) keyingi boshlanishgacha
+# kamida shuncha kutiladi — bo'sh aylanib CPU yemasligi uchun.
+MIN_PAUSE_SECONDS = 1.0
 
 
 @dataclass
@@ -58,22 +63,21 @@ class _SweepEntry:
     interval_seconds: int
     run_once: Callable[..., Awaitable[Any]]
     tier: Tier
-    last_run: float = field(default=0.0)
 
 
 def _face_entries() -> list[tuple[str, int, Callable[..., Awaitable[Any]], Tier]]:
     if settings.unified_face_sweep_enabled:
         return [
             (
-                "unified_face",
-                settings.unified_face_sweep_interval_seconds,
-                run_unified_face_sweep_once,
-                "critical",
-            ),
-            (
                 "entrance_exit_attendance",
                 settings.entrance_exit_attendance_interval_seconds,
                 run_entrance_exit_attendance_sweep_once,
+                "critical",
+            ),
+            (
+                "unified_face",
+                settings.unified_face_sweep_interval_seconds,
+                run_unified_face_sweep_once,
                 "critical",
             ),
         ]
@@ -97,101 +101,83 @@ def _build_registry() -> list[_SweepEntry]:
         ("teacher_punctuality", settings.teacher_punctuality_interval_seconds, run_teacher_punctuality_sweep_once, "standard"),
         ("disorder", settings.disorder_ai_interval_seconds, run_disorder_ai_sweep_once, "standard"),
         ("dress_code", settings.dress_code_ai_interval_seconds, run_dress_code_ai_sweep_once, "standard"),
-        ("badge", settings.badge_ai_interval_seconds, run_badge_ai_sweep_once, "standard"),
         ("ppe", settings.ppe_ai_interval_seconds, run_ppe_ai_sweep_once, "standard"),
         ("smoking", settings.smoking_ai_interval_seconds, run_smoking_ai_sweep_once, "standard"),
         ("lesson_quality", settings.lesson_quality_ai_interval_seconds, run_lesson_quality_ai_sweep_once, "standard"),
         ("lesson_attendance", settings.lesson_attendance_finalize_interval_seconds, run_lesson_attendance_finalization_once, "standard"),
-        # Kamera talab qilmaydi (faqat DB) — shuning uchun "standard"
-        # qatorida va kamdan-kam bajariladi; o'zi ish kuni tugaguncha
-        # hech narsa qilmaydi (app/jobs/absence_marker.py).
+        # Kamera talab qilmaydi (faqat DB); o'zi ish kuni tugaguncha hech
+        # narsa qilmaydi (app/jobs/absence_marker.py).
         ("absence_marking", settings.attendance_absence_marking_interval_seconds, run_absence_marking_once, "standard"),
     ]
     specs = _face_entries() + rest
     return [_SweepEntry(name=n, interval_seconds=i, run_once=fn, tier=t) for n, i, fn, t in specs]
 
 
-def _due_entries(registry: list[_SweepEntry], now: float) -> tuple[list[_SweepEntry], list[_SweepEntry]]:
-    critical: list[_SweepEntry] = []
-    standard: list[_SweepEntry] = []
-    for entry in registry:
-        if now - entry.last_run < entry.interval_seconds:
-            continue
-        if entry.tier == "critical":
-            critical.append(entry)
-        else:
-            standard.append(entry)
-    return critical, standard
-
-
 def _count_result(result: Any) -> int:
     if isinstance(result, dict):
-        return sum(result.values())
+        return sum(int(v or 0) for v in result.values())
     return int(result or 0)
 
 
-async def _run_one_entry(entry: _SweepEntry) -> None:
+async def run_sweep_once(entry: _SweepEntry, session_factory=SessionLocal) -> float:
+    """Sweepni bir marta bajaradi, xatoni yutadi va ko'rsatkichlarni yozadi.
+    Davomiylikni (soniya) qaytaradi."""
+    started = time.monotonic()
+    record_sweep_started(entry.name)
+    error: str | None = None
+    count = 0
     try:
-        result = await entry.run_once(session_factory=SessionLocal)
-        count = _count_result(result)
+        count = _count_result(await entry.run_once(session_factory=session_factory))
         if count:
             logger.info(
                 "scheduler sweep completed",
                 extra={"sweep": entry.name, "tier": entry.tier, "events_or_actions": count},
             )
-    except Exception:
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"[:300]
         logger.exception("scheduler sweep failed", extra={"sweep": entry.name, "tier": entry.tier})
-    finally:
-        entry.last_run = time.monotonic()
+    duration = time.monotonic() - started
+    record_sweep_finished(entry.name, duration_seconds=duration, result=count, error=error)
+    return duration
 
 
-async def _run_tier_parallel(entries: list[_SweepEntry]) -> int:
-    if not entries:
-        return 0
-    await asyncio.gather(*(_run_one_entry(entry) for entry in entries))
-    return len(entries)
+def next_pause(interval_seconds: float, duration_seconds: float) -> float:
+    """Boshlanishdan-boshlanishgacha interval: sweep 2 s davom etgan bo'lsa
+    va interval 6 s bo'lsa, 4 s kutiladi. Interval oshib ketgan bo'lsa —
+    faqat MIN_PAUSE_SECONDS."""
+    return max(MIN_PAUSE_SECONDS, interval_seconds - duration_seconds)
 
 
-async def run_scheduler_tick(registry: list[_SweepEntry]) -> tuple[int, int, int]:
-    """Run due sweeps: critical tier in parallel, then standard tier in parallel.
-    Returns (total_modules_ran, critical_ran, standard_ran)."""
-    now = time.monotonic()
-    critical, standard = _due_entries(registry, now)
-    if not critical and not standard:
-        return 0, 0, 0
-
-    critical_ran = await _run_tier_parallel(critical)
-    standard_ran = await _run_tier_parallel(standard)
-    return critical_ran + standard_ran, critical_ran, standard_ran
+async def _sweep_loop(entry: _SweepEntry, initial_delay: float) -> None:
+    if initial_delay > 0:
+        await asyncio.sleep(initial_delay)
+    while True:
+        duration = await run_sweep_once(entry)
+        await asyncio.sleep(next_pause(entry.interval_seconds, duration))
 
 
 async def ai_scheduler_loop() -> None:
     registry = _build_registry()
+    for entry in registry:
+        register_sweep(entry.name, entry.tier, entry.interval_seconds)
     logger.info(
-        "AI scheduler started (parallel tiers)",
+        "AI scheduler started (independent sweep loops)",
         extra={
-            "poll_seconds": settings.ai_scheduler_poll_seconds,
             "global_camera_concurrency": settings.ai_global_sweep_concurrency,
             "critical": [e.name for e in registry if e.tier == "critical"],
             "standard": [e.name for e in registry if e.tier == "standard"],
         },
     )
-    while True:
-        try:
-
-            async def tick() -> None:
-                started = time.monotonic()
-                total, critical_ran, standard_ran = await run_scheduler_tick(registry)
-                record_scheduler_tick(
-                    duration_seconds=time.monotonic() - started,
-                    modules_ran=total,
-                    critical_ran=critical_ran,
-                    standard_ran=standard_ran,
-                )
-
-            result = await _guard.run(tick)
-            if result is None:
-                record_scheduler_skip()
-        except Exception:
-            logger.exception("AI scheduler tick failed")
-        await asyncio.sleep(settings.ai_scheduler_poll_seconds)
+    # Kritik sweeplar birinchi boshlanadi; qolganlari ai_loop_stagger_seconds
+    # oralig'ida — hammasi bir lahzada kamera/inference uchun talashmasin.
+    ordered = [e for e in registry if e.tier == "critical"] + [e for e in registry if e.tier == "standard"]
+    stagger = settings.ai_loop_stagger_seconds
+    tasks = [
+        asyncio.create_task(_sweep_loop(entry, index * stagger), name=f"ai-sweep:{entry.name}")
+        for index, entry in enumerate(ordered)
+    ]
+    try:
+        await asyncio.gather(*tasks)
+    finally:
+        for task in tasks:
+            task.cancel()

@@ -44,12 +44,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
+from app.services.confidence import exceed_confidence
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
-from app.jobs.disorder_ai import _decode_grayscale, _is_motion_spike, _mean_flow_magnitude
+from app.jobs.disorder_ai import _decode_grayscale, _is_motion_spike, _last_decision, _mean_flow_magnitude
 from app.models import Camera, Event
 from app.services.event_bus import raise_event
 from app.services.frame_grabber import grab_frame_pair_for_camera
@@ -127,13 +128,18 @@ async def process_camera_frame_pair_for_fight(frame_a: bytes, frame_b: bytes, db
     if await _recently_flagged(db, camera.id):
         return False
 
+    # Harakat chegaradan necha barobar oshgani. Tizimdagi eng zaif mezon,
+    # shuning uchun yuqori chegara 75 — bu "jang tasdiqlandi" emas.
+    magnitude_now, _baseline, threshold_now = _last_decision.get(f"{camera.id}:fight", (0.0, 0.0, 0.0))
+    confidence = exceed_confidence(magnitude_now, threshold_now, floor=35, ceiling=75)
+
     await raise_event(
         db,
         camera=camera,
         module_code=FIGHT_MODULE_CODE,
         module_name=FIGHT_MODULE_NAME,
         group="D",
-        confidence=35,  # deliberately the lowest confidence this system raises — see module docstring
+        confidence=confidence,
         severity="yuqori",  # still worth a human look despite the low confidence — a missed real fight is worse than a false alarm
         frame_bytes=frame_b,
     )

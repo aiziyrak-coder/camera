@@ -485,9 +485,11 @@ class TestCameraExcludedModules:
         body = resp.json()
         # 2026-09-07: yettita kriteriya olib tashlandi (#4, #5, #11, #16,
         # #18, #24, #25), bittasi qo'shildi (#26) -> 25 - 7 + 1 = 19.
-        assert len(body) == 19
+        # 2026-09-15: #12 (beyjik) ham olib tashlandi -> 18.
+        assert len(body) == 18
         assert all("code" in row and "name" in row and "hasDetector" in row for row in body)
         assert 25 not in {row["code"] for row in body}
+        assert 12 not in {row["code"] for row in body}
         assert 26 in {row["code"] for row in body}
 
     async def test_module_camera_assignments_toggle(self, client: AsyncClient):

@@ -21,15 +21,21 @@ class TestAiModules:
         assert resp.status_code == 200
         module_1 = next(m for m in resp.json() if m["code"] == 1)
         assert module_1["hasDetector"] is True
-        module_12 = next(m for m in resp.json() if m["code"] == 12)
-        assert module_12["hasDetector"] is True
+        module_13 = next(m for m in resp.json() if m["code"] == 13)
+        assert module_13["hasDetector"] is True
+        # #12 (beyjik) butunlay olib tashlangan — yolg'on signal manbai edi.
+        assert all(m["code"] != 12 for m in resp.json())
+        # Aniqlik — statik raqam emas, ko'rib chiqilgan signallardan o'lchanadi.
+        assert module_1["measuredPrecision"] is None
+        assert module_1["accuracy"] == 0
+        assert module_13["maturity"] == "sinov"
 
     async def test_p3_modules_have_detectors_and_can_activate(self, client: AsyncClient, db_session: AsyncSession):
-        for code in (12, 13, 15):
+        for code in (13, 15):
             module = await _get_module(db_session, code)
             assert module.has_detector is True
         headers = await auth_headers(client, "admin", "admin123")
-        module = await _get_module(db_session, 12)
+        module = await _get_module(db_session, 13)
         resp = await client.patch(
             f"/api/ai-modules/{module.id}",
             headers=headers,
@@ -59,7 +65,7 @@ class TestAiModules:
     async def test_deactivating_a_no_detector_module_is_always_allowed(
         self, client: AsyncClient, db_session: AsyncSession
     ):
-        module = await _get_module(db_session, 12)
+        module = await _get_module(db_session, 13)
         headers = await auth_headers(client, "admin", "admin123")
 
         resp = await client.patch(
@@ -69,3 +75,45 @@ class TestAiModules:
         )
         assert resp.status_code == 200
         assert resp.json()["active"] is False
+
+
+@pytest.mark.usefixtures("seeded")
+class TestMeasuredPrecision:
+    """Audit #7/#8: aniqlik statik raqam emas — operator ko'rib chiqqan
+    signallardan o'lchanadi; ko'p yolg'on signal bergan modul "sozlash kerak"."""
+
+    async def _events(self, db_session: AsyncSession, code: int, confirmed: int, rejected: int, new: int = 0):
+        from app.models import Event
+
+        for status_value, count in (("tasdiqlangan", confirmed), ("rad_etilgan", rejected), ("yangi", new)):
+            for _ in range(count):
+                db_session.add(Event(camera_name="Sinov", building="1-bino", module_code=code, module_name="m",
+                                     group="D", confidence=50, severity="o'rta", status=status_value))
+        await db_session.commit()
+
+    async def _module(self, client: AsyncClient, code: int) -> dict:
+        headers = await auth_headers(client, "admin", "admin123")
+        resp = await client.get("/api/ai-modules", headers=headers)
+        return next(m for m in resp.json() if m["code"] == code)
+
+    async def test_precision_is_confirmed_share_of_reviewed(self, client: AsyncClient, db_session: AsyncSession):
+        await self._events(db_session, 1, confirmed=9, rejected=3, new=5)
+        module = await self._module(client, 1)
+        assert module["measuredPrecision"] == 75.0
+        assert module["accuracy"] == 75.0
+        assert module["reviewedEvents"] == 12
+        assert module["recentEvents"] == 17
+        assert module["maturity"] == "asosiy"
+
+    async def test_small_sample_is_not_a_percentage(self, client: AsyncClient, db_session: AsyncSession):
+        await self._events(db_session, 17, confirmed=1, rejected=0)
+        module = await self._module(client, 17)
+        assert module["measuredPrecision"] is None  # "100% (1/1)" emas
+        assert module["maturity"] == "sinov"
+        assert "1" in module["maturityNote"]
+
+    async def test_mostly_rejected_module_needs_tuning(self, client: AsyncClient, db_session: AsyncSession):
+        await self._events(db_session, 14, confirmed=2, rejected=18)
+        module = await self._module(client, 14)
+        assert module["maturity"] == "sozlash_kerak"
+        assert module["measuredPrecision"] == 10.0

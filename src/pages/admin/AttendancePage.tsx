@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, LogOut, Loader2, LogIn, Trash2, UserCheck, UserX, Clock3, TrendingUp, CalendarDays } from 'lucide-react';
+import { ChevronLeft, ChevronRight, LogOut, Loader2, LogIn, Search, Trash2, UserCheck, UserX, Clock3, TrendingUp, CalendarDays, AlertTriangle } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import StatCard from '../../components/StatCard';
 import Modal from '../../components/Modal';
 import Badge from '../../components/Badge';
 import ConfirmDialog from '../../components/ConfirmDialog';
-import { api, fetchAllPages } from '../../lib/apiClient';
+import { api, type Page } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { toLocalDateString } from '../../lib/date';
 import type { AttendanceDay, AttendanceDayStatus, StudentStaffRecord } from '../../types';
@@ -102,29 +102,54 @@ function buildMonthGrid(records: AttendanceDay[], year: number, month: number): 
 
 export default function AttendancePage() {
   const { token } = useAuth();
-  const [people, setPeople] = useState<StudentStaffRecord[]>([]);
-  const [personId, setPersonId] = useState('');
+  // Ilgari sahifa ochilganda BARCHA ~8 000 odam sahifama-sahifa yuklanib
+  // <select> ga joylanardi — kalendar shu tugamaguncha ochilmasdi. Endi odam
+  // qidiruv orqali tanlanadi va faqat tanlangan odamning oyi yuklanadi.
+  const [person, setPerson] = useState<StudentStaffRecord | null>(null);
+  const personId = person?.id ?? '';
+  const [query, setQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<StudentStaffRecord[]>([]);
+  const [searching, setSearching] = useState(false);
   const now = new Date();
   const [viewYear, setViewYear] = useState(now.getFullYear());
   const [viewMonth, setViewMonth] = useState(now.getMonth());
   const [records, setRecords] = useState<AttendanceDay[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<AttendanceDay | null>(null);
   const [selectedDay, setSelectedDay] = useState<CalendarCell | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    if (!token) return;
-    fetchAllPages<StudentStaffRecord>('/api/students-staff', token)
-      .then((items) => {
-        setPeople(items);
-        setPersonId((cur) => cur || items[0]?.id || '');
-      })
-      .catch(() => {
-        /* ulanish muvaffaqiyatsiz — bo'sh ro'yxat bilan davom etamiz */
-      });
-  }, [token]);
+    const text = query.trim();
+    if (!token || text.length < 2 || (person && text === person.fullName)) {
+      setSuggestions([]);
+      setSearching(false);
+      return;
+    }
+    let cancelled = false;
+    setSearching(true);
+    const timer = window.setTimeout(() => {
+      // POST: qidiruv JSHSHIR bo'lishi mumkin — URL/access logga tushmasin.
+      api
+        .post<Page<StudentStaffRecord>>('/api/students-staff/search', { search: text, pageSize: 8 }, token)
+        .then((page) => !cancelled && setSuggestions(page.items))
+        .catch(() => !cancelled && setSuggestions([]))
+        .finally(() => !cancelled && setSearching(false));
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [query, token, person]);
+
+  function choosePerson(next: StudentStaffRecord) {
+    setPerson(next);
+    setQuery(next.fullName);
+    setSuggestions([]);
+    setRecords([]);
+    setSelectedDay(null);
+  }
 
   useEffect(() => {
     if (!token || !personId) return;
@@ -158,7 +183,6 @@ export default function AttendancePage() {
     setReloadKey((k) => k + 1);
   }
 
-  const person = people.find((p) => p.id === personId);
   const days = useMemo(() => buildMonthGrid(records, viewYear, viewMonth), [records, viewYear, viewMonth]);
   const leadingBlanks = mondayIndex(new Date(viewYear, viewMonth, 1));
 
@@ -168,8 +192,8 @@ export default function AttendancePage() {
     const late = workDays.filter((d) => d.status === 'kech_keldi').length;
     const absent = workDays.filter((d) => d.status === 'kelmadi').length;
     const earlyLeave = workDays.filter((d) => d.earlyLeave).length;
-    const rate = workDays.length ? Math.round(((present + late) / workDays.length) * 100) : 0;
-    return { present, late, absent, earlyLeave, rate };
+    const rate = workDays.length ? Math.round(((present + late) / workDays.length) * 100) : null;
+    return { present, late, absent, earlyLeave, rate, recordedDays: workDays.length };
   }, [days]);
 
   function shiftMonth(delta: number) {
@@ -194,17 +218,47 @@ export default function AttendancePage() {
       />
 
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <select
-          value={personId}
-          onChange={(e) => setPersonId(e.target.value)}
-          className="rounded-xl border border-white/80 bg-white/60 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-indigo-300"
-        >
-          {people.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.fullName} — {p.groupOrPosition}
-            </option>
-          ))}
-        </select>
+        <div className="relative w-full max-w-md">
+          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && suggestions.length) {
+                e.preventDefault();
+                choosePerson(suggestions[0]);
+              }
+            }}
+            placeholder="Ism-familiya yoki JSHSHIR bo'yicha qidiring"
+            aria-label="Odamni qidirish"
+            autoComplete="off"
+            className="w-full rounded-xl border border-white/80 bg-white/60 py-2.5 pl-9 pr-9 text-sm text-slate-900 outline-none focus:border-indigo-300"
+          />
+          {searching && (
+            <Loader2 size={15} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-slate-400" />
+          )}
+          {suggestions.length > 0 && (
+            <ul className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border border-white/80 bg-white p-1 shadow-lg">
+              {suggestions.map((p) => (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    onClick={() => choosePerson(p)}
+                    className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm hover:bg-indigo-50"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium text-slate-900">{p.fullName}</span>
+                      <span className="block truncate text-xs text-slate-500">{p.groupOrPosition}</span>
+                    </span>
+                    {p.biometricsStatus !== 'tasdiqlangan' && (
+                      <span className="shrink-0 text-[11px] font-semibold text-amber-600">yuzi yo&apos;q</span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
 
         <div className="ml-auto flex items-center gap-2">
           <button
@@ -231,12 +285,49 @@ export default function AttendancePage() {
         </p>
       )}
 
+      {!person && (
+        <p className="mb-4 rounded-xl bg-white/60 px-3 py-2.5 text-sm text-slate-500">
+          Davomat tarixini ko&apos;rish uchun yuqorida odamni qidirib tanlang.
+        </p>
+      )}
+
+      {person && person.biometricsStatus !== 'tasdiqlangan' && (
+        <div className="mb-4 flex gap-2 rounded-xl bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+          <p>
+            <span className="font-semibold">
+              {person.biometricsStatus === 'kutilmoqda' ? 'Yuzi tekshiruvda (tasdiqlanmagan).' : "Yuzi ro'yxatga olinmagan."}
+            </span>{' '}
+            Kameralar bu odamni taniy olmaydi, shuning uchun davomat avtomatik yozilmaydi va kalendardagi bo&apos;sh
+            kunlar &quot;kelmagan&quot; degani emas. Yuzni &quot;Talabalar va Xodimlar&quot; bo&apos;limida
+            &quot;Tahrirlash → Yuzni olish&quot; orqali yoki ro&apos;yxatdan o&apos;tish sahifasida qo&apos;shing.
+          </p>
+        </div>
+      )}
+
+      {person && stats.recordedDays > 0 && stats.present + stats.late === 0 && (
+        <div className="mb-4 flex gap-2 rounded-xl bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+          <p>
+            <span className="font-semibold">Bu oyda birorta ham &quot;Keldi&quot; yo&apos;q.</span> &quot;Kelmadi&quot; kun oxirida
+            kamera tanimagan har bir yuzi tasdiqlangan odamga avtomatik qo&apos;yiladi — bu odam haqiqatan kelmaganini
+            emas, kameralar uni tanimaganini ham bildirishi mumkin. &quot;O&apos;qituvchilar kuzatuvi → Davomat
+            kameralari&quot; bo&apos;limidagi tashxisni tekshiring.
+          </p>
+        </div>
+      )}
+
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <StatCard icon={<UserCheck size={20} />} value={stats.present} label="Keldi" tone="green" />
         <StatCard icon={<Clock3 size={20} />} value={stats.late} label="Kech keldi" tone="amber" />
         <StatCard icon={<UserX size={20} />} value={stats.absent} label="Kelmadi" tone="red" />
         <StatCard icon={<LogOut size={20} />} value={stats.earlyLeave} label="Erta ketdi" tone="amber" />
-        <StatCard icon={<TrendingUp size={20} />} value={`${stats.rate}%`} label="Davomat" tone="indigo" />
+        <StatCard
+          icon={<TrendingUp size={20} />}
+          value={stats.rate === null ? '—' : `${stats.rate}%`}
+          label={stats.rate === null ? "Davomat (yozuv yo'q)" : `Davomat (${stats.recordedDays} kun)`}
+          tone="indigo"
+        />
       </div>
 
       {loading && !person ? (

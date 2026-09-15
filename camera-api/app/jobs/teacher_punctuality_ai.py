@@ -70,6 +70,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
+from app.services.confidence import exceed_confidence
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import is_module_active
@@ -145,7 +146,7 @@ async def _due_sessions(db: AsyncSession) -> list[LessonSession]:
     return due
 
 
-async def _find_known_staff(db: AsyncSession, faces, *, exclude_id) -> StudentStaff | None:
+async def _find_known_staff(db: AsyncSession, faces, *, exclude_id) -> tuple[StudentStaff, float] | None:
     """Kadrdagi yuzlar orasidan ro'yxatdan o'tgan XODIMni topadi.
 
     Faqat xodimlar tekshiriladi: auditoriyada talaba bo'lishi tabiiy va u
@@ -179,8 +180,16 @@ async def _find_known_staff(db: AsyncSession, faces, *, exclude_id) -> StudentSt
             continue
         person = await db.get(StudentStaff, uuid.UUID(person_id))
         if person is not None:
-            return person
+            return person, float(match[1])
     return None
+
+
+def _substitution_confidence(similarity: float | None) -> int:
+    """Boshqa xodimning yuz mosligi qanchalik kuchli: chegarada 70, 0.9+ da 95."""
+    threshold = settings.attendance_ai_match_threshold
+    if similarity is None or threshold <= 0:
+        return 70
+    return exceed_confidence(similarity, threshold, floor=70, ceiling=95, full_at=0.9 / threshold)
 
 
 def _matches_teacher(faces, teacher) -> bool:
@@ -203,6 +212,10 @@ async def check_lesson_session(session_row: LessonSession, db: AsyncSession) -> 
     ran_check = False
     seen = False
     substitute: StudentStaff | None = None
+    substitute_similarity: float | None = None
+    # Ikkala kadrda ham odam yuzlari bor, lekin o'qituvchi ular orasida yo'q —
+    # "kamera hech kimni ko'rmadi" holatidan kuchliroq dalil.
+    faces_in_both = False
     evidence_frame: bytes | None = None
 
     if camera and camera.stream_url and is_reachable(camera.last_seen_at) and teacher and teacher.biometric_embedding:
@@ -223,14 +236,16 @@ async def check_lesson_session(session_row: LessonSession, db: AsyncSession) -> 
                 seen = bool(faces_a) and _matches_teacher(faces_a, teacher)
 
                 if not seen:
+                    faces_in_both = bool(faces_a) and bool(faces_b)
                     # Ikkala kadrda ham yo'q. Endi almashinuvni
                     # tekshiramiz: BIR XIL boshqa xodim ikkalasida ham
                     # bo'lsagina almashinuv deb hisoblanadi.
-                    substitute_b = await _find_known_staff(db, faces_b, exclude_id=teacher.id)
-                    if substitute_b is not None:
-                        substitute_a = await _find_known_staff(db, faces_a, exclude_id=teacher.id)
-                        if substitute_a is not None and substitute_a.id == substitute_b.id:
-                            substitute = substitute_b
+                    found_b = await _find_known_staff(db, faces_b, exclude_id=teacher.id)
+                    if found_b is not None:
+                        found_a = await _find_known_staff(db, faces_a, exclude_id=teacher.id)
+                        if found_a is not None and found_a[0].id == found_b[0].id:
+                            substitute = found_b[0]
+                            substitute_similarity = min(found_a[1], found_b[1])
 
     session_row.punctuality_checked_at = local_now()
 
@@ -263,7 +278,7 @@ async def check_lesson_session(session_row: LessonSession, db: AsyncSession) -> 
             # ijobiy yuz mosligi — tizimdagi eng ishonchli signal turi.
             # 100 emas: "boshqa xodim xonada" va "u dars o'tyapti" bir xil
             # narsa emas, buni faqat operator rasmga qarab hal qiladi.
-            confidence=85,
+            confidence=_substitution_confidence(substitute_similarity),
             severity="o'rta",
             frame_bytes=evidence_frame,
             person_name=f"{substitute.full_name} ({teacher.full_name} o'rniga)",
@@ -291,7 +306,7 @@ async def check_lesson_session(session_row: LessonSession, db: AsyncSession) -> 
         module_code=PUNCTUALITY_MODULE_CODE,
         module_name=PUNCTUALITY_MODULE_NAME,
         group="E",
-        confidence=70,  # a real single-frame detection attempt, not a pure rule — see module docstring
+        confidence=80 if faces_in_both else 70,
         severity="o'rta",
         person_name=teacher.full_name if teacher else None,
         status="yangi",

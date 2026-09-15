@@ -26,6 +26,22 @@ RESET_TOKEN_TTL_MINUTES = 30
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+def _mask_login(login: str) -> str:
+    """Noto'g'ri urinishdagi login jurnalga to'liq yozilmaydi.
+
+    Odamlar login maydoniga ko'pincha JSHSHIR yoki pasport raqamini
+    yozadi (ro'yxatdan o'tish sahifasi bilan adashtirib) — tizim jurnali
+    esa ko'p adminlarga ochiq. Mavjud foydalanuvchi logini bo'lsa ham
+    brute-force monitoringi uchun boshi va oxiri yetarli."""
+    text = (login or "").strip()
+    digits = sum(ch.isdigit() for ch in text)
+    if len(text) <= 3:
+        return "*" * len(text)
+    if digits >= 6:
+        return f"{text[:2]}{'*' * (len(text) - 4)}{text[-2:]}"
+    return f"{text[:3]}{'*' * max(0, len(text) - 3)}"
+
+
 @router.post("/login", response_model=LoginResponse)
 @limiter.limit("5/minute")
 async def login(
@@ -42,7 +58,7 @@ async def login(
         db.add(
             AuditLog(
                 user_id=user.id if user else None,
-                user_name=body.login,
+                user_name=_mask_login(body.login),
                 action="Noto'g'ri login urinishi",
                 module="Autentifikatsiya",
                 status="xatolik",

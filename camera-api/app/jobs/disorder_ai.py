@@ -43,6 +43,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
+from app.services.confidence import exceed_confidence
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
@@ -167,7 +168,8 @@ async def process_camera_frame_pair_for_disorder(
         module_code=DISORDER_MODULE_CODE,
         module_name=DISORDER_MODULE_NAME,
         group="D",
-        confidence=55,  # a coarse whole-frame motion heuristic, not validated against real footage — see module docstring
+        # Butun kadr harakati chegaradan necha barobar oshgani (2x -> 90).
+        confidence=exceed_confidence(magnitude_now, threshold_now, floor=55, ceiling=90),
         severity="past",
         frame_bytes=frame_b,
     )

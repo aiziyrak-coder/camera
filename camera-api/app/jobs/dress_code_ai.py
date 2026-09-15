@@ -42,13 +42,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
+from app.services.confidence import below_confidence, weakest
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.models import Camera, Event, StudentStaff
-from app.services.coat_detection import is_wearing_white_coat
+from app.services.coat_detection import is_wearing_white_coat, torso_bbox, white_fraction
 from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
@@ -97,12 +98,25 @@ def _closest_pose_to_point(poses: list[PoseLandmarks], point: tuple[float, float
     return best
 
 
+# Oxirgi _staff_missing_coat() chaqiruvi topgan oq rang ulushi (ishonch
+# hisoblash uchun). Funksiya bool qaytarishda davom etadi — testlar va
+# ikki-kadrli oqim shunga tayanadi.
+_last_white_fraction: float | None = None
+
+
+def _torso_white_fraction(image, points) -> float | None:
+    bbox = torso_bbox(points, image.shape[1], image.shape[0])
+    return white_fraction(image, bbox) if bbox is not None else None
+
+
 async def _staff_missing_coat(
     frame_bytes: bytes, candidates: CandidateMatrix, staff_ids: set[str]
 ) -> bool:
     """True if ANY recognized staff member in this frame reads as being
     without a white coat. False when no staff member is recognized here —
     nothing to evaluate, which is not the same as a compliance pass."""
+    global _last_white_fraction
+    _last_white_fraction = None
     if candidates.is_empty or not staff_ids:
         return False
 
@@ -130,6 +144,7 @@ async def _staff_missing_coat(
         if pose is None:
             continue
         if not is_wearing_white_coat(image, pose.points):
+            _last_white_fraction = _torso_white_fraction(image, pose.points)
             return True
 
     return False
@@ -154,8 +169,10 @@ async def process_camera_frame_pair_for_dress_code(
     # kadr boshiga bitta tahlil.
     if not await _staff_missing_coat(frame_b, candidates, staff_ids):
         return False
+    fraction_b = _last_white_fraction
     if not await _staff_missing_coat(frame_a, candidates, staff_ids):
         return False
+    fraction_a = _last_white_fraction
     if await _recently_flagged(db, camera.id):
         return False
 
@@ -165,7 +182,15 @@ async def process_camera_frame_pair_for_dress_code(
         module_code=COAT_MODULE_CODE,
         module_name=COAT_MODULE_NAME,
         group="C",
-        confidence=40,  # klassik rang evristikasi, haqiqiy kamera bilan hali kalibrlanmagan — bilib turib past
+        # Tanada oq rang qanchalik kam: chegarada 40, umuman oq yo'q bo'lsa 85.
+        confidence=weakest(
+            *(
+                below_confidence(f, settings.coat_white_fraction_threshold, floor=40, ceiling=85)
+                for f in (fraction_a, fraction_b)
+                if f is not None
+            ),
+            default=40,
+        ),
         severity="past",  # xavfsizlik-kritik emas, intizom/qoida masalasi
         frame_bytes=frame_b,
     )

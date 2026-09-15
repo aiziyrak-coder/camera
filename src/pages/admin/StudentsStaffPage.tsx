@@ -122,7 +122,7 @@ export default function StudentsStaffPage() {
     error,
     reload,
   } = useServerPage<StudentStaffRecord>(
-    '/api/students-staff',
+    '/api/students-staff/search',
     {
       type: tab,
       faculty: facultyFilter || undefined,
@@ -131,6 +131,7 @@ export default function StudentsStaffPage() {
       search: search.trim() || undefined,
     },
     10,
+    { post: true },
   );
 
   // Qamrov ro'yxatdan MUSTAQIL yuklanadi: u butun bo'limni ko'rsatadi,

@@ -113,7 +113,33 @@ class TestMissingDataIsNotZero:
         await db_session.commit()
 
         report = await generate_rule_based_report(db_session, "Kunlik", today=today)
-        assert report.stats[0] == {"label": "Davomat", "value": "0.0%"}
+        assert report.stats[0]["label"] == "Davomat"
+        assert report.stats[0]["value"].startswith("0.0%")
+        # ...lekin "0%" yolg'iz turmaydi: bitta yozuv — namuna juda kichik va
+        # hech kim tanilmagani alohida tushuntiriladi (audit #26, #27).
+        reliability = next(s for s in report.sections if "ishonchliligi" in s.title)
+        texts = " ".join(r["value"] for r in reliability.rows)
+        assert "namuna" not in report.stats[0]["value"] or "ishonchsiz" in report.summary
+        assert "tanimaganini" in texts
+        assert "30 tadan kam" in texts
+
+    async def test_large_healthy_sample_has_no_reliability_warning(self, db_session):
+        today = date(2026, 9, 4)
+        people = [
+            StudentStaff(full_name=f"Talaba Namuna {i:02d}", type="talaba", group_or_position="1",
+                         biometrics_status="tasdiqlangan")
+            for i in range(40)
+        ]
+        db_session.add_all(people)
+        await db_session.commit()
+        for i, person in enumerate(people):
+            db_session.add(AttendanceRecord(student_staff_id=person.id, date=today,
+                                            status="keldi" if i % 4 else "kelmadi"))
+        await db_session.commit()
+
+        report = await generate_rule_based_report(db_session, "Kunlik", today=today)
+        assert report.stats[0]["value"] == "75.0%"
+        assert not any("ishonchliligi" in s.title for s in report.sections)
 
 
 @pytest.mark.usefixtures("seeded")

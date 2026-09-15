@@ -38,12 +38,56 @@ class StudentStaffCreateIn(CamelModel):
 
 
 class StudentStaffUpdateIn(CamelModel):
-    """Matches EditStudentStaffModal.tsx fields."""
+    """Matches EditStudentStaffModal.tsx fields.
+
+    Talabada kurs va guruh ALOHIDA keladi (course, group) va server ularni
+    "2-kurs, DI-1625" shakliga o'zi yig'adi — import ham shu shaklni yozadi
+    (staff_export.split_course). Xodimda group_or_position = lavozim.
+
+    pinfl / passport_series / passport_number: maydon umuman yuborilmasa —
+    o'zgarmaydi; bo'sh satr — o'chiriladi."""
 
     full_name: str = Field(min_length=5)
     type: Literal["talaba", "xodim"]
     faculty: str
-    group_or_position: str = Field(min_length=1)
+    group_or_position: str = ""
+    course: int | None = Field(default=None, ge=1, le=10)
+    group: str | None = None
+    pinfl: str | None = None
+    passport_series: str | None = None
+    passport_number: str | None = None
+
+
+class StudentStaffDetailOut(StudentStaffOut):
+    """Tahrirlash oynasi uchun: ro'yxatda ko'rsatilmaydigan shaxsiy
+    identifikatorlar. Faqat bitta yozuv so'ralganda qaytariladi."""
+
+    pinfl: str | None = None
+    passport_series: str | None = None
+    passport_number: str | None = None
+
+
+class StudentStaffFilterIn(CamelModel):
+    """Qidiruv/eksport filtri SO'ROV TANASIDA — URL'da emas.
+
+    Qidiruv matni ko'pincha JSHSHIR bo'ladi. GET so'rovning query qatori
+    nginx access logida, brauzer tarixida va proksi jurnallarida saqlanib
+    qoladi; POST tanasi esa hech qayerga yozilmaydi."""
+
+    type: Literal["talaba", "xodim"] | None = None
+    faculty: str | None = None
+    search: str | None = Field(default=None, max_length=200)
+    biometrics_status: str | None = None
+    course: int | None = Field(default=None, ge=1, le=10)
+
+
+class StudentStaffSearchIn(StudentStaffFilterIn):
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=20, ge=1, le=500)
+
+
+class StudentStaffExportIn(StudentStaffFilterIn):
+    kind: Literal["people", "stats"] = "people"
 
 
 class BiometricsFacultyRowOut(CamelModel):

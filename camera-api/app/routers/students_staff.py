@@ -22,7 +22,10 @@ from app.schemas.student_staff import (
     BiometricsCoverageOut,
     BiometricsFacultyRowOut,
     StudentStaffCreateIn,
+    StudentStaffDetailOut,
+    StudentStaffExportIn,
     StudentStaffOut,
+    StudentStaffSearchIn,
     StudentStaffUpdateIn,
 )
 from app.schemas.student_staff_import import StudentStaffImportResultOut
@@ -176,6 +179,21 @@ async def list_students_staff(
 ) -> Page[StudentStaffOut]:
     stmt = _filtered_query(type, faculty, search, biometrics, course)
 
+    records, total = await paginate(db, stmt, page_params)
+    items = [_to_out(r, r.faculty.name if r.faculty else "") for r in records]
+    return build_page(items, total, page_params)
+
+
+@router.post("/search", response_model=Page[StudentStaffOut])
+async def search_students_staff(
+    body: StudentStaffSearchIn,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
+) -> Page[StudentStaffOut]:
+    """GET ro'yxat bilan bir xil, lekin filtr (JSHSHIR bo'lishi mumkin bo'lgan
+    qidiruv matni bilan) so'rov tanasida — URL/access logga tushmaydi."""
+    page_params = PageParams(page=body.page, page_size=body.page_size)
+    stmt = _filtered_query(body.type, body.faculty, body.search, body.biometrics_status, body.course)
     records, total = await paginate(db, stmt, page_params)
     items = [_to_out(r, r.faculty.name if r.faculty else "") for r in records]
     return build_page(items, total, page_params)
@@ -348,6 +366,30 @@ async def export_students_staff(
 
     CSV nima uchun almashtirilgani — app/services/staff_export.py
     docstringida."""
+    return await _export_response(db, kind, type, faculty, search, biometrics, course)
+
+
+@router.post("/export")
+async def export_students_staff_post(
+    body: StudentStaffExportIn,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
+) -> Response:
+    """GET /export bilan bir xil fayl; filtr so'rov tanasida (URL'da JSHSHIR qolmaydi)."""
+    return await _export_response(
+        db, body.kind, body.type, body.faculty, body.search, body.biometrics_status, body.course
+    )
+
+
+async def _export_response(
+    db: AsyncSession,
+    kind: str,
+    type: str | None,
+    faculty: str | None,
+    search: str | None,
+    biometrics: str | None,
+    course: int | None,
+) -> Response:
     now = local_now()
     stamp = now.strftime("%Y-%m-%d")
     slug = PERSON_TYPE_SLUGS.get(type, "talabalar-va-xodimlar")
@@ -492,29 +534,144 @@ async def import_students_staff(
     return result
 
 
-@router.patch("/{record_id}", response_model=StudentStaffOut)
+def _to_detail(record: StudentStaff) -> StudentStaffDetailOut:
+    base = _to_out(record, record.faculty.name if record.faculty else "")
+    return StudentStaffDetailOut(
+        **base.model_dump(),
+        pinfl=record.pinfl,
+        passport_series=record.passport_series,
+        passport_number=record.passport_number,
+    )
+
+
+async def _load_record(db: AsyncSession, record_id: str) -> StudentStaff:
+    try:
+        record_uuid = uuid.UUID(record_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Yozuv topilmadi") from None
+    result = await db.execute(
+        select(StudentStaff)
+        .options(selectinload(StudentStaff.faculty))
+        .where(StudentStaff.id == record_uuid)
+        .execution_options(populate_existing=True)
+    )
+    record = result.scalar_one_or_none()
+    if record is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Yozuv topilmadi")
+    return record
+
+
+@router.get("/{record_id}/details", response_model=StudentStaffDetailOut)
+async def student_staff_details(
+    record_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
+) -> StudentStaffDetailOut:
+    """Tahrirlash oynasi: JSHSHIR va pasport bilan bitta yozuv."""
+    return _to_detail(await _load_record(db, record_id))
+
+
+def _clean_pinfl(value: str) -> str | None:
+    digits = "".join(ch for ch in value if ch.isdigit())
+    if not digits:
+        return None
+    if len(digits) != 14:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "JSHSHIR 14 ta raqamdan iborat bo'lishi kerak")
+    return digits
+
+
+def _clean_passport(series: str, number: str) -> tuple[str | None, str | None]:
+    clean_series = "".join(ch for ch in series if ch.isalpha()).upper()
+    clean_number = "".join(ch for ch in number if ch.isdigit())
+    if not clean_series and not clean_number:
+        return None, None
+    if len(clean_series) != 2 or len(clean_number) != 7:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Pasport seriyasi 2 ta harf, raqami 7 ta raqam bo'lishi kerak (masalan: AD 1234567)",
+        )
+    return clean_series, clean_number
+
+
+def _compose_unit(body: StudentStaffUpdateIn) -> str:
+    if body.type == "talaba" and body.course is not None:
+        group = (body.group or "").strip()
+        return f"{body.course}-kurs, {group}" if group else f"{body.course}-kurs"
+    unit = body.group_or_position.strip()
+    if not unit and body.type == "talaba":
+        unit = (body.group or "").strip()
+    if not unit:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Kurs yoki guruh kiritilishi shart" if body.type == "talaba" else "Lavozim kiritilishi shart",
+        )
+    return unit
+
+
+@router.patch("/{record_id}", response_model=StudentStaffDetailOut)
 async def update_student_staff(
     record_id: str,
     body: StudentStaffUpdateIn,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
-) -> StudentStaffOut:
-    result = await db.execute(select(StudentStaff).where(StudentStaff.id == record_id))
-    record = result.scalar_one_or_none()
-    if record is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Yozuv topilmadi")
-
+) -> StudentStaffDetailOut:
+    record = await _load_record(db, record_id)
     faculty = await _resolve_faculty(db, body.faculty)
+    sent = body.model_fields_set
+    changed_identity: list[str] = []
+
+    if "pinfl" in sent:
+        pinfl = _clean_pinfl(body.pinfl or "")
+        if pinfl != record.pinfl:
+            if pinfl is not None:
+                other = (
+                    await db.execute(
+                        select(StudentStaff).where(StudentStaff.pinfl == pinfl).where(StudentStaff.id != record.id)
+                    )
+                ).scalar_one_or_none()
+                if other is not None:
+                    raise HTTPException(
+                        status.HTTP_409_CONFLICT,
+                        f"Bu JSHSHIR boshqa yozuvga biriktirilgan: {other.full_name} ({other.group_or_position})",
+                    )
+            record.pinfl = pinfl
+            changed_identity.append("JSHSHIR")
+
+    if "passport_series" in sent or "passport_number" in sent:
+        series, number = _clean_passport(
+            (body.passport_series or "") if "passport_series" in sent else (record.passport_series or ""),
+            (body.passport_number or "") if "passport_number" in sent else (record.passport_number or ""),
+        )
+        if (series, number) != (record.passport_series, record.passport_number):
+            if series is not None:
+                other = (
+                    await db.execute(
+                        select(StudentStaff)
+                        .where(StudentStaff.passport_series == series)
+                        .where(StudentStaff.passport_number == number)
+                        .where(StudentStaff.id != record.id)
+                    )
+                ).scalars().first()
+                if other is not None:
+                    raise HTTPException(
+                        status.HTTP_409_CONFLICT,
+                        f"Bu pasport boshqa yozuvga biriktirilgan: {other.full_name} ({other.group_or_position})",
+                    )
+            record.passport_series = series
+            record.passport_number = number
+            changed_identity.append("pasport")
+
     record.full_name = body.full_name
     record.type = body.type
     record.faculty_id = faculty.id
-    record.group_or_position = body.group_or_position
+    record.group_or_position = _compose_unit(body)
 
-    await log_action(db, request, current_user.id, f"Yozuvni tahrirladi: {body.full_name}", "Talabalar")
+    # Audit jurnaliga raqamlarning o'zi emas, faqat NIMA o'zgargani yoziladi.
+    suffix = f" ({', '.join(changed_identity)} yangilandi)" if changed_identity else ""
+    await log_action(db, request, current_user.id, f"Yozuvni tahrirladi: {body.full_name}{suffix}", "Talabalar")
     await db.commit()
-    await db.refresh(record)
-    return _to_out(record, faculty.name)
+    return _to_detail(await _load_record(db, record_id))
 
 
 @router.get("/{record_id}/biometrics-confirmation", response_model=BiometricsConfirmationOut)

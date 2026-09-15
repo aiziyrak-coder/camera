@@ -12,7 +12,12 @@ export function useServerPage<T>(
   path: string,
   params: Record<string, string | undefined>,
   pageSize = 10,
+  /** Filtrni URL o'rniga so'rov tanasida yuborish (POST). Qidiruv matni
+   *  JSHSHIR bo'lishi mumkin — query qatori access log va brauzer
+   *  tarixida qoladi, tana esa qolmaydi. */
+  options: { post?: boolean } = {},
 ) {
+  const post = Boolean(options.post);
   const { token } = useAuth();
   const [page, setPage] = useState(1);
   const [data, setData] = useState<Page<T>>({ items: [], total: 0, page: 1, pageSize, totalPages: 1 });
@@ -38,9 +43,11 @@ export function useServerPage<T>(
     }
     let cancelled = false;
     setLoading(true);
-    const qs = buildQuery({ page, pageSize, ...JSON.parse(paramsKey) });
-    api
-      .get<Page<T>>(`${path}${qs}`, token)
+    const filters = JSON.parse(paramsKey) as Record<string, string | undefined>;
+    const request = post
+      ? api.post<Page<T>>(path, { page, pageSize, ...filters }, token)
+      : api.get<Page<T>>(`${path}${buildQuery({ page, pageSize, ...filters })}`, token);
+    request
       .then((res) => {
         if (cancelled) return;
         setData(res);
@@ -56,7 +63,7 @@ export function useServerPage<T>(
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, page, pageSize, paramsKey, token, reloadNonce]);
+  }, [path, page, pageSize, paramsKey, token, reloadNonce, post]);
 
   return {
     ...data,

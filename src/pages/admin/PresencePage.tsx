@@ -342,7 +342,9 @@ function CamerasTab() {
     { label: 'Tasvir bermoqda', value: data.video },
     { label: 'Bugun kimnidir tanigan', value: data.recognizingToday },
     { label: 'Bugun tanilgan odamlar', value: data.peopleRecognizedToday },
+    { label: 'Yuzi saqlanganlar', value: data.enrolledFaces },
   ];
+  const problems = data.cameras.filter((c) => c.attendanceEnabled && c.diagnosis);
 
   return (
     <>
@@ -353,7 +355,17 @@ function CamerasTab() {
         </p>
       )}
 
-      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+      {problems.length > 0 && data.peopleRecognizedToday === 0 && (
+        <div className="mb-4 rounded-xl bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+          <p className="font-semibold">Bugun hali hech kim davomatga tushmadi.</p>
+          <p className="mt-1">
+            Har bir kamera yonidagi &quot;Tashxis&quot; ustuni sababini ko&apos;rsatadi: kamera tekshirilmayaptimi, kadrda yuz
+            yo&apos;qmi, yuzlar juda kichikmi yoki o&apos;xshashlik chegaradan pastmi.
+          </p>
+        </div>
+      )}
+
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
         {tiles.map((tile) => (
           <div key={tile.label} className="rounded-2xl border border-white/70 bg-white/50 px-3 py-2.5">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{tile.label}</p>
@@ -374,6 +386,10 @@ function CamerasTab() {
               <th className="px-4 py-3">Tasvir</th>
               <th className="px-4 py-3 text-center">Bugun tanigan</th>
               <th className="px-4 py-3">Oxirgi tanish</th>
+              <th className="px-4 py-3" title="Bugun: tekshirilgan kadr / ko'rilgan yuz / o'rtacha yuz o'lchami / eng yuqori o'xshashlik">
+                Bugun AI
+              </th>
+              <th className="px-4 py-3">Tashxis</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/60">
@@ -404,6 +420,23 @@ function CamerasTab() {
                   {camera.recognizedToday}
                 </td>
                 <td className="px-4 py-3 tabular-nums text-slate-600">{camera.lastRecognition ?? '—'}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-[11px] tabular-nums text-slate-600">
+                  {camera.framesCheckedToday > 0 ? (
+                    <>
+                      <p>
+                        {camera.framesCheckedToday} kadr · {camera.facesSeenToday} yuz
+                      </p>
+                      <p className="text-slate-400">
+                        {camera.facePxMedian ? `~${camera.facePxMedian} px` : '—'}
+                        {camera.bestSimilarityToday != null ? ` · max ${camera.bestSimilarityToday.toFixed(2)}` : ''}
+                        {camera.relaxedPendingToday > 0 ? ` · ${camera.relaxedPendingToday} kutilmoqda` : ''}
+                      </p>
+                    </>
+                  ) : (
+                    <span className="text-slate-400">{camera.lastChecked ?? '—'}</span>
+                  )}
+                </td>
+                <td className="min-w-48 px-4 py-3 text-xs text-amber-800">{camera.diagnosis ?? ''}</td>
               </tr>
             ))}
           </tbody>
@@ -411,7 +444,10 @@ function CamerasTab() {
       </div>
       <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
         "Tasvir" — kamera so&apos;nggi daqiqalarda AI uchun kadr bergani. "Bugun tanigan" — shu kamerada bugun tanilgan
-        turli odamlar soni (yangilanish bilan hisoblanadi).
+        turli odamlar soni (yangilanish bilan hisoblanadi). "Bugun AI" — server qayta ishga tushgandan beri: tekshirilgan
+        kadrlar, ko&apos;rilgan yuzlar, yuzning o&apos;rtacha balandligi va ro&apos;yxatdagi eng yaqin odamga eng yuqori
+        o&apos;xshashlik (tanish chegarasi {data.matchThreshold}
+        {data.relaxedThreshold ? `; ${data.relaxedThreshold}–${data.matchThreshold} oralig'i ikkinchi ko'rinish bilan tasdiqlanadi` : ''}).
       </p>
     </>
   );

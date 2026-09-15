@@ -29,6 +29,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
+from app.services.confidence import exceed_confidence
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
@@ -37,7 +38,7 @@ from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.models import Camera, Event
 from app.services.event_bus import raise_event
 from app.services.frame_grabber import grab_frame_pair_for_camera
-from app.services.pose_detection import detect_poses
+from app.services.pose_detection import LEFT_ANKLE, LEFT_HIP, RIGHT_ANKLE, RIGHT_HIP, detect_poses
 from app.services.zone_detection import ground_position, is_inside_zone
 
 logger = logging.getLogger("app.zone_entry_ai")
@@ -57,6 +58,29 @@ def _any_person_in_zone(poses, polygon: list) -> bool:
         if position is not None and is_inside_zone(position, polygon):
             return True
     return False
+
+
+def _zone_evidence(poses, polygon: list) -> int | None:
+    """Zonadagi eng ishonchli odam uchun ishonch. Oyoq (to'piq) nuqtalari
+    bo'yicha joylashuv — haqiqiy yer nuqtasi (70-92); faqat son nuqtalari
+    ko'rinsa — zaifroq taxmin (65-75). Nuqtalar qanchalik aniq ko'ringani
+    (visibility) ham hisobga olinadi."""
+    min_vis = settings.zone_min_landmark_visibility
+    full_at = (1.0 / min_vis) if min_vis > 0 else 2.0
+    best: int | None = None
+    for pose in poses:
+        position = ground_position(pose.points)
+        if position is None or not is_inside_zone(position, polygon):
+            continue
+        points = pose.points
+        ankles = float(min(points[LEFT_ANKLE][3], points[RIGHT_ANKLE][3]))
+        hips = float(min(points[LEFT_HIP][3], points[RIGHT_HIP][3]))
+        if ankles >= min_vis:
+            score = exceed_confidence(ankles, min_vis, floor=70, ceiling=92, full_at=full_at)
+        else:
+            score = exceed_confidence(hips, min_vis, floor=65, ceiling=75, full_at=full_at)
+        best = score if best is None else max(best, score)
+    return best
 
 
 async def _recently_flagged(db: AsyncSession, camera_id) -> bool:
@@ -88,13 +112,18 @@ async def process_camera_frame_pair_for_zone(frame_a: bytes, frame_b: bytes, db:
     if await _recently_flagged(db, camera.id):
         return False
 
+    confidence = min(
+        _zone_evidence(poses_a, camera.restricted_zone_polygon) or 65,
+        _zone_evidence(poses_b, camera.restricted_zone_polygon) or 65,
+    )
+
     await raise_event(
         db,
         camera=camera,
         module_code=ZONE_MODULE_CODE,
         module_name=ZONE_MODULE_NAME,
         group="A",
-        confidence=65,  # real geometric signal, two-frame confirmed, but the hip-fallback ground position is a weaker proxy — see zone_detection.py
+        confidence=confidence,
         severity="yuqori",
         frame_bytes=frame_b,
     )

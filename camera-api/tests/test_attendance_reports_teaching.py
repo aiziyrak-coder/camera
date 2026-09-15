@@ -259,7 +259,8 @@ class TestReports:
         )
         resp = await client.post("/api/reports/generate", headers=headers, json={"period": "Kunlik"})
         stat_values = {s["label"]: s["value"] for s in resp.json()["stats"]}
-        assert stat_values["Davomat"] == "100.0%"
+        # Bitta yozuvdan chiqqan 100% yolg'iz ko'rsatilmaydi (audit #26).
+        assert stat_values["Davomat"] == "100.0% (namuna juda kichik — ishonchsiz)"
 
     async def test_list_and_get_report(self, client: AsyncClient):
         headers = await auth_headers(client, "admin", "admin123")

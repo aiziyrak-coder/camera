@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.jobs.ai_scheduler import _build_registry, run_scheduler_tick
+from app.jobs.ai_scheduler import _build_registry, next_pause
 from app.services.face_recognition import _detect_faces_batch_sync
 
 
@@ -17,23 +17,12 @@ class TestAISchedulerRegistry:
         else:
             assert "attendance" in names
 
-    async def test_scheduler_tick_respects_intervals(self, monkeypatch):
+    def test_each_sweep_waits_only_the_rest_of_its_own_interval(self):
+        # Mustaqil tsikllar: sweep o'z intervalidan uzoq ishlasa ham boshqalarni kutmaydi.
         registry = _build_registry()
-        calls: list[str] = []
-
-        async def fake_run(**kwargs):
-            calls.append("ran")
-            return 0
-
-        registry[0].run_once = fake_run  # type: ignore[method-assign]
-        registry[0].interval_seconds = 9999
-        registry[0].last_run = 0.0
-
-        total, critical_ran, standard_ran = await run_scheduler_tick(registry)
-        assert total == 0
-        assert critical_ran == 0
-        assert standard_ran == 0
-        assert calls == []
+        entrance = next((e for e in registry if e.name == "entrance_exit_attendance"), None)
+        if entrance is not None:
+            assert next_pause(entrance.interval_seconds, 1.0) == entrance.interval_seconds - 1.0
 
 
 class TestFaceBatchSync:

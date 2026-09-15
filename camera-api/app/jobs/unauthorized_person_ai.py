@@ -38,6 +38,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
+from app.services.confidence import below_confidence, weakest
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
@@ -112,6 +113,24 @@ def _has_unmatched_face(faces, candidates: CandidateMatrix) -> bool:
     return any(match is None for match in matches)
 
 
+def _unmatched_confidence(faces, candidates: CandidateMatrix) -> int | None:
+    """Tanilmagan yuz ro'yxatdagi ENG YAQIN odamdan qanchalik uzoq.
+
+    O'xshashlik 0.50 bo'lgan "begona" ko'pincha yomon burchakdan
+    ko'ringan ro'yxatdagi odamning o'zi; 0.10 bo'lgani esa haqiqatan
+    notanish. Chegarada 70, umuman o'xshamaganda 95."""
+    usable = [face for face in faces or [] if getattr(face, "embedding", None) is not None]
+    if not usable or candidates.is_empty:
+        return None
+    threshold = settings.attendance_ai_match_threshold
+    embeddings = np.stack([face.embedding for face in usable])
+    _idx, best_sim, _second = candidates.top_two(embeddings)
+    unmatched = [max(0.0, float(s)) for s in best_sim if float(s) < threshold]
+    if not unmatched:
+        return None
+    return below_confidence(min(unmatched), threshold, floor=70, ceiling=95)
+
+
 async def process_camera_frame_pair_for_unauthorized(
     frame_a: bytes,
     frame_b: bytes,
@@ -165,7 +184,11 @@ async def process_camera_frame_pair_for_unauthorized(
         module_code=UNAUTHORIZED_MODULE_CODE,
         module_name=UNAUTHORIZED_MODULE_NAME,
         group="A",
-        confidence=70,  # two independent frames agreed — still a real false-positive risk, see module docstring
+        confidence=weakest(
+            _unmatched_confidence(faces_a, candidates),
+            _unmatched_confidence(faces_b, candidates),
+            default=70,
+        ),
         severity="yuqori",
         frame_bytes=frame_b,
     )

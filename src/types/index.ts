@@ -83,6 +83,13 @@ export interface StudentStaffRecord {
   confirmedLabel?: string | null;
 }
 
+/** Tahrirlash oynasi — ro'yxatda yuborilmaydigan shaxsiy identifikatorlar bilan. */
+export interface StudentStaffDetail extends StudentStaffRecord {
+  pinfl: string | null;
+  passportSeries: string | null;
+  passportNumber: string | null;
+}
+
 /** "Aniqlash" oynasi — odam yuzini aniq qachon tasdiqlagani.
  *  Vaqt maydonlari serverda Toshkent vaqtida formatlanadi. */
 export interface BiometricsConfirmation extends StudentStaffRecord {
@@ -202,6 +209,18 @@ export interface AttendanceCamera {
   video: boolean;
   recognizedToday: number;
   lastRecognition: string | null;
+  framesCheckedToday: number;
+  facesSeenToday: number;
+  facePxMedian: number | null;
+  smallFacesToday: number;
+  bestSimilarityToday: number | null;
+  similarityBuckets: Record<string, number>;
+  strictMatchesToday: number;
+  relaxedConfirmedToday: number;
+  relaxedPendingToday: number;
+  lastChecked: string | null;
+  /** Nima uchun kamera hech kimni davomatga yozmayotgani — oddiy tilda. */
+  diagnosis: string | null;
 }
 
 export interface AttendanceCameras {
@@ -215,6 +234,9 @@ export interface AttendanceCameras {
   video: number;
   recognizingToday: number;
   peopleRecognizedToday: number;
+  enrolledFaces: number;
+  matchThreshold: number;
+  relaxedThreshold: number | null;
   cameras: AttendanceCamera[];
 }
 
@@ -315,6 +337,14 @@ export interface AIModule {
   sensitivity: 'past' | "o'rta" | 'yuqori';
   cameraCount: number;
   active: boolean;
+  /** Operator ko'rib chiqqan signallardan o'lchangan aniqlik (%), namuna kichik bo'lsa null. */
+  measuredPrecision?: number | null;
+  reviewedEvents?: number;
+  /** Oxirgi 90 kundagi barcha signallar (ko'rib chiqilmaganlari ham). */
+  recentEvents?: number;
+  /** asosiy — model asosida; sinov — kalibrlanmagan evristika; sozlash_kerak — ko'p yolg'on signal. */
+  maturity?: 'asosiy' | 'sinov' | 'sozlash_kerak';
+  maturityNote?: string;
   /** false bo'lsa, bu kriteriya uchun hali hech qanday aniqlash kodi
    * yozilmagan (sof registr qatori) — shuning uchun uni faollashtirish
    * backend tomonidan rad etiladi (409). true bo'lganlarning barchasida

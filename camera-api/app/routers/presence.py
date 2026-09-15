@@ -33,6 +33,7 @@ from app.schemas.presence import (
     TeacherDaySummaryOut,
     VisitOut,
 )
+from app.services import recognition_stats
 from app.services.camera_module_mapping import camera_allows_module_code
 from app.services.staff_export import split_course
 from app.timezone import INSTITUTE_TZ, local_now, to_local
@@ -325,6 +326,31 @@ async def teachers_day(
     return sorted(out, key=lambda t: (t.first_seen is None, t.first_seen or "", t.full_name))
 
 
+def _diagnose(enabled: bool, online: bool, live, recognized: int, enrolled: int) -> str | None:
+    """Kamera nima uchun hech kimni davomatga yozmayotganini oddiy tilda."""
+    if not enabled:
+        return None
+    if enrolled == 0:
+        return "Bazada yuzi saqlangan odam yo'q — tanish uchun namuna yo'q"
+    if not online:
+        return "Kamera tarmoqda emas"
+    if live is None or live.frames == 0:
+        return "Bugun hali tekshirilmadi (AI navbati yetib kelmagan yoki kadr olinmayapti)"
+    if recognized > 0 or live.strict or live.relaxed_confirmed:
+        return None
+    if live.faces == 0:
+        return "Kadrlarda yuz topilmayapti — kamera burchagi/masofasi yuzni ko'rsatmaydi"
+    median_px = live.face_px_median or 0
+    if median_px and median_px < settings.attendance_min_face_px:
+        return f"Yuzlar juda kichik (o'rtacha {median_px} px) — kamerani yaqinroq/pastroq o'rnating"
+    near = live.buckets.get("0.47-0.55", 0) + live.buckets.get("0.40-0.47", 0)
+    if near and live.relaxed_pending:
+        return "Yuzlar chegaraga yaqin o'xshash, lekin ikkinchi ko'rinish bilan tasdiqlanmadi"
+    if near:
+        return "Yuzlar ko'rinmoqda, o'xshashlik chegaradan past — odamlar yuzini qayta (jonli) tasdiqlashi kerak"
+    return "Yuzlar ko'rinmoqda, lekin ro'yxatdagi hech kimga o'xshamayapti (ro'yxatdan o'tmagan odamlar)"
+
+
 @router.get("/cameras", response_model=AttendanceCamerasOut)
 async def attendance_cameras(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -360,6 +386,10 @@ async def attendance_cameras(
         select(func.count(func.distinct(PresenceVisit.student_staff_id))).where(PresenceVisit.last_seen_at >= today_start)
     )
 
+    enrolled = await db.scalar(
+        select(func.count()).select_from(StudentStaff).where(StudentStaff.biometric_embedding.is_not(None))
+    ) or 0
+
     rows: list[AttendanceCameraOut] = []
     for camera in cameras:
         allows_staff = camera_allows_module_code(camera.excluded_module_codes, STAFF_ATTENDANCE_CODE)
@@ -375,6 +405,7 @@ async def attendance_cameras(
             reason = None
         people, last = stats.get(camera.id, (0, None))
         security = camera.is_entrance or camera.is_exit
+        live = recognition_stats.snapshot(str(camera.id))
         rows.append(
             AttendanceCameraOut(
                 id=str(camera.id),
@@ -391,6 +422,17 @@ async def attendance_cameras(
                 video=is_video_flowing(camera.last_frame_at),
                 recognized_today=people,
                 last_recognition=_hm(last),
+                frames_checked_today=live.frames if live else 0,
+                faces_seen_today=live.faces if live else 0,
+                face_px_median=live.face_px_median if live else None,
+                small_faces_today=live.small_faces if live else 0,
+                best_similarity_today=round(live.best_similarity, 3) if live and live.best_similarity >= 0 else None,
+                similarity_buckets=dict(live.buckets) if live else {},
+                strict_matches_today=live.strict if live else 0,
+                relaxed_confirmed_today=live.relaxed_confirmed if live else 0,
+                relaxed_pending_today=live.relaxed_pending if live else 0,
+                last_checked=_hm(live.last_frame_at) if live else None,
+                diagnosis=_diagnose(enabled, is_reachable(camera.last_seen_at), live, people, enrolled),
             )
         )
     rows.sort(key=lambda r: (not r.attendance_enabled, r.role == "Xona/koridor", r.building, r.name))
@@ -406,5 +448,12 @@ async def attendance_cameras(
         video=sum(1 for r in rows if r.attendance_enabled and r.video),
         recognizing_today=sum(1 for r in rows if r.recognized_today > 0),
         people_recognized_today=people_today or 0,
+        enrolled_faces=enrolled,
+        match_threshold=settings.attendance_ai_match_threshold,
+        relaxed_threshold=(
+            settings.attendance_ai_relaxed_threshold
+            if 0 < settings.attendance_ai_relaxed_threshold < settings.attendance_ai_match_threshold
+            else None
+        ),
         cameras=rows,
     )

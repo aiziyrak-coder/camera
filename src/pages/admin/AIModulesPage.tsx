@@ -128,7 +128,9 @@ export default function AIModulesPage() {
                 <th className="px-4 py-3">Kriteriya</th>
                 <th className="px-4 py-3">Aniqlash usuli / AI model</th>
                 <th className="px-4 py-3">Holat</th>
-                <th className="px-4 py-3">Aniqlik</th>
+                <th className="px-4 py-3" title="Operator tasdiqlagan / ko'rib chiqilgan signallar, oxirgi 90 kun">
+                  O&apos;lchangan aniqlik
+                </th>
                 <th className="px-4 py-3">Kamera</th>
                 <th className="px-4 py-3">Amallar</th>
               </tr>
@@ -143,10 +145,34 @@ export default function AIModulesPage() {
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-500">{m.method}</td>
                   <td className="px-4 py-3">
-                    <Badge tone={m.active ? 'green' : 'slate'}>{m.active ? 'Faol' : 'Nofaol'}</Badge>
+                    <div className="flex flex-col items-start gap-1">
+                      <Badge tone={m.active ? 'green' : 'slate'}>{m.active ? 'Faol' : 'Nofaol'}</Badge>
+                      {m.maturity === 'sinov' && (
+                        <span title={m.maturityNote}>
+                          <Badge tone="amber">Sinov rejimi</Badge>
+                        </span>
+                      )}
+                      {m.maturity === 'sozlash_kerak' && (
+                        <span title={m.maturityNote}>
+                          <Badge tone="red">Sozlash kerak</Badge>
+                        </span>
+                      )}
+                    </div>
                   </td>
-                  <td className="px-4 py-3 font-semibold text-slate-900">
-                    {m.active ? `${m.accuracy}%` : '—'}
+                  <td className="px-4 py-3" title={m.maturityNote}>
+                    {m.measuredPrecision != null ? (
+                      <>
+                        <p className="font-semibold tabular-nums text-slate-900">{m.measuredPrecision}%</p>
+                        <p className="text-[11px] text-slate-400">{m.reviewedEvents} ta ko&apos;rib chiqilgan</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs font-semibold text-slate-500">O&apos;lchanmagan</p>
+                        <p className="text-[11px] text-slate-400">
+                          {m.reviewedEvents ?? 0} / 10 ko&apos;rib chiqilgan
+                        </p>
+                      </>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-slate-600">
                     {m.hasDetector ? (

@@ -49,6 +49,7 @@ from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, find_best_match as _vectorized_find_best_match, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
 from app.services.frame_grabber import grab_frame_for_camera, grab_frame_burst_for_camera
+from app.services import recognition_stats
 from app.services.presence import record_visit
 from app.timezone import local_now, to_local
 
@@ -69,6 +70,15 @@ STUDENT_ATTENDANCE_MODULE_CODE = 7
 # Concurrent camera pipelines share app/jobs/sweep_concurrency.global_camera_semaphore
 # (ai_global_sweep_concurrency in .env) — separate from face_recognition inference cap.
 _sweep_guard = SweepGuard("attendance_ai")
+
+
+def _relaxed_threshold() -> float:
+    """0 yoki qat'iy chegaradan past bo'lmagan qiymat yumshoq moslikni
+    o'chiradi (graded_matches'da relaxed oralig'i bo'sh qoladi)."""
+    relaxed = settings.attendance_ai_relaxed_threshold
+    if relaxed <= 0 or relaxed >= settings.attendance_ai_match_threshold:
+        return settings.attendance_ai_match_threshold
+    return relaxed
 
 
 def _is_off_hours(occurred_time: time_type) -> bool:
@@ -281,14 +291,21 @@ async def process_camera_frame(
 
     moment = occurred_at or local_now()
     embeddings = np.stack([face.embedding for face in faces])
-    matches = candidates.best_matches(embeddings, settings.attendance_ai_match_threshold)
+    graded = candidates.graded_matches(
+        embeddings,
+        strict_threshold=settings.attendance_ai_match_threshold,
+        relaxed_threshold=_relaxed_threshold(),
+        margin=settings.attendance_ai_relaxed_margin,
+    )
+    camera_key = str(camera.id) if camera is not None else None
+    recognition_stats.record_frame(camera_key, faces, graded)
 
     matched_ids: set[str] = set()
     records: list[AttendanceRecord] = []
-    for match in matches:
-        if match is None:
+    for face, match in zip(faces, graded, strict=True):
+        if match.person_id is None:
             continue
-        student_staff_id, similarity = match
+        student_staff_id, similarity = match.person_id, match.similarity
         if student_staff_id in matched_ids:
             continue  # two faces in one frame matching the same person is a coincidence, not two sightings
         person_type = candidates.person_type(student_staff_id)
@@ -296,9 +313,30 @@ async def process_camera_frame(
             continue
         if person_type == "talaba" and not student_module_active:
             continue
+
+        if match.grade == "strict":
+            recognition_stats.note_strict_sighting(student_staff_id)
+            recognition_stats.record_credit(camera_key, "strict")
+        else:
+            # Yumshoq moslik: kichik yuz uchun umuman qabul qilinmaydi,
+            # qolganlari esa ikkinchi ko'rinish bilan tasdiqlanishi shart.
+            if recognition_stats.face_height_px(face) < settings.attendance_min_face_px:
+                continue
+            if not recognition_stats.confirm_relaxed(student_staff_id):
+                recognition_stats.record_credit(camera_key, "relaxed_pending")
+                continue
+            recognition_stats.record_credit(camera_key, "relaxed_confirmed")
+
         matched_ids.add(student_staff_id)
         logger.info(
-            "attendance AI matched a face", extra={"student_staff_id": student_staff_id, "similarity": similarity}
+            "attendance AI matched a face",
+            extra={
+                "student_staff_id": student_staff_id,
+                "similarity": round(similarity, 3),
+                "second_similarity": round(match.second_similarity, 3),
+                "grade": match.grade,
+                "face_px": recognition_stats.face_height_px(face),
+            },
         )
         if camera is not None:
             # "Kim qayerda qachon bo'lgani" — kunlik davomatdan mustaqil.

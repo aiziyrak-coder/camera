@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BarChart3, Download, Loader2, Users } from 'lucide-react';
 import Modal from '../Modal';
-import { api, buildQuery, type Page } from '../../lib/apiClient';
+import { api, type Page } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { config } from '../../lib/config';
 import {
@@ -147,7 +147,7 @@ export default function ExportPeopleModal({
     setCounting(true);
     const timer = window.setTimeout(() => {
       api
-        .get<Page<StudentStaffRecord>>(`/api/students-staff${buildQuery({ ...params, pageSize: 1 })}`, token)
+        .post<Page<StudentStaffRecord>>('/api/students-staff/search', { ...params, pageSize: 1 }, token)
         .then((page) => !cancelled && setCount(page.total))
         .catch(() => !cancelled && setCount(null))
         .finally(() => !cancelled && setCounting(false));
@@ -169,8 +169,11 @@ export default function ExportPeopleModal({
     setDownloading(true);
     setError(null);
     try {
-      const res = await fetch(`${config.apiBaseUrl}/api/students-staff/export${buildQuery({ kind, ...params })}`, {
-        headers: { Authorization: `Bearer ${token}` },
+      // POST: qidiruv (JSHSHIR bo'lishi mumkin) URL/access logga tushmasin.
+      const res = await fetch(`${config.apiBaseUrl}/api/students-staff/export`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind, ...params, course: params.course ? Number(params.course) : undefined }),
       });
       if (!res.ok) throw new Error(String(res.status));
       const blob = await res.blob();

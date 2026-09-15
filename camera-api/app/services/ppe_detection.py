@@ -33,6 +33,25 @@ def _get_ppe_model() -> YOLO | None:
     return _ppe_model
 
 
+def mask_fraction(image: np.ndarray, face_bbox: tuple[float, float, float, float]) -> float | None:
+    """Yuzning pastki qismidagi "niqobga o'xshash" piksellar ulushi."""
+    h, w = image.shape[:2]
+    x1, y1, x2, y2 = face_bbox
+    fx1, fy1 = max(0, int(x1)), max(0, int(y1 + (y2 - y1) * 0.45))
+    fx2, fy2 = min(w, int(x2)), min(h, int(y2))
+    crop = image[fy1:fy2, fx1:fx2]
+    if crop.size == 0:
+        return None
+    hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+    sat, val = hsv[:, :, 1], hsv[:, :, 2]
+    mask_like = (sat >= settings.ppe_mask_saturation_min) & (val >= settings.ppe_mask_value_min)
+    return float(np.count_nonzero(mask_like)) / float(mask_like.size)
+
+
+def uses_heuristic() -> bool:
+    return _get_ppe_model() is None
+
+
 def _mask_heuristic(image: np.ndarray, face_bbox: tuple[float, float, float, float]) -> bool:
     """Lower-face region: significant non-skin saturated pixels suggest mask."""
     h, w = image.shape[:2]

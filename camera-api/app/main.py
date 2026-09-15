@@ -14,7 +14,6 @@ from app.jobs.attendance_ai import attendance_ai_loop
 from app.jobs.camera_health import camera_health_loop
 from app.jobs.cleanup import cleanup_loop
 from app.jobs.fire_ai import fire_ai_loop
-from app.jobs.badge_ai import badge_ai_loop
 from app.jobs.disorder_ai import disorder_ai_loop
 from app.jobs.dress_code_ai import dress_code_ai_loop
 from app.jobs.fight_ai import fight_ai_loop
@@ -128,7 +127,6 @@ async def lifespan(app: FastAPI):
                 teacher_punctuality_ai_loop(),
                 disorder_ai_loop(),
                 dress_code_ai_loop(),
-                badge_ai_loop(),
                 ppe_ai_loop(),
                 smoking_ai_loop(),
                 zone_entry_ai_loop(),

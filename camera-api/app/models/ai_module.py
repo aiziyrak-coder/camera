@@ -37,6 +37,6 @@ class AIModuleConfig(Base):
     # True for every criterion that has a real app/jobs/*.py sweep behind
     # it (heuristic/unvalidated is fine — accuracy=0 just means nobody's
     # measured it against ground truth yet). False only for the handful
-    # (ID-badge, PPE, smoking, general dress-code) that are pure registry
+    # (PPE, smoking, general dress-code) that are pure registry
     # rows with no detector written at all — see app/seed.py.
     has_detector: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

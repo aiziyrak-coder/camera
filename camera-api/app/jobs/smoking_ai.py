@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
+from app.services.confidence import below_confidence, weakest
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
@@ -17,7 +18,7 @@ from app.models import Camera, Event
 from app.services.event_bus import raise_event
 from app.services.frame_grabber import grab_frame_pair_for_camera
 from app.services.pose_detection import detect_poses
-from app.services.smoking_detection import is_smoking_posture
+from app.services.smoking_detection import closest_smoking_distance, is_smoking_posture
 
 logger = logging.getLogger("app.smoking_ai")
 
@@ -38,17 +39,23 @@ async def _recently_flagged(db: AsyncSession, camera_id) -> bool:
     return result.scalar_one_or_none() is not None
 
 
-async def _frame_smoking_posture(frame_bytes: bytes) -> bool:
+async def _frame_smoking_distance(frame_bytes: bytes) -> float | None:
     poses = await detect_poses(frame_bytes)
-    return is_smoking_posture(poses)
+    return closest_smoking_distance(poses)
+
+
+async def _frame_smoking_posture(frame_bytes: bytes) -> bool:
+    return await _frame_smoking_distance(frame_bytes) is not None
 
 
 async def process_camera_frame_pair_for_smoking(
     frame_a: bytes, frame_b: bytes, db: AsyncSession, camera: Camera
 ) -> bool:
-    if not await _frame_smoking_posture(frame_b):
+    distance_b = await _frame_smoking_distance(frame_b)
+    if distance_b is None:
         return False
-    if not await _frame_smoking_posture(frame_a):
+    distance_a = await _frame_smoking_distance(frame_a)
+    if distance_a is None:
         return False
     if await _recently_flagged(db, camera.id):
         return False
@@ -59,7 +66,13 @@ async def process_camera_frame_pair_for_smoking(
         module_code=SMOKING_MODULE_CODE,
         module_name=SMOKING_MODULE_NAME,
         group="D",
-        confidence=35,
+        # Bilak og'izga qanchalik yaqin (chegarada 35, tegib turganda 80);
+        # ikki kadrdan zaifrog'i.
+        confidence=weakest(
+            below_confidence(distance_a, settings.smoking_wrist_mouth_distance, floor=35, ceiling=80),
+            below_confidence(distance_b, settings.smoking_wrist_mouth_distance, floor=35, ceiling=80),
+            default=35,
+        ),
         severity="o'rta",
         frame_bytes=frame_b,
     )
