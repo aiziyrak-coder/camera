@@ -182,6 +182,7 @@ class TestSweepConcurrency:
             return frame, frame
 
         monkeypatch.setattr(unauthorized_person_ai, "grab_frame_pair_for_camera", flaky_grab_frame_pair)
+        monkeypatch.setattr(unauthorized_person_ai, "is_unauthorized_alert_time", lambda: True)
         # This test is about error isolation, not about the roster guard —
         # switch the guard off so an empty test roster doesn't end the
         # sweep before any camera is touched (see settings.unauthorized_min_enrolled).
@@ -256,6 +257,7 @@ class TestSweepConcurrency:
             return frame, frame
 
         monkeypatch.setattr(unauthorized_person_ai, "grab_frame_pair_for_camera", counting_grab)
+        monkeypatch.setattr(unauthorized_person_ai, "is_unauthorized_alert_time", lambda: True)
         monkeypatch.setattr(settings, "unauthorized_min_enrolled", 10)
 
         raised = await run_unauthorized_person_ai_sweep_once(session_factory=TestSessionLocal)

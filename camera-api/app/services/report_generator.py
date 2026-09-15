@@ -151,7 +151,7 @@ async def generate_rule_based_report(db: AsyncSession, period: str, today: date 
     start, end, period_label = _date_range(period, today)
 
     occurred_on = local_date(Event.occurred_at)
-    in_range = occurred_on.between(start, end)
+    in_range = occurred_on.between(start, end) & Event.is_trial.is_(False)
 
     total_records, present_records, attendance_by_status = await _attendance(db, start, end)
     attendance_pct = round((present_records / total_records) * 100, 1) if total_records else None

@@ -355,6 +355,27 @@ export interface AIModule {
    * app/jobs/*.py'da haqiqiy (garchi hali baholanmagan bo'lsa ham)
    * aniqlash logikasi bor. */
   hasDetector: boolean;
+  /** ishchi — signallar navbatga tushadi; sinov — fonda ishlaydi, namunalar baholanadi. */
+  mode: 'ishchi' | 'sinov';
+  /** Sinovdagi modulni ishchi rejimga o'tkazish sharti bajarilgan. */
+  promotionReady?: boolean;
+  /** Baholanmagan sinov signallari. */
+  trialUnreviewed?: number;
+}
+
+/** Operatorlar ko'p rad etgani uchun avtomatik o'chirilgan kamera × modul juftligi. */
+export interface ModuleSuppression {
+  id: string;
+  cameraId: string;
+  cameraName: string;
+  building: string;
+  moduleCode: number;
+  moduleName: string;
+  confirmed: number;
+  rejected: number;
+  precision: number | null;
+  reason: string;
+  createdAt: string;
 }
 
 /** GET /api/cameras/module-options — manageCameras uchun yengil modul ro'yxati */
@@ -601,6 +622,12 @@ export interface AuditLogEntry {
 export type EventSeverity = 'past' | "o'rta" | 'yuqori';
 export type EventStatus = 'yangi' | 'tasdiqlangan' | 'rad_etilgan';
 
+/** Signal dalili — app/services/event_bus.py (details). */
+export interface EventDetails {
+  reason?: string;
+  metrics?: Record<string, number | string | null>;
+}
+
 export interface AIEvent {
   id: string;
   timestamp: string;
@@ -622,6 +649,10 @@ export interface AIEvent {
   occurredAt?: string | null;
   /** Operator qaror qilgan payt ("2026-09-15 14:20"). */
   reviewedAt?: string | null;
+  /** Sinov rejimidagi modul signali — operator navbatiga chiqmaydi. */
+  isTrial?: boolean;
+  /** Nega signal: sabab matni va o'lchangan qiymatlar. */
+  details?: EventDetails | null;
 }
 
 export type AttendanceDayStatus = 'keldi' | 'kelmadi' | 'kech_keldi' | 'dam_olish';
@@ -710,4 +741,7 @@ export interface EventSummary {
   recentPrecision: number | null;
   modules: EventFacet[];
   buildings: EventFacet[];
+  /** Sinov rejimidagi, hali baholanmagan signallar. */
+  trialUnreviewed: number;
+  trialModules: EventFacet[];
 }

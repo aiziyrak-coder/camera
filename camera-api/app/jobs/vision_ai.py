@@ -202,6 +202,13 @@ async def process_camera_frame_for_sleep(
             severity="past",  # low: sleeping isn't dangerous, even when confirmed across a multi-frame burst
             frame_bytes=frames[-1],
             person_name=person_name,
+            details={
+                "reason": (
+                    f"{total} kadrdan {votes} tasida ko'z yumuq "
+                    f"(kamida {round(settings.sleep_confirmation_majority_ratio * 100)}% kerak)"
+                ),
+                "metrics": {"closed": votes, "frames": total, "ratio": round(ratio, 2)},
+            },
         )
         raised += 1
 

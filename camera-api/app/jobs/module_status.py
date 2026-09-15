@@ -16,15 +16,15 @@ existing camera (column is nullable) keeps today's behavior — every
 active module still runs on it — until an admin deliberately opts it out
 of specific modules via PATCH /api/cameras/{id}/modules."""
 
-from datetime import time as time_type
+from datetime import datetime, time as time_type
 import logging
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import ColumnElement
 
 from app.config import settings
-from app.models import AIModuleConfig, Camera
+from app.models import AIModuleConfig, Camera, ModuleCameraSuppression
 from app.timezone import local_now
 
 logger = logging.getLogger("app.module_status")
@@ -118,7 +118,77 @@ def camera_allows_module(module_code: int) -> ColumnElement[bool]:
     Camera.status == "faol" in every sweep's camera query, e.g.:
         select(Camera).where(Camera.status == "faol").where(camera_allows_module(CODE))
     """
-    return or_(
-        Camera.excluded_module_codes.is_(None),
-        ~Camera.excluded_module_codes.contains([module_code]),
+    suppressed = (
+        select(ModuleCameraSuppression.id)
+        .where(ModuleCameraSuppression.camera_id == Camera.id)
+        .where(ModuleCameraSuppression.module_code == module_code)
+        .where(ModuleCameraSuppression.restored_at.is_(None))
+        .exists()
     )
+    return and_(
+        or_(
+            Camera.excluded_module_codes.is_(None),
+            ~Camera.excluded_module_codes.contains([module_code]),
+        ),
+        # Operatorlar ko'p rad etgani uchun avtomatik o'chirilgan juftlik
+        # (app/jobs/module_suppression.py) — admin qaytarguncha ishlamaydi.
+        ~suppressed,
+    )
+
+
+async def load_suppressed_pairs(db: AsyncSession) -> set[tuple[str, int]]:
+    """Faol avtomatik o'chirishlar {(camera_id, module_code)} — kamerani
+    Python'da tekshiradigan sweeplar uchun (unified_face_sweep)."""
+    rows = await db.execute(
+        select(ModuleCameraSuppression.camera_id, ModuleCameraSuppression.module_code).where(
+            ModuleCameraSuppression.restored_at.is_(None)
+        )
+    )
+    return {(str(camera_id), code) for camera_id, code in rows.all()}
+
+
+def _parse_windows(value: str) -> list[tuple[time_type, time_type]]:
+    windows: list[tuple[time_type, time_type]] = []
+    for part in value.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            start_text, end_text = part.split("-")
+            windows.append((time_type.fromisoformat(start_text.strip()), time_type.fromisoformat(end_text.strip())))
+        except ValueError:
+            logger.warning("invalid time window ignored", extra={"value": part})
+    return windows
+
+
+def _inside_window(window: tuple[time_type, time_type], current: time_type) -> bool:
+    start, end = window
+    if start <= end:
+        return start <= current <= end
+    return current >= start or current <= end
+
+
+def is_unauthorized_alert_time(now: datetime | None = None) -> bool:
+    """Begona shaxs (#1) signal beradigan paytmi: ish kuni bo'lmagan kun yoki
+    settings.unauthorized_active_windows oynalaridan biri.
+
+    Oynalar bo'sh yoki hammasi noto'g'ri yozilgan bo'lsa — cheklov yo'q:
+    xato sozlama xavfsizlik modulini jimgina o'chirib qo'ymasligi kerak."""
+    from app.jobs.absence_marker import is_working_day
+
+    moment = now if now is not None else local_now()
+    if not is_working_day(moment.date()):
+        return True
+    windows = _parse_windows(settings.unauthorized_active_windows)
+    if not windows:
+        return True
+    current = moment.time()
+    return any(_inside_window(window, current) for window in windows)
+
+
+def camera_can_report_unauthorized(camera: Camera) -> bool:
+    """Kunduzi ichkaridagi notanish yuz — odatda ro'yxatdan o'tmagan talaba.
+    Signal faqat kirish va perimetr kameralaridan (settings.unauthorized_perimeter_only)."""
+    if not settings.unauthorized_perimeter_only:
+        return True
+    return bool(camera.is_entrance or camera.is_perimeter)

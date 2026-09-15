@@ -48,6 +48,7 @@ from app.services.confidence import exceed_confidence
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
+from app.services.evidence import pose_box
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.jobs.disorder_ai import _decode_grayscale, _is_motion_spike, _last_decision, _mean_flow_magnitude
@@ -142,6 +143,15 @@ async def process_camera_frame_pair_for_fight(frame_a: bytes, frame_b: bytes, db
         confidence=confidence,
         severity="yuqori",  # still worth a human look despite the low confidence — a missed real fight is worse than a false alarm
         frame_bytes=frame_b,
+        details={
+            "reason": (
+                f"{len(poses_b)} odam bir-biriga juda yaqin va harakat chegaradan {magnitude_now / threshold_now:.1f} barobar yuqori"
+                if threshold_now > 0
+                else f"{len(poses_b)} odam bir-biriga juda yaqin va keskin harakat"
+            ),
+            "metrics": {"people": len(poses_b), "motion": round(magnitude_now, 3), "threshold": round(threshold_now, 3)},
+        },
+        annotations=[box for box in (pose_box(pose.points, label="odam") for pose in poses_b) if box is not None],
     )
     return True
 

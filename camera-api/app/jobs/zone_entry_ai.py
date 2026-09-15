@@ -33,6 +33,7 @@ from app.services.confidence import exceed_confidence
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
+from app.services.evidence import pose_box, zone_polygon
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.models import Camera, Event
@@ -126,6 +127,15 @@ async def process_camera_frame_pair_for_zone(frame_a: bytes, frame_b: bytes, db:
         confidence=confidence,
         severity="yuqori",
         frame_bytes=frame_b,
+        details={"reason": "Odam taqiqlangan zona ichida — ikki kadrda ham", "metrics": {"people": len(poses_b)}},
+        annotations=[
+            shape
+            for shape in (
+                zone_polygon(camera.restricted_zone_polygon, "zona"),
+                *(pose_box(pose.points, label="odam") for pose in poses_b),
+            )
+            if shape is not None
+        ],
     )
     return True
 

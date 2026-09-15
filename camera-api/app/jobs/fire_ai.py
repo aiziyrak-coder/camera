@@ -81,6 +81,10 @@ async def process_camera_frame_pair_for_fire(
         confidence=min(100, round(fraction * 1000)),  # scaled, not a calibrated probability — see module docstring
         severity="yuqori",
         frame_bytes=frame_b,
+        details={
+            "reason": f"Kadrning {fraction * 100:.1f}% i olov rangida va yorqinligi kadrlar orasida miltillaydi",
+            "metrics": {"fire_fraction": round(fraction, 4)},
+        },
     )
     return True
 

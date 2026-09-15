@@ -192,6 +192,14 @@ async def process_camera_frame_pair_for_dress_code(
             default=40,
         ),
         severity="past",  # xavfsizlik-kritik emas, intizom/qoida masalasi
+        details={
+            "reason": "Tanilgan xodimning tanasida oq xalat rangi kam — ikki kadrda ham",
+            "metrics": {
+                "white_a": round(fraction_a, 3) if fraction_a is not None else None,
+                "white_b": round(fraction_b, 3) if fraction_b is not None else None,
+                "threshold": settings.coat_white_fraction_threshold,
+            },
+        },
         frame_bytes=frame_b,
     )
     return True

@@ -26,7 +26,13 @@ from app.jobs.attendance_ai import (
     process_camera_frame,
 )
 from app.jobs.camera_health import is_reachable
-from app.jobs.module_status import camera_allows_module, is_module_active
+from app.jobs.module_status import (
+    camera_allows_module,
+    camera_can_report_unauthorized,
+    is_module_active,
+    is_unauthorized_alert_time,
+    load_suppressed_pairs,
+)
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.jobs.unauthorized_person_ai import UNAUTHORIZED_MODULE_CODE, process_camera_frame_pair_for_unauthorized
@@ -243,6 +249,7 @@ async def run_unified_face_sweep_once(
         )
         cameras = [c for c in result.scalars().all() if c.stream_url and is_reachable(c.last_seen_at)]
         candidates = await load_candidate_matrix_for_sweep(db)
+        suppressed = await load_suppressed_pairs(db)
 
         # Ro'yxat juda kichik bo'lsa 1-modulni shu yerda o'chiramiz.
         # Haqiqiy himoya process_camera_frame_pair_for_unauthorized
@@ -260,8 +267,25 @@ async def run_unified_face_sweep_once(
     if not cameras:
         return totals
 
+    # Begona shaxs (#1) faqat ruxsat etilgan vaqtda va kirish/perimetr
+    # kamerasida tekshiriladi; avtomatik o'chirilgan kamera×modul juftliklari
+    # (app/jobs/module_suppression.py) tashlab ketiladi. Kameraga xos
+    # bayroqlar shu yerda hisoblanadi — _process_camera o'zgarmaydi.
+    alert_time = is_unauthorized_alert_time()
+
+    def camera_flags(camera: Camera) -> dict[str, bool]:
+        camera_id = str(camera.id)
+        return {
+            **flags,
+            "unauthorized": flags["unauthorized"]
+            and alert_time
+            and camera_can_report_unauthorized(camera)
+            and (camera_id, UNAUTHORIZED_MODULE_CODE) not in suppressed,
+            "sleep": flags["sleep"] and (camera_id, SLEEP_MODULE_CODE) not in suppressed,
+        }
+
     results = await asyncio.gather(
-        *(_process_camera(camera, flags, candidates, session_factory) for camera in cameras),
+        *(_process_camera(camera, camera_flags(camera), candidates, session_factory) for camera in cameras),
         return_exceptions=True,
     )
     for camera, outcome in zip(cameras, results, strict=True):

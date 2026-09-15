@@ -27,6 +27,12 @@ class AIModuleOut(CamelModel):
     # sozlash_kerak — operatorlar signallarning yarmidan ko'pini rad etgan.
     maturity: Literal["asosiy", "sinov", "sozlash_kerak"] = "sinov"
     maturity_note: str = ""
+    # ishchi | sinov — qarang app/models/ai_module.py.
+    mode: Literal["ishchi", "sinov"] = "ishchi"
+    # Sinovdagi modulni ishchi rejimga o'tkazish sharti bajarilganmi.
+    promotion_ready: bool = False
+    # Baholanmagan sinov signallari (oxirgi 90 kun).
+    trial_unreviewed: int = 0
 
 
 class AIModuleUpdateIn(CamelModel):
@@ -39,3 +45,21 @@ class AIModuleUpdateIn(CamelModel):
     threshold: int
     sensitivity: Literal["past", "o'rta", "yuqori"]
     active: bool
+    # Berilmasa rejim o'zgarmaydi. "ishchi" ga o'tish sharti routerda tekshiriladi.
+    mode: Literal["ishchi", "sinov"] | None = None
+
+
+class ModuleSuppressionOut(CamelModel):
+    """Avtomatik o'chirilgan kamera × modul juftligi (app/jobs/module_suppression.py)."""
+
+    id: str
+    camera_id: str
+    camera_name: str
+    building: str
+    module_code: int
+    module_name: str
+    confirmed: int
+    rejected: int
+    precision: float | None = None
+    reason: str
+    created_at: str  # "2026-09-16 10:05", institut vaqti

@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, false, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -24,6 +24,8 @@ class Event(Base):
         Index("ix_events_status_occurred", "status", "occurred_at"),
         Index("ix_events_severity_occurred", "severity", "occurred_at"),
         Index("ix_events_module_occurred", "module_code", "occurred_at"),
+        # Operator ko'rinishlari faqat ishchi signallarni oladi (h1b2c3d4e5f6).
+        Index("ix_events_trial_occurred", "is_trial", "occurred_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
@@ -50,3 +52,8 @@ class Event(Base):
     # itself failed; a human reviewing "Hodisalar jurnali" should see what
     # the AI actually saw, not a live feed of whatever's on camera now.
     snapshot_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Sinov rejimidagi modul signali (app/services/event_bus.py). Operator
+    # navbati, ogohlantirishlar va hisobotlar faqat is_trial = false ni ko'radi.
+    is_trial: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    # Dalil: sabab matni va o'lchangan qiymatlar — "Nega signal?" bloki uchun.
+    details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

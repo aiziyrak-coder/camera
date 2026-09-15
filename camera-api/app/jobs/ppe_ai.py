@@ -101,6 +101,14 @@ async def process_camera_frame_pair_for_ppe(
             default=40,
         ),
         severity="o'rta",
+        details={
+            "reason": "Yuz atrofida niqob topilmadi — ikki kadrda ham",
+            "metrics": {
+                "mask_a": round(fraction_a, 3) if fraction_a is not None else None,
+                "mask_b": round(fraction_b, 3) if fraction_b is not None else None,
+                "threshold": settings.ppe_mask_fraction_threshold,
+            },
+        },
         frame_bytes=frame_b,
     )
     return True

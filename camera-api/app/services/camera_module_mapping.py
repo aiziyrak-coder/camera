@@ -3,7 +3,7 @@
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Camera
+from app.models import AIModuleConfig, Camera, ModuleCameraSuppression
 
 
 def camera_allows_module_code(excluded_module_codes: list | None, module_code: int) -> bool:
@@ -37,3 +37,29 @@ def set_camera_module_enabled(camera: Camera, module_code: int, enabled: bool) -
     elif module_code not in excluded:
         excluded.append(module_code)
     camera.excluded_module_codes = excluded if excluded else None
+
+
+async def camera_counts_by_module(db: AsyncSession) -> dict[int, int]:
+    """Har modul uchun faol kamera soni — bitta aylanishda (ilgari har modulga
+    alohida COUNT so'rovi). Avtomatik o'chirilgan juftliklar sanalmaydi."""
+    codes = (await db.execute(select(AIModuleConfig.code))).scalars().all()
+    cameras = (
+        await db.execute(select(Camera.id, Camera.excluded_module_codes).where(Camera.status == "faol"))
+    ).all()
+    suppressed = set(
+        (
+            await db.execute(
+                select(ModuleCameraSuppression.camera_id, ModuleCameraSuppression.module_code).where(
+                    ModuleCameraSuppression.restored_at.is_(None)
+                )
+            )
+        ).all()
+    )
+    return {
+        code: sum(
+            1
+            for camera_id, excluded in cameras
+            if camera_allows_module_code(excluded, code) and (camera_id, code) not in suppressed
+        )
+        for code in codes
+    }

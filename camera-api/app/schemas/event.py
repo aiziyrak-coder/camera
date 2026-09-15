@@ -29,6 +29,10 @@ class EventOut(CamelModel):
     occurred_at: str | None = None
     # Operator qaror qilgan payt ("2026-09-15 14:20", institut vaqti).
     reviewed_at: str | None = None
+    # Sinov rejimidagi modul signali — operator navbatiga chiqmaydi.
+    is_trial: bool = False
+    # Dalil: {"reason": "...", "metrics": {...}} — app/services/event_bus.py.
+    details: dict | None = None
 
 
 class EventCreateIn(CamelModel):
@@ -90,4 +94,7 @@ class EventSummaryOut(CamelModel):
     # "precision30d" ga aylantirmaydi.
     recent_precision: float | None = None
     modules: list[EventFacetOut] = []
+    # Sinov rejimidagi, hali baholanmagan signallar — "Sinov namunalari" uchun.
+    trial_unreviewed: int = 0
+    trial_modules: list[EventFacetOut] = []
     buildings: list[EventFacetOut] = []

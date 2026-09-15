@@ -13,7 +13,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
-from sqlalchemy import case, func, or_, select, update
+from sqlalchemy import case, false, func, or_, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -32,8 +32,9 @@ from app.schemas.event import (
     EventSummaryOut,
 )
 from app.security import decode_access_token
-from app.storage import delete_files_quietly, presigned_url
-from app.timezone import INSTITUTE_TZ, local_now, to_local
+from app.services.event_bus import event_to_out
+from app.storage import delete_files_quietly
+from app.timezone import INSTITUTE_TZ, local_now
 from app.ws import manager
 
 router = APIRouter(tags=["events"])
@@ -43,26 +44,13 @@ REVIEW_STATS_DAYS = 30
 MIN_REVIEWS_FOR_PRECISION = 10
 FACET_LIMIT = 40
 
+# Operator va rahbar ko'rinishlari faqat ishchi rejimdagi modullar signalini
+# ko'radi — sinov signallari (is_trial) navbat va statistikaga aralashmaydi.
+OPERATOR_EVENTS = Event.is_trial == false()
+
 
 def _to_out(event: Event) -> EventOut:
-    return EventOut(
-        id=str(event.id),
-        timestamp=to_local(event.occurred_at).strftime("%Y-%m-%d %H:%M"),
-        camera_id=str(event.camera_id) if event.camera_id else "",
-        camera_name=event.camera_name,
-        building=event.building,
-        module_code=event.module_code,
-        module_name=event.module_name,
-        group=event.group,
-        confidence=event.confidence,
-        severity=event.severity,
-        status=event.status,
-        person_name=event.person_name,
-        reviewed_by=event.reviewed_by,
-        snapshot_url=presigned_url(event.snapshot_key) if event.snapshot_key else None,
-        occurred_at=to_local(event.occurred_at).isoformat(timespec="seconds"),
-        reviewed_at=to_local(event.reviewed_at).strftime("%Y-%m-%d %H:%M") if event.reviewed_at else None,
-    )
+    return event_to_out(event)
 
 
 def _local_day_start(day: date) -> datetime:
@@ -110,8 +98,10 @@ async def list_events(
     date_from: Annotated[date | None, Query(alias="from")] = None,
     date_to: Annotated[date | None, Query(alias="to")] = None,
     sort: Annotated[Literal["newest", "oldest", "severity"], Query()] = "newest",
+    trial: Annotated[bool, Query()] = False,
 ) -> Page[EventOut]:
-    stmt = select(Event)
+    # trial=true — faqat sinov rejimidagi modullar signallari (baholash uchun).
+    stmt = select(Event).where(Event.is_trial == (true() if trial else false()))
     if severity:
         stmt = stmt.where(Event.severity == severity)
     if status_filter:
@@ -180,27 +170,35 @@ async def events_summary(
     _: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> EventSummaryOut:
     now = datetime.now(timezone.utc)
-    status_counts = dict((await db.execute(select(Event.status, func.count()).group_by(Event.status))).all())
+    status_counts = dict(
+        (await db.execute(select(Event.status, func.count()).where(OPERATOR_EVENTS).group_by(Event.status))).all()
+    )
     unreviewed_by_severity = dict(
         (
             await db.execute(
-                select(Event.severity, func.count()).where(Event.status == "yangi").group_by(Event.severity)
+                select(Event.severity, func.count())
+                .where(OPERATOR_EVENTS)
+                .where(Event.status == "yangi")
+                .group_by(Event.severity)
             )
         ).all()
     )
     start_of_today = local_now().replace(hour=0, minute=0, second=0, microsecond=0)
     today_row = (
         await db.execute(
-            select(func.count(), func.count().filter(Event.severity.in_(SERIOUS))).where(
-                Event.occurred_at >= start_of_today
-            )
+            select(func.count(), func.count().filter(Event.severity.in_(SERIOUS)))
+            .where(OPERATOR_EVENTS)
+            .where(Event.occurred_at >= start_of_today)
         )
     ).one()
-    oldest = await db.scalar(select(func.min(Event.occurred_at)).where(Event.status == "yangi"))
+    oldest = await db.scalar(
+        select(func.min(Event.occurred_at)).where(OPERATOR_EVENTS).where(Event.status == "yangi")
+    )
     stale_serious = (
         await db.scalar(
             select(func.count())
             .select_from(Event)
+            .where(OPERATOR_EVENTS)
             .where(Event.status == "yangi")
             .where(Event.severity.in_(SERIOUS))
             .where(Event.occurred_at < now - timedelta(hours=24))
@@ -216,7 +214,9 @@ async def events_summary(
                 func.avg(func.extract("epoch", Event.reviewed_at - Event.occurred_at)),
                 func.count().filter(Event.status == "tasdiqlangan"),
                 func.count().filter(Event.status == "rad_etilgan"),
-            ).where(reviewed_recently)
+            )
+            .where(OPERATOR_EVENTS)
+            .where(reviewed_recently)
         )
     ).one()
     avg_seconds, confirmed_recent, rejected_recent = review_row
@@ -225,6 +225,7 @@ async def events_summary(
     module_rows = (
         await db.execute(
             select(Event.module_code, Event.module_name, func.count())
+            .where(OPERATOR_EVENTS)
             .group_by(Event.module_code, Event.module_name)
             .order_by(func.count().desc())
             .limit(FACET_LIMIT)
@@ -233,9 +234,20 @@ async def events_summary(
     building_rows = (
         await db.execute(
             select(Event.building, func.count())
+            .where(OPERATOR_EVENTS)
             .where(Event.building != "")
             .group_by(Event.building)
             .order_by(Event.building)
+            .limit(FACET_LIMIT)
+        )
+    ).all()
+    trial_rows = (
+        await db.execute(
+            select(Event.module_code, Event.module_name, func.count())
+            .where(Event.is_trial == true())
+            .where(Event.status == "yangi")
+            .group_by(Event.module_code, Event.module_name)
+            .order_by(func.count().desc())
             .limit(FACET_LIMIT)
         )
     ).all()
@@ -258,6 +270,8 @@ async def events_summary(
         ),
         modules=[EventFacetOut(value=str(code), label=name, count=count) for code, name, count in module_rows],
         buildings=[EventFacetOut(value=name, label=name, count=count) for name, count in building_rows],
+        trial_unreviewed=sum(count for _code, _name, count in trial_rows),
+        trial_modules=[EventFacetOut(value=str(code), label=name, count=count) for code, name, count in trial_rows],
     )
 
 
@@ -383,5 +397,7 @@ async def review_event(
     await db.refresh(event)
 
     out = _to_out(event)
-    await manager.broadcast(out.model_dump(by_alias=True))
+    # Sinov signali operator sahifalariga umuman kelmagan — uning bahosini ham yubormaymiz.
+    if not event.is_trial:
+        await manager.broadcast(out.model_dump(by_alias=True))
     return out

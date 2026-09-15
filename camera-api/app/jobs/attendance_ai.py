@@ -237,6 +237,7 @@ async def upsert_attendance_from_recognition(
             severity="o'rta",
             frame_bytes=frame_bytes,
             person_name=person.full_name if person else None,
+            details={"reason": f"Ish vaqtidan tashqari ({occurred_time.strftime('%H:%M')}) binoga kirish qayd etildi"},
         )
     else:
         await db.commit()

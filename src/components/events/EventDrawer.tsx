@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
-import { Check, ChevronLeft, ChevronRight, ExternalLink, ImageOff, Trash2, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, ExternalLink, FlaskConical, ImageOff, Lightbulb, Trash2, X } from 'lucide-react';
 import Drawer from '../ui/Drawer';
 import Badge from '../Badge';
+import { detailMetrics } from '../../lib/eventDetails';
 import { SEVERITY_LABEL, SEVERITY_TONE, STATUS_LABEL, STATUS_TONE } from '../../lib/eventLabels';
 import { relativeTime } from '../../lib/uzDate';
 import type { AIEvent, EventStatus } from '../../types';
@@ -60,6 +61,9 @@ export default function EventDrawer({
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [event, onPrev, onNext, onReview, busy]);
+
+  const metrics = detailMetrics(event?.details);
+  const reason = event?.details?.reason;
 
   return (
     <Drawer
@@ -149,7 +153,38 @@ export default function EventDrawer({
             <Badge tone={SEVERITY_TONE[event.severity]}>{`Muhimlik: ${SEVERITY_LABEL[event.severity]}`}</Badge>
             <Badge tone={STATUS_TONE[event.status]}>{STATUS_LABEL[event.status]}</Badge>
             <Badge tone="indigo">{`Ishonch: ${event.confidence}%`}</Badge>
+            {event.isTrial && <Badge tone="amber">Sinov signali</Badge>}
           </div>
+
+          {(reason || metrics.length > 0) && (
+            <section className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-3">
+              <h4 className="mb-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-indigo-700">
+                <Lightbulb size={13} aria-hidden="true" />
+                Nega signal?
+              </h4>
+              {reason && <p className="text-sm leading-relaxed text-slate-800">{reason}</p>}
+              {metrics.length > 0 && (
+                <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
+                  {metrics.map((metric) => (
+                    <div key={metric.key} className="flex justify-between gap-2 border-b border-indigo-100/70 py-0.5">
+                      <dt className="text-slate-500">{metric.label}</dt>
+                      <dd className="font-semibold tabular-nums text-slate-800">{metric.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+            </section>
+          )}
+
+          {event.isTrial && (
+            <p className="flex gap-2 rounded-xl bg-amber-50 px-3 py-2.5 text-xs leading-relaxed text-amber-900">
+              <FlaskConical size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <span>
+                Bu modul hali sinov rejimida — signal operator navbatiga chiqmagan. Bahoyingiz modul aniqligini
+                o&apos;lchash uchun ishlatiladi: kadrga qarab haqqoniy baholang.
+              </span>
+            </p>
+          )}
 
           <div className="grid grid-cols-2 gap-2">
             <Field label="Vaqt" value={`${event.timestamp}${event.occurredAt ? ` · ${relativeTime(event.occurredAt)}` : ''}`} />
@@ -163,7 +198,7 @@ export default function EventDrawer({
             />
           </div>
 
-          {event.status === 'yangi' && (
+          {event.status === 'yangi' && !event.isTrial && (
             <p className="rounded-xl bg-indigo-50 px-3 py-2.5 text-xs leading-relaxed text-indigo-800">
               AI signal — bu dalil emas, ko&apos;rsatkich. Yakuniy qarorni kadrni ko&apos;rib chiqqan inson qabul qiladi.
             </p>

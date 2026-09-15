@@ -708,6 +708,29 @@ class Settings(BaseSettings):
     # Bu ro'yxatga olish tugagach o'zi hal bo'ladi — modul avtomatik
     # ishlay boshlaydi, hech narsani qo'lda yoqish shart emas.
     unauthorized_min_enrolled: int = 10
+    # Begona shaxs (#1) faqat shu joy va vaqtda signal beradi. Talabalarning
+    # ko'pi yuzini ro'yxatdan o'tkazmagan, shuning uchun kunduzi bino ichidagi
+    # "notanish yuz" deyarli har doim o'z talabamiz — bu signal emas.
+    # Oyna "HH:MM-HH:MM" (vergul bilan bir nechta, yarim tundan o'tishi
+    # mumkin). Ish kuni bo'lmagan kunlarda (attendance_working_weekdays)
+    # kun bo'yi faol. perimeter_only — faqat kirish va perimetr kameralari.
+    unauthorized_active_windows: str = "19:00-07:00"
+    unauthorized_perimeter_only: bool = True
+
+    # Signal oqimi himoyasi (app/services/event_bus.py). Shaxsi aniqlanmagan
+    # signallar uchun: bitta kamera×modul soatiga, modul esa butun tizimda
+    # soatiga ko'pi bilan shuncha signal yozadi. Ortig'i navbatni to'ldirmaydi.
+    event_rate_limit_per_camera_hour: int = 6
+    event_rate_limit_per_module_hour: int = 60
+
+    # Shovqinli kamera×modul juftligini avtomatik o'chirish
+    # (app/jobs/module_suppression.py): oxirgi window_days kunda kamida
+    # min_rejected ta rad etilgan va aniqligi max_precision % dan past bo'lsa.
+    suppression_enabled: bool = True
+    suppression_interval_seconds: int = 3600
+    suppression_window_days: int = 14
+    suppression_min_rejected: int = 8
+    suppression_max_precision: float = 25.0
 
     # TT kriteriya 13 — SIZ
     ppe_ai_interval_seconds: int = 45

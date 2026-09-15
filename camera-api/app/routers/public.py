@@ -149,6 +149,7 @@ async def get_public_stats(db: Annotated[AsyncSession, Depends(get_db)]) -> Publ
         await db.execute(
             select(func.count())
             .select_from(Event)
+            .where(Event.is_trial.is_(False))
             .where(Event.occurred_at >= start_of_today)
             .where(Event.severity.in_(["o'rta", "yuqori"]))
         )

@@ -41,7 +41,13 @@ from app.config import settings
 from app.services.confidence import below_confidence, weakest
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
-from app.jobs.module_status import camera_allows_module, is_module_active
+from app.jobs.module_status import (
+    camera_allows_module,
+    camera_can_report_unauthorized,
+    is_module_active,
+    is_unauthorized_alert_time,
+)
+from app.services.evidence import face_box
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.models import Camera, Event
@@ -131,6 +137,27 @@ def _unmatched_confidence(faces, candidates: CandidateMatrix) -> int | None:
     return below_confidence(min(unmatched), threshold, floor=70, ceiling=95)
 
 
+def _unmatched_faces(faces, candidates: CandidateMatrix) -> list:
+    """Bazadagi hech kimga o'xshamagan yuzlar — dalil ramkasi uchun."""
+    if not faces:
+        return []
+    if candidates.is_empty:
+        return list(faces)
+    embeddings = np.stack([face.embedding for face in faces])
+    matches = candidates.best_matches(embeddings, settings.attendance_ai_match_threshold)
+    return [face for face, match in zip(faces, matches, strict=True) if match is None]
+
+
+def _closest_similarity(faces, candidates: CandidateMatrix) -> float | None:
+    """Tanilmagan yuzlarning bazadagi eng yaqin odamga o'xshashligi (eng kattasi)."""
+    usable = [face for face in faces or [] if getattr(face, "embedding", None) is not None]
+    if not usable or candidates.is_empty:
+        return None
+    _idx, best_sim, _second = candidates.top_two(np.stack([face.embedding for face in usable]))
+    unmatched = [float(s) for s in best_sim if float(s) < settings.attendance_ai_match_threshold]
+    return max(unmatched) if unmatched else None
+
+
 async def process_camera_frame_pair_for_unauthorized(
     frame_a: bytes,
     frame_b: bytes,
@@ -178,6 +205,8 @@ async def process_camera_frame_pair_for_unauthorized(
     if await _recently_flagged(db, camera.id):
         return False
 
+    unmatched_b = _unmatched_faces(faces_b, candidates)
+    closest = _closest_similarity(faces_b, candidates)
     await raise_event(
         db,
         camera=camera,
@@ -191,6 +220,22 @@ async def process_camera_frame_pair_for_unauthorized(
         ),
         severity="yuqori",
         frame_bytes=frame_b,
+        details={
+            "reason": (
+                f"{len(unmatched_b)} ta yuz bazadagi hech kimga o'xshamadi — ikki kadrda ham"
+                + (
+                    f"; eng yaqin o'xshashlik {closest:.2f} (tanish chegarasi {settings.attendance_ai_match_threshold:.2f})"
+                    if closest is not None
+                    else ""
+                )
+            ),
+            "metrics": {
+                "unmatched": len(unmatched_b),
+                "closest": round(closest, 3) if closest is not None else None,
+                "threshold": settings.attendance_ai_match_threshold,
+            },
+        },
+        annotations=[face_box(face, "notanish") for face in unmatched_b if getattr(face, "bbox", None) is not None],
     )
     return True
 
@@ -207,12 +252,20 @@ async def run_unauthorized_person_ai_sweep_once(
     async with session_factory() as db:
         if not await is_module_active(db, UNAUTHORIZED_MODULE_CODE):
             return 0
+        # Kunduzi bino ichidagi notanish yuz — odatda o'z talabamiz
+        # (settings.unauthorized_active_windows izohiga qarang).
+        if not is_unauthorized_alert_time():
+            return 0
         result = await db.execute(
             select(Camera)
             .where(Camera.status == "faol")
             .where(camera_allows_module(UNAUTHORIZED_MODULE_CODE))
         )
-        cameras = [c for c in result.scalars().all() if is_reachable(c.last_seen_at)]
+        cameras = [
+            c
+            for c in result.scalars().all()
+            if is_reachable(c.last_seen_at) and camera_can_report_unauthorized(c)
+        ]
         candidates = await load_candidate_matrix_for_sweep(db)
 
     # Ro'yxat juda kichik bo'lsa modul umuman ma'noga ega emas — sozlama

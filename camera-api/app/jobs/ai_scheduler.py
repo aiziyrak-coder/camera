@@ -41,6 +41,7 @@ from app.jobs.lesson_attendance import run_lesson_attendance_finalization_once
 from app.jobs.lesson_quality_ai import run_lesson_quality_ai_sweep_once
 from app.jobs.ppe_ai import run_ppe_ai_sweep_once
 from app.jobs.module_status import is_within_attendance_priority_window
+from app.jobs.module_suppression import run_module_suppression_once
 from app.jobs.scheduler_metrics import record_sweep_finished, record_sweep_paused, record_sweep_started, register_sweep
 from app.jobs.smoking_ai import run_smoking_ai_sweep_once
 from app.jobs.teacher_punctuality_ai import run_teacher_punctuality_sweep_once
@@ -127,6 +128,8 @@ def _build_registry() -> list[_SweepEntry]:
         # Kamera talab qilmaydi (faqat DB); o'zi ish kuni tugaguncha hech
         # narsa qilmaydi (app/jobs/absence_marker.py).
         ("absence_marking", settings.attendance_absence_marking_interval_seconds, run_absence_marking_once, "standard"),
+        # Faqat DB: operatorlar ko'p rad etgan kamera×modul juftliklarini o'chiradi.
+        ("module_suppression", settings.suppression_interval_seconds, run_module_suppression_once, "standard"),
     ]
     specs = _face_entries() + rest
     return [_SweepEntry(name=n, interval_seconds=i, run_once=fn, tier=t) for n, i, fn, t in specs]

@@ -21,6 +21,7 @@ class AIModuleConfig(Base):
     __table_args__ = (
         CheckConstraint("\"group\" IN ('A', 'B', 'C', 'D', 'E', 'F')", name="ck_ai_modules_group"),
         CheckConstraint("sensitivity IN ('past', 'o''rta', 'yuqori')", name="ck_ai_modules_sensitivity"),
+        CheckConstraint("mode IN ('ishchi', 'sinov')", name="ck_ai_modules_mode"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
@@ -40,3 +41,8 @@ class AIModuleConfig(Base):
     # (PPE, smoking, general dress-code) that are pure registry
     # rows with no detector written at all — see app/seed.py.
     has_detector: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # ishchi — signallar operator navbatiga tushadi. sinov — kalibrlanmagan
+    # detektor: signal yoziladi (events.is_trial), lekin navbat,
+    # ogohlantirish va hisobotlarga chiqmaydi, faqat namuna sifatida
+    # baholanadi (app/services/event_bus.py, app/routers/ai_modules.py).
+    mode: Mapped[str] = mapped_column(String, nullable=False, default="ishchi", server_default="ishchi")

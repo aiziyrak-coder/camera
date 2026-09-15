@@ -172,6 +172,18 @@ async def process_camera_frame_pair_for_disorder(
         confidence=exceed_confidence(magnitude_now, threshold_now, floor=55, ceiling=90),
         severity="past",
         frame_bytes=frame_b,
+        details={
+            "reason": (
+                f"Butun kadr harakati odatdagidan {magnitude_now / baseline_now:.1f} barobar yuqori"
+                if baseline_now > 0
+                else "Butun kadr harakati keskin oshdi"
+            ),
+            "metrics": {
+                "motion": round(magnitude_now, 3),
+                "baseline": round(baseline_now, 3),
+                "threshold": round(threshold_now, 3),
+            },
+        },
     )
     return True
 

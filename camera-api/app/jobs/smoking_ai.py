@@ -74,6 +74,17 @@ async def process_camera_frame_pair_for_smoking(
             default=35,
         ),
         severity="o'rta",
+        details={
+            "reason": (
+                f"Qo'l og'izga yaqin — ikki kadrda ham (masofa {min(distance_a, distance_b):.2f}, "
+                f"chegara {settings.smoking_wrist_mouth_distance:.2f})"
+            ),
+            "metrics": {
+                "distance_a": round(distance_a, 3),
+                "distance_b": round(distance_b, 3),
+                "threshold": settings.smoking_wrist_mouth_distance,
+            },
+        },
         frame_bytes=frame_b,
     )
     return True

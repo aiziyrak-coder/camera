@@ -78,7 +78,7 @@ from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.models import Event, LessonSession, StudentStaff
 from app.schemas.event import EventOut
-from app.services.event_bus import raise_event
+from app.services.event_bus import event_to_out, raise_event
 from app.services.face_matching import (
     CandidateMatrix,
     find_best_match,
@@ -282,6 +282,12 @@ async def check_lesson_session(session_row: LessonSession, db: AsyncSession) -> 
             severity="o'rta",
             frame_bytes=evidence_frame,
             person_name=f"{substitute.full_name} ({teacher.full_name} o'rniga)",
+            details={
+                "reason": (
+                    "Jadvaldagi o'qituvchi ikkala kadrda ham yo'q, o'rniga boshqa xodim bor"
+                    + (f" (o'xshashlik {substitute_similarity:.2f})" if substitute_similarity is not None else "")
+                ),
+            },
         )
         logger.info(
             "teacher substitution detected",
@@ -310,24 +316,14 @@ async def check_lesson_session(session_row: LessonSession, db: AsyncSession) -> 
         severity="o'rta",
         person_name=teacher.full_name if teacher else None,
         status="yangi",
+        details={
+            "reason": "Dars boshlanganidan keyin o'qituvchi xonada ko'rinmadi"
+            + (" — xonada boshqa odamlar bor" if faces_in_both else ""),
+        },
     )
     db.add(event)
     await db.flush()
-    event_out = EventOut(
-        id=str(event.id),
-        timestamp=to_local(event.occurred_at).strftime("%Y-%m-%d %H:%M"),
-        camera_id=str(event.camera_id) if event.camera_id else "",
-        camera_name=event.camera_name,
-        building=event.building,
-        module_code=event.module_code,
-        module_name=event.module_name,
-        group=event.group,
-        confidence=event.confidence,
-        severity=event.severity,
-        status=event.status,
-        person_name=event.person_name,
-        reviewed_by=event.reviewed_by,
-    )
+    event_out = event_to_out(event)
     await db.commit()
     await manager.broadcast(event_out.model_dump(by_alias=True))
     return True

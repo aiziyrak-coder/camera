@@ -10,28 +10,79 @@ UI used to show (or a live feed of whatever's on camera *now*, which by
 the time anyone reviews it has nothing to do with the original
 detection). A missing/failed upload degrades to no snapshot, not a
 failed sweep — see _save_snapshot.
+
+Uch himoya shu yerda (2026-09):
+- Sinov rejimi: modul `sinov` bo'lsa signal yoziladi (is_trial), lekin
+  operatorlarga yuborilmaydi — navbat, ogohlantirish va hisobotlar uni
+  ko'rmaydi. Aniqlik namunalarni baholash orqali o'lchanadi.
+- Tezlik chegarasi: shaxsi aniqlanmagan signallar kamera×modul va modul
+  bo'yicha soatlik chegaradan oshsa yozilmaydi.
+- Dalil: `details` (sabab va o'lchangan qiymatlar) saqlanadi, snapshot
+  ustiga ramka/zona chiziladi (app/services/evidence.py).
 """
 
 import asyncio
 import logging
+from collections import Counter
+from collections.abc import Sequence
+from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sqlalchemy import select
-
+from app.config import settings
 from app.models import AIModuleConfig, Camera, Event
 from app.schemas.event import EventOut
+from app.services.evidence import Shape, annotate_snapshot
 from app.storage import presigned_url, upload_file
 from app.timezone import to_local
 from app.ws import manager
 
 logger = logging.getLogger("app.event_bus")
 
+# Tezlik chegarasi sabab yozilmagan signallar (modul kodi bo'yicha, jarayon
+# ishga tushgandan beri) — AI Modullari sahifasida ko'rsatiladi.
+_rate_limited: Counter[int] = Counter()
 
-async def _save_snapshot(frame_bytes: bytes | None) -> str | None:
+
+def rate_limited_counts() -> dict[int, int]:
+    return dict(_rate_limited)
+
+
+def reset_rate_limited_for_tests() -> None:
+    _rate_limited.clear()
+
+
+def event_to_out(event: Event) -> EventOut:
+    """Event → API javobi. Routerlar va sweeplar bitta shakldan foydalanadi."""
+    return EventOut(
+        id=str(event.id),
+        timestamp=to_local(event.occurred_at).strftime("%Y-%m-%d %H:%M"),
+        camera_id=str(event.camera_id) if event.camera_id else "",
+        camera_name=event.camera_name,
+        building=event.building,
+        module_code=event.module_code,
+        module_name=event.module_name,
+        group=event.group,
+        confidence=event.confidence,
+        severity=event.severity,
+        status=event.status,
+        person_name=event.person_name,
+        reviewed_by=event.reviewed_by,
+        snapshot_url=presigned_url(event.snapshot_key) if event.snapshot_key else None,
+        occurred_at=to_local(event.occurred_at).isoformat(timespec="seconds"),
+        reviewed_at=to_local(event.reviewed_at).strftime("%Y-%m-%d %H:%M") if event.reviewed_at else None,
+        is_trial=bool(event.is_trial),
+        details=event.details,
+    )
+
+
+async def _save_snapshot(frame_bytes: bytes | None, annotations: Sequence[Shape] | None = None) -> str | None:
     if not frame_bytes:
         return None
     try:
+        if annotations:
+            frame_bytes = await asyncio.to_thread(annotate_snapshot, frame_bytes, annotations)
         # upload_file() is a synchronous boto3 call (real network I/O) —
         # off the event loop via to_thread, same reason every other
         # blocking model/storage call in app/jobs/*.py is wrapped this
@@ -42,6 +93,32 @@ async def _save_snapshot(frame_bytes: bytes | None) -> str | None:
     except Exception:
         logger.exception("event snapshot upload failed")
         return None
+
+
+async def _over_rate_limit(db: AsyncSession, camera: Camera, module_code: int) -> bool:
+    since = datetime.now(timezone.utc) - timedelta(hours=1)
+    per_camera = (
+        await db.scalar(
+            select(func.count())
+            .select_from(Event)
+            .where(Event.camera_id == camera.id)
+            .where(Event.module_code == module_code)
+            .where(Event.occurred_at >= since)
+        )
+        or 0
+    )
+    if per_camera >= settings.event_rate_limit_per_camera_hour:
+        return True
+    per_module = (
+        await db.scalar(
+            select(func.count())
+            .select_from(Event)
+            .where(Event.module_code == module_code)
+            .where(Event.occurred_at >= since)
+        )
+        or 0
+    )
+    return per_module >= settings.event_rate_limit_per_module_hour
 
 
 async def raise_event(
@@ -55,6 +132,8 @@ async def raise_event(
     severity: str,
     frame_bytes: bytes | None = None,
     person_name: str | None = None,
+    details: dict | None = None,
+    annotations: Sequence[Shape] | None = None,
 ) -> Event | None:
     """Creates, commits, and broadcasts one Event, with a snapshot of
     `frame_bytes` if given. Caller is responsible for its own dedup check
@@ -76,10 +155,17 @@ async def raise_event(
     quiet. That is a real, useful control, but it is not a gradual one,
     and pretending otherwise in the UI would be the same lie in a new
     place.
+
+    Also returns None when the hourly rate limit is exceeded — only for
+    detections without an identified person: a sleeping student or an
+    off-hours entry names someone specific, a heuristic burst does not.
     """
-    threshold = (
-        await db.execute(select(AIModuleConfig.threshold).where(AIModuleConfig.code == module_code))
-    ).scalar_one_or_none()
+    config = (
+        await db.execute(
+            select(AIModuleConfig.threshold, AIModuleConfig.mode).where(AIModuleConfig.code == module_code)
+        )
+    ).one_or_none()
+    threshold, mode = (config.threshold, config.mode) if config is not None else (None, "ishchi")
     if threshold is not None and confidence < threshold:
         logger.info(
             "event suppressed by module threshold",
@@ -92,7 +178,16 @@ async def raise_event(
         )
         return None
 
-    snapshot_key = await _save_snapshot(frame_bytes)
+    if person_name is None and await _over_rate_limit(db, camera, module_code):
+        _rate_limited[module_code] += 1
+        logger.info(
+            "event suppressed by rate limit",
+            extra={"module_code": module_code, "camera": camera.name},
+        )
+        return None
+
+    is_trial = mode == "sinov"
+    snapshot_key = await _save_snapshot(frame_bytes, annotations)
     event = Event(
         camera_id=camera.id,
         camera_name=camera.name,
@@ -105,25 +200,15 @@ async def raise_event(
         status="yangi",
         person_name=person_name,
         snapshot_key=snapshot_key,
+        is_trial=is_trial,
+        details=details,
     )
     db.add(event)
     await db.flush()
-    event_out = EventOut(
-        id=str(event.id),
-        timestamp=to_local(event.occurred_at).strftime("%Y-%m-%d %H:%M"),
-        camera_id=str(event.camera_id) if event.camera_id else "",
-        camera_name=event.camera_name,
-        building=event.building,
-        module_code=event.module_code,
-        module_name=event.module_name,
-        group=event.group,
-        confidence=event.confidence,
-        severity=event.severity,
-        status=event.status,
-        person_name=event.person_name,
-        reviewed_by=event.reviewed_by,
-        snapshot_url=presigned_url(event.snapshot_key) if event.snapshot_key else None,
-    )
+    event_out = event_to_out(event)
     await db.commit()
-    await manager.broadcast(event_out.model_dump(by_alias=True))
+    # Sinov signali operatorlarga yuborilmaydi: monitoring devori, signal
+    # paneli va Hodisalar navbati uni ko'rsatmasligi kerak.
+    if not is_trial:
+        await manager.broadcast(event_out.model_dump(by_alias=True))
     return event

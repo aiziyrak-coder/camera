@@ -314,7 +314,8 @@ async def _security(
     db: AsyncSession, start: date, end: date, days: list[date]
 ) -> tuple[SecurityAnalyticsOut, list[tuple[str, float, int]]]:
     lo, hi = _utc_bounds(start, end)
-    in_range = and_(Event.occurred_at >= lo, Event.occurred_at < hi)
+    # Sinov rejimidagi modullar signali rahbariyat hisobotiga kirmaydi.
+    in_range = and_(Event.occurred_at >= lo, Event.occurred_at < hi, Event.is_trial.is_(False))
     local_ts = func.timezone(INSTITUTE_TZ_NAME, Event.occurred_at)
 
     day_rows = (
@@ -350,12 +351,15 @@ async def _security(
             .limit(TOP_CAMERAS)
         )
     ).all()
-    oldest = await db.scalar(select(func.min(Event.occurred_at)).where(Event.status == "yangi"))
+    oldest = await db.scalar(
+        select(func.min(Event.occurred_at)).where(Event.is_trial.is_(False)).where(Event.status == "yangi")
+    )
     now = datetime.now(timezone.utc)
     stale_serious = (
         await db.scalar(
             select(func.count())
             .select_from(Event)
+            .where(Event.is_trial.is_(False))
             .where(Event.status == "yangi")
             .where(Event.severity.in_(SERIOUS))
             .where(Event.occurred_at < now - timedelta(hours=24))
@@ -555,7 +559,8 @@ async def _core(db: AsyncSession, start: date, end: date) -> dict[str, float | i
     present = staff_counts.get("keldi", 0) + staff_counts.get("kech_keldi", 0)
 
     lo, hi = _utc_bounds(start, end)
-    in_range = and_(Event.occurred_at >= lo, Event.occurred_at < hi)
+    # Sinov rejimidagi modullar signali rahbariyat hisobotiga kirmaydi.
+    in_range = and_(Event.occurred_at >= lo, Event.occurred_at < hi, Event.is_trial.is_(False))
     status_counts = dict(
         (await db.execute(select(Event.status, func.count()).where(in_range).group_by(Event.status))).all()
     )

@@ -76,6 +76,10 @@ DEFAULT_BUILDINGS = [
 # ko'pincha real aniqlash logikasi yo'qligini emas, hali o'lchanmaganini
 # anglatadi (pastdagi `has_detector: False` bo'lganlar bundan mustasno —
 # ular uchun haqiqatan ham hech qanday aniqlash kodi yozilmagan).
+# Kalibrlanmagan klassik evristikalar sinov rejimida boshlanadi — mavjud
+# bazalarda buni alembic h1b2c3d4e5f6 bajaradi.
+TRIAL_MODULE_CODES = {2, 10, 13, 14, 15, 17, 19, 21, 23}
+
 DEFAULT_AI_MODULES = [
     {"code": 1, "group": "A", "name": "Notanish/begona shaxsni aniqlash", "description": "Yuzni tanish (Face-ID) — xodimlar/talabalar bazasida yo'q shaxs binoga kirsa signal. attendance_ai.py bilan bir xil InsightFace pipeline, teskari mantiq bilan: mos kelmagan yuz = begona. Ikki kadrli tasdiqlash (bad-angle/yorug'lik xatosini kamaytirish uchun), lekin real kuzatuv/identifikatsiya (tracking) yo'q — bir xil begona odam har safar yangi deb hisoblanishi mumkin", "method": "InsightFace + face_matching (teskari moslik) + ikki-kadrli tasdiqlash (app/jobs/unauthorized_person_ai.py)", "accuracy": 0, "threshold": 70, "sensitivity": "yuqori", "camera_count": 0, "active": True},
     {"code": 2, "group": "A", "name": "Taqiqlangan zonaga kirish", "description": "Rentgen xonasi, laboratoriya, arxiv kabi cheklangan hududlarga ruxsatsiz kirish — mediapipe Pose orqali odamning oyoq (yoki son, agar oyoq ko'rinmasa) o'rni kamera poligoniga (Camera.restricted_zone_polygon) solishtiriladi. Hozircha poligon chizish uchun admin interfeysi yo'q — bu haqiqiy, ishlaydigan aniqlash logikasi, faqat konfiguratsiya ma'lumoti kutmoqda. To'liq DeepSORT kuzatuvi emas, ikki-kadrli tasdiqlash bilan", "method": "mediapipe Pose + nuqta-poligon tekshiruvi + ikki-kadrli tasdiqlash (app/jobs/zone_entry_ai.py, app/services/zone_detection.py)", "accuracy": 0, "threshold": 65, "sensitivity": "yuqori", "camera_count": 0, "active": True},
@@ -159,4 +163,4 @@ async def _seed_ai_modules(db: AsyncSession) -> None:
     if count:
         return
     for m in DEFAULT_AI_MODULES:
-        db.add(AIModuleConfig(**m))
+        db.add(AIModuleConfig(**m, mode="sinov" if m["code"] in TRIAL_MODULE_CODES else "ishchi"))

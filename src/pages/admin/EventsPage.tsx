@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { BellRing, Check, CheckCheck, Gauge, ImageOff, Inbox, Timer, X } from 'lucide-react';
+import { BellRing, Check, CheckCheck, FlaskConical, Gauge, ImageOff, Inbox, Shuffle, Timer, X } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import Badge from '../../components/Badge';
 import Pagination from '../../components/Pagination';
@@ -14,7 +14,7 @@ import SegmentedControl from '../../components/ui/SegmentedControl';
 import SelectFilter from '../../components/ui/SelectFilter';
 import { SkeletonCards, SkeletonTable } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
-import { ApiError, api } from '../../lib/apiClient';
+import { ApiError, api, isAbortError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { SEVERITY_LABEL, SEVERITY_STRIPE, SEVERITY_TONE, STATUS_LABEL, STATUS_TONE } from '../../lib/eventLabels';
 import { useLiveEvents } from '../../lib/realtime';
@@ -22,7 +22,7 @@ import { invalidateServerPageCache, useServerPage } from '../../lib/useServerPag
 import { formatCount, formatMinutes, relativeTime } from '../../lib/uzDate';
 import type { AIEvent, EventStatus, EventSummary } from '../../types';
 
-type View = 'navbat' | 'jurnal';
+type View = 'navbat' | 'jurnal' | 'sinov';
 type Decision = Exclude<EventStatus, 'yangi'>;
 
 const SEVERITY_OPTIONS: { value: '' | AIEvent['severity']; label: string }[] = [
@@ -31,6 +31,9 @@ const SEVERITY_OPTIONS: { value: '' | AIEvent['severity']; label: string }[] = [
   { value: "o'rta", label: "O'rta" },
   { value: 'past', label: 'Past' },
 ];
+
+// Sinov namunasi hajmi: bir o'tirishda baholash oson, lekin aniqlik uchun yetarli.
+const TRIAL_SAMPLE_SIZE = 12;
 
 function errorText(err: unknown): string {
   return err instanceof ApiError ? err.message : "Tarmoq xatosi — server bilan bog'lanib bo'lmadi";
@@ -73,13 +76,78 @@ function Thumb({ event, className }: { event: AIEvent; className: string }) {
   );
 }
 
+function ReviewCard({
+  event,
+  busy,
+  onOpen,
+  onReview,
+}: {
+  event: AIEvent;
+  busy: boolean;
+  onOpen: () => void;
+  onReview: (decision: Decision) => void;
+}) {
+  return (
+    <article className="flex flex-col overflow-hidden rounded-2xl border border-white/70 bg-white/65">
+      <div className={`h-1 ${SEVERITY_STRIPE[event.severity]}`} aria-hidden="true" />
+      <button type="button" onClick={onOpen} className="relative block text-left" aria-label={`${event.moduleName} tafsilotlari`}>
+        <Thumb event={event} className="aspect-video w-full" />
+        <span className="absolute left-2 top-2 flex gap-1">
+          <Badge tone={SEVERITY_TONE[event.severity]}>{SEVERITY_LABEL[event.severity]}</Badge>
+          {event.isTrial && <Badge tone="amber">Sinov</Badge>}
+        </span>
+        <span className="absolute bottom-2 right-2 rounded-md bg-black/55 px-1.5 py-0.5 text-[11px] text-white" title={event.timestamp}>
+          {event.occurredAt ? relativeTime(event.occurredAt) : event.timestamp}
+        </span>
+      </button>
+      <div className="flex flex-1 flex-col p-3">
+        <p className="font-semibold text-slate-900">{event.moduleName}</p>
+        {event.personName && <p className="text-xs text-slate-600">{event.personName}</p>}
+        <p className="text-xs text-slate-500">
+          {event.cameraName}
+          {event.building ? ` · ${event.building}` : ''} · ishonch {event.confidence}%
+        </p>
+        {event.details?.reason && (
+          <p className="mt-1.5 line-clamp-2 text-xs text-slate-600" title={event.details.reason}>
+            {event.details.reason}
+          </p>
+        )}
+        <div className="mt-auto grid grid-cols-2 gap-2 pt-3">
+          <button
+            type="button"
+            onClick={() => onReview('rad_etilgan')}
+            disabled={busy}
+            className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            <X size={15} />
+            Rad etish
+          </button>
+          <button
+            type="button"
+            onClick={() => onReview('tasdiqlangan')}
+            disabled={busy}
+            className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-btn hover:bg-emerald-700 disabled:opacity-50"
+          >
+            <Check size={15} />
+            Tasdiqlash
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 export default function EventsPage() {
   const { token } = useAuth();
   const toast = useToast();
   const [params, setParams] = useSearchParams();
 
-  const view: View = params.get('korinish') === 'jurnal' ? 'jurnal' : 'navbat';
+  const korinish = params.get('korinish');
+  const view: View = korinish === 'jurnal' ? 'jurnal' : korinish === 'sinov' ? 'sinov' : 'navbat';
   const queue = view === 'navbat';
+  const trialView = view === 'sinov';
+  // Navbat va sinov namunalari kartalar ko'rinishida: baholangan karta ro'yxatdan chiqadi.
+  const cardView = queue || trialView;
   const severity = (params.get('muhimlik') ?? '') as '' | AIEvent['severity'];
   const statusFilter = (params.get('holat') ?? '') as '' | EventStatus;
   const moduleCode = params.get('modul') ?? '';
@@ -118,7 +186,39 @@ export default function EventsPage() {
       sort: queue ? 'severity' : undefined,
     },
     queue ? 12 : 20,
+    { enabled: !trialView },
   );
+
+  // Sinov namunasi: tasodifiy tanlangan, hali baholanmagan sinov signallari.
+  const [sample, setSample] = useState<AIEvent[]>([]);
+  const [sampleLoading, setSampleLoading] = useState(false);
+  const [sampleError, setSampleError] = useState<string | null>(null);
+  const [sampleNonce, setSampleNonce] = useState(0);
+  const [reviewedThisSession, setReviewedThisSession] = useState(0);
+
+  useEffect(() => {
+    if (!trialView || !token || !moduleCode) {
+      setSample([]);
+      return;
+    }
+    const controller = new AbortController();
+    setSampleLoading(true);
+    setSampleError(null);
+    api
+      .get<AIEvent[]>(`/api/ai-modules/${moduleCode}/trial-sample?limit=${TRIAL_SAMPLE_SIZE}`, token, {
+        signal: controller.signal,
+      })
+      .then(setSample)
+      .catch((err: unknown) => {
+        if (!isAbortError(err)) setSampleError(errorText(err));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setSampleLoading(false);
+      });
+    return () => controller.abort();
+  }, [trialView, moduleCode, token, sampleNonce]);
+
+  const sourceItems = trialView ? sample : items;
 
   // Optimistik yangilanish: server javobini kutmasdan qaror ekranda ko'rinadi.
   const [overrides, setOverrides] = useState<Record<string, Partial<AIEvent>>>({});
@@ -126,10 +226,10 @@ export default function EventsPage() {
   useEffect(() => {
     setOverrides({});
     setHidden(new Set());
-  }, [items]);
+  }, [sourceItems]);
   const rows = useMemo(
-    () => items.filter((e) => !hidden.has(e.id)).map((e) => ({ ...e, ...overrides[e.id] }) as AIEvent),
-    [items, hidden, overrides],
+    () => sourceItems.filter((e) => !hidden.has(e.id)).map((e) => ({ ...e, ...overrides[e.id] }) as AIEvent),
+    [sourceItems, hidden, overrides],
   );
 
   const [summary, setSummary] = useState<EventSummary | null>(null);
@@ -143,6 +243,13 @@ export default function EventsPage() {
       });
   }, [token]);
   useEffect(loadSummary, [loadSummary]);
+
+  // Sinov ko'rinishiga modul tanlanmay kirilsa — eng ko'p baholanmagan signalli modul.
+  useEffect(() => {
+    if (trialView && !moduleCode && summary?.trialModules?.length) {
+      setParam({ modul: summary.trialModules[0].value });
+    }
+  }, [trialView, moduleCode, summary, setParam]);
 
   const [openId, setOpenId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -172,6 +279,7 @@ export default function EventsPage() {
   useLiveEvents(
     (incoming) => {
       loadSummary();
+      if (trialView) return;
       if (incoming.status !== 'yangi') {
         // Boshqa operator ko'rib chiqdi — ro'yxatni jimgina yangilaymiz.
         invalidateServerPageCache('/api/events');
@@ -195,7 +303,7 @@ export default function EventsPage() {
     const index = rows.findIndex((r) => r.id === event.id);
     const nextId = rows[index + 1]?.id ?? rows[index - 1]?.id ?? null;
     setBusyId(event.id);
-    if (queue) {
+    if (cardView) {
       setHidden((prev) => new Set(prev).add(event.id));
       if (openId === event.id) setOpenId(nextId);
     } else {
@@ -203,8 +311,9 @@ export default function EventsPage() {
     }
     try {
       const updated = await api.patch<AIEvent>(`/api/events/${event.id}/review`, { status: decision }, token);
-      if (!queue) setOverrides((prev) => ({ ...prev, [event.id]: updated }));
-      toast.success(decision === 'tasdiqlangan' ? 'Hodisa tasdiqlandi' : 'Hodisa rad etildi (yolg\'on signal)');
+      if (!cardView) setOverrides((prev) => ({ ...prev, [event.id]: updated }));
+      if (trialView) setReviewedThisSession((n) => n + 1);
+      toast.success(decision === 'tasdiqlangan' ? 'Hodisa tasdiqlandi' : "Hodisa rad etildi (yolg'on signal)");
       invalidateServerPageCache('/api/events');
       loadSummary();
     } catch (err) {
@@ -249,7 +358,9 @@ export default function EventsPage() {
     }
     toast.success("Hodisa o'chirildi");
     if (openId === deleting.id) setOpenId(null);
+    const deletedId = deleting.id;
     setDeleting(null);
+    if (trialView) setSample((prev) => prev.filter((e) => e.id !== deletedId));
     refreshAll();
   }
 
@@ -263,8 +374,54 @@ export default function EventsPage() {
 
   const allOnPageSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
 
+  function renderCards() {
+    return (
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {rows.map((event) => (
+          <ReviewCard
+            key={event.id}
+            event={event}
+            busy={busyId !== null}
+            onOpen={() => setOpenId(event.id)}
+            onReview={(decision) => review(event, decision)}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  function renderTrialBody() {
+    if (sampleError) return <ErrorState message={sampleError} onRetry={() => setSampleNonce((n) => n + 1)} />;
+    if (!moduleCode) {
+      return (
+        <EmptyState
+          icon={<FlaskConical size={18} />}
+          title={summary && summary.trialUnreviewed === 0 ? "Baholanmagan sinov signali yo'q" : 'Baholash uchun modulni tanlang'}
+          description="Sinov rejimidagi modul signal berganda, uning namunalari shu yerda paydo bo'ladi."
+        />
+      );
+    }
+    if (sampleLoading && rows.length === 0) return <SkeletonCards count={6} className="xl:grid-cols-3" />;
+    if (rows.length === 0) {
+      return (
+        <EmptyState
+          icon={<CheckCheck size={18} />}
+          title={sample.length > 0 ? 'Bu namuna baholandi' : "Bu modulda baholanmagan signal qolmadi"}
+          description="Yangi namuna olsangiz, tasodifiy tanlangan boshqa signallar ko'rsatiladi."
+          action={
+            <button type="button" onClick={() => setSampleNonce((n) => n + 1)} className="btn-glass flex items-center gap-1.5">
+              <Shuffle size={14} />
+              Yangi namuna
+            </button>
+          }
+        />
+      );
+    }
+    return renderCards();
+  }
+
   return (
-    <section className="glass p-6">
+    <section className="glass p-4 sm:p-6">
       <PageHeader
         title="Hodisalar jurnali"
         subtitle="AI signallarini ko'rib chiqish: har birini tasdiqlash yoki yolg'on signal deb rad etish"
@@ -273,108 +430,147 @@ export default function EventsPage() {
             options={[
               { value: 'navbat', label: "Ko'rib chiqish navbati", count: summary?.unreviewed },
               { value: 'jurnal', label: "To'liq jurnal" },
+              { value: 'sinov', label: 'Sinov namunalari', count: summary?.trialUnreviewed },
             ]}
             value={view}
             ariaLabel="Ko'rinish"
             onChange={(next) => {
               setOpenId(null);
-              setParam({ korinish: next === 'jurnal' ? 'jurnal' : null, holat: null });
+              setParam({ korinish: next === 'navbat' ? null : next, holat: null, modul: null });
             }}
           />
         }
       />
 
-      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryTile
-          icon={<Inbox size={19} />}
-          label="Ko'rib chiqilmagan"
-          value={formatCount(summary?.unreviewed)}
-          hint={summary ? `yuqori: ${summary.unreviewedHigh} · o'rta: ${summary.unreviewedMedium}` : null}
-          alert={!!summary && summary.unreviewedHigh > 0}
-        />
-        <SummaryTile
-          icon={<BellRing size={19} />}
-          label="Bugun"
-          value={formatCount(summary?.today)}
-          hint={summary ? `shundan jiddiy: ${summary.todaySerious}` : null}
-        />
-        <SummaryTile
-          icon={<Gauge size={19} />}
-          label="Signallar aniqligi (30 kun)"
-          value={summary?.recentPrecision == null ? '—' : `${summary.recentPrecision}%`}
-          hint={summary?.recentPrecision == null ? "kamida 10 ta ko'rib chiqilgan signal kerak" : 'tasdiqlangan / ko\'rib chiqilgan'}
-        />
-        <SummaryTile
-          icon={<Timer size={19} />}
-          label="O'rtacha ko'rib chiqish vaqti"
-          value={formatMinutes(summary?.avgReviewMinutes)}
-          hint={
-            summary && summary.staleSeriousUnreviewed > 0
-              ? `${summary.staleSeriousUnreviewed} ta jiddiy signal 24 soatdan beri kutmoqda`
-              : 'signal kelgandan qarorgacha (30 kun)'
-          }
-          alert={!!summary && summary.staleSeriousUnreviewed > 0}
-        />
-      </div>
-
-      <FilterBar activeCount={activeFilters} onReset={resetFilters}>
-        <SegmentedControl
-          options={SEVERITY_OPTIONS}
-          value={severity}
-          size="sm"
-          ariaLabel="Muhimlik"
-          onChange={(value) => setParam({ muhimlik: value || null })}
-        />
-        {!queue && (
-          <SegmentedControl
-            options={[
-              { value: '', label: 'Barchasi', count: summary?.total },
-              { value: 'yangi', label: STATUS_LABEL.yangi, count: summary?.unreviewed },
-              { value: 'tasdiqlangan', label: STATUS_LABEL.tasdiqlangan, count: summary?.confirmed },
-              { value: 'rad_etilgan', label: STATUS_LABEL.rad_etilgan, count: summary?.rejected },
-            ]}
-            value={statusFilter}
-            size="sm"
-            ariaLabel="Holat"
-            onChange={(value) => setParam({ holat: value || null })}
+      {trialView ? (
+        <div className="mb-5 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-amber-900">
+          <FlaskConical size={20} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <div className="text-sm">
+            <p className="font-semibold">Sinov rejimidagi modullar signallari</p>
+            <p className="mt-1 text-xs leading-relaxed">
+              Bu modullar hali kalibrlanmagan, shuning uchun ularning signallari operator navbatiga, ogohlantirishlarga va
+              hisobotlarga chiqmaydi. Quyida tasodifiy tanlangan namunalar — kadrga qarab haqqoniy baholang. Modul ishchi
+              rejimga o&apos;tishi uchun kamida 30 ta baholangan signal va 80% aniqlik kerak (AI Modullari sahifasida).
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <SummaryTile
+            icon={<Inbox size={19} />}
+            label="Ko'rib chiqilmagan"
+            value={formatCount(summary?.unreviewed)}
+            hint={summary ? `yuqori: ${summary.unreviewedHigh} · o'rta: ${summary.unreviewedMedium}` : null}
+            alert={!!summary && summary.unreviewedHigh > 0}
           />
-        )}
-        <SelectFilter
-          label="Modul"
-          value={moduleCode}
-          onChange={(value) => setParam({ modul: value || null })}
-          options={(summary?.modules ?? []).map((m) => ({ value: m.value, label: `${m.label} (${m.count})` }))}
-        />
-        <SelectFilter
-          label="Bino"
-          value={building}
-          onChange={(value) => setParam({ bino: value || null })}
-          options={(summary?.buildings ?? []).map((b) => ({ value: b.value, label: `${b.label} (${b.count})` }))}
-        />
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
-          <label htmlFor="events-from">Sana</label>
-          <input
-            id="events-from"
-            type="date"
-            value={from}
-            max={to || undefined}
-            onChange={(e) => setParam({ from: e.target.value || null })}
-            className="rounded-lg border border-white/80 bg-white/70 px-2 py-1 text-sm font-medium text-slate-700 outline-none focus:border-indigo-300"
+          <SummaryTile
+            icon={<BellRing size={19} />}
+            label="Bugun"
+            value={formatCount(summary?.today)}
+            hint={summary ? `shundan jiddiy: ${summary.todaySerious}` : null}
           />
-          <span aria-hidden="true">—</span>
-          <input
-            type="date"
-            aria-label="Sana gacha"
-            value={to}
-            min={from || undefined}
-            onChange={(e) => setParam({ to: e.target.value || null })}
-            className="rounded-lg border border-white/80 bg-white/70 px-2 py-1 text-sm font-medium text-slate-700 outline-none focus:border-indigo-300"
+          <SummaryTile
+            icon={<Gauge size={19} />}
+            label="Signallar aniqligi (30 kun)"
+            value={summary?.recentPrecision == null ? '—' : `${summary.recentPrecision}%`}
+            hint={summary?.recentPrecision == null ? "kamida 10 ta ko'rib chiqilgan signal kerak" : "tasdiqlangan / ko'rib chiqilgan"}
+          />
+          <SummaryTile
+            icon={<Timer size={19} />}
+            label="O'rtacha ko'rib chiqish vaqti"
+            value={formatMinutes(summary?.avgReviewMinutes)}
+            hint={
+              summary && summary.staleSeriousUnreviewed > 0
+                ? `${summary.staleSeriousUnreviewed} ta jiddiy signal 24 soatdan beri kutmoqda`
+                : 'signal kelgandan qarorgacha (30 kun)'
+            }
+            alert={!!summary && summary.staleSeriousUnreviewed > 0}
           />
         </div>
-        <SearchInput value={search} onChange={setSearch} placeholder="Kriteriya, kamera yoki shaxs..." ariaLabel="Hodisalarni qidirish" />
-      </FilterBar>
+      )}
 
-      {pendingNew > 0 && (
+      {trialView ? (
+        <FilterBar>
+          <SelectFilter
+            label="Modul"
+            value={moduleCode}
+            onChange={(value) => setParam({ modul: value || null })}
+            allLabel="Modulni tanlang"
+            options={(summary?.trialModules ?? []).map((m) => ({ value: m.value, label: `${m.label} (${m.count})` }))}
+          />
+          <button
+            type="button"
+            onClick={() => setSampleNonce((n) => n + 1)}
+            disabled={!moduleCode || sampleLoading}
+            className="btn-glass flex items-center gap-1.5 text-xs disabled:opacity-50"
+          >
+            <Shuffle size={13} />
+            Yangi namuna
+          </button>
+          {reviewedThisSession > 0 && (
+            <span className="text-xs font-semibold text-slate-500">Bu safar baholandi: {reviewedThisSession} ta</span>
+          )}
+        </FilterBar>
+      ) : (
+        <FilterBar activeCount={activeFilters} onReset={resetFilters}>
+          <SegmentedControl
+            options={SEVERITY_OPTIONS}
+            value={severity}
+            size="sm"
+            ariaLabel="Muhimlik"
+            onChange={(value) => setParam({ muhimlik: value || null })}
+          />
+          {!queue && (
+            <SegmentedControl
+              options={[
+                { value: '', label: 'Barchasi', count: summary?.total },
+                { value: 'yangi', label: STATUS_LABEL.yangi, count: summary?.unreviewed },
+                { value: 'tasdiqlangan', label: STATUS_LABEL.tasdiqlangan, count: summary?.confirmed },
+                { value: 'rad_etilgan', label: STATUS_LABEL.rad_etilgan, count: summary?.rejected },
+              ]}
+              value={statusFilter}
+              size="sm"
+              ariaLabel="Holat"
+              onChange={(value) => setParam({ holat: value || null })}
+            />
+          )}
+          <SelectFilter
+            label="Modul"
+            value={moduleCode}
+            onChange={(value) => setParam({ modul: value || null })}
+            options={(summary?.modules ?? []).map((m) => ({ value: m.value, label: `${m.label} (${m.count})` }))}
+          />
+          <SelectFilter
+            label="Bino"
+            value={building}
+            onChange={(value) => setParam({ bino: value || null })}
+            options={(summary?.buildings ?? []).map((b) => ({ value: b.value, label: `${b.label} (${b.count})` }))}
+          />
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+            <label htmlFor="events-from">Sana</label>
+            <input
+              id="events-from"
+              type="date"
+              value={from}
+              max={to || undefined}
+              onChange={(e) => setParam({ from: e.target.value || null })}
+              className="rounded-lg border border-white/80 bg-white/70 px-2 py-1 text-sm font-medium text-slate-700 outline-none focus:border-indigo-300"
+            />
+            <span aria-hidden="true">—</span>
+            <input
+              type="date"
+              aria-label="Sana gacha"
+              value={to}
+              min={from || undefined}
+              onChange={(e) => setParam({ to: e.target.value || null })}
+              className="rounded-lg border border-white/80 bg-white/70 px-2 py-1 text-sm font-medium text-slate-700 outline-none focus:border-indigo-300"
+            />
+          </div>
+          <SearchInput value={search} onChange={setSearch} placeholder="Kriteriya, kamera yoki shaxs..." ariaLabel="Hodisalarni qidirish" />
+        </FilterBar>
+      )}
+
+      {!trialView && pendingNew > 0 && (
         <button
           type="button"
           onClick={() => {
@@ -389,9 +585,11 @@ export default function EventsPage() {
         </button>
       )}
 
-      {error && <ErrorState message={error} onRetry={refreshAll} />}
+      {!trialView && error && <ErrorState message={error} onRetry={refreshAll} />}
 
-      {loading && rows.length === 0 ? (
+      {trialView ? (
+        renderTrialBody()
+      ) : loading && rows.length === 0 ? (
         queue ? <SkeletonCards count={6} className="xl:grid-cols-3" /> : <SkeletonTable rows={8} columns={7} />
       ) : rows.length === 0 ? (
         queue ? (
@@ -413,50 +611,7 @@ export default function EventsPage() {
           />
         )
       ) : queue ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {rows.map((event) => (
-            <article key={event.id} className="flex flex-col overflow-hidden rounded-2xl border border-white/70 bg-white/65">
-              <div className={`h-1 ${SEVERITY_STRIPE[event.severity]}`} aria-hidden="true" />
-              <button type="button" onClick={() => setOpenId(event.id)} className="relative block text-left" aria-label={`${event.moduleName} tafsilotlari`}>
-                <Thumb event={event} className="aspect-video w-full" />
-                <span className="absolute left-2 top-2">
-                  <Badge tone={SEVERITY_TONE[event.severity]}>{SEVERITY_LABEL[event.severity]}</Badge>
-                </span>
-                <span className="absolute bottom-2 right-2 rounded-md bg-black/55 px-1.5 py-0.5 text-[11px] text-white" title={event.timestamp}>
-                  {event.occurredAt ? relativeTime(event.occurredAt) : event.timestamp}
-                </span>
-              </button>
-              <div className="flex flex-1 flex-col p-3">
-                <p className="font-semibold text-slate-900">{event.moduleName}</p>
-                {event.personName && <p className="text-xs text-slate-600">{event.personName}</p>}
-                <p className="text-xs text-slate-500">
-                  {event.cameraName}
-                  {event.building ? ` · ${event.building}` : ''} · ishonch {event.confidence}%
-                </p>
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => review(event, 'rad_etilgan')}
-                    disabled={busyId !== null}
-                    className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                  >
-                    <X size={15} />
-                    Rad etish
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => review(event, 'tasdiqlangan')}
-                    disabled={busyId !== null}
-                    className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-btn hover:bg-emerald-700 disabled:opacity-50"
-                  >
-                    <Check size={15} />
-                    Tasdiqlash
-                  </button>
-                </div>
-              </div>
-            </article>
-          ))}
-        </div>
+        renderCards()
       ) : (
         <>
           {selected.size > 0 && (
@@ -561,7 +716,7 @@ export default function EventsPage() {
         </>
       )}
 
-      {rows.length > 0 && (
+      {!trialView && rows.length > 0 && (
         <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onChange={setPage} />
       )}
 

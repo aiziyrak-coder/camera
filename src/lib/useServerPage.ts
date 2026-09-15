@@ -41,10 +41,13 @@ export function useServerPage<T>(
   pageSize = 10,
   /** post: filtrni URL o'rniga so'rov tanasida yuborish. Qidiruv matni
    *  JSHSHIR bo'lishi mumkin — query qatori access log va brauzer
-   *  tarixida qoladi, tana esa qolmaydi. */
-  options: { post?: boolean; debounceMs?: number } = {},
+   *  tarixida qoladi, tana esa qolmaydi.
+   *  enabled: false bo'lsa so'rov yuborilmaydi (sahifaning boshqa
+   *  ko'rinishi o'z ma'lumotini boshqa joydan olayotganda). */
+  options: { post?: boolean; debounceMs?: number; enabled?: boolean } = {},
 ) {
   const post = Boolean(options.post);
+  const enabled = options.enabled ?? true;
   const { token } = useAuth();
   const [page, setPage] = useState(1);
   const [data, setData] = useState<Page<T>>({ items: [], total: 0, page: 1, pageSize, totalPages: 1 });
@@ -61,8 +64,8 @@ export function useServerPage<T>(
   }, [paramsKey]);
 
   useEffect(() => {
-    if (!token) {
-      // Token yo'q => so'rov yuborilmaydi; "ma'lumot yo'q" tugallangan holat.
+    if (!token || !enabled) {
+      // So'rov yuborilmaydi => "ma'lumot yo'q" tugallangan holat.
       setLoading(false);
       return;
     }
@@ -102,7 +105,7 @@ export function useServerPage<T>(
         setRefreshing(false);
       });
     return () => controller.abort();
-  }, [path, page, pageSize, paramsKey, token, reloadNonce, post]);
+  }, [path, page, pageSize, paramsKey, token, reloadNonce, post, enabled]);
 
   return {
     ...data,
