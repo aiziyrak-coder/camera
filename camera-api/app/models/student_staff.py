@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -17,6 +17,10 @@ class StudentStaff(Base):
             "biometrics_status IN ('tasdiqlangan', 'kutilmoqda', 'yoq')",
             name="ck_students_staff_biometrics_status",
         ),
+        # Ro'yxat har doim tur bo'yicha filtrlanib F.I.Sh. bo'yicha saralanadi,
+        # qamrov esa tur va yuz holati bo'yicha guruhlanadi (g8b9c0d1e2f3).
+        Index("ix_students_staff_type_full_name", "type", "full_name"),
+        Index("ix_students_staff_type_biometrics", "type", "biometrics_status"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())

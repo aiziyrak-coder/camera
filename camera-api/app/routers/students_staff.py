@@ -27,6 +27,7 @@ from app.schemas.student_staff import (
     StudentStaffOut,
     StudentStaffSearchIn,
     StudentStaffUpdateIn,
+    PeopleOverviewOut,
 )
 from app.schemas.student_staff_import import StudentStaffImportResultOut
 from app.services.face_matching import invalidate_candidate_matrix_cache
@@ -127,17 +128,14 @@ def _filtered_query(
     search: str | None,
     biometrics: str | None,
     course: int | None = None,
+    sort: str = "name",
 ):
     """Ro'yxat va eksport AYNAN bir xil filtrdan foydalanadi.
 
     Alohida yozilsa, ikkalasi vaqt o'tib bir-biridan farq qila boshlardi
     va yuklab olingan fayl ekranda ko'rinayotgan ro'yxatga mos
     kelmasdi — bu hisobot uchun jiddiy nuqson."""
-    stmt = (
-        select(StudentStaff)
-        .options(selectinload(StudentStaff.faculty))
-        .order_by(StudentStaff.full_name)
-    )
+    stmt = select(StudentStaff).options(selectinload(StudentStaff.faculty))
     if type:
         stmt = stmt.where(StudentStaff.type == type)
     if faculty == NO_FACULTY_KEY:
@@ -163,6 +161,16 @@ def _filtered_query(
         stmt = stmt.where(StudentStaff.type == "talaba").where(
             StudentStaff.group_or_position.ilike(f"{course}-kurs%")
         )
+    if sort == "confirmed":
+        stmt = stmt.order_by(StudentStaff.biometrics_confirmed_at.desc().nulls_last(), StudentStaff.full_name)
+    elif sort == "faculty":
+        # Fakultet filtri bo'lsa Faculty allaqachon ulangan (join); aks holda
+        # fakultetsizlar ham ro'yxatda qolishi uchun outer join.
+        if not faculty or faculty == NO_FACULTY_KEY:
+            stmt = stmt.outerjoin(Faculty, StudentStaff.faculty_id == Faculty.id)
+        stmt = stmt.order_by(Faculty.name.asc().nulls_last(), StudentStaff.full_name)
+    else:
+        stmt = stmt.order_by(StudentStaff.full_name)
     return stmt
 
 
@@ -193,7 +201,7 @@ async def search_students_staff(
     """GET ro'yxat bilan bir xil, lekin filtr (JSHSHIR bo'lishi mumkin bo'lgan
     qidiruv matni bilan) so'rov tanasida — URL/access logga tushmaydi."""
     page_params = PageParams(page=body.page, page_size=body.page_size)
-    stmt = _filtered_query(body.type, body.faculty, body.search, body.biometrics_status, body.course)
+    stmt = _filtered_query(body.type, body.faculty, body.search, body.biometrics_status, body.course, body.sort)
     records, total = await paginate(db, stmt, page_params)
     items = [_to_out(r, r.faculty.name if r.faculty else "") for r in records]
     return build_page(items, total, page_params)
@@ -205,6 +213,19 @@ async def biometrics_coverage(
     _: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
     type: Annotated[str | None, Query()] = None,
 ) -> BiometricsCoverageOut:
+    return await _coverage(db, type)
+
+
+@router.get("/overview", response_model=PeopleOverviewOut)
+async def people_overview(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
+) -> PeopleOverviewOut:
+    """Ikkala tur qamrovi bitta javobda — sahifa tepasi va tablar soni uchun."""
+    return PeopleOverviewOut(xodim=await _coverage(db, "xodim"), talaba=await _coverage(db, "talaba"))
+
+
+async def _coverage(db: AsyncSession, type: str | None) -> BiometricsCoverageOut:
     """Yuzni kim tasdiqlagani va kim tasdiqlamagani — fakultetlar kesimida.
 
     Bu savol tizim ishga tushgandan keyin eng ko'p beriladigan savol:

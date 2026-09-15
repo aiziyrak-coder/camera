@@ -84,6 +84,9 @@ class StudentStaffFilterIn(CamelModel):
 class StudentStaffSearchIn(StudentStaffFilterIn):
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=20, ge=1, le=500)
+    # name — F.I.Sh. bo'yicha; confirmed — oxirgi yuz tasdiqlaganlar birinchi;
+    # faculty — fakultet, keyin F.I.Sh.
+    sort: Literal["name", "confirmed", "faculty"] = "name"
 
 
 class StudentStaffExportIn(StudentStaffFilterIn):
@@ -146,3 +149,11 @@ class BiometricsConfirmationOut(StudentStaffOut):
     bo'lishidan oldingi tasdiqlash, vaqt yuz rasmi saqlangan paytdan
     tiklangan; nomalum — tasdiqlangan, lekin vaqtni aniqlab bo'lmadi;
     tasdiqlanmagan — odam hali yuzini tasdiqlamagan."""
+
+
+class PeopleOverviewOut(CamelModel):
+    """"Talabalar va Xodimlar" sahifasining tepa qismi — ikkala tur qamrovi
+    bitta so'rovda (ilgari ikki alohida /biometrics-coverage so'rovi)."""
+
+    xodim: BiometricsCoverageOut
+    talaba: BiometricsCoverageOut

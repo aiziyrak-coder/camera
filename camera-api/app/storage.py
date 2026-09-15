@@ -6,6 +6,7 @@ persisted anywhere."""
 
 import asyncio
 import logging
+import time
 import uuid
 from collections.abc import Iterable
 from datetime import datetime
@@ -66,12 +67,28 @@ def check_bucket() -> None:
     _s3.head_bucket(Bucket=settings.s3_bucket)
 
 
+# Bir kalit uchun imzolangan URL yarim umri davomida qayta beriladi. Har
+# chaqiruvda yangi imzo URL'ni o'zgartirardi va brauzer bir xil rasmni (hodisa
+# surati, yuz rasmi) har ro'yxat yangilanishida qaytadan yuklab olardi.
+# Qaytarilgan URL kamida PRESIGNED_URL_TTL_SECONDS / 2 amal qiladi.
+_PRESIGN_CACHE_LIMIT = 5000
+_presign_cache: dict[str, tuple[str, float]] = {}
+
+
 def presigned_url(key: str) -> str:
-    return _s3_public.generate_presigned_url(
+    now = time.monotonic()
+    cached = _presign_cache.get(key)
+    if cached is not None and cached[1] > now:
+        return cached[0]
+    url = _s3_public.generate_presigned_url(
         "get_object",
         Params={"Bucket": settings.s3_bucket, "Key": key},
         ExpiresIn=PRESIGNED_URL_TTL_SECONDS,
     )
+    if len(_presign_cache) >= _PRESIGN_CACHE_LIMIT:
+        _presign_cache.clear()
+    _presign_cache[key] = (url, now + PRESIGNED_URL_TTL_SECONDS / 2)
+    return url
 
 
 def object_last_modified(key: str) -> datetime | None:
@@ -88,6 +105,7 @@ def object_last_modified(key: str) -> datetime | None:
 
 
 def delete_file(key: str) -> None:
+    _presign_cache.pop(key, None)
     _s3.delete_object(Bucket=settings.s3_bucket, Key=key)
 
 

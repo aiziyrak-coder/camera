@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import { AlertTriangle, FileText, Loader2, Upload } from 'lucide-react';
-import { PdfRenderTimeoutError, renderPdfFirstPageToDataUrl } from '../../lib/pdf';
 import { uploadFile } from '../../lib/fileUpload';
 import { useAuth } from '../../lib/auth';
 
@@ -30,19 +29,25 @@ export default function PassportUploadStep({ onLoaded }: PassportUploadStepProps
     }
 
     setLoading(true);
+    // pdf.js (~400 KB) faqat PDF tanlanganda yuklanadi — "Talabalar va
+    // Xodimlar" sahifasi ochilishi uni kutib turmaydi.
+    let pdf: typeof import('../../lib/pdf') | null = null;
     try {
+      pdf = await import('../../lib/pdf');
       // Asl PDF faylni "arxiv" xizmati orqali saqlaymiz (backend tayyor bo'lganda
       // shu joyda haqiqiy serverga yuklanadi) — vizual preview esa alohida,
       // yuzni solishtirish uchun kerakli piksel ma'lumotini beruvchi rasmga render qilinadi.
       await uploadFile(file, file.name, token, 'passports');
-      const dataUrl = await renderPdfFirstPageToDataUrl(file);
+      const dataUrl = await pdf.renderPdfFirstPageToDataUrl(file);
       setPreview({ url: dataUrl, name: file.name });
       onLoaded(dataUrl, file.name);
     } catch (err) {
       setError(
-        err instanceof PdfRenderTimeoutError
-          ? "PDF sahifasini render qilish juda uzoq davom etmoqda. Brauzeringiz Web Worker'larni cheklagan bo'lishi mumkin — boshqa brauzerda urinib ko'ring yoki qayta yuklang"
-          : "PDF faylni o'qib bo'lmadi, boshqa fayl tanlang",
+        pdf === null
+          ? "PDF o'quvchini yuklab bo'lmadi — sahifani yangilang va qayta urinib ko'ring"
+          : err instanceof pdf.PdfRenderTimeoutError
+            ? "PDF sahifasini render qilish juda uzoq davom etmoqda. Brauzeringiz Web Worker'larni cheklagan bo'lishi mumkin — boshqa brauzerda urinib ko'ring yoki qayta yuklang"
+            : "PDF faylni o'qib bo'lmadi, boshqa fayl tanlang",
       );
     } finally {
       setLoading(false);

@@ -48,10 +48,20 @@ function timeAgo(iso: string): string {
  * bo'lsa — ro'yxatni ko'rsatadi. Ko'p odamdan birinchisini jimgina tanlash
  * bir xil familiyali boshqa odamning vaqtini ko'rsatib qo'yishi mumkin edi.
  */
-export default function BiometricsTimeLookupModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export default function BiometricsTimeLookupModal({
+  open,
+  onClose,
+  person = null,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Ro'yxat qatoridan ochilganda — oyna darhol shu odamning natijasi bilan ochiladi. */
+  person?: StudentStaffRecord | null;
+}) {
   const { token } = useAuth();
   const inputRef = useRef<HTMLInputElement>(null);
   const requestSeq = useRef(0);
+  const resultSeq = useRef(0);
 
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<StudentStaffRecord[]>([]);
@@ -64,7 +74,9 @@ export default function BiometricsTimeLookupModal({ open, onClose }: { open: boo
 
   const resetToSearch = useCallback(() => {
     requestSeq.current += 1;
+    resultSeq.current += 1;
     setResult(null);
+    setLoadingResult(false);
     setSuggestions([]);
     setSearchedFor(null);
     setHighlight(0);
@@ -72,11 +84,39 @@ export default function BiometricsTimeLookupModal({ open, onClose }: { open: boo
     window.setTimeout(() => inputRef.current?.focus(), 0);
   }, []);
 
+  const choose = useCallback(
+    async (target: StudentStaffRecord) => {
+      requestSeq.current += 1;
+      // Oyna yopilib boshqa odam uchun qayta ochilsa, kechikkan eski javob
+      // yangisining ustiga yozilmasin.
+      const seq = ++resultSeq.current;
+      setSuggestions([]);
+      setSearching(false);
+      setLoadingResult(true);
+      setError(null);
+      try {
+        const data = await api.get<BiometricsConfirmation>(
+          `/api/students-staff/${target.id}/biometrics-confirmation`,
+          token,
+        );
+        if (seq === resultSeq.current) setResult(data);
+      } catch (err) {
+        if (seq === resultSeq.current) {
+          setError(err instanceof ApiError ? err.message : "Ma'lumotni olib bo'lmadi — qayta urinib ko'ring");
+        }
+      } finally {
+        if (seq === resultSeq.current) setLoadingResult(false);
+      }
+    },
+    [token],
+  );
+
   useEffect(() => {
     if (!open) return;
     setQuery('');
     resetToSearch();
-  }, [open, resetToSearch]);
+    if (person) void choose(person);
+  }, [open, person, resetToSearch, choose]);
 
   const runSearch = useCallback(
     async (text: string): Promise<StudentStaffRecord[] | null> => {
@@ -121,21 +161,6 @@ export default function BiometricsTimeLookupModal({ open, onClose }: { open: boo
     const timer = window.setTimeout(() => void runSearch(text), DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [query, open, result, runSearch]);
-
-  async function choose(person: StudentStaffRecord) {
-    requestSeq.current += 1;
-    setSuggestions([]);
-    setSearching(false);
-    setLoadingResult(true);
-    setError(null);
-    try {
-      setResult(await api.get<BiometricsConfirmation>(`/api/students-staff/${person.id}/biometrics-confirmation`, token));
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Ma'lumotni olib bo'lmadi — qayta urinib ko'ring");
-    } finally {
-      setLoadingResult(false);
-    }
-  }
 
   async function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'ArrowDown' && suggestions.length) {
