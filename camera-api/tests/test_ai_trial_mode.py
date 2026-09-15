@@ -178,6 +178,25 @@ class TestTrialSampleAndPromotion:
         assert promoted.status_code == 200, promoted.text
         assert promoted.json()["mode"] == "ishchi"
 
+    async def test_switching_to_trial_moves_pending_events_out_of_the_queue(
+        self, client: AsyncClient, db_session, seeded
+    ):
+        for status_value in ("yangi", "yangi", "tasdiqlangan"):
+            db_session.add(
+                Event(camera_name="Kirish", building="1-bino", module_code=WORKING_CODE, module_name="Begona",
+                      group="A", confidence=90, severity="yuqori", status=status_value)
+            )
+        await db_session.commit()
+        module = await _module(db_session, WORKING_CODE)
+        headers = await auth_headers(client, "admin", "admin123")
+        body = {"threshold": module.threshold, "sensitivity": module.sensitivity, "active": module.active, "mode": "sinov"}
+
+        assert (await client.patch(f"/api/ai-modules/{module.id}", headers=headers, json=body)).status_code == 200
+
+        summary = (await client.get("/api/events/summary", headers=headers)).json()
+        assert summary["unreviewed"] == 0 and summary["confirmed"] == 1
+        assert summary["trialUnreviewed"] == 2
+
     async def test_back_to_trial_is_always_allowed(self, client: AsyncClient, db_session, seeded):
         module = await _module(db_session, WORKING_CODE)
         headers = await auth_headers(client, "admin", "admin123")

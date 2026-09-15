@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import func, select, true
+from sqlalchemy import false, func, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_action
@@ -271,6 +271,18 @@ async def update_ai_module(
                 )
         module.mode = body.mode
         action = f"AI modul rejimini o'zgartirdi: {module.name} — {'ishchi' if body.mode == 'ishchi' else 'sinov'}"
+        if body.mode == "sinov":
+            # Navbatda kutayotgan (hali ko'rilmagan) signallar ham sinovga o'tadi —
+            # aks holda operator navbati shu modulning eski shovqini bilan to'la qolardi.
+            moved = await db.execute(
+                update(Event)
+                .where(Event.module_code == module.code)
+                .where(Event.status == "yangi")
+                .where(Event.is_trial == false())
+                .values(is_trial=True)
+            )
+            if moved.rowcount:
+                action += f" ({moved.rowcount} ta ko'rilmagan signal sinov namunalariga o'tkazildi)"
 
     module.threshold = body.threshold
     module.sensitivity = body.sensitivity
