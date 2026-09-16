@@ -30,6 +30,19 @@ class TestAiModules:
         assert module_1["accuracy"] == 0
         assert module_13["maturity"] == "sinov"
 
+    async def test_smoking_module_is_off(self, client: AsyncClient, db_session: AsyncSession):
+        """#15 buyurtmachi qarori bilan o'chirilgan (2026-09-16) — sweep
+        umuman ishlamasligi kerak, lekin modul ro'yxatda qoladi."""
+        from app.jobs.module_status import is_module_active
+
+        module = await _get_module(db_session, 15)
+        assert module.active is False
+        assert await is_module_active(db_session, 15) is False
+
+        headers = await auth_headers(client, "admin", "admin123")
+        listed = (await client.get("/api/ai-modules", headers=headers)).json()
+        assert next(m for m in listed if m["code"] == 15)["active"] is False
+
     async def test_p3_modules_have_detectors_and_can_activate(self, client: AsyncClient, db_session: AsyncSession):
         for code in (13, 15):
             module = await _get_module(db_session, code)
