@@ -39,6 +39,7 @@ from app.jobs.unauthorized_person_ai import UNAUTHORIZED_MODULE_CODE, process_ca
 from app.jobs.vision_ai import SLEEP_MODULE_CODE, process_camera_frame_for_sleep
 from app.models import Camera
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
+from app.services import recognition_stats
 from app.services.face_recognition import detect_faces
 from app.services.frame_grabber import (
     grab_frame_burst_for_camera,
@@ -50,6 +51,27 @@ from app.services.sweep_result_cache import record_camera_sweep
 logger = logging.getLogger("app.unified_face_sweep")
 
 _sweep_guard = SweepGuard("unified_face_sweep")
+
+# Nechanchi aylanish ketyapti — "ko'r" kameralarni vaqti-vaqti bilan
+# qayta tekshirish uchun (recognition_stats.is_face_blind izohiga qarang).
+# Ro'yxat sifatida: `global` e'lonisiz o'zgartirish uchun.
+_sweep_round = [0]
+
+
+def reset_sweep_round_for_tests() -> None:
+    _sweep_round[0] = 0
+
+
+def _skip_face_blind(camera: Camera, *, recheck: bool) -> bool:
+    """Bu kamerani shu aylanishda o'tkazib yuboramizmi.
+
+    Yuzi 8-20 pikselda ko'rinadigan kamera hech kimni tanimaydi, lekin
+    har aylanishda kadr olish va model chaqirishni talab qiladi. Uni
+    tashlab ketish sweep aylanishini qisqartiradi, ya'ni HAQIQATAN yuz
+    ko'rinadigan kirish kameralari tezroq navbatga keladi."""
+    if recheck:
+        return False
+    return recognition_stats.is_face_blind(str(camera.id))
 
 
 def _allows(camera: Camera, module_code: int) -> bool:
@@ -247,7 +269,7 @@ async def run_unified_face_sweep_once(
                 )
             )
         )
-        cameras = [c for c in result.scalars().all() if c.stream_url and is_reachable(c.last_seen_at)]
+        reachable_cameras = [c for c in result.scalars().all() if c.stream_url and is_reachable(c.last_seen_at)]
         candidates = await load_candidate_matrix_for_sweep(db)
         suppressed = await load_suppressed_pairs(db)
 
@@ -262,6 +284,22 @@ async def run_unified_face_sweep_once(
                 extra={"enrolled": len(candidates.ids), "required": settings.unauthorized_min_enrolled},
             )
             flags["unauthorized"] = False
+
+    # Yuzi tanib bo'lmaydigan kameralarni shu aylanishda tashlab ketamiz
+    # (_skip_face_blind izohiga qarang). Sanoq har aylanishda oshadi,
+    # shuning uchun ular vaqti-vaqti bilan qayta tekshiriladi.
+    _sweep_round[0] += 1
+    recheck = (
+        settings.face_blind_recheck_every <= 1
+        or _sweep_round[0] % settings.face_blind_recheck_every == 0
+    )
+    cameras = [camera for camera in reachable_cameras if not _skip_face_blind(camera, recheck=recheck)]
+    skipped_blind = len(reachable_cameras) - len(cameras)
+    if skipped_blind:
+        logger.info(
+            "unified face sweep skipped cameras with no recognisable faces today",
+            extra={"skipped": skipped_blind, "swept": len(cameras)},
+        )
 
     totals = {"attendance": 0, "unauthorized": 0, "sleep": 0}
     if not cameras:

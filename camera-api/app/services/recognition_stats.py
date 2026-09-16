@@ -121,6 +121,28 @@ def record_frame(camera_id: str | None, faces: list, graded: list) -> None:
         stats.buckets[_bucket(match.similarity)] += 1
 
 
+def is_face_blind(camera_id: str) -> bool:
+    """Shu kamera bugun BIRORTA ham tanib bo'ladigan yuz bermadimi.
+
+    "Ko'r" deb hisoblanadi: yetarlicha yuz ko'rilgan (tasodifiy bir-ikki
+    kadr emas), ularning deyarli hammasi minimal o'lchamdan kichik VA
+    birorta ham moslik yozilmagan. Uchinchi shart muhim: bir marta
+    bo'lsa ham odam tanigan kamera hech qachon o'chirilmaydi.
+
+    Statistika har kuni noldan boshlanadi (CameraRecognitionStats.day),
+    shuning uchun qaror ham har kuni qaytadan olinadi."""
+    if not settings.face_blind_skip_enabled:
+        return False
+    stats = _stats.get(camera_id)
+    if stats is None or stats.day != local_now().date():
+        return False
+    if stats.faces < settings.face_blind_min_faces:
+        return False
+    if stats.strict or stats.relaxed_confirmed or stats.relaxed_pending:
+        return False
+    return stats.small_faces >= stats.faces * settings.face_blind_small_ratio
+
+
 def record_credit(camera_id: str | None, grade: str) -> None:
     if camera_id is None:
         return

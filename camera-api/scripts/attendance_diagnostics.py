@@ -214,6 +214,28 @@ async def presence_state(db) -> None:
         for day, visits, people, cameras in per_day:
             print(f"{day} | {visits} | {people} | {cameras}")
 
+    # Bugungi tanishlar soat kesimida — "o'zgarish qachon boshlandi" degan
+    # savolga aniq javob beradi (masalan sozlama o'zgargan yoki konteyner
+    # qayta ishga tushgan payt).
+    start_of_today = local_now().replace(hour=0, minute=0, second=0, microsecond=0)
+    hourly = (
+        await db.execute(
+            select(
+                func.extract("hour", func.timezone("Asia/Tashkent", PresenceVisit.first_seen_at)),
+                func.count(),
+                func.count(func.distinct(PresenceVisit.student_staff_id)),
+            )
+            .where(PresenceVisit.first_seen_at >= start_of_today)
+            .group_by(text("1"))
+            .order_by(text("1"))
+        )
+    ).all()
+    if hourly:
+        print()
+        print("Bugun soat kesimida (soat | tashrif | turli odam):")
+        for hour, visits, people in hourly:
+            print(f"{int(hour):02d}:00 | {visits} | {people}")
+
     top = (
         await db.execute(
             select(Camera.name, func.count(), func.count(func.distinct(PresenceVisit.student_staff_id)))

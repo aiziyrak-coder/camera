@@ -117,6 +117,25 @@ class Settings(BaseSettings):
     # yumshatilgan chegarani qo'llash boshqa odamga davomat yozish
     # xavfini ochadi, shuning uchun ular eski chegarada qoladi.
     attendance_small_face_match_threshold: float = 0.55
+    # Yuzi hech qachon tanib bo'lmaydigan kameralar (keng qamrovli
+    # auditoriya/koridor kameralari) yuz sweepidan chiqariladi.
+    #
+    # Productionda o'lchandi (2026-09-16): 107 kameraning taxminan
+    # yarmida yuz balandligi 8-20 piksel, ya'ni attendance_min_face_px
+    # (40) dan ancha past. Bunday kadr InsightFace uchun shovqin: hech
+    # kim tanilmaydi, lekin har aylanishda kadr olinadi va model
+    # chaqiriladi — unified_face sweepining bitta aylanishi 129 soniyaga
+    # cho'zilishining asosiy sababi shu.
+    #
+    # Qaror kamera bo'yicha, o'sha kunning o'z statistikasidan chiqadi va
+    # abadiy emas: har face_blind_recheck_every aylanishda kamera qayta
+    # tekshiriladi (kamera burilishi, yaqinlashtirilishi yoki oqim
+    # sifatini o'zgartirishi mumkin), statistika esa har kuni noldan
+    # boshlanadi.
+    face_blind_skip_enabled: bool = True
+    face_blind_min_faces: int = 40
+    face_blind_small_ratio: float = 0.95
+    face_blind_recheck_every: int = 20
     # "HH:MM" — kunlik davomatda kech qolish chegarasi (mahalliy vaqt).
     # Kunlik davomat dars jadvaliga BOG'LIQ EMAS: odamning birinchi
     # ko'rinishi shu vaqtdan keyin bo'lsa — "kech_keldi". Darsga
