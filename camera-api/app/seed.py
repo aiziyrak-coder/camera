@@ -38,9 +38,9 @@ DEFAULT_FACULTIES = [
 ]
 
 DEFAULT_BUILDINGS = [
-    {"name": "1-Bino (Asosiy korpus)", "camera_count": 12},
-    {"name": "2-Bino (Klinika va Laboratoriya)", "camera_count": 18},
-    {"name": "3-Bino (Ma'muriy bino)", "camera_count": 8},
+    {"name": "1-Bino (Asosiy korpus)", "camera_count": 12, "floors": 4, "sort_order": 1},
+    {"name": "2-Bino (Klinika va Laboratoriya)", "camera_count": 18, "floors": 3, "sort_order": 2},
+    {"name": "3-Bino (Ma'muriy bino)", "camera_count": 8, "floors": 2, "sort_order": 3},
 ]
 
 # `threshold` haqida (2026-09 auditidan keyin): bu qiymat endi HAQIQATAN

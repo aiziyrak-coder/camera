@@ -49,7 +49,7 @@ interface LiveVideoPlayerProps {
   onZonePointAdd?: (point: [number, number]) => void;
   /** Standart holatda src/lib/streamLoadQueue.ts (admin panjarasi uchun,
    * MAX 8) ishlatiladi — boshqa alohida navbat kerak bo'lsa (masalan
-   * src/lib/monitorThumbnailQueue.ts, kichikroq MAX bilan) shu yerdan
+   * eski miniatyura navbati, endi rasm keshi bilan almashtirilgan) shu yerdan
    * almashtiriladi. priority=true bo'lsa ikkalasi ham chaqirilmaydi. */
   acquireSlot?: (id: string, onRevoked: () => void) => Promise<void>;
   releaseSlot?: (id: string) => void;

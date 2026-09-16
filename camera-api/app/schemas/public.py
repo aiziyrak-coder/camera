@@ -14,6 +14,8 @@ class PublicCameraOut(CamelModel):
     """Kafedra nomi; biriktirilmagan bo'lsa bo'sh satr."""
     status: str
     stream_url: str | None = None
+    floor: int | None = None
+    """Qavat raqami; belgilanmagan bo'lsa None (Camera.floor izohiga qarang)."""
     has_video: bool = True
     """Kamera tarmoqda javob beryapti, LEKIN tasvir kelyaptimi.
 
@@ -78,3 +80,47 @@ class CameraAnalysisStatusOut(CamelModel):
     face_count: int = 0
     modules: list[str] = []
     events_raised: int = 0
+
+
+class CampusFloorOut(CamelModel):
+    """Bitta qavat kesimi — Video Monitoring Markazining bino ko'rinishida
+    bitta plita. `floor=None` qavati belgilanmagan kameralar guruhi:
+    ular yo'qolib qolmasligi uchun alohida chiqariladi."""
+
+    floor: int | None = None
+    label: str
+    cameras: int = 0
+    live: int = 0
+    offline: int = 0
+    no_video: int = 0
+    """Tarmoqda javob beryapti, lekin tasvir kelmayapti (PublicCameraOut.has_video)."""
+    events_today: int = 0
+    """Bugungi ishchi signallar (sinov namunalari hisobga olinmaydi)."""
+
+
+class CampusBuildingOut(CamelModel):
+    id: str = ""
+    """Bo'sh satr — binoga biriktirilmagan kameralar guruhi."""
+
+    name: str
+    floors: list[CampusFloorOut] = []
+    cameras: int = 0
+    live: int = 0
+    offline: int = 0
+    no_video: int = 0
+    events_today: int = 0
+
+
+class CampusOut(CamelModel):
+    """Butun kampus kesimi bitta so'rovda: bino -> qavat -> sanoq.
+
+    Kameralar ro'yxati bu yerda YO'Q ataylab — u faqat operator qavatni
+    tanlaganda va faqat o'sha qavat uchun yuklanadi."""
+
+    buildings: list[CampusBuildingOut] = []
+    cameras: int = 0
+    live: int = 0
+    offline: int = 0
+    no_video: int = 0
+    events_today: int = 0
+    generated_at: str = ""

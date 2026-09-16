@@ -19,6 +19,45 @@ export interface CameraFeed {
       bilan qo'shilmaydi: "erishib bo'lmaydi" va "erishiladi, lekin
       tasvirsiz" — operator uchun ikki xil nosozlik. */
   hasVideo?: boolean;
+  /** Qavat raqami; belgilanmagan bo'lsa null (backend `Camera.floor`). */
+  floor?: number | null;
+}
+
+/** GET /api/public/campus — bitta qavat kesimi. `floor: null` qavati
+ * belgilanmagan kameralar guruhi: ular yo'qolib qolmasligi kerak. */
+export interface CampusFloor {
+  floor: number | null;
+  label: string;
+  cameras: number;
+  live: number;
+  offline: number;
+  noVideo: number;
+  eventsToday: number;
+}
+
+/** Bitta bino kesimi. `id: ''` — binoga biriktirilmagan kameralar. */
+export interface CampusBuilding {
+  id: string;
+  name: string;
+  floors: CampusFloor[];
+  cameras: number;
+  live: number;
+  offline: number;
+  noVideo: number;
+  eventsToday: number;
+}
+
+/** Butun kampus kesimi — Video Monitoring Markazining birinchi ekrani.
+ * Kameralar ro'yxati bu yerda YO'Q: u faqat qavat tanlanganda yuklanadi,
+ * shuning uchun sahifa ochilishi 100+ kamerada ham yengil qoladi. */
+export interface Campus {
+  buildings: CampusBuilding[];
+  cameras: number;
+  live: number;
+  offline: number;
+  noVideo: number;
+  eventsToday: number;
+  generatedAt: string;
 }
 
 /** Backenddagi GET /api/public/cameras/{id}/live-detection javobiga mos —
@@ -56,7 +95,7 @@ export interface AttendanceStats {
   offlineCameras: number;
   buildings: string[];
   /** Kafedralar, har biri o'z binosi bilan — filtr bosqichma-bosqich
-      ishlashi uchun (CameraFilterBar izohiga qarang). */
+      ishlashi uchun: bino tanlanganda faqat o'sha binoning kafedralari. */
   departments?: { name: string; building: string }[];
 }
 

@@ -9,9 +9,11 @@ an earlier mock-data version pretended to.
 
 from datetime import datetime, timedelta, timezone
 import logging
+import time
+import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import and_, case, extract, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -25,6 +27,9 @@ from app.pagination import Page, PageParams, build_page, paginate
 from app.rate_limit import limiter
 from app.schemas.public import (
     CameraAnalysisStatusOut,
+    CampusBuildingOut,
+    CampusFloorOut,
+    CampusOut,
     DetectedFaceOut,
     LiveDetectionOut,
     PublicCameraOut,
@@ -39,6 +44,7 @@ from app.services.frame_grabber import frame_wait_seconds_for_camera, grab_frame
 from app.services.image_size import jpeg_dimensions
 from app.services.sleep_detection import is_asleep, is_face_measurable
 from app.services.sweep_result_cache import get_camera_sweep
+from app.services.thumbnail_cache import ensure_thumbnail
 
 logger = logging.getLogger("app.public")
 from app.timezone import local_now
@@ -80,6 +86,7 @@ def _to_public_camera(camera: Camera) -> PublicCameraOut:
         status="live" if live else "offline",
         has_video=has_video,
         stream_url=camera.stream_url,
+        floor=camera.floor,
     )
 
 
@@ -89,6 +96,8 @@ async def list_public_cameras(
     params: Annotated[PageParams, Depends()],
     search: str | None = None,
     building: str | None = None,
+    building_id: Annotated[str | None, Query(alias="buildingId")] = None,
+    floor: Annotated[str | None, Query()] = None,
     department: str | None = None,
     status_filter: Annotated[str | None, Query(alias="status")] = None,
 ) -> Page[PublicCameraOut]:
@@ -106,6 +115,25 @@ async def list_public_cameras(
         stmt = stmt.where(or_(Camera.name.ilike(like), Camera.zone.ilike(like)))
     if building:
         stmt = stmt.where(Camera.building.has(Building.name == building))
+    if building_id == "none":
+        # Kesimdagi "Bino biriktirilmagan" guruhi.
+        stmt = stmt.where(Camera.building_id.is_(None))
+    elif building_id:
+        # Monitoring markazi qavat gridi bino NOMI emas, ID bo'yicha
+        # so'raydi: nom o'zgarishi mumkin, havola esa ishlab turishi kerak.
+        try:
+            stmt = stmt.where(Camera.building_id == uuid.UUID(building_id))
+        except ValueError:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Noto'g'ri bino identifikatori")
+    if floor:
+        # "none" — qavati belgilanmagan kameralar guruhi (Camera.floor
+        # nullable, kesimda ular alohida plita bo'lib chiqadi).
+        if floor == "none":
+            stmt = stmt.where(Camera.floor.is_(None))
+        elif floor.lstrip("-").isdigit():
+            stmt = stmt.where(Camera.floor == int(floor))
+        else:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Noto'g'ri qavat qiymati")
     if department:
         # Kafedra bino ichida joylashadi, lekin filtr mustaqil: bino
         # tanlanmagan holda ham kafedra bo'yicha izlash mumkin.
@@ -312,4 +340,179 @@ async def get_camera_analysis_status(
         face_count=snap.face_count,
         modules=list(snap.modules),
         events_raised=snap.events_raised,
+    )
+
+
+# Kampus kesimi 15 soniya keshlanadi: sanoqlar shu vaqt ichida sezilarli
+# o'zgarmaydi, monitoring devorida esa bu so'rov har bir tomoshabinda
+# takrorlanadi.
+_CAMPUS_CACHE_SECONDS = 15
+_campus_cache: tuple[float, CampusOut] | None = None
+
+
+def _has_video_expr():
+    """_is_live_expr() ning juftligi — app/jobs/camera_health.py dagi
+    is_video_flowing() ning SQL ko'rinishi: kamera javob beryapti, lekin
+    tasvir kelyaptimi."""
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=settings.camera_video_stale_seconds)
+    return and_(Camera.last_frame_at.isnot(None), Camera.last_frame_at >= cutoff)
+
+
+def _floor_label(floor: int | None) -> str:
+    return f"{floor}-qavat" if floor is not None else "Qavat belgilanmagan"
+
+
+def _floor_sort_key(item) -> tuple[int, int]:
+    floor = item[0]
+    return (1, 0) if floor is None else (0, floor)
+
+
+@router.get("/campus", response_model=CampusOut)
+async def get_campus(db: Annotated[AsyncSession, Depends(get_db)]) -> CampusOut:
+    """Bino -> qavat kesimi: har qavatda nechta kamera bor, nechtasi jonli,
+    nechtasida tasvir yo'q va bugun nechta signal bo'lgan.
+
+    Kameralar RO'YXATI bu yerda qaytarilmaydi — Video Monitoring Markazi
+    avval shu yengil kesimni ko'rsatadi, kameralarni esa faqat operator
+    qavatni tanlaganda so'raydi. 100+ kamerali kampusda birinchi
+    yuklanish shu tariqa bir necha o'nlab marta yengillashadi.
+
+    Hammasi ikkita GROUP BY so'rovda: kamera sanoqlari va bugungi
+    signallar. Binolar ro'yxati uchinchi (kichik) so'rov — kamerasi hali
+    biriktirilmagan bino ham kesimda ko'rinishi uchun."""
+    global _campus_cache
+    now = time.monotonic()
+    cached = _campus_cache
+    if cached is not None and now - cached[0] < _CAMPUS_CACHE_SECONDS:
+        return cached[1]
+
+    live = _is_live_expr()
+    has_video = _has_video_expr()
+    camera_rows = (
+        await db.execute(
+            select(
+                Camera.building_id,
+                Camera.floor,
+                func.count(),
+                func.count().filter(live),
+                func.count().filter(and_(live, ~has_video)),
+            ).group_by(Camera.building_id, Camera.floor)
+        )
+    ).all()
+
+    start_of_today = local_now().replace(hour=0, minute=0, second=0, microsecond=0)
+    event_rows = (
+        await db.execute(
+            select(Camera.building_id, Camera.floor, func.count())
+            .select_from(Event)
+            .join(Camera, Camera.id == Event.camera_id)
+            .where(Event.is_trial.is_(False))
+            .where(Event.occurred_at >= start_of_today)
+            .group_by(Camera.building_id, Camera.floor)
+        )
+    ).all()
+
+    buildings = (
+        await db.execute(select(Building).order_by(Building.sort_order, Building.name))
+    ).scalars().all()
+
+    # (bino_id, qavat) -> [jami, jonli, tasvirsiz, bugungi signallar]
+    counts: dict[tuple[str, int | None], list[int]] = {}
+    for building_id, floor, total, live_count, no_video in camera_rows:
+        counts[(str(building_id) if building_id else "", floor)] = [total, live_count, no_video, 0]
+    for building_id, floor, event_count in event_rows:
+        key = (str(building_id) if building_id else "", floor)
+        counts.setdefault(key, [0, 0, 0, 0])[3] = event_count
+
+    groups: list[tuple[str, str, int | None]] = [(str(b.id), b.name, b.floors) for b in buildings]
+    # Binoga biriktirilmagan kameralar ham ko'rinishi kerak: aks holda ular
+    # kesimdan butunlay tushib qolib, "hammasi joyida" degan yolg'on
+    # manzara chiqadi.
+    if any(building_id == "" for building_id, _floor in counts):
+        groups.append(("", "Bino biriktirilmagan", None))
+
+    out_buildings: list[CampusBuildingOut] = []
+    for building_id, name, declared_floors in groups:
+        floors: dict[int | None, list[int]] = {}
+        # Bino nechta qavatli ekani ma'lum bo'lsa, kamerasi yo'q qavat ham
+        # chiziladi — u yerda kamera yo'qligi ko'rinib tursin.
+        for number in range(1, (declared_floors or 0) + 1):
+            floors[number] = [0, 0, 0, 0]
+        for (row_building, floor), values in counts.items():
+            if row_building == building_id:
+                floors[floor] = values
+        floor_out = [
+            CampusFloorOut(
+                floor=floor,
+                label=_floor_label(floor),
+                cameras=values[0],
+                live=values[1],
+                offline=values[0] - values[1],
+                no_video=values[2],
+                events_today=values[3],
+            )
+            for floor, values in sorted(floors.items(), key=_floor_sort_key)
+        ]
+        out_buildings.append(
+            CampusBuildingOut(
+                id=building_id,
+                name=name,
+                floors=floor_out,
+                cameras=sum(f.cameras for f in floor_out),
+                live=sum(f.live for f in floor_out),
+                offline=sum(f.offline for f in floor_out),
+                no_video=sum(f.no_video for f in floor_out),
+                events_today=sum(f.events_today for f in floor_out),
+            )
+        )
+
+    campus = CampusOut(
+        buildings=out_buildings,
+        cameras=sum(b.cameras for b in out_buildings),
+        live=sum(b.live for b in out_buildings),
+        offline=sum(b.offline for b in out_buildings),
+        no_video=sum(b.no_video for b in out_buildings),
+        events_today=sum(b.events_today for b in out_buildings),
+        generated_at=datetime.now(timezone.utc).isoformat(),
+    )
+    _campus_cache = (now, campus)
+    return campus
+
+
+def reset_campus_cache_for_tests() -> None:
+    global _campus_cache
+    _campus_cache = None
+
+
+@router.get("/cameras/{camera_id}/thumbnail", response_class=Response)
+@limiter.limit("600/minute")
+async def get_camera_thumbnail(
+    request: Request, camera_id: str, db: Annotated[AsyncSession, Depends(get_db)]
+) -> Response:
+    """Qavat grididagi bitta kadr (JPEG).
+
+    Jonli HLS o'rniga: 24 kamerali qavat 24 ta ffmpeg transkodini emas,
+    24 ta kichik rasmni oladi. Rasm AI sweep allaqachon olgan kadrdan
+    tayyorlanadi (app/services/thumbnail_cache.py), ya'ni odatda kameraga
+    qo'shimcha ulanish umuman bo'lmaydi; sweep tegmagan kamera uchungina
+    bitta kadr so'raladi va u ham sovutish oynasi bilan cheklangan."""
+    try:
+        camera_uuid = uuid.UUID(camera_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
+    result = await db.execute(select(Camera).where(Camera.id == camera_uuid))
+    camera = result.scalar_one_or_none()
+    if camera is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
+
+    thumbnail = await ensure_thumbnail(camera)
+    if thumbnail is None:
+        # 404 ataylab: "hali rasm yo'q" — xato emas, holat. Frontend
+        # bunda kamera holatiga qarab joy egallovchi chizadi.
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Miniatyura hali tayyor emas")
+    jpeg, age_seconds = thumbnail
+    return Response(
+        content=jpeg,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-store", "X-Thumbnail-Age": str(age_seconds)},
     )

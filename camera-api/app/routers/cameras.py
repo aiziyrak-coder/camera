@@ -1,4 +1,5 @@
 from typing import Annotated
+import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import func, select
@@ -13,6 +14,8 @@ from app.jobs.camera_health import is_reachable
 from app.models import AIModuleConfig, Building, Camera
 from app.pagination import Page, PageParams, build_page, paginate
 from app.schemas.camera import (
+    CameraBulkLocationIn,
+    CameraBulkLocationOut,
     CameraCreateIn,
     CameraModuleOptionOut,
     CameraModulesIn,
@@ -80,6 +83,7 @@ def _to_out(camera: Camera) -> CameraOut:
         building=camera.building.name if camera.building else "",
         department=camera.department.name if camera.department else "",
         zone=camera.zone,
+        floor=camera.floor,
         resolution=camera.resolution,
         fps=camera.fps,
         status=camera.status,
@@ -243,6 +247,7 @@ async def create_camera(
         building_id=building.id,
         department_id=department.id if department else None,
         zone=body.zone,
+        floor=body.floor,
         resolution=body.resolution,
         fps=body.fps,
         status=body.status,
@@ -310,6 +315,11 @@ async def update_camera(
     department = await _resolve_department(db, body.department)
     camera.department_id = department.id if department else None
     camera.zone = body.zone
+    # Qavat faqat YUBORILGAN bo'lsa o'zgaradi: bu maydon keyin qo'shilgan
+    # va uni bilmaydigan mijoz (eski forma, skript) kameraning qavatini
+    # jimgina tozalab yuborishi kerak emas.
+    if "floor" in body.model_fields_set:
+        camera.floor = body.floor
     camera.resolution = body.resolution
     camera.fps = body.fps
     camera.status = body.status
@@ -414,3 +424,65 @@ async def test_saved_camera_connection(
         username=decrypt(camera.rtsp_username) if camera.rtsp_username else None,
         password=decrypt(camera.rtsp_password) if camera.rtsp_password else None,
     )
+
+
+@router.post("/bulk-location", response_model=CameraBulkLocationOut)
+async def set_cameras_location(
+    body: CameraBulkLocationIn,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: PermDep,
+) -> CameraBulkLocationOut:
+    """Belgilangan kameralarga bino/qavat/zonani birdan qo'yadi.
+
+    Qavat ma'lumoti Video Monitoring Markazining bino -> qavat kesimi
+    uchun kerak, lekin 107 ta kameraga uni bittalab kiritish real ish
+    emas. Yuborilmagan (None) maydon o'zgarmaydi — masalan faqat qavatni
+    qo'yish uchun binoni qayta yuborish shart emas; qavatni BO'SHATISH
+    uchun esa alohida `clearFloor` bayrog'i bor, chunki None bu yerda
+    "tegmaslik" degani."""
+    ids: list[uuid.UUID] = []
+    not_found: list[str] = []
+    for raw_id in body.camera_ids:
+        try:
+            ids.append(uuid.UUID(raw_id))
+        except ValueError:
+            not_found.append(raw_id)
+
+    building = await _resolve_building(db, body.building) if body.building else None
+    cameras = (
+        (await db.execute(select(Camera).where(Camera.id.in_(ids)))).scalars().all() if ids else []
+    )
+    found_ids = {str(camera.id) for camera in cameras}
+    not_found.extend(str(camera_id) for camera_id in ids if str(camera_id) not in found_ids)
+
+    for camera in cameras:
+        if building is not None:
+            camera.building_id = building.id
+        if body.clear_floor:
+            camera.floor = None
+        elif body.floor is not None:
+            camera.floor = body.floor
+        if body.zone:
+            camera.zone = body.zone
+
+    if cameras:
+        parts = []
+        if building is not None:
+            parts.append(f"bino: {building.name}")
+        if body.clear_floor:
+            parts.append("qavat: bo'shatildi")
+        elif body.floor is not None:
+            parts.append(f"qavat: {body.floor}")
+        if body.zone:
+            parts.append(f"zona: {body.zone}")
+        await log_action(
+            db,
+            request,
+            current_user.id,
+            f"{len(cameras)} ta kameraning joylashuvini o'zgartirdi ({', '.join(parts) or 'o\'zgarishsiz'})",
+            "Kameralar",
+        )
+        await db.commit()
+
+    return CameraBulkLocationOut(updated=len(cameras), not_found=not_found)

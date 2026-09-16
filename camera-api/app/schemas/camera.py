@@ -24,6 +24,9 @@ class CameraOut(CamelModel):
     building: str  # full Building.name
     department: str = ""  # Department.name; biriktirilmagan bo'lsa bo'sh
     zone: str
+    # Qavat raqami — Video Monitoring Markazi kesimi shu bo'yicha quriladi
+    # (app/models/camera.py Camera.floor). None = belgilanmagan.
+    floor: int | None = None
     resolution: str
     fps: int | None
     status: Literal["faol", "nofaol", "tamirda"]
@@ -71,6 +74,8 @@ class CameraCreateIn(CamelModel):
     Bo'sh qoldirilsa kamera kafedrasiz qoladi va faqat bino bo'yicha
     filtrlanadi. Mavjud 107 kameraning barchasi shu holatda."""
     zone: str = Field(min_length=1)
+    floor: int | None = Field(default=None, ge=-5, le=50)
+    """Qavat raqami; bo'sh qoldirilsa kamera "Qavat belgilanmagan" guruhida qoladi."""
     resolution: str = Field(min_length=2)
     fps: int | None = None
     status: Literal["faol", "nofaol", "tamirda"] = "nofaol"
@@ -81,6 +86,27 @@ class CameraCreateIn(CamelModel):
 
 class CameraUpdateIn(CameraCreateIn):
     pass
+
+
+class CameraBulkLocationIn(CamelModel):
+    """Bir nechta kameraga joylashuvni birdan belgilash.
+
+    107 ta kameraga qavatni bittalab qo'yish real ish emas, shuning uchun
+    admin sahifasida kameralar belgilanadi va shu endpoint bilan
+    guruhlab yangilanadi. None qoldirilgan maydon O'ZGARTIRILMAYDI —
+    faqat qavatni qo'yish uchun binoni qayta yuborish shart emas."""
+
+    camera_ids: list[str] = Field(min_length=1, max_length=500)
+    building: str | None = None
+    floor: int | None = Field(default=None, ge=-5, le=50)
+    clear_floor: bool = False
+    """True — qavat belgisi olib tashlanadi (floor=None 'tegmaslik' degani)."""
+    zone: str | None = None
+
+
+class CameraBulkLocationOut(CamelModel):
+    updated: int
+    not_found: list[str] = []
 
 
 class CameraZoneOut(CamelModel):

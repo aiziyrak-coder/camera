@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import ForeignKey, Integer, String, func
+from sqlalchemy import ForeignKey, Integer, SmallInteger, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -59,3 +59,13 @@ class Building(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
     name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     camera_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # Binodagi qavatlar soni. Kamerasi hali biriktirilmagan qavat ham
+    # kampus kesimida ko'rinishi uchun kerak: aks holda 5 qavatli bino
+    # 2 qavatli bo'lib ko'rinardi. NULL = noma'lum, u holda kesim faqat
+    # kameralari bor qavatlarni chizadi.
+    floors: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    # Ro'yxat tartibi: nom bo'yicha saralash "10-bino"ni "2-bino"dan
+    # oldin qo'yadi. Migratsiya nomdagi raqamdan to'ldiradi, admin
+    # keyin qo'lda o'zgartirishi mumkin.
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")

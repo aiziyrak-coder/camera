@@ -28,6 +28,16 @@ router = APIRouter(prefix="/api", tags=["org-structure"])
 AuthDep = Annotated[CurrentUser, Depends(get_current_user)]
 
 
+def _building_out(building: Building, camera_count: int = 0) -> BuildingOut:
+    return BuildingOut(
+        id=str(building.id),
+        name=building.name,
+        camera_count=camera_count or building.camera_count,
+        floors=building.floors,
+        sort_order=building.sort_order,
+    )
+
+
 @router.get("/buildings", response_model=list[BuildingOut])
 async def list_buildings(db: Annotated[AsyncSession, Depends(get_db)], _: AuthDep) -> list[BuildingOut]:
     """camera_count endi Building.camera_count'dan (hech qachon admin
@@ -40,21 +50,31 @@ async def list_buildings(db: Annotated[AsyncSession, Depends(get_db)], _: AuthDe
         select(Building, func.count(Camera.id))
         .outerjoin(Camera, Camera.building_id == Building.id)
         .group_by(Building.id)
-        .order_by(Building.name)
+        .order_by(Building.sort_order, Building.name)
     )
-    return [BuildingOut(id=str(b.id), name=b.name, camera_count=count) for b, count in result.all()]
+    return [
+        BuildingOut(
+            id=str(b.id), name=b.name, camera_count=count, floors=b.floors, sort_order=b.sort_order
+        )
+        for b, count in result.all()
+    ]
 
 
 @router.post("/buildings", response_model=BuildingOut, status_code=status.HTTP_201_CREATED)
 async def create_building(
     body: BuildingCreateIn, request: Request, db: Annotated[AsyncSession, Depends(get_db)], current_user: AuthDep
 ) -> BuildingOut:
-    building = Building(name=body.name, camera_count=body.camera_count)
+    building = Building(
+        name=body.name,
+        camera_count=body.camera_count,
+        floors=body.floors,
+        sort_order=body.sort_order if body.sort_order is not None else 0,
+    )
     db.add(building)
     await log_action(db, request, current_user.id, f"Yangi bino qo'shdi: {body.name}", "Tashkilot")
     await db.commit()
     await db.refresh(building)
-    return BuildingOut(id=str(building.id), name=building.name, camera_count=building.camera_count)
+    return _building_out(building)
 
 
 @router.patch("/buildings/{building_id}", response_model=BuildingOut)
@@ -71,10 +91,16 @@ async def update_building(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Bino topilmadi")
     building.name = body.name
     building.camera_count = body.camera_count
+    # Yuborilmagan maydonga tegilmaydi: eski frontend qavatlar sonini
+    # bilmaydi, uni jimgina nolga tushirib yuborishi kerak emas.
+    if "floors" in body.model_fields_set:
+        building.floors = body.floors
+    if body.sort_order is not None:
+        building.sort_order = body.sort_order
     await log_action(db, request, current_user.id, f"Binoni tahrirladi: {body.name}", "Tashkilot")
     await db.commit()
     await db.refresh(building)
-    return BuildingOut(id=str(building.id), name=building.name, camera_count=building.camera_count)
+    return _building_out(building)
 
 
 @router.delete("/buildings/{building_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -6,8 +6,8 @@ import { useCameraAnalysisStatus } from '../../lib/useCameraAnalysisStatus';
 import { formatModules, formatSecondsAgo } from '../../lib/formatAnalysis';
 import type { CameraFeed } from '../../types';
 
-/** Katta, asosiy kamera ko'rinishi — CameraThumbnailStrip'dan tanlangan
- * kamerani shu yerda ko'rsatadi. CameraDetailModal bilan bir xil
+/** Katta, asosiy kamera ko'rinishi — qavat gridida (FloorCameras)
+ * tanlangan kamerani shu yerda ko'rsatadi. CameraDetailModal bilan bir xil
  * video/overlay tarkibi, faqat modal emas, sahifaning o'zida joylashgan.
  *
  * Qasddan aspect-video EMAS: butun "Video Monitoring Markazi" bloki bir

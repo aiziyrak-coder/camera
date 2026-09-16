@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, SmallInteger, String, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -29,6 +29,17 @@ class Camera(Base):
         UUID(as_uuid=True), ForeignKey("buildings.id", ondelete="SET NULL"), nullable=True, index=True
     )
     zone: Mapped[str] = mapped_column(String, nullable=False)
+
+    # Qavat raqami — Video Monitoring Markazi kampusni bino -> qavat ->
+    # kamera bo'lib ochadi (app/routers/public.py get_campus), shunda bir
+    # sahifaga 100+ kamera emas, faqat tanlangan qavat yuklanadi.
+    #
+    # Nullable ataylab: zona matni ('3-qavat koridor') bu ma'lumotni
+    # ishonchli bermaydi va hamma kamerada ham yo'q. Qavati
+    # belgilanmagan kamera kesimda 'Qavat belgilanmagan' guruhida
+    # ko'rinadi — ya'ni yo'qolmaydi, aksincha belgilash kerakligi
+    # ko'zga tashlanadi.
+    floor: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     # Kafedra — binodan mustaqil saqlanadi (Department izohiga qarang).
     # Nullable: mavjud 107 kameraning hech biriga kafedra biriktirilmagan
     # va biriktirilmaguncha ular bino bo'yicha filtrlanaveradi.

@@ -31,11 +31,16 @@ class BuildingOut(CamelModel):
     id: str
     name: str
     camera_count: int
+    floors: int | None = None
+    """Qavatlar soni; monitoring kesimi kamerasiz qavatni ham shu bo'yicha chizadi."""
+    sort_order: int = 0
 
 
 class BuildingCreateIn(CamelModel):
     name: str
     camera_count: int = 0
+    floors: int | None = None
+    sort_order: int | None = None
 
 
 class DepartmentOut(CamelModel):

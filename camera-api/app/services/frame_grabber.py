@@ -19,6 +19,7 @@ from app.crypto import decrypt
 from app.models import Camera
 from app.rtsp import build_rtsp_url
 from app.services.stream_cache import get_cached_frame, is_stream_known_broken
+from app.services.thumbnail_cache import remember_frame
 from app.services.video_gateway import public_hls_to_internal
 
 logger = logging.getLogger("app.frame_grabber")
@@ -70,6 +71,11 @@ async def grab_frame_for_camera(camera: Camera, *, wait_seconds: float | None = 
     while time.monotonic() < deadline:
         frame = await get_cached_frame(source)
         if frame is not None:
+            # Monitoring markazining qavat gridi shu kadrdan miniatyura
+            # oladi: kameraga qo'shimcha ulanish ham, qo'shimcha ffmpeg
+            # ham kerak bo'lmaydi. Chaqiruv kamera bo'yicha oraliqqa
+            # bo'ysunadi va xato ko'tarmaydi (thumbnail_cache.py).
+            await remember_frame(str(camera.id), frame)
             return frame
         if is_stream_known_broken(source):
             return None  # reader had its grace period, decoded nothing — don't burn the rest of the slot

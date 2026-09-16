@@ -740,6 +740,20 @@ class Settings(BaseSettings):
     trial_events_per_module_hour: int = 12
     trial_events_per_camera_hour: int = 2
 
+    # Monitoring markazining qavat gridi uchun miniatyura keshi
+    # (app/services/thumbnail_cache.py). Rasm AI baribir oladigan
+    # kadrdan tayyorlanadi, shuning uchun gridni ochish kameralarga
+    # yangi ulanish qilmaydi; jonli video faqat tanlangan kamerada.
+    thumbnail_width: int = 320
+    thumbnail_quality: int = 60
+    thumbnail_ttl_seconds: int = 300
+    # Bitta kameradan miniatyura shu oraliqdan tez-tez siqilmaydi.
+    thumbnail_refresh_seconds: int = 20
+    # Shu yoshdan eski rasm uchun (sweep tegmagan kamera) bitta kadr
+    # so'raladi — global semafor va kamera bo'yicha sovutish ostida.
+    thumbnail_stale_seconds: int = 120
+    thumbnail_grab_concurrency: int = 3
+
     # TT kriteriya 13 — SIZ
     ppe_ai_interval_seconds: int = 45
     ppe_dedup_minutes: int = 20
