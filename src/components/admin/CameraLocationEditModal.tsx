@@ -8,6 +8,19 @@ import { useBuildings } from '../../lib/useBuildings';
 import { useCameraZones } from '../../lib/useCameraZones';
 import type { CameraConfig } from '../../types';
 
+/** Oynaga kerak bo'ladigan minimal ma'lumot.
+ *
+ * Admin ro'yxatidagi `CameraConfig` ham, monitoring devoridagi
+ * `CameraFeed` ham shu shaklga to'g'ri keladi — shuning uchun bitta oyna
+ * ikkala joydan ham ochiladi va qoidalar bir joyda qoladi. */
+export interface CameraLocationTarget {
+  id: string;
+  name: string;
+  building: string;
+  zone: string;
+  floor?: number | null;
+}
+
 /** Kameraning JOYLASHUVINI to'g'rilash: nomi, binosi, qavati, zonasi.
  *
  * Nega alohida oyna: to'liq tahrirlash formasi IP, port, RTSP yo'li va
@@ -20,7 +33,7 @@ export default function CameraLocationEditModal({
   onClose,
   onSave,
 }: {
-  camera: CameraConfig | null;
+  camera: CameraLocationTarget | null;
   onClose: () => void;
   onSave: (camera: CameraConfig) => void;
 }) {

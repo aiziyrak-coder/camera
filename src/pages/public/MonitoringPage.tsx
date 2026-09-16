@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ChevronRight, Layers, RefreshCw, Search, Video, X } from 'lucide-react';
+import { ChevronRight, Layers, Pencil, RefreshCw, Search, Video, X } from 'lucide-react';
 import MainCameraView from '../../components/monitor/MainCameraView';
 import CampusOverview from '../../components/monitor/campus/CampusOverview';
 import BuildingFloors from '../../components/monitor/campus/BuildingFloors';
@@ -9,6 +9,10 @@ import ReportPanel from '../../components/monitor/ReportPanel';
 import EventsLogPanel from '../../components/monitor/EventsLogPanel';
 import AlarmPanel from '../../components/monitor/AlarmPanel';
 import ErrorState from '../../components/ui/ErrorState';
+import CameraLocationEditModal from '../../components/admin/CameraLocationEditModal';
+import { useToast } from '../../components/ui/Toast';
+import { useAuth } from '../../lib/auth';
+import { usePermissions } from '../../lib/permissions';
 import { useCampus } from '../../lib/useCampus';
 import { useServerPage } from '../../lib/useServerPage';
 import {
@@ -42,6 +46,14 @@ export default function MonitoringPage() {
 
   const [searchInput, setSearchInput] = useState(queryParam);
   const [activeCamera, setActiveCamera] = useState<CameraFeed | null>(null);
+  // Kamera ma'lumotini shu yerdan to'g'rilash — kamera mas'uli uchun
+  // eng qulay joy: jonli tasvirni ko'rib turib, qaysi bino/qavat
+  // ekanini darhol yozadi. Huquqi yo'q tomoshabin buni ko'rmaydi.
+  const [editingCamera, setEditingCamera] = useState<CameraFeed | null>(null);
+  const { role } = useAuth();
+  const { can } = usePermissions();
+  const toast = useToast();
+  const canEditLocation = can('editCameraLocation', role);
 
   const { campus, loading: campusLoading, error: campusError, reload: reloadCampus } = useCampus();
 
@@ -230,22 +242,40 @@ export default function MonitoringPage() {
           {activeCamera && (level === 'floor' || level === 'search') && (
             <div className="flex min-h-0 flex-[2] flex-col gap-1.5">
               <div className="flex items-center justify-between gap-2">
-                <span className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                <span className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-slate-700">
                   <Video size={13} className="text-indigo-500" />
                   {activeCamera.name}
-                  <span className="font-medium text-slate-400">· {activeCamera.zone}</span>
+                  <span className="font-medium text-slate-400">
+                    · {activeCamera.building || 'Bino belgilanmagan'} ·{' '}
+                    {activeCamera.floor === null || activeCamera.floor === undefined
+                      ? 'qavat belgilanmagan'
+                      : `${activeCamera.floor}-qavat`}{' '}
+                    · {activeCamera.zone}
+                  </span>
                 </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveCamera(null);
-                    setQuery({ kamera: null });
-                  }}
-                  className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-500 transition hover:bg-white/70 hover:text-indigo-700"
-                >
-                  <Layers size={12} />
-                  Gridga qaytish
-                </button>
+                <span className="flex items-center gap-1">
+                  {canEditLocation && (
+                    <button
+                      type="button"
+                      onClick={() => setEditingCamera(activeCamera)}
+                      className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-indigo-600 transition hover:bg-white/70"
+                    >
+                      <Pencil size={12} />
+                      Sozlash
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveCamera(null);
+                      setQuery({ kamera: null });
+                    }}
+                    className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-500 transition hover:bg-white/70 hover:text-indigo-700"
+                  >
+                    <Layers size={12} />
+                    Gridga qaytish
+                  </button>
+                </span>
               </div>
               <MainCameraView camera={activeCamera} className="min-h-0 flex-1" />
             </div>
@@ -283,6 +313,7 @@ export default function MonitoringPage() {
                 totalPages={list.totalPages}
                 total={list.total}
                 onPageChange={list.setPage}
+                onEdit={canEditLocation ? setEditingCamera : undefined}
                 compact={Boolean(activeCamera)}
                 emptyHint={
                   level === 'search'
@@ -300,6 +331,30 @@ export default function MonitoringPage() {
           <AlarmPanel cameras={list.items} onSelectCamera={jumpToCamera} />
         </div>
       </section>
+
+      <CameraLocationEditModal
+        camera={editingCamera}
+        onClose={() => setEditingCamera(null)}
+        onSave={(saved) => {
+          // Ekrandagi kamera sarlavhasi darhol yangilansin, kesim va
+          // ro'yxat esa serverdan qayta o'qilsin: kamera boshqa qavatga
+          // ko'chgan bo'lishi mumkin.
+          setActiveCamera((current) =>
+            current && current.id === saved.id
+              ? {
+                  ...current,
+                  name: saved.name,
+                  building: saved.building,
+                  zone: saved.zone,
+                  floor: saved.floor ?? null,
+                }
+              : current,
+          );
+          reloadCampus();
+          list.reload();
+          toast.success(`${saved.name} ma'lumoti saqlandi`);
+        }}
+      />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { Camera as CameraIcon, ChevronLeft, ChevronRight, VideoOff } from 'lucide-react';
+import { Camera as CameraIcon, ChevronLeft, ChevronRight, Pencil, VideoOff } from 'lucide-react';
 import CameraThumbnail from './CameraThumbnail';
 import EmptyState from '../../ui/EmptyState';
 import { SkeletonBlock } from '../../ui/Skeleton';
@@ -29,6 +29,7 @@ export default function FloorCameras({
   onPageChange,
   compact = false,
   emptyHint,
+  onEdit,
 }: {
   cameras: CameraFeed[];
   loading: boolean;
@@ -40,6 +41,9 @@ export default function FloorCameras({
   onPageChange: (page: number) => void;
   compact?: boolean;
   emptyHint?: string;
+  /** Berilsa — kartada ma'lumotni to'g'rilash tugmasi chiqadi (faqat
+   *  huquqi borlarga: kamera mas'uli va admin). */
+  onEdit?: (camera: CameraFeed) => void;
 }) {
   if (loading && cameras.length === 0) {
     return (
@@ -72,12 +76,15 @@ export default function FloorCameras({
         {cameras.map((camera) => {
           const active = camera.id === activeId;
           return (
+            // Qalam tugmasi kartaning ICHIDA emas, yonida: tugma ichiga
+            // tugma joylash HTML qoidasini buzadi va bosish hodisasi
+            // chalkashadi.
+            <div key={camera.id} className="group relative">
             <button
-              key={camera.id}
               type="button"
               onClick={() => onSelect(camera)}
               aria-pressed={active}
-              className={`group overflow-hidden rounded-xl bg-white/70 text-left ring-2 transition hover:-translate-y-0.5 hover:shadow-md ${
+              className={`group w-full overflow-hidden rounded-xl bg-white/70 text-left ring-2 transition hover:-translate-y-0.5 hover:shadow-md ${
                 active ? 'ring-indigo-500' : statusRing(camera)
               }`}
             >
@@ -119,6 +126,18 @@ export default function FloorCameras({
                 )}
               </span>
             </button>
+            {onEdit && (
+              <button
+                type="button"
+                onClick={() => onEdit(camera)}
+                title="Kamera ma'lumotini to'g'rilash"
+                aria-label={`${camera.name} — ma'lumotini to'g'rilash`}
+                className="absolute right-1.5 top-1.5 rounded-lg bg-black/55 p-1.5 text-white/80 opacity-80 transition hover:bg-indigo-600 hover:text-white hover:opacity-100"
+              >
+                <Pencil size={12} />
+              </button>
+            )}
+            </div>
           );
         })}
       </div>

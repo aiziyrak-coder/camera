@@ -3,8 +3,9 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import CampusOverview from './CampusOverview';
 import BuildingFloors from './BuildingFloors';
 import CameraThumbnail from './CameraThumbnail';
+import FloorCameras from './FloorCameras';
 import { api } from '../../../lib/apiClient';
-import type { Campus, CampusBuilding } from '../../../types';
+import type { Campus, CameraFeed, CampusBuilding } from '../../../types';
 
 const buildingFixture: CampusBuilding = {
   id: 'b1',
@@ -91,6 +92,56 @@ describe('BuildingFloors', () => {
       <BuildingFloors building={{ ...buildingFixture, floors: [] }} onOpenFloor={() => {}} />,
     );
     expect(screen.getByText(/Bu binoda kamera yo/)).toBeInTheDocument();
+  });
+});
+
+describe('FloorCameras', () => {
+  const cameras: CameraFeed[] = [
+    {
+      id: 'cam-1',
+      name: 'Kirish kamerasi',
+      building: '2-Bino',
+      zone: 'Kirish',
+      status: 'offline',
+      floor: 1,
+    },
+  ];
+
+  function renderGrid(onEdit?: (camera: CameraFeed) => void) {
+    const onSelect = vi.fn();
+    render(
+      <FloorCameras
+        cameras={cameras}
+        loading={false}
+        activeId={null}
+        onSelect={onSelect}
+        page={1}
+        totalPages={1}
+        total={1}
+        onPageChange={() => {}}
+        onEdit={onEdit}
+      />,
+    );
+    return onSelect;
+  }
+
+  it('huquq berilmasa tahrirlash tugmasi umuman chizilmaydi', () => {
+    renderGrid();
+    expect(screen.queryByLabelText(/ma’lumotini to’g’rilash|ma'lumotini to'g'rilash/)).toBeNull();
+  });
+
+  it('huquq berilganda kartada tahrirlash tugmasi chiqadi', () => {
+    const onEdit = vi.fn();
+    renderGrid(onEdit);
+    fireEvent.click(screen.getByLabelText("Kirish kamerasi — ma'lumotini to'g'rilash"));
+    expect(onEdit).toHaveBeenCalledWith(cameras[0]);
+  });
+
+  it('tahrirlash tugmasi kamerani tanlab yubormaydi', () => {
+    const onEdit = vi.fn();
+    const onSelect = renderGrid(onEdit);
+    fireEvent.click(screen.getByLabelText("Kirish kamerasi — ma'lumotini to'g'rilash"));
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });
 
