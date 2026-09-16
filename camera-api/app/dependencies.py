@@ -64,6 +64,14 @@ async def require_monitoring_access(
     return await get_current_user(credentials, db)
 
 
+# Rol qaysi ustundan o'qiladi (app/models/permission.py).
+_PERMISSION_COLUMN = {
+    "super-admin": Permission.super_admin,
+    "admin": Permission.admin,
+    "kamera-masuli": Permission.camera_steward,
+}
+
+
 def require_permission(key: str):
     """Server-side equivalent of the frontend's usePermissions().can(key, role) —
     this is the real security boundary; the frontend's own check is UX-only.
@@ -73,7 +81,11 @@ def require_permission(key: str):
         current_user: Annotated[CurrentUser, Depends(get_current_user)],
         db: Annotated[AsyncSession, Depends(get_db)],
     ) -> CurrentUser:
-        column = Permission.super_admin if current_user.role == "super-admin" else Permission.admin
+        column = _PERMISSION_COLUMN.get(current_user.role)
+        if column is None:
+            # Noma'lum rol — huquq yo'q. Yangi rol qo'shilganda uni shu
+            # jadvalga kiritish esdan chiqsa, tizim ochilib qolmasin.
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Sizda bu amal uchun huquq yo'q")
         result = await db.execute(select(column).where(Permission.key == key))
         allowed = result.scalar_one_or_none()
         if not allowed:

@@ -10,7 +10,9 @@ from app.database import Base
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = (CheckConstraint("role IN ('super-admin', 'admin')", name="ck_users_role"),)
+    __table_args__ = (
+        CheckConstraint("role IN ('super-admin', 'admin', 'kamera-masuli')", name="ck_users_role"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
     login: Mapped[str] = mapped_column(String, unique=True, nullable=False)
@@ -30,12 +32,38 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+# Rol qiymati <-> ekranda ko'rinadigan nomi. src/layouts/AdminLayout.tsx
+# dagi ROLE_LABEL bilan bir xil bo'lishi shart.
+ROLE_LABELS = {
+    "super-admin": "Super Admin",
+    "admin": "Admin",
+    "kamera-masuli": "Kamera mas'uli",
+}
+
+
+def _normalize_label(label: str) -> str:
+    """Tutuq belgisi klaviaturaga qarab har xil yoziladi (mas'uli,
+    mas’uli, masʻuli) — solishtirishdan oldin bir xilga keltiramiz."""
+    text = label.strip().lower()
+    for ch in "‘’`ʻʼ´":
+        text = text.replace(ch, "'")
+    return text
+
+
 def role_display_label(role: str) -> str:
     """Mirrors src/layouts/AdminLayout.tsx ROLE_LABEL."""
-    return "Super Admin" if role == "super-admin" else "Admin"
+    return ROLE_LABELS.get(role, ROLE_LABELS["admin"])
 
 
 def role_from_display_label(label: str) -> str:
     """Inverse of role_display_label — used when a client sends the
-    frontend's display string (AddUserModal's role <select>)."""
-    return "super-admin" if label.strip().lower() == "super admin" else "admin"
+    frontend's display string (AddUserModal's role <select>).
+
+    Noma'lum qiymat "admin" ga tushadi: eng kam imtiyozli EMAS, lekin
+    mavjud xatti-harakat shunday edi va uni jimgina o'zgartirish
+    foydalanuvchi yaratishni buzishi mumkin."""
+    normalized = _normalize_label(label)
+    for role, display in ROLE_LABELS.items():
+        if normalized == _normalize_label(display):
+            return role
+    return "admin"

@@ -1,5 +1,5 @@
 import { Suspense, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Users,
@@ -18,7 +18,7 @@ import {
   Menu,
   X,
 } from 'lucide-react';
-import { useAuth } from '../lib/auth';
+import { useAuth, type Role } from '../lib/auth';
 import { usePermissions, type PermissionKey } from '../lib/permissions';
 import { useLiveEvents } from '../lib/realtime';
 import { PageSkeleton } from '../components/ui/Skeleton';
@@ -37,14 +37,35 @@ const NAV_ITEMS: {
   { to: '/admin/presence', label: "O'qituvchilar kuzatuvi", icon: MapPin },
   { to: '/admin/teaching', label: 'Dars monitoring', icon: Presentation },
   { to: '/admin/org-structure', label: 'Tashkiliy tuzilma', icon: Building2 },
-  { to: '/admin/cameras', label: 'Kameralar va Zonalar', icon: Video, permission: 'manageCameras' },
+  { to: '/admin/cameras', label: 'Kameralar va Zonalar', icon: Video, permission: 'editCameraLocation' },
   { to: '/admin/ai-modules', label: 'AI Modullari', icon: BrainCircuit, permission: 'configureAi' },
   { to: '/admin/reports', label: 'Hisobotlar', icon: FileBarChart, permission: 'viewReports' },
   { to: '/admin/users-roles', label: 'Foydalanuvchilar va Rollar', icon: ShieldCheck, permission: 'manageRoles' },
   { to: '/admin/system-log', label: 'Tizim jurnali', icon: ScrollText, permission: 'systemSettings' },
 ];
 
-const ROLE_LABEL = { 'super-admin': 'Super Admin', admin: 'Admin' } as const;
+const ROLE_LABEL: Record<Role, string> = {
+  'super-admin': 'Super Admin',
+  admin: 'Admin',
+  'kamera-masuli': "Kamera mas'uli",
+};
+
+/** Ayrim rollar butun panelni emas, sanoqli sahifani ko'radi.
+ *
+ * Huquqlar matritsasi "nima qilish mumkin"ni boshqaradi, bu ro'yxat esa
+ * "qayerga kirish mumkin"ni: kamera mas'uli uchun qolgan bo'limlar
+ * (davomat, hodisalar, hisobotlar) shunchaki keraksiz va chalg'ituvchi.
+ * Haqiqiy chegara baribir backendda — bu ro'yxat menyuni tozalaydi. */
+const ROLE_PAGES: Partial<Record<Role, string[]>> = {
+  'kamera-masuli': ['/admin/org-structure', '/admin/cameras'],
+};
+
+/** Cheklangan rol kirgandan keyin qayerga tushadi. Menyu tartibi
+ * tashkiliy tuzilmadan boshlanadi, lekin kunlik ish kameralar
+ * ro'yxatida — shuning uchun boshlanish sahifasi alohida. */
+const ROLE_HOME: Partial<Record<Role, string>> = {
+  'kamera-masuli': '/admin/cameras',
+};
 
 export default function AdminLayout() {
   const navigate = useNavigate();
@@ -55,7 +76,18 @@ export default function AdminLayout() {
 
   useLiveEvents(() => setUnreadEvents((n) => n + 1));
 
-  const visibleItems = NAV_ITEMS.filter((item) => !item.permission || can(item.permission, role));
+  const { pathname } = useLocation();
+  const allowedPaths = role ? ROLE_PAGES[role] : undefined;
+  const visibleItems = NAV_ITEMS.filter(
+    (item) =>
+      (!item.permission || can(item.permission, role)) &&
+      (!allowedPaths || allowedPaths.includes(item.to)),
+  );
+  // Cheklangan rol ruxsat etilmagan manzilga tushib qolsa (eski havola,
+  // brauzer tarixi) — birinchi ruxsat etilgan sahifaga qaytaramiz.
+  const onAllowedPage = visibleItems.some((item) =>
+    item.end ? pathname === item.to : pathname.startsWith(item.to),
+  );
 
   function handleLogout() {
     logout();
@@ -65,6 +97,10 @@ export default function AdminLayout() {
   function handleBellClick() {
     setUnreadEvents(0);
     navigate('/admin/events');
+  }
+
+  if (allowedPaths && !onAllowedPage) {
+    return <Navigate to={(role && ROLE_HOME[role]) ?? allowedPaths[0]} replace />;
   }
 
   return (

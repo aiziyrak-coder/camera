@@ -115,6 +115,7 @@ export default function AddUserModal({
           options={[
             { value: 'Super Admin', label: 'Super Admin' },
             { value: 'Admin', label: 'Admin' },
+            { value: "Kamera mas'uli", label: "Kamera mas'uli" },
           ]}
         />
         <TextField

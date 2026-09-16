@@ -12,7 +12,8 @@ export type PermissionKey =
   | 'viewReports'
   | 'viewLive'
   | 'manageRoles'
-  | 'exportData';
+  | 'exportData'
+  | 'editCameraLocation';
 
 export const PERMISSION_LABELS: Record<PermissionKey, string> = {
   manageCameras: "Kameralarni qo'shish va o'chirish",
@@ -23,19 +24,34 @@ export const PERMISSION_LABELS: Record<PermissionKey, string> = {
   viewLive: "Kamera tasvirini real vaqtda ko'rish",
   manageRoles: 'Foydalanuvchi rollarini boshqarish',
   exportData: "Ma'lumotlarni eksport qilish",
+  editCameraLocation: "Kamera joylashuvini to'g'rilash (bino, qavat, zona)",
 };
 
-export type PermissionMatrix = Record<PermissionKey, { superAdmin: boolean; admin: boolean }>;
+export type PermissionMatrix = Record<
+  PermissionKey,
+  { superAdmin: boolean; admin: boolean; cameraSteward: boolean }
+>;
+
+/** Matritsadagi ustun nomi — JWT'dagi rol emas. */
+export type PermissionRoleColumn = 'superAdmin' | 'admin' | 'cameraSteward';
 
 export const DEFAULT_PERMISSIONS: PermissionMatrix = {
-  manageCameras: { superAdmin: true, admin: true },
-  configureAi: { superAdmin: true, admin: true },
-  registerPeople: { superAdmin: true, admin: true },
-  systemSettings: { superAdmin: true, admin: false },
-  viewReports: { superAdmin: true, admin: true },
-  viewLive: { superAdmin: true, admin: true },
-  manageRoles: { superAdmin: true, admin: false },
-  exportData: { superAdmin: true, admin: false },
+  manageCameras: { superAdmin: true, admin: true, cameraSteward: false },
+  configureAi: { superAdmin: true, admin: true, cameraSteward: false },
+  registerPeople: { superAdmin: true, admin: true, cameraSteward: false },
+  systemSettings: { superAdmin: true, admin: false, cameraSteward: false },
+  viewReports: { superAdmin: true, admin: true, cameraSteward: false },
+  viewLive: { superAdmin: true, admin: true, cameraSteward: false },
+  manageRoles: { superAdmin: true, admin: false, cameraSteward: false },
+  exportData: { superAdmin: true, admin: false, cameraSteward: false },
+  editCameraLocation: { superAdmin: true, admin: true, cameraSteward: true },
+};
+
+/** Rol qaysi ustundan o'qiladi — backenddagi _PERMISSION_COLUMN bilan bir xil. */
+const ROLE_COLUMN: Record<Role, PermissionRoleColumn> = {
+  'super-admin': 'superAdmin',
+  admin: 'admin',
+  'kamera-masuli': 'cameraSteward',
 };
 
 const STORAGE_KEY = 'camera-permissions';
@@ -43,7 +59,7 @@ const STORAGE_KEY = 'camera-permissions';
 interface PermissionsContextValue {
   matrix: PermissionMatrix;
   can: (key: PermissionKey, role: Role | null) => boolean;
-  toggle: (key: PermissionKey, role: 'superAdmin' | 'admin') => void;
+  toggle: (key: PermissionKey, role: PermissionRoleColumn) => void;
 }
 
 const PermissionsContext = createContext<PermissionsContextValue | null>(null);
@@ -80,10 +96,12 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
 
   function can(key: PermissionKey, role: Role | null): boolean {
     if (!role) return false;
-    return role === 'super-admin' ? matrix[key].superAdmin : matrix[key].admin;
+    // Server yangi huquq kalitini bilmasligi mumkin (eski backend) —
+    // bunday holda taqiqlaymiz, ochib qo'ymaymiz.
+    return matrix[key]?.[ROLE_COLUMN[role]] ?? false;
   }
 
-  function toggle(key: PermissionKey, role: 'superAdmin' | 'admin') {
+  function toggle(key: PermissionKey, role: PermissionRoleColumn) {
     if (!isBackendConfigured) {
       setLocalMatrix((prev) => ({
         ...prev,
@@ -99,7 +117,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
     }));
 
     api
-      .patch<{ superAdmin: boolean; admin: boolean }>(`/api/permissions/${key}`, { role }, token)
+      .patch<PermissionMatrix[PermissionKey]>(`/api/permissions/${key}`, { role }, token)
       .then((updated) => {
         setRemoteMatrix((prev) => ({ ...prev, [key]: updated }));
       })

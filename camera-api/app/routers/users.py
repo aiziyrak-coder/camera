@@ -159,7 +159,9 @@ async def get_permission_matrix(
 ) -> dict[str, PermissionEntryOut]:
     result = await db.execute(select(Permission))
     return {
-        p.key: PermissionEntryOut(super_admin=p.super_admin, admin=p.admin)
+        p.key: PermissionEntryOut(
+            super_admin=p.super_admin, admin=p.admin, camera_steward=p.camera_steward
+        )
         for p in result.scalars().all()
     }
 
@@ -184,6 +186,8 @@ async def toggle_permission(
 
     if body.role == "superAdmin":
         permission.super_admin = not permission.super_admin
+    elif body.role == "cameraSteward":
+        permission.camera_steward = not permission.camera_steward
     else:
         permission.admin = not permission.admin
 

@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AlertCircle, Eye, EyeOff, Loader2, Lock, ShieldCheck, User } from 'lucide-react';
-import { useAuth, DEMO_CREDENTIALS, type Role } from '../../lib/auth';
+import { useAuth, DEMO_CREDENTIALS, type DemoRole } from '../../lib/auth';
 import ForgotPasswordModal from '../../components/admin/ForgotPasswordModal';
 
 interface FieldErrors {
@@ -24,7 +24,9 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const auth = useAuth();
-  const [role, setRole] = useState<Role>('super-admin');
+  // Bu tanlov faqat DEMO rejim uchun: backend ulangan bo'lsa rol
+  // serverdan keladi (kamera mas'uli ham shu yo'l bilan kiradi).
+  const [role, setRole] = useState<DemoRole>('super-admin');
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(false);

@@ -105,6 +105,20 @@ class CameraSummaryOut(CamelModel):
     """Qavati belgilanmagan kameralar — monitoring kesimi uchun muhim."""
 
 
+class CameraLocationIn(CamelModel):
+    """Bitta kameraning joylashuvi — PATCH /api/cameras/{id}/location.
+
+    Ulanishga taalluqli maydonlar (ip, port, rtsp, login/parol) bu yerda
+    ATAYLAB yo'q: ular umuman yuborilmaydi, demak tasodifan buzilmaydi
+    ham. Yuborilmagan maydon o'zgarmaydi."""
+
+    name: str | None = Field(default=None, min_length=2)
+    building: str | None = None
+    floor: int | None = Field(default=None, ge=-5, le=50)
+    clear_floor: bool = False
+    zone: str | None = Field(default=None, min_length=1)
+
+
 class CameraBulkLocationIn(CamelModel):
     """Bir nechta kameraga joylashuvni birdan belgilash.
 

@@ -14,15 +14,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import AIModuleConfig, Building, Faculty, Permission, User
 from app.security import hash_password
 
+# (super_admin, admin, kamera_masuli)
 DEFAULT_PERMISSIONS = {
-    "manageCameras": (True, True),
-    "configureAi": (True, True),
-    "registerPeople": (True, True),
-    "systemSettings": (True, False),
-    "viewReports": (True, True),
-    "viewLive": (True, True),
-    "manageRoles": (True, False),
-    "exportData": (True, False),
+    "manageCameras": (True, True, False),
+    "configureAi": (True, True, False),
+    "registerPeople": (True, True, False),
+    "systemSettings": (True, False, False),
+    "viewReports": (True, True, False),
+    "viewLive": (True, True, False),
+    "manageRoles": (True, False, False),
+    "exportData": (True, False, False),
+    # Kamera ma'lumotlarini to'g'rilash: bino, qavat, zona, nom. Kamera
+    # qo'shish/o'chirish va ulanish sozlamalari bunga KIRMAYDI — shuning
+    # uchun bu alohida huquq (app/routers/cameras.py location endpointi).
+    "editCameraLocation": (True, True, True),
 }
 
 DEMO_USERS = [
@@ -130,8 +135,10 @@ async def _seed_permissions(db: AsyncSession) -> None:
     count = await db.scalar(select(func.count()).select_from(Permission))
     if count:
         return
-    for key, (super_admin, admin) in DEFAULT_PERMISSIONS.items():
-        db.add(Permission(key=key, super_admin=super_admin, admin=admin))
+    for key, (super_admin, admin, camera_steward) in DEFAULT_PERMISSIONS.items():
+        db.add(
+            Permission(key=key, super_admin=super_admin, admin=admin, camera_steward=camera_steward)
+        )
 
 
 async def _seed_users(db: AsyncSession) -> None:

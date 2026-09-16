@@ -128,6 +128,7 @@ export default function UsersRolesPage() {
                 <th className="px-4 py-3">Huquq / Ruxsat</th>
                 <th className="px-4 py-3 text-center">Super Admin</th>
                 <th className="px-4 py-3 text-center">Admin</th>
+                <th className="px-4 py-3 text-center">Kamera mas&apos;uli</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/60">
@@ -143,6 +144,12 @@ export default function UsersRolesPage() {
                     <PermissionMark
                       granted={matrix[key].admin}
                       onToggle={canEdit ? () => toggle(key, 'admin') : undefined}
+                    />
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <PermissionMark
+                      granted={matrix[key].cameraSteward}
+                      onToggle={canEdit ? () => toggle(key, 'cameraSteward') : undefined}
                     />
                   </td>
                 </tr>

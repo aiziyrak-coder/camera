@@ -141,6 +141,7 @@ export default function EditUserModal({
               options={[
                 { value: 'Super Admin', label: 'Super Admin' },
                 { value: 'Admin', label: 'Admin' },
+                { value: "Kamera mas'uli", label: "Kamera mas'uli" },
               ]}
             />
             <div className="flex justify-end gap-2 pt-1">

@@ -10,6 +10,7 @@ import CameraConfigDetailModal from '../../components/admin/CameraConfigDetailMo
 import CameraModulesModal from '../../components/admin/CameraModulesModal';
 import CameraZoneModal from '../../components/admin/CameraZoneModal';
 import CameraLocationModal from '../../components/admin/CameraLocationModal';
+import CameraLocationEditModal from '../../components/admin/CameraLocationEditModal';
 import EmptyState from '../../components/ui/EmptyState';
 import ErrorState from '../../components/ui/ErrorState';
 import FilterBar from '../../components/ui/FilterBar';
@@ -21,6 +22,7 @@ import { useToast } from '../../components/ui/Toast';
 import { api } from '../../lib/apiClient';
 import { formatModuleSummary } from '../../lib/cameraModules';
 import { useAuth } from '../../lib/auth';
+import { usePermissions } from '../../lib/permissions';
 import { useCameraModuleOptions } from '../../lib/useCameraModuleOptions';
 import { useServerPage } from '../../lib/useServerPage';
 import { useBuildings } from '../../lib/useBuildings';
@@ -52,7 +54,12 @@ const UNASSIGNED_FLOOR = 'none';
 const PAGE_SIZE = 10;
 
 export default function CamerasZonesPage() {
-  const { token } = useAuth();
+  const { token, role } = useAuth();
+  const { can } = usePermissions();
+  /** Kamera mas'uli faqat joylashuvni to'g'rilaydi: kamera qo'shish,
+   * o'chirish, zona chizish va modul biriktirish unga ko'rinmaydi —
+   * backend ham ularni rad etadi (editCameraLocation huquqi). */
+  const canManage = can('manageCameras', role);
   const { buildings } = useBuildings();
   const { modules: moduleOptions } = useCameraModuleOptions();
   const toast = useToast();
@@ -185,19 +192,21 @@ export default function CamerasZonesPage() {
         title="Kameralar va Zonalar"
         subtitle="RTSP kamera konfiguratsiyasi, qavat, zona va AI modul bog‘lanishi"
         action={
-          <div className="flex items-center gap-2">
-            <button onClick={() => setImportOpen(true)} className="btn-glass flex items-center gap-1.5">
-              <FileUp size={14} />
-              SADP&apos;dan import
-            </button>
-            <button
-              onClick={() => setAddOpen(true)}
-              className="btn-glass flex items-center gap-1.5 !bg-indigo-600 !text-white hover:!bg-indigo-700"
-            >
-              <Plus size={14} />
-              Yangi kamera qo&apos;shish
-            </button>
-          </div>
+          canManage ? (
+            <div className="flex items-center gap-2">
+              <button onClick={() => setImportOpen(true)} className="btn-glass flex items-center gap-1.5">
+                <FileUp size={14} />
+                SADP&apos;dan import
+              </button>
+              <button
+                onClick={() => setAddOpen(true)}
+                className="btn-glass flex items-center gap-1.5 !bg-indigo-600 !text-white hover:!bg-indigo-700"
+              >
+                <Plus size={14} />
+                Yangi kamera qo&apos;shish
+              </button>
+            </div>
+          ) : undefined
         }
       />
 
@@ -363,16 +372,20 @@ export default function CamerasZonesPage() {
                     </td>
                     <td className="px-4 py-3 text-slate-600">{c.zone}</td>
                     <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={() => setEditingModules(c)}
-                        title="AI modullarni sozlash"
-                        className={`text-xs font-semibold hover:underline ${
-                          hasCustomModules ? 'text-amber-600' : 'text-slate-600'
-                        }`}
-                      >
-                        {moduleSummary}
-                      </button>
+                      {canManage ? (
+                        <button
+                          type="button"
+                          onClick={() => setEditingModules(c)}
+                          title="AI modullarni sozlash"
+                          className={`text-xs font-semibold hover:underline ${
+                            hasCustomModules ? 'text-amber-600' : 'text-slate-600'
+                          }`}
+                        >
+                          {moduleSummary}
+                        </button>
+                      ) : (
+                        <span className="text-xs font-semibold text-slate-500">{moduleSummary}</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-slate-600">
                       {c.resolution} / {c.fps ? `${c.fps} fps` : '—'}
@@ -415,28 +428,32 @@ export default function CamerasZonesPage() {
                           <Settings2 size={12} />
                           Sozlash
                         </button>
-                        <button
-                          onClick={() => setDrawingZone(c)}
-                          title="Taqiqlangan zonani belgilash"
-                          className={`flex items-center gap-1 text-xs font-semibold hover:underline ${
-                            c.restrictedZonePolygon && c.restrictedZonePolygon.length > 0
-                              ? 'text-red-600'
-                              : 'text-indigo-600'
-                          }`}
-                        >
-                          <MapPinned size={12} />
-                          Zona
-                        </button>
-                        <button
-                          onClick={() => setEditingModules(c)}
-                          title="AI modullarni sozlash"
-                          className={`flex items-center gap-1 text-xs font-semibold hover:underline ${
-                            hasCustomModules ? 'text-amber-600' : 'text-indigo-600'
-                          }`}
-                        >
-                          <Cpu size={12} />
-                          Modullar
-                        </button>
+                        {canManage && (
+                          <>
+                            <button
+                              onClick={() => setDrawingZone(c)}
+                              title="Taqiqlangan zonani belgilash"
+                              className={`flex items-center gap-1 text-xs font-semibold hover:underline ${
+                                c.restrictedZonePolygon && c.restrictedZonePolygon.length > 0
+                                  ? 'text-red-600'
+                                  : 'text-indigo-600'
+                              }`}
+                            >
+                              <MapPinned size={12} />
+                              Zona
+                            </button>
+                            <button
+                              onClick={() => setEditingModules(c)}
+                              title="AI modullarni sozlash"
+                              className={`flex items-center gap-1 text-xs font-semibold hover:underline ${
+                                hasCustomModules ? 'text-amber-600' : 'text-indigo-600'
+                              }`}
+                            >
+                              <Cpu size={12} />
+                              Modullar
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -459,15 +476,28 @@ export default function CamerasZonesPage() {
           setEditingModules(cam);
         }}
       />
-      <AddCameraModal
-        open={!!editing}
-        camera={editing}
-        onClose={() => setEditing(null)}
-        onSave={() => {
-          reload();
-          loadSummary();
-        }}
-      />
+      {/* Tahrirlash tugmasi huquqqa qarab ikki xil oyna ochadi: to'liq
+          sozlama (admin) yoki faqat joylashuv (kamera mas'uli). */}
+      {canManage ? (
+        <AddCameraModal
+          open={!!editing}
+          camera={editing}
+          onClose={() => setEditing(null)}
+          onSave={() => {
+            reload();
+            loadSummary();
+          }}
+        />
+      ) : (
+        <CameraLocationEditModal
+          camera={editing}
+          onClose={() => setEditing(null)}
+          onSave={() => {
+            reload();
+            loadSummary();
+          }}
+        />
+      )}
       <CameraImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={() => reload()} />
       <CameraConfigDetailModal
         camera={viewing}

@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode, useRef 
 import { ApiError, api, setAuthTokenGetter, setUnauthorizedHandler } from './apiClient';
 import { isBackendConfigured } from './config';
 
-export type Role = 'super-admin' | 'admin';
+export type Role = 'super-admin' | 'admin' | 'kamera-masuli';
 
 interface AuthState {
   role: Role | null;
@@ -23,8 +23,12 @@ export type AuthResult =
 
 const STORAGE_KEY = 'camera-auth';
 
+/** Demo rejimda kirish mumkin bo'lgan rollar. Kamera mas'uli bu yerda
+ * ATAYLAB yo'q: u faqat haqiqiy backend bilan ishlaydigan rol. */
+export type DemoRole = Extract<Role, 'super-admin' | 'admin'>;
+
 // Demo hisob ma'lumotlari — backend ulanmaganda ishlatiladigan zaxira rejim.
-export const DEMO_CREDENTIALS: Record<Role, { login: string; password: string }> = {
+export const DEMO_CREDENTIALS: Record<DemoRole, { login: string; password: string }> = {
   'super-admin': { login: 'admin', password: 'admin123' },
   admin: { login: 'operator', password: 'operator123' },
 };
@@ -69,8 +73,8 @@ async function authenticate(role: Role, login: string, password: string): Promis
   // Real tarmoq so'rovini simulyatsiya qilish uchun kichik kechikish.
   await new Promise((resolve) => setTimeout(resolve, 400));
 
-  const creds = DEMO_CREDENTIALS[role];
-  if (login.trim() === creds.login && password.trim() === creds.password) {
+  const creds = role === 'kamera-masuli' ? undefined : DEMO_CREDENTIALS[role];
+  if (creds && login.trim() === creds.login && password.trim() === creds.password) {
     return { ok: true, userName: login.trim(), role, token: null };
   }
   return { ok: false, error: "Login yoki parol noto'g'ri" };

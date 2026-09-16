@@ -19,6 +19,7 @@ from app.schemas.camera import (
     CameraBulkLocationIn,
     CameraBulkLocationOut,
     CameraCreateIn,
+    CameraLocationIn,
     CameraSummaryOut,
     CameraModuleOptionOut,
     CameraModulesIn,
@@ -42,6 +43,18 @@ from app.services.stream_sync import sync_camera_stream
 router = APIRouter(prefix="/api/cameras", tags=["cameras"])
 
 PermDep = Annotated[CurrentUser, Depends(require_permission("manageCameras"))]
+# Kamera ma'lumotini (bino, qavat, zona, nom) to'g'rilash huquqi.
+# "Kamera mas'uli" rolida faqat shu bor: ro'yxatni o'qiy oladi va
+# joylashuvni tuzatadi, lekin kamera qo'sha/o'chira olmaydi va
+# ulanish sozlamalariga tegmaydi.
+LocationDep = Annotated[CurrentUser, Depends(require_permission("editCameraLocation"))]
+
+
+def _camera_uuid(camera_id: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(camera_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi") from None
 
 
 async def _resolve_building(db: AsyncSession, name: str) -> Building:
@@ -104,7 +117,7 @@ def _to_out(camera: Camera) -> CameraOut:
 @router.get("", response_model=Page[CameraOut])
 async def list_cameras(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: PermDep,
+    _: LocationDep,
     page_params: Annotated[PageParams, Depends()],
     status_filter: Annotated[str | None, Query(alias="status")] = None,
     building: Annotated[str | None, Query()] = None,
@@ -138,7 +151,7 @@ async def list_cameras(
 @router.get("/module-options", response_model=list[CameraModuleOptionOut])
 async def list_camera_module_options(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: PermDep,
+    _: LocationDep,
 ) -> list[CameraModuleOptionOut]:
     """Module checklist data for CameraModulesModal — manageCameras permission
     only (no configureAi needed to assign modules to cameras)."""
@@ -227,7 +240,7 @@ async def patch_module_camera_assignments(
 @router.get("/summary", response_model=CameraSummaryOut)
 async def get_cameras_summary(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: PermDep,
+    _: LocationDep,
 ) -> CameraSummaryOut:
     """Holat bo'yicha sanoqlar bitta GROUP BY so'rovida — sahifadagi
     uchta qo'shimcha so'rov o'rniga."""
@@ -262,7 +275,7 @@ async def get_cameras_summary(
 @router.get("/zones", response_model=list[CameraZoneOut])
 async def list_camera_zones(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: PermDep,
+    _: LocationDep,
     building: Annotated[str | None, Query()] = None,
 ) -> list[CameraZoneOut]:
     """Distinct zone names with their camera count — a room routinely holds
@@ -481,7 +494,7 @@ async def set_cameras_location(
     body: CameraBulkLocationIn,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: PermDep,
+    current_user: LocationDep,
 ) -> CameraBulkLocationOut:
     """Belgilangan kameralarga bino/qavat/zonani birdan qo'yadi.
 
@@ -536,3 +549,61 @@ async def set_cameras_location(
         await db.commit()
 
     return CameraBulkLocationOut(updated=len(cameras), not_found=not_found)
+
+
+@router.patch("/{camera_id}/location", response_model=CameraOut)
+async def update_camera_location(
+    camera_id: str,
+    body: CameraLocationIn,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: LocationDep,
+) -> CameraOut:
+    """Faqat kameraning JOYLASHUV ma'lumotini o'zgartiradi: nomi, binosi,
+    qavati, zonasi.
+
+    Nega alohida endpoint: to'liq PATCH /{camera_id} butun yozuvni
+    almashtiradi, ya'ni mijoz IP, port, RTSP yo'li va login/parolni ham
+    qayta yuborishi kerak. Kamera ma'lumotini to'g'rilayotgan xodim
+    uchun bu keraksiz xavf — bitta noto'g'ri yuborilgan maydon
+    kameraning ULANISHINI yo'qotadi. Bu yerda ulanishga taalluqli
+    maydonlarga umuman tegilmaydi, shuning uchun ularni yuborishning
+    ham hojati yo'q.
+
+    Yuborilmagan maydon o'zgarmaydi; qavatni bo'shatish uchun alohida
+    `clearFloor` bayrog'i bor (None "tegmaslik" degani)."""
+    result = await db.execute(select(Camera).where(Camera.id == _camera_uuid(camera_id)))
+    camera = result.scalar_one_or_none()
+    if camera is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
+
+    changes: list[str] = []
+    if body.name is not None and body.name.strip() and body.name.strip() != camera.name:
+        camera.name = body.name.strip()
+        changes.append(f"nomi: {camera.name}")
+    if body.building:
+        building = await _resolve_building(db, body.building)
+        if camera.building_id != building.id:
+            camera.building_id = building.id
+            changes.append(f"bino: {building.name}")
+    if body.clear_floor:
+        camera.floor = None
+        changes.append("qavat: bo'shatildi")
+    elif body.floor is not None:
+        camera.floor = body.floor
+        changes.append(f"qavat: {body.floor}")
+    if body.zone is not None and body.zone.strip() and body.zone.strip() != camera.zone:
+        camera.zone = body.zone.strip()
+        changes.append(f"zona: {camera.zone}")
+
+    if changes:
+        await log_action(
+            db,
+            request,
+            current_user.id,
+            f"Kamera joylashuvini to'g'riladi: {camera.name} ({', '.join(changes)})",
+            "Kameralar",
+        )
+        await db.commit()
+    await db.refresh(camera, attribute_names=["building"])
+    return _to_out(camera)

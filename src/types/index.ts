@@ -661,7 +661,7 @@ export interface AdminUser {
   login: string;
   initials: string;
   lastLogin: string;
-  role: 'Super Admin' | 'Admin';
+  role: 'Super Admin' | 'Admin' | "Kamera mas'uli";
   email?: string | null;
 }
 
