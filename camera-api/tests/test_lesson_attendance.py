@@ -20,7 +20,7 @@ from app.jobs.lesson_attendance import (
     record_sightings,
     run_lesson_attendance_finalization_once,
 )
-from app.models import AttendanceRecord, Building, Camera, LessonAttendance, LessonSession, StudentStaff
+from app.models import AIModuleConfig, AttendanceRecord, Building, Camera, LessonAttendance, LessonSession, StudentStaff
 from app.timezone import local_now
 from tests.conftest import TestSessionLocal
 
@@ -232,8 +232,33 @@ class TestDayLevelAttendanceIsCredited:
         assert record.status == "kech_keldi"
 
 
-@pytest.mark.usefixtures("seeded")
+@pytest.fixture
+async def student_attendance_on(db_session, seeded):
+    """Dars davomatini yakunlash #7 (talaba davomati) moduliga bog'langan,
+    u esa 2026-09-16 dan beri o'chirilgan (migratsiya l5f6a7b8c9d0).
+    Quyidagi testlar yakunlash MANTIG'INI tekshiradi, shuning uchun
+    modulni ataylab yoqib olamiz; darvozaning o'zi alohida tekshiriladi."""
+    module = (
+        await db_session.execute(select(AIModuleConfig).where(AIModuleConfig.code == 7))
+    ).scalar_one()
+    module.active = True
+    await db_session.commit()
+    return module
+
+
+@pytest.mark.usefixtures("seeded", "student_attendance_on")
 class TestFinalizationSweep:
+    async def test_paused_student_attendance_stops_finalization(self, db_session, a_camera, student_attendance_on):
+        """Modul o'chirilgan bo'lsa dars davomati ham yakunlanmaydi: aks
+        holda kamera tekshirmagan talabaga "darsga kirmadi" yozilardi."""
+        student = await _student(db_session, "Aziz Karimov")
+        lesson = await _lesson(db_session, a_camera, started_minutes_ago=settings.lesson_duration_minutes + 5)
+        await _see(db_session, lesson, student, times=settings.lesson_attendance_min_sightings)
+        student_attendance_on.active = False
+        await db_session.commit()
+
+        assert await run_lesson_attendance_finalization_once(session_factory=TestSessionLocal) == 0
+
     async def test_a_lesson_still_in_progress_is_not_finalized(self, db_session, a_camera):
         student = await _student(db_session, "Aziz Karimov")
         lesson = await _lesson(db_session, a_camera, started_minutes_ago=5)  # hali davom etyapti
