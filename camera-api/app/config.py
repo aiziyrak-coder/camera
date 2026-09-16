@@ -732,6 +732,14 @@ class Settings(BaseSettings):
     suppression_min_rejected: int = 8
     suppression_max_precision: float = 25.0
 
+    # Sinov rejimidagi modulning aniqligini o'lchash uchun NAMUNA yetarli.
+    # Har signalni saqlash bazani va omborni behuda to'ldiradi: chekish
+    # moduli (#15) productionda kuniga 1200+ kadr yozardi. Soatlik kvota
+    # to'lgach modul o'sha soat oxirigacha umuman tekshirilmaydi
+    # (app/jobs/module_status.py) — CPU ham bo'shaydi.
+    trial_events_per_module_hour: int = 12
+    trial_events_per_camera_hour: int = 2
+
     # TT kriteriya 13 — SIZ
     ppe_ai_interval_seconds: int = 45
     ppe_dedup_minutes: int = 20

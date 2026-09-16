@@ -129,6 +129,41 @@ class TestRateLimit:
         assert await _raise(db_session, camera, WORKING_CODE) is None
 
 
+class TestTrialQuota:
+    """Sinov signali namuna uchun yig'iladi: soatlik kvota to'lgach modul
+    tekshirilmaydi ham, yozmaydi ham."""
+
+    async def test_trial_events_are_capped_per_hour(self, db_session, camera, broadcasts, monkeypatch):
+        monkeypatch.setattr(settings, "trial_events_per_module_hour", 2)
+        monkeypatch.setattr(settings, "trial_events_per_camera_hour", 5)
+        assert await _raise(db_session, camera, TRIAL_CODE) is not None
+        assert await _raise(db_session, camera, TRIAL_CODE) is not None
+        assert await _raise(db_session, camera, TRIAL_CODE) is None
+
+    async def test_one_camera_cannot_use_the_whole_quota(self, db_session, camera, broadcasts, monkeypatch):
+        monkeypatch.setattr(settings, "trial_events_per_module_hour", 10)
+        monkeypatch.setattr(settings, "trial_events_per_camera_hour", 1)
+        assert await _raise(db_session, camera, TRIAL_CODE) is not None
+        assert await _raise(db_session, camera, TRIAL_CODE) is None
+
+    async def test_sweep_stops_for_the_rest_of_the_hour(self, db_session, camera, broadcasts, monkeypatch):
+        from app.jobs.module_status import is_module_active
+
+        monkeypatch.setattr(settings, "trial_events_per_module_hour", 1)
+        assert await is_module_active(db_session, TRIAL_CODE) is True
+        await _raise(db_session, camera, TRIAL_CODE)
+        assert await is_module_active(db_session, TRIAL_CODE) is False
+        # Ishchi rejimdagi modulga ta'sir qilmaydi.
+        assert await is_module_active(db_session, WORKING_CODE) is True
+
+    async def test_working_modules_keep_their_own_limits(self, db_session, camera, broadcasts, monkeypatch):
+        monkeypatch.setattr(settings, "trial_events_per_module_hour", 1)
+        monkeypatch.setattr(settings, "event_rate_limit_per_camera_hour", 3)
+        for _ in range(3):
+            assert await _raise(db_session, camera, WORKING_CODE) is not None
+        assert await _raise(db_session, camera, WORKING_CODE) is None
+
+
 class TestTrialSampleAndPromotion:
     async def _trial_events(self, db_session, count, status="yangi"):
         for _ in range(count):

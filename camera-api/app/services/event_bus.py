@@ -95,30 +95,40 @@ async def _save_snapshot(frame_bytes: bytes | None, annotations: Sequence[Shape]
         return None
 
 
-async def _over_rate_limit(db: AsyncSession, camera: Camera, module_code: int) -> bool:
+async def _over_rate_limit(db: AsyncSession, camera: Camera, module_code: int, *, is_trial: bool) -> bool:
+    """Soatlik chegara. Sinov signallari uchun chegara ancha past: u yerda
+    maqsad aniqlikni o'lchash uchun namuna yig'ish, hamma holatni yozish emas."""
     since = datetime.now(timezone.utc) - timedelta(hours=1)
+    camera_limit = (
+        settings.trial_events_per_camera_hour if is_trial else settings.event_rate_limit_per_camera_hour
+    )
+    module_limit = (
+        settings.trial_events_per_module_hour if is_trial else settings.event_rate_limit_per_module_hour
+    )
     per_camera = (
         await db.scalar(
             select(func.count())
             .select_from(Event)
             .where(Event.camera_id == camera.id)
             .where(Event.module_code == module_code)
+            .where(Event.is_trial.is_(is_trial))
             .where(Event.occurred_at >= since)
         )
         or 0
     )
-    if per_camera >= settings.event_rate_limit_per_camera_hour:
+    if per_camera >= camera_limit:
         return True
     per_module = (
         await db.scalar(
             select(func.count())
             .select_from(Event)
             .where(Event.module_code == module_code)
+            .where(Event.is_trial.is_(is_trial))
             .where(Event.occurred_at >= since)
         )
         or 0
     )
-    return per_module >= settings.event_rate_limit_per_module_hour
+    return per_module >= module_limit
 
 
 async def raise_event(
@@ -178,15 +188,18 @@ async def raise_event(
         )
         return None
 
-    if person_name is None and await _over_rate_limit(db, camera, module_code):
+    is_trial = mode == "sinov"
+    # Shaxsi aniqlangan ishchi signal (uxlagan talaba, ish vaqtidan tashqari
+    # kirgan xodim) cheklanmaydi — har biri alohida odam haqida. Sinov
+    # signallari esa har doim kvota ostida: ular faqat namuna.
+    if (is_trial or person_name is None) and await _over_rate_limit(db, camera, module_code, is_trial=is_trial):
         _rate_limited[module_code] += 1
         logger.info(
             "event suppressed by rate limit",
-            extra={"module_code": module_code, "camera": camera.name},
+            extra={"module_code": module_code, "camera": camera.name, "trial": is_trial},
         )
         return None
 
-    is_trial = mode == "sinov"
     snapshot_key = await _save_snapshot(frame_bytes, annotations)
     event = Event(
         camera_id=camera.id,

@@ -16,15 +16,15 @@ existing camera (column is nullable) keeps today's behavior — every
 active module still runs on it — until an admin deliberately opts it out
 of specific modules via PATCH /api/cameras/{id}/modules."""
 
-from datetime import datetime, time as time_type
+from datetime import datetime, time as time_type, timedelta, timezone
 import logging
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import ColumnElement
 
 from app.config import settings
-from app.models import AIModuleConfig, Camera, ModuleCameraSuppression
+from app.models import AIModuleConfig, Camera, Event, ModuleCameraSuppression
 from app.timezone import local_now
 
 logger = logging.getLogger("app.module_status")
@@ -80,9 +80,32 @@ def is_within_attendance_priority_window(now: time_type | None = None) -> bool:
     return False
 
 
+async def _trial_quota_reached(db: AsyncSession, code: int) -> bool:
+    """Sinov moduli shu soat ichida yetarlicha namuna berdimi."""
+    if settings.trial_events_per_module_hour <= 0:
+        return False
+    since = datetime.now(timezone.utc) - timedelta(hours=1)
+    count = await db.scalar(
+        select(func.count())
+        .select_from(Event)
+        .where(Event.module_code == code)
+        .where(Event.is_trial.is_(True))
+        .where(Event.occurred_at >= since)
+    )
+    return (count or 0) >= settings.trial_events_per_module_hour
+
+
 async def is_module_active(db: AsyncSession, code: int) -> bool:
-    result = await db.execute(select(AIModuleConfig.active).where(AIModuleConfig.code == code))
-    if not bool(result.scalar_one_or_none()):
+    row = (
+        await db.execute(select(AIModuleConfig.active, AIModuleConfig.mode).where(AIModuleConfig.code == code))
+    ).one_or_none()
+    if row is None or not row.active:
+        return False
+
+    # Sinov rejimida soatlik namuna kvotasi to'lgan bo'lsa, modul shu soat
+    # oxirigacha umuman tekshirilmaydi: aniqlikni o'lchash uchun namuna
+    # yetarli, qolgan kadrlar faqat CPU va ombor yeydi.
+    if row.mode == "sinov" and await _trial_quota_reached(db, code):
         return False
 
     # Ish vaqti oynasi — settings.behaviour_hours_* izohiga qarang.
