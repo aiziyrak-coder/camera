@@ -56,6 +56,9 @@ logger = logging.getLogger("app.students_staff")
 
 MAX_PHOTO_SIZE_BYTES = 10 * 1024 * 1024
 
+# Audit jurnalida "kim o'chirildi" savoliga javob beradigan yorliq.
+PERSON_TYPE_LABELS = {"talaba": "talaba", "xodim": "xodim"}
+
 
 async def _resolve_faculty(db: AsyncSession, faculty_name: str) -> Faculty:
     result = await db.execute(select(Faculty).where(Faculty.name == faculty_name))
@@ -809,3 +812,45 @@ async def enroll_biometrics(
         await delete_files_quietly([previous_key])
     invalidate_candidate_matrix_cache()
     return _to_out(record, record.faculty.name if record.faculty else "")
+
+
+@router.delete("/{record_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_student_staff(
+    record_id: str,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
+) -> None:
+    """Odamni ro'yxatdan butunlay o'chiradi.
+
+    Qator bilan birga unga bog'liq yozuvlar ham ketadi (FK ON DELETE
+    CASCADE): kunlik davomat, tashriflar va dars davomati. Dars jadvali
+    yozuvining o'zi qoladi, faqat o'qituvchi maydoni bo'shaydi (SET
+    NULL) — o'tilgan dars tarixi odam o'chirilgani uchun yo'qolmasligi
+    kerak.
+
+    Yuz rasmi ombordan ham o'chiriladi: bazada unga ishora qolmagach, u
+    faqat egasiz biometrik ma'lumot bo'lib qolardi. Yuz vektorlari keshi
+    esa darhol bekor qilinadi — aks holda o'chirilgan odam keyingi bir
+    necha daqiqa davomida kameralarda tanilishda davom etardi
+    (app/services/face_matching.py sweep keshi).
+
+    Yumshoq o'chirish (arxivga olish) ataylab emas: tizimda bunday naqsh
+    yo'q va "o'chirildi, lekin hali ham tanilyapti" holati odamni
+    chalkashtiradi. Amal audit jurnaliga yoziladi."""
+    record = await _load_record(db, record_id)
+    # Qiymatlar O'CHIRISHDAN OLDIN olinadi: commit'dan keyin obyekt
+    # maydonlariga murojaat qilish bazadan yo'q qatorni qayta o'qishga
+    # urinadi va xato beradi.
+    photo_key = record.biometric_photo_key
+    person_type = record.type
+    label = f"{record.full_name} ({PERSON_TYPE_LABELS.get(person_type, person_type)})"
+
+    await log_action(db, request, current_user.id, f"Ro'yxatdan o'chirdi: {label}", "Talabalar")
+    await db.delete(record)
+    await db.commit()
+
+    if photo_key:
+        await delete_files_quietly([photo_key])
+    invalidate_candidate_matrix_cache()
+    logger.info("person deleted", extra={"record_id": record_id, "type": person_type})

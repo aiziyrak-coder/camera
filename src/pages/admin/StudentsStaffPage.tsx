@@ -13,11 +13,13 @@ import {
   Pencil,
   Plus,
   ScanFace,
+  Trash2,
   UserRoundX,
   Users,
 } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import Badge from '../../components/Badge';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import Pagination from '../../components/Pagination';
 import AddStudentStaffModal from '../../components/admin/AddStudentStaffModal';
 import EditStudentStaffModal from '../../components/admin/EditStudentStaffModal';
@@ -30,6 +32,7 @@ import SearchInput from '../../components/ui/SearchInput';
 import SegmentedControl from '../../components/ui/SegmentedControl';
 import SelectFilter from '../../components/ui/SelectFilter';
 import { SkeletonBlock, SkeletonTable } from '../../components/ui/Skeleton';
+import { useToast } from '../../components/ui/Toast';
 import { api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import {
@@ -202,6 +205,7 @@ function Avatar({ record }: { record: StudentStaffRecord }) {
 
 export default function StudentsStaffPage() {
   const { token } = useAuth();
+  const toast = useToast();
   const [tab, setTab] = useState<PersonType>('xodim');
   const [facultyFilter, setFacultyFilter] = useState('');
   const [courseFilter, setCourseFilter] = useState<number | null>(null);
@@ -214,6 +218,7 @@ export default function StudentsStaffPage() {
   const [exportOpen, setExportOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<StudentStaffRecord | null>(null);
+  const [deleting, setDeleting] = useState<StudentStaffRecord | null>(null);
   const [lookup, setLookup] = useState<{ open: boolean; person: StudentStaffRecord | null }>({
     open: false,
     person: null,
@@ -604,6 +609,16 @@ export default function StudentsStaffPage() {
                           <Pencil size={14} />
                           Tahrirlash
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeleting(person)}
+                          title="Ro'yxatdan butunlay o'chirish"
+                          aria-label={`${person.fullName} — ro'yxatdan o'chirish`}
+                          className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50"
+                        >
+                          <Trash2 size={14} />
+                          O&apos;chirish
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -646,6 +661,32 @@ export default function StudentsStaffPage() {
         onClose={() => setLookup({ open: false, person: null })}
       />
       <AddStudentStaffModal open={modalOpen} onClose={() => setModalOpen(false)} onAdd={refresh} />
+      {/* O'chirish qaytarib bo'lmaydi va odamning butun tarixini olib
+          ketadi, shuning uchun tasdiqlash oynasida AYNAN nima yo'qolishi
+          yozilgan — "rostdanmi?" degan savolning o'zi yetarli emas. */}
+      <ConfirmDialog
+        open={!!deleting}
+        title="Ro'yxatdan o'chirish"
+        message={
+          deleting
+            ? `${deleting.fullName} ro'yxatdan butunlay o'chiriladi. Bu bilan birga uning davomat yozuvlari, kameradagi tashriflari va yuz ma'lumoti ham o'chadi. Amalni ortga qaytarib bo'lmaydi.`
+            : ''
+        }
+        confirmLabel="Ha, o'chirilsin"
+        onCancel={() => setDeleting(null)}
+        onConfirm={async () => {
+          if (!deleting) return;
+          await api.del(`/api/students-staff/${deleting.id}`, token);
+          const removed = deleting.fullName;
+          setDeleting(null);
+          // Sahifadagi oxirgi yozuv o'chirilsa, oldingi sahifaga qaytamiz —
+          // aks holda ro'yxat bo'sh ko'rinib, "hammasi o'chib ketdi" degan
+          // taassurot qoladi.
+          if (records.length === 1 && page > 1) setPage(page - 1);
+          refresh();
+          toast.success(`${removed} ro'yxatdan o'chirildi`);
+        }}
+      />
       <EditStudentStaffModal
         record={editing}
         onClose={() => setEditing(null)}
