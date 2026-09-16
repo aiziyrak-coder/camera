@@ -20,12 +20,14 @@ export default function AddBuildingModal({
   const { token } = useAuth();
   const isEdit = !!building;
   const [name, setName] = useState(building?.name ?? '');
+  const [floors, setFloors] = useState(building?.floors ? String(building.floors) : '');
   const [error, setError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (open) {
       setName(building?.name ?? '');
+      setFloors(building?.floors ? String(building.floors) : '');
       setError(undefined);
     }
   }, [open, building]);
@@ -40,7 +42,13 @@ export default function AddBuildingModal({
 
     setSubmitting(true);
     try {
-      const payload = { name: name.trim(), cameraCount: building?.cameraCount ?? 0 };
+      const payload = {
+        name: name.trim(),
+        cameraCount: building?.cameraCount ?? 0,
+        // Bo'sh qoldirilsa qavatlar soni noma'lum bo'lib qoladi: monitoring
+        // kesimi u holda faqat kameralari bor qavatlarni chizadi.
+        floors: floors.trim() === '' ? null : Number(floors),
+      };
       const saved = isEdit
         ? await api.patch<Building>(`/api/buildings/${building.id}`, payload, token)
         : await api.post<Building>('/api/buildings', payload, token);
@@ -63,6 +71,21 @@ export default function AddBuildingModal({
           onChange={(e) => setName(e.target.value)}
           error={error}
         />
+        <div>
+          <TextField
+            label="Qavatlar soni"
+            type="number"
+            min={1}
+            max={50}
+            placeholder="Masalan: 4"
+            value={floors}
+            onChange={(e) => setFloors(e.target.value)}
+          />
+          <p className="mt-1 text-[11px] text-slate-400">
+            Monitoring markazidagi bino kesimi shuncha qavat chizadi — kamerasi hali
+            biriktirilmagan qavat ham ko&apos;rinadi.
+          </p>
+        </div>
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} className="btn-glass">
             Bekor qilish

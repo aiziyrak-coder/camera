@@ -88,6 +88,23 @@ class CameraUpdateIn(CameraCreateIn):
     pass
 
 
+class CameraSummaryOut(CamelModel):
+    """Kameralar sahifasining yuqori ko'rsatkichlari — BITTA so'rovda.
+
+    Ilgari sahifa har ro'yxat yangilanganda holat bo'yicha uchta
+    qo'shimcha so'rov yuborardi (`?status=...&pageSize=1`), ya'ni filtr
+    bosilgan sayin to'rtta so'rov ketardi."""
+
+    total: int = 0
+    faol: int = 0
+    nofaol: int = 0
+    tamirda: int = 0
+    reachable: int = 0
+    """Oxirgi tekshiruvda javob bergan faol kameralar."""
+    without_floor: int = 0
+    """Qavati belgilanmagan kameralar — monitoring kesimi uchun muhim."""
+
+
 class CameraBulkLocationIn(CamelModel):
     """Bir nechta kameraga joylashuvni birdan belgilash.
 

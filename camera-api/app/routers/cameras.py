@@ -1,12 +1,14 @@
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.audit import log_action
+from app.config import settings
 from app.crypto import decrypt, encrypt
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
@@ -17,6 +19,7 @@ from app.schemas.camera import (
     CameraBulkLocationIn,
     CameraBulkLocationOut,
     CameraCreateIn,
+    CameraSummaryOut,
     CameraModuleOptionOut,
     CameraModulesIn,
     CameraOut,
@@ -106,6 +109,8 @@ async def list_cameras(
     status_filter: Annotated[str | None, Query(alias="status")] = None,
     building: Annotated[str | None, Query()] = None,
     zone: Annotated[str | None, Query()] = None,
+    floor: Annotated[str | None, Query()] = None,
+    search: Annotated[str | None, Query()] = None,
 ) -> Page[CameraOut]:
     stmt = select(Camera).options(selectinload(Camera.building)).order_by(Camera.created_at.desc())
     if status_filter:
@@ -114,6 +119,16 @@ async def list_cameras(
         stmt = stmt.join(Building).where(Building.name == building)
     if zone:
         stmt = stmt.where(Camera.zone == zone)
+    if floor == "none":
+        # Qavati belgilanmaganlar — ularni topib belgilash uchun.
+        stmt = stmt.where(Camera.floor.is_(None))
+    elif floor:
+        if not floor.lstrip("-").isdigit():
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Noto'g'ri qavat qiymati")
+        stmt = stmt.where(Camera.floor == int(floor))
+    if search:
+        like = f"%{search.strip()}%"
+        stmt = stmt.where(or_(Camera.name.ilike(like), Camera.zone.ilike(like), Camera.ip.ilike(like)))
 
     records, total = await paginate(db, stmt, page_params)
     items = [_to_out(c) for c in records]
@@ -207,6 +222,41 @@ async def patch_module_camera_assignments(
     )
     await db.commit()
     return await _module_assignments_out(db, module_code)
+
+
+@router.get("/summary", response_model=CameraSummaryOut)
+async def get_cameras_summary(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: PermDep,
+) -> CameraSummaryOut:
+    """Holat bo'yicha sanoqlar bitta GROUP BY so'rovida — sahifadagi
+    uchta qo'shimcha so'rov o'rniga."""
+    reachable_cutoff = datetime.now(timezone.utc) - timedelta(seconds=settings.camera_health_freshness_seconds)
+    row = (
+        await db.execute(
+            select(
+                func.count(),
+                func.count().filter(Camera.status == "faol"),
+                func.count().filter(Camera.status == "nofaol"),
+                func.count().filter(Camera.status == "tamirda"),
+                func.count().filter(
+                    Camera.status == "faol",
+                    Camera.last_seen_at.isnot(None),
+                    Camera.last_seen_at >= reachable_cutoff,
+                ),
+                func.count().filter(Camera.floor.is_(None)),
+            ).select_from(Camera)
+        )
+    ).one()
+    total, faol, nofaol, tamirda, reachable, without_floor = row
+    return CameraSummaryOut(
+        total=total,
+        faol=faol,
+        nofaol=nofaol,
+        tamirda=tamirda,
+        reachable=reachable,
+        without_floor=without_floor,
+    )
 
 
 @router.get("/zones", response_model=list[CameraZoneOut])

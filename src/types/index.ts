@@ -308,6 +308,20 @@ export interface Building {
   id: string;
   name: string;
   cameraCount: number;
+  /** Qavatlar soni — monitoring kesimi kamerasi yo'q qavatni ham shu
+   * bo'yicha chizadi. Kiritilmagan bo'lsa null. */
+  floors?: number | null;
+  sortOrder?: number;
+}
+
+/** GET /api/cameras/summary — kameralar sahifasining ko'rsatkichlari. */
+export interface CameraSummary {
+  total: number;
+  faol: number;
+  nofaol: number;
+  tamirda: number;
+  reachable: number;
+  withoutFloor: number;
 }
 
 /** Kafedra — bino ichidagi tashkiliy birlik.
@@ -332,6 +346,9 @@ export interface CameraConfig {
   rtspPath?: string | null;
   building: string;
   zone: string;
+  /** Qavat raqami; belgilanmagan bo'lsa null. Monitoring markazining
+   * bino -> qavat kesimi shu maydon bo'yicha quriladi. */
+  floor?: number | null;
   resolution: string;
   fps: number | null;
   status: 'faol' | 'nofaol' | 'tamirda';

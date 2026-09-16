@@ -140,6 +140,7 @@ export default function OrgStructurePage() {
                     <p className="flex items-center gap-1 text-xs text-slate-500">
                       <Camera size={12} />
                       {b.cameraCount} ta kamera biriktirilgan
+                      {b.floors ? ` · ${b.floors} qavat` : ' · qavatlar soni kiritilmagan'}
                     </p>
                   </div>
                   <div className="flex gap-3 border-t border-white/70 pt-3 text-xs font-semibold">

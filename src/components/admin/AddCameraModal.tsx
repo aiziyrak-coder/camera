@@ -18,6 +18,7 @@ interface FormState {
   rtspPassword: string;
   building: string;
   zone: string;
+  floor: string;
   resolution: string;
   fps: string;
   status: CameraConfig['status'];
@@ -39,6 +40,7 @@ function toForm(c?: CameraConfig | null): FormState {
     rtspPassword: '',
     building: c?.building ?? '',
     zone: c?.zone ?? '',
+    floor: c?.floor === null || c?.floor === undefined ? '' : String(c.floor),
     resolution: c?.resolution ?? '1080p',
     fps: String(c?.fps ?? 25),
     status: c?.status ?? 'nofaol',
@@ -99,6 +101,10 @@ export default function AddCameraModal({
       building: form.building ? undefined : 'Binoni tanlang',
       zone: required(form.zone, 'Zona nomi kiritilishi shart'),
       fps: numberRange(form.fps, 1, 60, "1 dan 60 gacha bo'lgan qiymat kiriting"),
+      floor:
+        form.floor.trim() === ''
+          ? undefined
+          : numberRange(form.floor, -5, 50, "-5 dan 50 gacha qavat raqamini kiriting"),
       port: numberRange(form.port, 1, 65535, "1 dan 65535 gacha bo'lgan port kiriting"),
     };
     setErrors(next);
@@ -150,6 +156,8 @@ export default function AddCameraModal({
         rtspPassword: form.rtspPassword || null,
         building: form.building,
         zone: form.zone.trim(),
+        // Bo'sh maydon = "qavat belgilanmagan" (null), 0 emas.
+        floor: form.floor.trim() === '' ? null : Number(form.floor),
         resolution: form.resolution,
         fps: Number(form.fps),
         status: form.status,
@@ -271,6 +279,22 @@ export default function AddCameraModal({
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
+          <div>
+            <TextField
+              label="Qavat"
+              type="number"
+              min={-5}
+              max={50}
+              placeholder="Masalan: 3"
+              value={form.floor}
+              onChange={(e) => set('floor', e.target.value)}
+              error={errors.floor}
+            />
+            <p className="mt-1 text-[11px] text-slate-400">
+              Monitoring markazi kameralarni shu bo&apos;yicha qavatlarga ajratadi. Bo&apos;sh
+              qoldirilsa &laquo;Qavat belgilanmagan&raquo; guruhida qoladi.
+            </p>
+          </div>
           <SelectField
             label="Ruxsat"
             value={form.resolution}

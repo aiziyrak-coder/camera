@@ -255,6 +255,38 @@ class TestBulkLocation:
         assert next(item for item in listed["items"] if item["name"] == "1-qavat kirish")["floor"] is None
 
 
+class TestCameraSummaryAndFilters:
+    async def test_summary_counts_come_from_one_request(self, client: AsyncClient, campus):
+        _building, _cameras = campus
+        headers = await auth_headers(client, "admin", "admin123")
+        body = (await client.get("/api/cameras/summary", headers=headers)).json()
+        assert body["total"] == 5
+        assert body["faol"] == 4 and body["nofaol"] == 1
+        assert body["reachable"] == 4
+        # Ikkitasining qavati yo'q: "Qavatsiz kamera" va "Biriktirilmagan kamera".
+        assert body["withoutFloor"] == 2
+
+    async def test_admin_list_filters_by_floor_and_search(self, client: AsyncClient, campus):
+        headers = await auth_headers(client, "admin", "admin123")
+        by_floor = (
+            await client.get("/api/cameras", headers=headers, params={"floor": "2", "pageSize": 50})
+        ).json()
+        assert sorted(item["name"] for item in by_floor["items"]) == [
+            "2-qavat auditoriya",
+            "2-qavat koridor",
+        ]
+
+        without_floor = (
+            await client.get("/api/cameras", headers=headers, params={"floor": "none", "pageSize": 50})
+        ).json()
+        assert without_floor["total"] == 2
+
+        found = (
+            await client.get("/api/cameras", headers=headers, params={"search": "kirish", "pageSize": 50})
+        ).json()
+        assert [item["name"] for item in found["items"]] == ["1-qavat kirish"]
+
+
 class TestCameraEditKeepsFloor:
     async def test_patch_without_floor_does_not_clear_it(self, client: AsyncClient, campus):
         """Qavat maydonini bilmaydigan eski forma kameraning qavatini

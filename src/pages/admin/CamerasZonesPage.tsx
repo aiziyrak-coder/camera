@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Cpu, Eye, FileUp, Loader2, MapPinned, Plus, Settings2, Video, VideoOff, Wrench } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Cpu, Eye, FileUp, Layers, MapPin, MapPinned, Plus, Settings2, Video, VideoOff, Wrench } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import StatCard from '../../components/StatCard';
 import Badge from '../../components/Badge';
@@ -9,6 +9,15 @@ import CameraImportModal from '../../components/admin/CameraImportModal';
 import CameraConfigDetailModal from '../../components/admin/CameraConfigDetailModal';
 import CameraModulesModal from '../../components/admin/CameraModulesModal';
 import CameraZoneModal from '../../components/admin/CameraZoneModal';
+import CameraLocationModal from '../../components/admin/CameraLocationModal';
+import EmptyState from '../../components/ui/EmptyState';
+import ErrorState from '../../components/ui/ErrorState';
+import FilterBar from '../../components/ui/FilterBar';
+import SearchInput from '../../components/ui/SearchInput';
+import SegmentedControl from '../../components/ui/SegmentedControl';
+import SelectFilter from '../../components/ui/SelectFilter';
+import { SkeletonTable } from '../../components/ui/Skeleton';
+import { useToast } from '../../components/ui/Toast';
 import { api } from '../../lib/apiClient';
 import { formatModuleSummary } from '../../lib/cameraModules';
 import { useAuth } from '../../lib/auth';
@@ -16,7 +25,7 @@ import { useCameraModuleOptions } from '../../lib/useCameraModuleOptions';
 import { useServerPage } from '../../lib/useServerPage';
 import { useBuildings } from '../../lib/useBuildings';
 import { useCameraZones } from '../../lib/useCameraZones';
-import type { CameraConfig } from '../../types';
+import type { CameraConfig, CameraSummary } from '../../types';
 
 const STATUS_TONE: Record<CameraConfig['status'], 'green' | 'slate' | 'amber'> = {
   faol: 'green',
@@ -30,29 +39,41 @@ const STATUS_LABEL: Record<CameraConfig['status'], string> = {
   tamirda: "Ta'mirda",
 };
 
-const STATUS_FILTERS = ['Barchasi', 'Faol', 'Nofaol', "Ta'mirda"] as const;
-const STATUS_VALUE: Record<(typeof STATUS_FILTERS)[number], CameraConfig['status'] | undefined> = {
-  Barchasi: undefined,
-  Faol: 'faol',
-  Nofaol: 'nofaol',
-  "Ta'mirda": 'tamirda',
-};
+type StatusFilter = 'barchasi' | CameraConfig['status'];
+
+const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
+  { value: 'barchasi', label: 'Barchasi' },
+  { value: 'faol', label: 'Faol' },
+  { value: 'nofaol', label: 'Nofaol' },
+  { value: 'tamirda', label: "Ta'mirda" },
+];
+
+const UNASSIGNED_FLOOR = 'none';
+const PAGE_SIZE = 10;
 
 export default function CamerasZonesPage() {
   const { token } = useAuth();
   const { buildings } = useBuildings();
   const { modules: moduleOptions } = useCameraModuleOptions();
-  const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>('Barchasi');
-  const [buildingFilter, setBuildingFilter] = useState<string | null>(null);
-  const [zoneFilter, setZoneFilter] = useState<string | null>(null);
+  const toast = useToast();
+
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('barchasi');
+  const [buildingFilter, setBuildingFilter] = useState('');
+  const [floorFilter, setFloorFilter] = useState('');
+  const [zoneFilter, setZoneFilter] = useState('');
+  const [search, setSearch] = useState('');
+
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState<CameraConfig | null>(null);
   const [viewing, setViewing] = useState<CameraConfig | null>(null);
   const [drawingZone, setDrawingZone] = useState<CameraConfig | null>(null);
   const [editingModules, setEditingModules] = useState<CameraConfig | null>(null);
-  const [counts, setCounts] = useState<{ faol: number; nofaol: number; tamirda: number } | null>(null);
-  const { zones } = useCameraZones(buildingFilter ?? undefined);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [locationOpen, setLocationOpen] = useState(false);
+
+  const [summary, setSummary] = useState<CameraSummary | null>(null);
+  const { zones } = useCameraZones(buildingFilter || undefined);
 
   const {
     items: cameras,
@@ -66,25 +87,92 @@ export default function CamerasZonesPage() {
     reload,
   } = useServerPage<CameraConfig>(
     '/api/cameras',
-    { status: STATUS_VALUE[statusFilter], building: buildingFilter ?? undefined, zone: zoneFilter ?? undefined },
-    10,
+    {
+      status: statusFilter === 'barchasi' ? undefined : statusFilter,
+      building: buildingFilter || undefined,
+      zone: zoneFilter || undefined,
+      floor: floorFilter || undefined,
+      search: search.trim() || undefined,
+    },
+    PAGE_SIZE,
+  );
+
+  /** Ko'rsatkichlar — bitta so'rov. Ilgari ular har ro'yxat yangilanganda
+   * uchta qo'shimcha so'rov bilan olinardi (`?status=...&pageSize=1`). */
+  const loadSummary = useCallback(
+    (signal?: AbortSignal) => {
+      if (!token) return;
+      api
+        .get<CameraSummary>('/api/cameras/summary', token, { signal })
+        .then(setSummary)
+        .catch(() => {
+          /* ko'rsatkichlarsiz ham sahifa ishlaydi */
+        });
+    },
+    [token],
   );
 
   useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    Promise.all(
-      (['faol', 'nofaol', 'tamirda'] as const).map((s) =>
-        api.get<{ total: number }>(`/api/cameras?status=${s}&pageSize=1`, token),
-      ),
-    ).then(([faol, nofaol, tamirda]) => {
-      if (cancelled) return;
-      setCounts({ faol: faol.total, nofaol: nofaol.total, tamirda: tamirda.total });
+    const controller = new AbortController();
+    loadSummary(controller.signal);
+    return () => controller.abort();
+  }, [loadSummary]);
+
+  // Filtr o'zgarsa tanlov bekor qilinadi: ko'rinmayotgan kameraga
+  // ommaviy amal qo'llash kutilmagan natija beradi.
+  useEffect(() => {
+    setSelected(new Set());
+  }, [statusFilter, buildingFilter, floorFilter, zoneFilter, search, page]);
+
+  const floorOptions = useMemo(() => {
+    const selectedBuilding = buildings.find((b) => b.name === buildingFilter);
+    const highest = Math.max(
+      selectedBuilding?.floors ?? 0,
+      ...buildings.map((b) => b.floors ?? 0),
+      5,
+    );
+    const options = Array.from({ length: highest }, (_, index) => ({
+      value: String(index + 1),
+      label: `${index + 1}-qavat`,
+    }));
+    return [...options, { value: UNASSIGNED_FLOOR, label: 'Qavat belgilanmagan' }];
+  }, [buildings, buildingFilter]);
+
+  const activeFilters =
+    (statusFilter === 'barchasi' ? 0 : 1) +
+    (buildingFilter ? 1 : 0) +
+    (floorFilter ? 1 : 0) +
+    (zoneFilter ? 1 : 0) +
+    (search.trim() ? 1 : 0);
+
+  function resetFilters() {
+    setStatusFilter('barchasi');
+    setBuildingFilter('');
+    setFloorFilter('');
+    setZoneFilter('');
+    setSearch('');
+  }
+
+  function toggleOne(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
-    return () => {
-      cancelled = true;
-    };
-  }, [token, cameras]);
+  }
+
+  function toggleAllOnPage() {
+    setSelected((prev) => {
+      const everySelected = cameras.every((camera) => prev.has(camera.id));
+      const next = new Set(prev);
+      for (const camera of cameras) {
+        if (everySelected) next.delete(camera.id);
+        else next.add(camera.id);
+      }
+      return next;
+    });
+  }
 
   function handleModulesSaved(saved: CameraConfig) {
     reload();
@@ -95,64 +183,68 @@ export default function CamerasZonesPage() {
     <section className="glass p-6">
       <PageHeader
         title="Kameralar va Zonalar"
-        subtitle="RTSP kamera konfiguratsiyasi, zona va AI modul bog‘lanishi"
+        subtitle="RTSP kamera konfiguratsiyasi, qavat, zona va AI modul bog‘lanishi"
         action={
           <div className="flex items-center gap-2">
             <button onClick={() => setImportOpen(true)} className="btn-glass flex items-center gap-1.5">
               <FileUp size={14} />
-              SADP'dan import
+              SADP&apos;dan import
             </button>
             <button
               onClick={() => setAddOpen(true)}
               className="btn-glass flex items-center gap-1.5 !bg-indigo-600 !text-white hover:!bg-indigo-700"
             >
               <Plus size={14} />
-              Yangi kamera qo'shish
+              Yangi kamera qo&apos;shish
             </button>
           </div>
         }
       />
 
-      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard icon={<Video size={20} />} value={counts?.faol ?? '—'} label="Faol kameralar" tone="green" />
-        <StatCard icon={<VideoOff size={20} />} value={counts?.nofaol ?? '—'} label="Nofaol kameralar" tone="slate" />
-        <StatCard icon={<Wrench size={20} />} value={counts?.tamirda ?? '—'} label="Ta'mirda" tone="amber" />
+      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard icon={<Video size={20} />} value={summary?.faol ?? '—'} label="Faol kameralar" tone="green" />
+        <StatCard icon={<VideoOff size={20} />} value={summary?.nofaol ?? '—'} label="Nofaol kameralar" tone="slate" />
+        <StatCard icon={<Wrench size={20} />} value={summary?.tamirda ?? '—'} label="Ta'mirda" tone="amber" />
+        <button
+          type="button"
+          onClick={() => setFloorFilter(UNASSIGNED_FLOOR)}
+          title="Qavati belgilanmagan kameralarni ko'rish"
+          className="text-left transition hover:-translate-y-0.5"
+        >
+          <StatCard
+            icon={<Layers size={20} />}
+            value={summary?.withoutFloor ?? '—'}
+            label="Qavatsiz kameralar"
+            tone={summary && summary.withoutFloor > 0 ? 'amber' : 'slate'}
+          />
+        </button>
       </div>
 
-      {error && (
-        <p className="mb-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
-          {error}
-        </p>
-      )}
-
-      <div className="mb-4 flex flex-wrap gap-2 text-sm">
-        {STATUS_FILTERS.map((f) => (
-          <button
-            key={f}
-            onClick={() => setStatusFilter(f)}
-            className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
-              statusFilter === f ? 'bg-indigo-600 text-white' : 'bg-white/60 text-slate-600 hover:bg-white/90'
-            }`}
-          >
-            {f}
-          </button>
-        ))}
-        <span className="mx-1 w-px self-stretch bg-white/80" />
-        {buildings.map((b) => (
-          <button
-            key={b.id}
-            onClick={() => {
-              setBuildingFilter((cur) => (cur === b.name ? null : b.name));
-              setZoneFilter(null);
-            }}
-            className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
-              buildingFilter === b.name ? 'bg-indigo-600 text-white' : 'bg-white/60 text-slate-600 hover:bg-white/90'
-            }`}
-          >
-            {b.name}
-          </button>
-        ))}
-      </div>
+      <FilterBar activeCount={activeFilters} onReset={resetFilters}>
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Nom, zona yoki IP bo'yicha qidirish..."
+          ariaLabel="Kameralarni qidirish"
+        />
+        <SegmentedControl
+          options={STATUS_OPTIONS}
+          value={statusFilter}
+          onChange={setStatusFilter}
+          ariaLabel="Holat bo'yicha filtr"
+          size="sm"
+        />
+        <SelectFilter
+          label="Bino"
+          value={buildingFilter}
+          onChange={(value) => {
+            setBuildingFilter(value);
+            setZoneFilter('');
+          }}
+          options={buildings.map((b) => ({ value: b.name, label: b.name }))}
+        />
+        <SelectFilter label="Qavat" value={floorFilter} onChange={setFloorFilter} options={floorOptions} />
+      </FilterBar>
 
       {zones.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-2 text-xs">
@@ -162,11 +254,9 @@ export default function CamerasZonesPage() {
           {zones.map((z) => (
             <button
               key={z.zone}
-              onClick={() => setZoneFilter((cur) => (cur === z.zone ? null : z.zone))}
+              onClick={() => setZoneFilter((cur) => (cur === z.zone ? '' : z.zone))}
               className={`rounded-lg px-2.5 py-1 font-medium transition-colors ${
-                zoneFilter === z.zone
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-white/60 text-slate-600 hover:bg-white/90'
+                zoneFilter === z.zone ? 'bg-indigo-600 text-white' : 'bg-white/60 text-slate-600 hover:bg-white/90'
               }`}
             >
               {z.zone} ({z.cameraCount})
@@ -175,22 +265,62 @@ export default function CamerasZonesPage() {
         </div>
       )}
 
-      {loading && cameras.length === 0 ? (
-        <div className="flex items-center justify-center py-10 text-slate-400">
-          <Loader2 size={20} className="animate-spin" />
+      {selected.size > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-indigo-200 bg-indigo-50/80 px-4 py-2.5">
+          <span className="text-xs font-bold text-indigo-800">{selected.size} ta kamera tanlandi</span>
+          <button
+            type="button"
+            onClick={() => setLocationOpen(true)}
+            className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-700"
+          >
+            <MapPin size={13} />
+            Bino/qavat belgilash
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelected(new Set())}
+            className="text-xs font-semibold text-indigo-700 hover:underline"
+          >
+            Tanlovni bekor qilish
+          </button>
         </div>
+      )}
+
+      {error && <ErrorState message={error} onRetry={reload} />}
+
+      {loading && cameras.length === 0 ? (
+        <SkeletonTable rows={6} columns={7} />
       ) : cameras.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-slate-300 p-10 text-center text-sm text-slate-400">
-          Filtrlarga mos kamera topilmadi
-        </p>
+        <EmptyState
+          icon={<Video size={18} />}
+          title="Filtrlarga mos kamera topilmadi"
+          description="Qidiruv yoki filtrlarni o'zgartiring."
+          action={
+            activeFilters > 0 ? (
+              <button type="button" onClick={resetFilters} className="btn-glass text-xs">
+                Filtrlarni tozalash
+              </button>
+            ) : undefined
+          }
+        />
       ) : (
         <div className="overflow-x-auto rounded-xl border border-white/70">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="bg-white/50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <th className="px-3 py-3">
+                  <input
+                    type="checkbox"
+                    aria-label="Sahifadagi barcha kameralarni tanlash"
+                    checked={cameras.length > 0 && cameras.every((camera) => selected.has(camera.id))}
+                    onChange={toggleAllOnPage}
+                    className="h-4 w-4 rounded border-slate-300"
+                  />
+                </th>
                 <th className="px-4 py-3">Kamera nomi</th>
                 <th className="px-4 py-3">IP / RTSP</th>
                 <th className="px-4 py-3">Bino</th>
+                <th className="px-4 py-3">Qavat</th>
                 <th className="px-4 py-3">Zona</th>
                 <th className="px-4 py-3">AI modullar</th>
                 <th className="px-4 py-3">Ruxsat / FPS</th>
@@ -201,14 +331,36 @@ export default function CamerasZonesPage() {
             </thead>
             <tbody className="divide-y divide-white/60">
               {cameras.map((c) => {
-                const moduleSummary =
-                  moduleOptions.length > 0 ? formatModuleSummary(moduleOptions, c) : '—';
+                const moduleSummary = moduleOptions.length > 0 ? formatModuleSummary(moduleOptions, c) : '—';
                 const hasCustomModules = (c.excludedModuleCodes?.length ?? 0) > 0;
                 return (
                   <tr key={c.id} className="transition-colors hover:bg-white/40">
+                    <td className="px-3 py-3">
+                      <input
+                        type="checkbox"
+                        aria-label={`${c.name} kamerasini tanlash`}
+                        checked={selected.has(c.id)}
+                        onChange={() => toggleOne(c.id)}
+                        className="h-4 w-4 rounded border-slate-300"
+                      />
+                    </td>
                     <td className="px-4 py-3 font-medium text-slate-900">{c.name}</td>
                     <td className="px-4 py-3 font-mono text-xs text-slate-600">{c.ip}</td>
                     <td className="px-4 py-3 text-slate-600">{c.building}</td>
+                    <td className="px-4 py-3">
+                      {c.floor === null || c.floor === undefined ? (
+                        <button
+                          type="button"
+                          onClick={() => setEditing(c)}
+                          title="Qavatni belgilash"
+                          className="text-xs font-semibold text-amber-600 hover:underline"
+                        >
+                          belgilanmagan
+                        </button>
+                      ) : (
+                        <span className="text-slate-600 tabular-nums">{c.floor}-qavat</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-slate-600">{c.zone}</td>
                     <td className="px-4 py-3">
                       <button
@@ -216,9 +368,7 @@ export default function CamerasZonesPage() {
                         onClick={() => setEditingModules(c)}
                         title="AI modullarni sozlash"
                         className={`text-xs font-semibold hover:underline ${
-                          hasCustomModules
-                            ? 'text-amber-600'
-                            : 'text-slate-600'
+                          hasCustomModules ? 'text-amber-600' : 'text-slate-600'
                         }`}
                       >
                         {moduleSummary}
@@ -241,16 +391,10 @@ export default function CamerasZonesPage() {
                               : "Kamera hozircha javob bermayapti — kabel/tarmoq muammosi bo'lishi mumkin"
                           }
                           className={`flex items-center gap-1.5 text-xs font-semibold ${
-                            c.isReachable
-                              ? 'text-emerald-600'
-                              : 'text-red-500'
+                            c.isReachable ? 'text-emerald-600' : 'text-red-500'
                           }`}
                         >
-                          <span
-                            className={`h-2 w-2 rounded-full ${
-                              c.isReachable ? 'bg-emerald-500' : 'bg-red-500'
-                            }`}
-                          />
+                          <span className={`h-2 w-2 rounded-full ${c.isReachable ? 'bg-emerald-500' : 'bg-red-500'}`} />
                           {c.isReachable ? 'Ulangan' : "Javob yo'q"}
                         </span>
                       )}
@@ -262,7 +406,7 @@ export default function CamerasZonesPage() {
                           className="flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:underline"
                         >
                           <Eye size={12} />
-                          Ko'rish
+                          Ko&apos;rish
                         </button>
                         <button
                           onClick={() => setEditing(c)}
@@ -287,9 +431,7 @@ export default function CamerasZonesPage() {
                           onClick={() => setEditingModules(c)}
                           title="AI modullarni sozlash"
                           className={`flex items-center gap-1 text-xs font-semibold hover:underline ${
-                            hasCustomModules
-                              ? 'text-amber-600'
-                              : 'text-indigo-600'
+                            hasCustomModules ? 'text-amber-600' : 'text-indigo-600'
                           }`}
                         >
                           <Cpu size={12} />
@@ -313,10 +455,19 @@ export default function CamerasZonesPage() {
         onClose={() => setAddOpen(false)}
         onSave={(cam) => {
           reload();
+          loadSummary();
           setEditingModules(cam);
         }}
       />
-      <AddCameraModal open={!!editing} camera={editing} onClose={() => setEditing(null)} onSave={() => reload()} />
+      <AddCameraModal
+        open={!!editing}
+        camera={editing}
+        onClose={() => setEditing(null)}
+        onSave={() => {
+          reload();
+          loadSummary();
+        }}
+      />
       <CameraImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={() => reload()} />
       <CameraConfigDetailModal
         camera={viewing}
@@ -336,6 +487,17 @@ export default function CamerasZonesPage() {
         camera={editingModules}
         onClose={() => setEditingModules(null)}
         onSave={handleModulesSaved}
+      />
+      <CameraLocationModal
+        open={locationOpen}
+        cameraIds={[...selected]}
+        onClose={() => setLocationOpen(false)}
+        onSaved={(updated) => {
+          setSelected(new Set());
+          reload();
+          loadSummary();
+          toast.success(`${updated} ta kameraning joylashuvi yangilandi`);
+        }}
       />
     </section>
   );
