@@ -112,7 +112,13 @@ def _tally_votes(
         if not faces:
             continue
         embeddings = np.stack([face.embedding for face in faces])
-        matches = candidates.best_matches(embeddings, settings.attendance_ai_match_threshold)
+        # Signalda talabaning ISMI yoziladi — ikki nomzod barobar
+        # o'xshash chiqsa, ism qo'yilmaydi (best_matches margin).
+        matches = candidates.best_matches(
+            embeddings,
+            settings.attendance_ai_match_threshold,
+            margin=settings.attendance_ai_strict_margin,
+        )
 
         known_seen_this_frame: set[str] = set()
         unidentified_present = False

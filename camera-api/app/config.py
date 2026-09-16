@@ -81,7 +81,20 @@ class Settings(BaseSettings):
     # 1:N identification against the whole enrolled population is a
     # higher false-accept risk than the 1:1 verification used at enrollment
     # time (face_recognition.MATCH_THRESHOLD=0.45) — deliberately stricter.
-    attendance_ai_match_threshold: float = 0.55
+    # 2026-09-16 kalibrlash: productionda 607 ta ro'yxatdan o'tgan
+    # xodimdan bir kunda atigi 4 tasi tanilardi. Kirish kameralaridagi
+    # o'xshashlik taqsimoti haqiqiy mosliklar 0.45-0.57 oralig'ida
+    # to'planishini ko'rsatdi — ya'ni 0.55 chegara ro'yxatdagi odamning
+    # o'zini ham "tanimasdi". Sabab: xodimlar bazasidagi rasm hujjat
+    # rasmi, kamera kadri esa boshqa sharoit (yorug'lik, burchak,
+    # masofa) — ArcFace uchun bu tabiiy ravishda past o'xshashlik.
+    # Chegara pasaytirildi, xavfi esa attendance_ai_strict_margin bilan
+    # qoplandi.
+    attendance_ai_match_threshold: float = 0.50
+    # Qat'iy moslik uchun "ajralish": eng yaqin nomzod ikkinchisidan
+    # shuncha uzoq bo'lishi kerak. Ikki odam bir xil darajada o'xshash
+    # chiqsa moslik qabul qilinmaydi (app/services/face_matching.py).
+    attendance_ai_strict_margin: float = 0.05
     # "Yumshoq" moslik (app/services/face_matching.py graded_matches).
     # CCTV kadridagi kichik/qiya yuz ro'yxatdagi odamning o'zi bo'lsa ham
     # ko'pincha 0.45-0.55 oralig'ida qoladi va qat'iy chegara uni hech
@@ -90,13 +103,20 @@ class Settings(BaseSettings):
     # xuddi shu odam confirm_window ichida yana bir kadrda mos kelgan
     # (app/services/recognition_stats.py). 0 yoki >= match_threshold
     # qiymati yumshoq moslikni butunlay o'chiradi.
-    attendance_ai_relaxed_threshold: float = 0.47
+    attendance_ai_relaxed_threshold: float = 0.42
     attendance_ai_relaxed_margin: float = 0.08
     attendance_relaxed_confirm_window_seconds: int = 180
     attendance_relaxed_min_gap_seconds: float = 0.5
     # Bundan kichik (piksel balandligi) yuz uchun faqat qat'iy moslik:
     # juda kichik yuzning vektori ishonchsiz.
     attendance_min_face_px: int = 40
+    # Kichik yuz uchun qat'iy chegara ham YUQORI qoladi. 2026-09-16 da
+    # umumiy chegara 0.55 -> 0.50 ga tushirildi, chunki kirish
+    # kamerasidagi KATTA yuzlar (60-80 px) shu oraliqda qolib ketardi.
+    # Ammo 10-20 pikselli yuzning vektori shovqinga to'la — unga
+    # yumshatilgan chegarani qo'llash boshqa odamga davomat yozish
+    # xavfini ochadi, shuning uchun ular eski chegarada qoladi.
+    attendance_small_face_match_threshold: float = 0.55
     # "HH:MM" — kunlik davomatda kech qolish chegarasi (mahalliy vaqt).
     # Kunlik davomat dars jadvaliga BOG'LIQ EMAS: odamning birinchi
     # ko'rinishi shu vaqtdan keyin bo'lsa — "kech_keldi". Darsga

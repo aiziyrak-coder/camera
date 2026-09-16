@@ -19,11 +19,13 @@ from app.models import AttendanceRecord, Faculty, StudentStaff
 from tests.conftest import TestSessionLocal
 
 
-async def _person(db, name: str, *, enrolled: bool) -> StudentStaff:
+async def _person(db, name: str, *, enrolled: bool, person_type: str = "xodim") -> StudentStaff:
+    """Standart tur — xodim: talabalar davomati (#7) 2026-09-16 dan beri
+    to'xtatilgan, shuning uchun bu yerdagi qoidalar xodimda tekshiriladi."""
     faculty = (await db.execute(select(Faculty))).scalars().first()
     record = StudentStaff(
         full_name=name,
-        type="talaba",
+        type=person_type,
         faculty_id=faculty.id,
         group_or_position="101-guruh",
         biometrics_status="tasdiqlangan" if enrolled else "yoq",
@@ -52,6 +54,43 @@ class TestMarkAbsencesForDay:
         ).scalar_one()
         assert row.status == "kelmadi"
         assert row.check_in is None
+
+    async def test_population_with_attendance_turned_off_is_never_marked(self, db_session):
+        """Talabalar davomati moduli o'chirilgan: kamera ularni
+        tekshirmayapti, demak "kelmadi" deb yozish yolg'on ayblov."""
+        from app.models import AIModuleConfig
+
+        student = await _person(db_session, "Kuzatilmaydigan Talaba", enrolled=True, person_type="talaba")
+        staff = await _person(db_session, "Kuzatiladigan Xodim", enrolled=True)
+        day = date(2026, 9, 2)
+
+        await mark_absences_for_day(db_session, day)
+
+        marked = set(
+            (
+                await db_session.execute(
+                    select(AttendanceRecord.student_staff_id).where(AttendanceRecord.date == day)
+                )
+            ).scalars().all()
+        )
+        assert staff.id in marked
+        assert student.id not in marked
+
+        # Modul qayta yoqilsa — talaba ham belgilanadi.
+        module = (
+            await db_session.execute(select(AIModuleConfig).where(AIModuleConfig.code == 7))
+        ).scalar_one()
+        module.active = True
+        await db_session.commit()
+        await mark_absences_for_day(db_session, day)
+        marked_after = set(
+            (
+                await db_session.execute(
+                    select(AttendanceRecord.student_staff_id).where(AttendanceRecord.date == day)
+                )
+            ).scalars().all()
+        )
+        assert student.id in marked_after
 
     async def test_person_without_enrolled_biometrics_is_never_marked(self, db_session):
         """The system physically cannot recognise them — their missing row

@@ -169,7 +169,11 @@ async def _find_known_staff(db: AsyncSession, faces, *, exclude_id) -> tuple[Stu
 
     exclude = str(exclude_id)
     embeddings = np.stack([face.embedding for face in faces])
-    matches = candidates.best_matches(embeddings, settings.attendance_ai_match_threshold)
+    # #26 signali aniq odamni nomlaydi ("o'qituvchi o'rniga X kirgan"),
+    # shuning uchun noaniq moslik umuman qabul qilinmaydi.
+    matches = candidates.best_matches(
+        embeddings, settings.attendance_ai_match_threshold, margin=settings.attendance_ai_strict_margin
+    )
     for match in matches:
         if match is None:
             continue

@@ -300,6 +300,7 @@ async def process_camera_frame(
         strict_threshold=settings.attendance_ai_match_threshold,
         relaxed_threshold=_relaxed_threshold(),
         margin=settings.attendance_ai_relaxed_margin,
+        strict_margin=settings.attendance_ai_strict_margin,
     )
     camera_key = str(camera.id) if camera is not None else None
     recognition_stats.record_frame(camera_key, faces, graded)
@@ -318,13 +319,19 @@ async def process_camera_frame(
         if person_type == "talaba" and not student_module_active:
             continue
 
+        small_face = recognition_stats.face_height_px(face) < settings.attendance_min_face_px
         if match.grade == "strict":
+            # Kichik yuz uchun kalibrlashdan oldingi, yuqoriroq chegara
+            # saqlanadi (attendance_small_face_match_threshold izohiga
+            # qarang) — aks holda 20 pikselli yuz ham davomat yozardi.
+            if small_face and similarity < settings.attendance_small_face_match_threshold:
+                continue
             recognition_stats.note_strict_sighting(student_staff_id)
             recognition_stats.record_credit(camera_key, "strict")
         else:
             # Yumshoq moslik: kichik yuz uchun umuman qabul qilinmaydi,
             # qolganlari esa ikkinchi ko'rinish bilan tasdiqlanishi shart.
-            if recognition_stats.face_height_px(face) < settings.attendance_min_face_px:
+            if small_face:
                 continue
             if not recognition_stats.confirm_relaxed(student_staff_id):
                 recognition_stats.record_credit(camera_key, "relaxed_pending")

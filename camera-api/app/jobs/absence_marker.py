@@ -34,7 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models import AttendanceRecord, StudentStaff
+from app.models import AIModuleConfig, AttendanceRecord, StudentStaff
 from app.timezone import local_now
 
 logger = logging.getLogger("app.absence_marker")
@@ -58,12 +58,47 @@ def _cutoff_time() -> time_type:
     return time_type.fromisoformat(settings.attendance_absence_mark_after)
 
 
+STAFF_ATTENDANCE_MODULE_CODE = 6
+STUDENT_ATTENDANCE_MODULE_CODE = 7
+
+
+async def tracked_types(db: AsyncSession) -> list[str]:
+    """Davomati HOZIR yig'ilayotgan populyatsiyalar.
+
+    Uchinchi himoya qoidasi (modul docstring'idagi ikkitasidan keyin):
+    moduli o'chirilgan populyatsiyani "kelmadi" deb belgilash ham yolg'on
+    ayblov — kamera ularni umuman tekshirmayapti. 2026-09-16 da talabalar
+    davomati (#7) shu sababdan to'xtatildi: 5935 talabadan bittasining
+    yuzi ro'yxatda."""
+    rows = dict(
+        (
+            await db.execute(
+                select(AIModuleConfig.code, AIModuleConfig.active).where(
+                    AIModuleConfig.code.in_([STAFF_ATTENDANCE_MODULE_CODE, STUDENT_ATTENDANCE_MODULE_CODE])
+                )
+            )
+        ).all()
+    )
+    types: list[str] = []
+    # Qator topilmasa (seed'dan oldin) — eski xatti-harakat saqlanadi.
+    if rows.get(STAFF_ATTENDANCE_MODULE_CODE, True):
+        types.append("xodim")
+    if rows.get(STUDENT_ATTENDANCE_MODULE_CODE, True):
+        types.append("talaba")
+    return types
+
+
 async def mark_absences_for_day(db: AsyncSession, day: date_type) -> int:
     """Files 'kelmadi' for every enrolled person with no row for `day`.
     Returns how many rows were actually inserted."""
+    types = await tracked_types(db)
+    if not types:
+        return 0
     enrolled = (
         await db.execute(
-            select(StudentStaff.id).where(StudentStaff.biometrics_status == "tasdiqlangan")
+            select(StudentStaff.id)
+            .where(StudentStaff.biometrics_status == "tasdiqlangan")
+            .where(StudentStaff.type.in_(types))
         )
     ).scalars().all()
     if not enrolled:

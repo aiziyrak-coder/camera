@@ -94,13 +94,22 @@ class CandidateMatrix:
             second = np.full(len(embeddings), -1.0)
         return best_idx, best_sim, second
 
-    def best_matches(self, embeddings: np.ndarray, threshold: float) -> list[tuple[str, float] | None]:
+    def best_matches(
+        self, embeddings: np.ndarray, threshold: float, *, margin: float = 0.0
+    ) -> list[tuple[str, float] | None]:
+        """`margin` berilsa, eng yaqin nomzod ikkinchisidan shuncha uzoq
+        bo'lishi shart. Odamning ISMI yoziladigan joylarda (uxlab qolish
+        signali, o'qituvchi o'rniga boshqasi) shu shart qo'yiladi:
+        chegara pasaytirilgandan keyin (2026-09-16) "ikki nomzod deyarli
+        barobar" holati noto'g'ri odamni nomlash xavfini tug'diradi."""
         if self.is_empty or len(embeddings) == 0:
             return [None] * len(embeddings)
-        best_idx, best_sim, _second = self.top_two(embeddings)
+        best_idx, best_sim, second = self.top_two(embeddings)
         return [
-            (self.ids[int(i)], float(s)) if int(i) >= 0 and s >= threshold else None
-            for i, s in zip(best_idx, best_sim, strict=True)
+            (self.ids[int(i)], float(s))
+            if int(i) >= 0 and s >= threshold and (s - s2) >= margin
+            else None
+            for i, s, s2 in zip(best_idx, best_sim, second, strict=True)
         ]
 
     def graded_matches(
@@ -110,11 +119,18 @@ class CandidateMatrix:
         strict_threshold: float,
         relaxed_threshold: float,
         margin: float,
+        strict_margin: float = 0.0,
     ) -> list["GradedMatch"]:
         """Har bir yuz uchun baholangan natija (hech qachon None emas —
         statistika uchun eng yaqin o'xshashlik ham kerak).
 
-        * strict  — o'xshashlik >= strict_threshold: darhol ishonchli.
+        * strict  — o'xshashlik >= strict_threshold VA eng yaqin nomzod
+          ikkinchisidan kamida `strict_margin` ga uzoq. Margin qat'iy
+          yo'lga 2026-09-16 kalibrlashda qo'shildi: chegara pasaytirilgach
+          (0.55 -> 0.50) "ikki nomzod deyarli barobar" holati xavfli
+          bo'ladi, ya'ni raqam yetarli, lekin QAYSI odam ekani noaniq.
+          Bunday yuz umuman hisobga olinmaydi — noto'g'ri odamga davomat
+          yozgandan ko'ra yozmagan yaxshi.
         * relaxed — relaxed_threshold <= o'xshashlik < strict_threshold VA
           eng yaqin nomzod ikkinchisidan kamida `margin` ga uzoq. CCTV
           kadridagi kichik/qiya yuz odatda 0.45-0.55 oralig'ida qoladi —
@@ -132,7 +148,7 @@ class CandidateMatrix:
             sim2 = float(s2)
             if idx < 0:
                 out.append(GradedMatch(None, -1.0, -1.0, "none"))
-            elif sim >= strict_threshold:
+            elif sim >= strict_threshold and (sim - sim2) >= strict_margin:
                 out.append(GradedMatch(self.ids[idx], sim, sim2, "strict"))
             elif sim >= relaxed_threshold and (sim - sim2) >= margin:
                 out.append(GradedMatch(self.ids[idx], sim, sim2, "relaxed"))
@@ -140,8 +156,10 @@ class CandidateMatrix:
                 out.append(GradedMatch(None, sim, sim2, "none"))
         return out
 
-    def best_match(self, embedding: list[float] | np.ndarray, threshold: float) -> tuple[str, float] | None:
-        return self.best_matches(np.array([embedding]), threshold)[0]
+    def best_match(
+        self, embedding: list[float] | np.ndarray, threshold: float, *, margin: float = 0.0
+    ) -> tuple[str, float] | None:
+        return self.best_matches(np.array([embedding]), threshold, margin=margin)[0]
 
 
 def _maybe_build_faiss_index(matrix: np.ndarray) -> object | None:
