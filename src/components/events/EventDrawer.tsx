@@ -34,7 +34,7 @@ export default function EventDrawer({
   event: AIEvent | null;
   onClose: () => void;
   onReview: (event: AIEvent, status: Decision) => void;
-  onDelete: (event: AIEvent) => void;
+  onDelete?: (event: AIEvent) => void;
   onPrev?: () => void;
   onNext?: () => void;
   position?: string;
@@ -94,15 +94,17 @@ export default function EventDrawer({
               >
                 <ChevronRight size={18} />
               </button>
-              <button
-                type="button"
-                onClick={() => onDelete(event)}
-                aria-label="Hodisani o'chirish"
-                title="O'chirish"
-                className="ml-1 rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
-              >
-                <Trash2 size={16} />
-              </button>
+              {onDelete && (
+                <button
+                  type="button"
+                  onClick={() => onDelete(event)}
+                  aria-label="Hodisani o'chirish"
+                  title="O'chirish"
+                  className="ml-1 rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                >
+                  <Trash2 size={16} />
+                </button>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <button

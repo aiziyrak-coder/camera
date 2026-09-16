@@ -655,6 +655,102 @@ export interface ReportSection {
   note?: string | null;
 }
 
+/** Hisobot sahifasi — "kriteriya kartasi -> ro'yxat -> isbot" uch darajasi.
+ * Backend: app/services/report_criteria.py */
+export type ReportPopulation = 'xodim' | 'talaba';
+export type ReportPeriodKey = 'bugun' | 'kecha' | 'hafta' | 'oy';
+
+export interface ReportPeriod {
+  key: string;
+  label: string;
+  start: string;
+  end: string;
+  days: number;
+}
+
+export interface ReportBucket {
+  key: string;
+  label: string;
+  count: number;
+  tone: 'green' | 'amber' | 'red' | 'slate' | 'indigo';
+}
+
+export interface ReportCriterion {
+  key: string;
+  title: string;
+  subtitle: string;
+  total: number;
+  unit: string;
+  buckets: ReportBucket[];
+  /** Kartani bosganda odamlar ro'yxati ochiladimi yoki signallar. */
+  detail: 'people' | 'events' | 'none';
+  moduleCodes: number[];
+  /** Raqam bo'sh bo'lsa — SABABI (modul o'chirilgan, yuzlar yo'q va h.k.). */
+  note?: string | null;
+}
+
+export interface ReportCriteria {
+  population: string;
+  populationLabel: string;
+  period: ReportPeriod;
+  peopleTotal: number;
+  enrolledTotal: number;
+  criteria: ReportCriterion[];
+}
+
+export interface ReportPersonRow {
+  id: string;
+  fullName: string;
+  initials: string;
+  photoUrl?: string | null;
+  faculty: string;
+  unit: string;
+  biometricsStatus: string;
+  presentDays: number;
+  lateDays: number;
+  absentDays: number;
+  firstCheckIn?: string | null;
+  lastCheckOut?: string | null;
+  visits: number;
+  cameras: number;
+  lastSeenAt?: string | null;
+  lastSeenCamera?: string | null;
+}
+
+export interface ReportPersonDay {
+  date: string;
+  weekday: string;
+  status?: string | null;
+  checkIn?: string | null;
+  checkOut?: string | null;
+  visits: number;
+  firstCamera?: string | null;
+}
+
+export interface ReportPersonDetail {
+  id: string;
+  fullName: string;
+  initials: string;
+  type: 'talaba' | 'xodim';
+  photoUrl?: string | null;
+  faculty: string;
+  unit: string;
+  biometricsStatus: string;
+  biometricsConfirmedLabel?: string | null;
+  period: ReportPeriod;
+  presentDays: number;
+  lateDays: number;
+  absentDays: number;
+  workingDays: number;
+  visits: number;
+  cameras: number;
+  buildings: string[];
+  firstCheckIn?: string | null;
+  lastCheckOut?: string | null;
+  days: ReportPersonDay[];
+  note?: string | null;
+}
+
 export interface AdminUser {
   id: string;
   name: string;

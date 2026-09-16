@@ -1,17 +1,18 @@
 import uuid
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.audit import log_action
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
-from app.models import Report, User
+from app.models import Report, StudentStaff, User
 from app.pagination import Page, PageParams, build_page, paginate
 from app.schemas.report import (
     KpiOut,
@@ -21,7 +22,19 @@ from app.schemas.report import (
     ReportGenerateIn,
     ReportOut,
 )
+from app.schemas.report_criteria import (
+    ReportCriteriaOut,
+    ReportPersonDetailOut,
+    ReportPersonRowOut,
+)
 from app.services.analytics import AnalyticsRangeError, build_analytics, get_analytics_cached, validate_range
+from app.services.report_criteria import (
+    build_criteria,
+    decorate_people,
+    people_query,
+    person_detail,
+    resolve_period,
+)
 from app.services.report_export import build_analytics_workbook
 from app.services.report_generator import _date_range, generate_rule_based_report
 from app.services.staff_export import XLSX_MIME
@@ -217,6 +230,73 @@ async def generate_report(
     await db.commit()
     await db.refresh(report)
     return _to_out(report)
+
+
+# Kriteriya yo'llari ham /{report_id} dan OLDIN — "criteria" so'zi
+# hisobot identifikatori deb tushunilmasligi uchun (yuqoridagi
+# /analytics bilan bir xil sabab).
+@router.get("/criteria", response_model=ReportCriteriaOut)
+async def report_criteria(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: PermDep,
+    population: Annotated[Literal["xodim", "talaba"], Query()] = "xodim",
+    period: Annotated[Literal["bugun", "kecha", "hafta", "oy"], Query()] = "bugun",
+) -> ReportCriteriaOut:
+    """Hisobot sahifasining birinchi darajasi: tanlangan populyatsiya va
+    davr uchun kriteriya kartalari, har birida raqamlari bilan."""
+    return await build_criteria(db, population, resolve_period(period))
+
+
+@router.get("/criteria/{criterion}/people", response_model=Page[ReportPersonRowOut])
+async def report_criterion_people(
+    criterion: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: PermDep,
+    page_params: Annotated[PageParams, Depends()],
+    population: Annotated[Literal["xodim", "talaba"], Query()] = "xodim",
+    period: Annotated[Literal["bugun", "kecha", "hafta", "oy"], Query()] = "bugun",
+    bucket: Annotated[str, Query(max_length=40)] = "",
+    search: Annotated[str | None, Query(max_length=100)] = None,
+) -> Page[ReportPersonRowOut]:
+    """Ikkinchi daraja: kartadagi raqam ortidagi odamlar ro'yxati.
+
+    Qatorlar davomat va tashrif raqamlari bilan boyitiladi — ya'ni
+    "kelgan" ro'yxatidagi odamning yonida qachon kelgani va uni qaysi
+    kamera oxirgi ko'rgani ko'rinadi."""
+    resolved = resolve_period(period)
+    stmt = await people_query(db, population, criterion, bucket, resolved)
+    if search and search.strip():
+        stmt = stmt.where(StudentStaff.full_name.ilike(f"%{search.strip()}%"))
+    rows, total = await paginate(db, stmt, page_params)
+    items = await decorate_people(db, rows, resolved)
+    return build_page(items, total, page_params)
+
+
+@router.get("/people/{person_id}", response_model=ReportPersonDetailOut)
+async def report_person(
+    person_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: PermDep,
+    period: Annotated[Literal["bugun", "kecha", "hafta", "oy"], Query()] = "bugun",
+) -> ReportPersonDetailOut:
+    """Uchinchi daraja: bitta odamning davr kesimi — rasmi, kafedrasi,
+    kunlik holati va kameradagi ko'rinishlari soni. Aniq bir kunning
+    tashriflari (qaysi kamera, qachon, qancha vaqt) GET
+    /api/presence/people/{id}/day dan olinadi."""
+    try:
+        person_uuid = uuid.UUID(person_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Yozuv topilmadi") from None
+    person = (
+        await db.execute(
+            select(StudentStaff)
+            .options(selectinload(StudentStaff.faculty))
+            .where(StudentStaff.id == person_uuid)
+        )
+    ).scalar_one_or_none()
+    if person is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Yozuv topilmadi")
+    return await person_detail(db, person, resolve_period(period))
 
 
 @router.get("/{report_id}", response_model=ReportDetailOut)

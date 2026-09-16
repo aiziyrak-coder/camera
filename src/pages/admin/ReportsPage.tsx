@@ -1,322 +1,333 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowLeft, FileDown, FileSpreadsheet, Loader2, RefreshCw, Save } from 'lucide-react';
+import { ArrowLeft, CalendarRange, RefreshCw } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import SegmentedControl from '../../components/ui/SegmentedControl';
 import ErrorState from '../../components/ui/ErrorState';
-import { SkeletonBlock, SkeletonCards } from '../../components/ui/Skeleton';
-import { useToast } from '../../components/ui/Toast';
-import PeriodPicker, { type PeriodValue } from '../../components/reports/PeriodPicker';
-import ReportView from '../../components/reports/ReportView';
-import ArchiveList from '../../components/reports/ArchiveList';
-import LegacyReportView from '../../components/reports/LegacyReportView';
-import { ApiError, api, buildQuery, isAbortError } from '../../lib/apiClient';
-import { useAuth } from '../../lib/auth';
-import { usePermissions } from '../../lib/permissions';
-import { downloadBlob } from '../../lib/download';
-import { isFixedPreset, resolvePreset, validateRange } from '../../lib/reportPeriods';
-import { invalidateServerPageCache } from '../../lib/useServerPage';
-import type { ReportAnalytics, ReportDetail } from '../../types';
+import EmptyState from '../../components/ui/EmptyState';
+import { SkeletonTable } from '../../components/ui/Skeleton';
+import CriteriaCards from '../../components/reports/CriteriaCards';
+import CriterionPeople from '../../components/reports/CriterionPeople';
+import PersonReport from '../../components/reports/PersonReport';
+import EventDrawer from '../../components/events/EventDrawer';
+import Badge from '../../components/Badge';
+import Pagination from '../../components/Pagination';
+import { buildQuery } from '../../lib/apiClient';
+import { useApiResource } from '../../lib/useApiResource';
+import { useServerPage } from '../../lib/useServerPage';
+import { relativeTime } from '../../lib/uzDate';
+import type {
+  AIEvent,
+  ReportCriteria,
+  ReportPeriodKey,
+  ReportPersonDetail,
+  ReportPersonRow,
+  ReportPopulation,
+} from '../../types';
 
-type Tab = 'tahlil' | 'arxiv';
+/** Hisobotlar — "kriteriya -> ro'yxat -> isbot" uch darajasi.
+ *
+ * Avvalgi sahifa umumiy analitika va PDF arxivi edi: chiroyli grafiklar,
+ * lekin "kim kelmadi va buni nima tasdiqlaydi" degan savolga javob
+ * bermasdi. Endi yo'l shunday: populyatsiya (o'qituvchi/xodim yoki
+ * talaba) -> davr -> kriteriya kartalari -> raqam ortidagi odamlar ->
+ * odamning o'zi, rasmi, kafedrasi va kamera isbotlari bilan.
+ *
+ * Har daraja URL'da: ?bolim=&davr=&kriteriya=&guruh=&odam= — havolani
+ * ulashish va brauzerning "orqaga" tugmasi ishlaydi. */
 
-const TABS: { value: Tab; label: string }[] = [
-  { value: 'tahlil', label: 'Tahlil' },
-  { value: 'arxiv', label: 'Arxiv' },
+const POPULATIONS: { value: ReportPopulation; label: string }[] = [
+  { value: 'xodim', label: "O'qituvchilar" },
+  { value: 'talaba', label: 'Talabalar' },
 ];
 
-const CACHE_MS = 60_000;
-const analyticsCache = new Map<string, { at: number; data: ReportAnalytics }>();
+const PERIODS: { value: ReportPeriodKey; label: string }[] = [
+  { value: 'bugun', label: 'Bugun' },
+  { value: 'kecha', label: 'Kecha' },
+  { value: 'hafta', label: 'Hafta' },
+  { value: 'oy', label: 'Oylik' },
+];
 
-function readPeriod(params: URLSearchParams): PeriodValue {
-  const raw = params.get('davr');
-  if (raw === 'custom') {
-    const fallback = resolvePreset('last7');
-    return { preset: 'custom', from: params.get('from') ?? fallback.from, to: params.get('to') ?? fallback.to };
-  }
-  const preset = isFixedPreset(raw) ? raw : 'last7';
-  return { preset, ...resolvePreset(preset) };
-}
-
-function errorText(err: unknown): string {
-  return err instanceof ApiError ? err.message : "Tarmoq xatosi — server bilan bog'lanib bo'lmadi";
-}
-
-function ReportSkeleton() {
-  return (
-    <div className="space-y-6" aria-busy="true" aria-label="Hisobot tayyorlanmoqda">
-      <div className="grid gap-3 md:grid-cols-2">
-        <SkeletonBlock className="h-24" />
-        <SkeletonBlock className="h-24" />
-      </div>
-      <SkeletonCards count={6} className="xl:grid-cols-3" />
-      <div className="grid gap-4 xl:grid-cols-2">
-        <SkeletonBlock className="h-72" />
-        <SkeletonBlock className="h-72" />
-      </div>
-    </div>
-  );
-}
+const PEOPLE_PAGE_SIZE = 20;
+const EVENTS_PAGE_SIZE = 20;
 
 export default function ReportsPage() {
-  const { token, role, userName } = useAuth();
-  const { can } = usePermissions();
-  const canExport = can('exportData', role);
-  const toast = useToast();
   const [params, setParams] = useSearchParams();
+  const population = (params.get('bolim') as ReportPopulation) === 'talaba' ? 'talaba' : 'xodim';
+  const periodKey = (PERIODS.find((item) => item.value === params.get('davr'))?.value ??
+    'bugun') as ReportPeriodKey;
+  const criterionKey = params.get('kriteriya');
+  const bucket = params.get('guruh') ?? '';
+  const personId = params.get('odam');
 
-  const tab: Tab = params.get('tab') === 'arxiv' ? 'arxiv' : 'tahlil';
-  const period = readPeriod(params);
-  const rangeError = validateRange(period.from, period.to);
+  const [search, setSearch] = useState('');
+  const [openEvent, setOpenEvent] = useState<AIEvent | null>(null);
 
-  const [analytics, setAnalytics] = useState<ReportAnalytics | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadNonce, setReloadNonce] = useState(0);
-  const lastNonce = useRef(0);
-  const [busy, setBusy] = useState<'save' | 'pdf' | 'xlsx' | null>(null);
-  const [opened, setOpened] = useState<ReportDetail | null>(null);
-  const [opening, setOpening] = useState<string | null>(null);
-  const viewRef = useRef<HTMLDivElement>(null);
-
-  const updateParams = useCallback(
-    (next: Record<string, string | null>) => {
-      setParams(
-        (prev) => {
-          const p = new URLSearchParams(prev);
-          for (const [key, value] of Object.entries(next)) {
-            if (value === null) p.delete(key);
-            else p.set(key, value);
-          }
-          return p;
-        },
-        { replace: true },
-      );
+  const setQuery = useCallback(
+    (patch: Record<string, string | null>) => {
+      const next = new URLSearchParams(params);
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === null || value === '') next.delete(key);
+        else next.set(key, value);
+      }
+      setParams(next);
     },
-    [setParams],
+    [params, setParams],
   );
 
-  useEffect(() => {
-    if (tab !== 'tahlil' || !token || rangeError) return;
-    const key = `${period.from}|${period.to}`;
-    const forced = lastNonce.current !== reloadNonce;
-    lastNonce.current = reloadNonce;
-    const cached = analyticsCache.get(key);
-    if (cached && !forced) {
-      setAnalytics(cached.data);
-      setError(null);
-      if (Date.now() - cached.at < CACHE_MS) return;
-    }
+  // 1-daraja: kriteriya kartalari.
+  const criteriaUrl = `/api/reports/criteria${buildQuery({ population, period: periodKey })}`;
+  const { data: criteria, loading: criteriaLoading, error: criteriaError, reload } =
+    useApiResource<ReportCriteria>(criteriaUrl);
 
-    const controller = new AbortController();
-    setLoading(true);
-    api
-      .get<ReportAnalytics>(`/api/reports/analytics${buildQuery({ from: period.from, to: period.to })}`, token, {
-        signal: controller.signal,
-      })
-      .then((data) => {
-        analyticsCache.set(key, { at: Date.now(), data });
-        setAnalytics(data);
-        setError(null);
-      })
-      .catch((err: unknown) => {
-        if (!isAbortError(err)) setError(errorText(err));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [tab, token, period.from, period.to, rangeError, reloadNonce]);
+  const criterion = useMemo(
+    () => criteria?.criteria.find((item) => item.key === criterionKey) ?? null,
+    [criteria, criterionKey],
+  );
+  const activeBucket = bucket || criterion?.buckets[0]?.key || '';
 
-  const current =
-    analytics && analytics.period.start === period.from && analytics.period.end === period.to ? analytics : null;
+  // 2-daraja (odamlar): faqat odamlar ro'yxati ochilganda so'raladi.
+  const peopleEnabled = Boolean(criterion && criterion.detail === 'people' && !personId);
+  const people = useServerPage<ReportPersonRow>(
+    `/api/reports/criteria/${criterion?.key ?? 'davomat'}/people`,
+    {
+      population,
+      period: periodKey,
+      bucket: activeBucket,
+      search: search.trim() || undefined,
+    },
+    PEOPLE_PAGE_SIZE,
+    { enabled: peopleEnabled },
+  );
 
-  async function saveToArchive() {
-    if (!current) return;
-    setBusy('save');
-    try {
-      await api.post<ReportDetail>('/api/reports', { from: period.from, to: period.to }, token);
-      invalidateServerPageCache('/api/reports');
-      toast.success(`"${current.period.label}" hisoboti arxivga saqlandi`);
-    } catch (err) {
-      toast.error(errorText(err));
-    } finally {
-      setBusy(null);
-    }
-  }
+  // 2-daraja (signallar): mavjud hodisalar jurnalidan o'qiladi, ya'ni
+  // kadr va "nega signal" izohi bilan birga keladi.
+  const eventsEnabled = Boolean(criterion && criterion.detail === 'events' && !personId);
+  const events = useServerPage<AIEvent>(
+    '/api/events',
+    {
+      moduleCodes: criterion?.moduleCodes.join(',') || undefined,
+      from: criteria?.period.start,
+      to: criteria?.period.end,
+      status: activeBucket || undefined,
+    },
+    EVENTS_PAGE_SIZE,
+    { enabled: eventsEnabled },
+  );
 
-  async function exportPdf(data: ReportAnalytics, title?: string) {
-    setBusy('pdf');
-    try {
-      const { exportAnalyticsPdf } = await import('../../lib/reportPdf');
-      await exportAnalyticsPdf(data, { preparedBy: userName, root: viewRef.current, title });
-    } catch (err) {
-      toast.error(`PDF tayyorlab bo'lmadi: ${err instanceof Error ? err.message : "noma'lum xato"}`);
-    } finally {
-      setBusy(null);
-    }
-  }
+  // 3-daraja: bitta odam.
+  const personUrl = personId
+    ? `/api/reports/people/${personId}${buildQuery({ period: periodKey })}`
+    : null;
+  const {
+    data: person,
+    loading: personLoading,
+    error: personError,
+    reload: reloadPerson,
+  } = useApiResource<ReportPersonDetail>(personUrl);
 
-  async function exportXlsx() {
-    setBusy('xlsx');
-    try {
-      const blob = await api.blob(`/api/reports/analytics.xlsx${buildQuery({ from: period.from, to: period.to })}`, token);
-      downloadBlob(blob, `hisobot-${period.from}_${period.to}.xlsx`);
-    } catch (err) {
-      toast.error(errorText(err));
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function openReport(id: string) {
-    setOpening(id);
-    try {
-      setOpened(await api.get<ReportDetail>(`/api/reports/${id}`, token));
-    } catch (err) {
-      toast.error(errorText(err));
-    } finally {
-      setOpening(null);
-    }
-  }
-
-  const exportButtons = (onPdf: () => void, withExcel: boolean, ready: boolean) =>
-    canExport && (
-      <>
-        {withExcel && (
-          <button
-            type="button"
-            onClick={exportXlsx}
-            disabled={!ready || busy !== null}
-            className="btn-glass flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {busy === 'xlsx' ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
-            Excel
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={onPdf}
-          disabled={!ready || busy !== null}
-          className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-[12.5px] font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {busy === 'pdf' ? <Loader2 size={14} className="animate-spin" /> : <FileDown size={14} />}
-          PDF hisobot
-        </button>
-      </>
-    );
+  const level: 'cards' | 'people' | 'events' | 'person' = personId
+    ? 'person'
+    : criterion?.detail === 'people'
+      ? 'people'
+      : criterion?.detail === 'events'
+        ? 'events'
+        : 'cards';
 
   return (
-    <section className="glass p-6">
-      <PageHeader
-        title="Hisobotlar"
-        subtitle="Institut faoliyati tahlili: davomat, xavfsizlik, darslar va tizim holati"
-        action={
+    <div className="space-y-4">
+      <section className="glass p-4 sm:p-6">
+        <PageHeader
+          title="Hisobotlar"
+          subtitle="Kriteriya bo'yicha raqam, raqam ortidagi ro'yxat va har bir odamning kamera isboti"
+          action={
+            <button
+              type="button"
+              onClick={reload}
+              className="btn-glass flex items-center gap-1.5"
+            >
+              <RefreshCw size={14} className={criteriaLoading ? 'animate-spin' : ''} />
+              Yangilash
+            </button>
+          }
+        />
+
+        <div className="flex flex-wrap items-center gap-3">
           <SegmentedControl
-            options={TABS}
-            value={tab}
-            ariaLabel="Hisobot bo'limi"
-            onChange={(next) => {
-              setOpened(null);
-              updateParams({ tab: next === 'arxiv' ? 'arxiv' : null });
-            }}
+            ariaLabel="Kim bo'yicha hisobot"
+            value={population}
+            onChange={(value) => setQuery({ bolim: value, kriteriya: null, guruh: null, odam: null })}
+            options={POPULATIONS}
           />
-        }
-      />
-
-      {tab === 'tahlil' ? (
-        <>
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/70 bg-white/50 p-3">
-            <PeriodPicker
-              value={period}
-              onChange={(next) =>
-                updateParams(
-                  next.preset === 'custom'
-                    ? { davr: 'custom', from: next.from, to: next.to }
-                    : { davr: next.preset, from: null, to: null },
-                )
-              }
-            />
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setReloadNonce((n) => n + 1)}
-                disabled={loading || !!rangeError}
-                aria-label="Ma'lumotni yangilash"
-                title="Yangilash"
-                className="btn-glass flex items-center !px-2.5 disabled:opacity-50"
-              >
-                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-              </button>
-              <button
-                type="button"
-                onClick={saveToArchive}
-                disabled={!current || busy !== null}
-                className="btn-glass flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {busy === 'save' ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                Arxivga saqlash
-              </button>
-              {exportButtons(() => current && exportPdf(current), true, !!current)}
-            </div>
-          </div>
-
-          {current && (
-            <p className="mb-5 text-xs text-slate-500">
-              Davr: <span className="font-semibold text-slate-700">{current.period.label}</span> · {current.period.days} kun ·
-              solishtiriladi: {current.previousPeriod.label} · ma&apos;lumot {current.generatedAt.slice(11)} holatiga
-              {loading && <Loader2 size={12} className="ml-1.5 inline animate-spin" aria-label="Yangilanmoqda" />}
-            </p>
+          <SegmentedControl
+            size="sm"
+            ariaLabel="Davrni tanlash"
+            value={periodKey}
+            onChange={(value) => setQuery({ davr: value, odam: null })}
+            options={PERIODS}
+          />
+          {criteria && (
+            <span className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500">
+              <CalendarRange size={13} className="text-indigo-500" />
+              {criteria.period.start === criteria.period.end
+                ? criteria.period.start
+                : `${criteria.period.start} — ${criteria.period.end}`}
+              <span className="text-slate-400">
+                · {criteria.populationLabel}: {criteria.peopleTotal} ta, ro&apos;yxatdan o&apos;tgan{' '}
+                {criteria.enrolledTotal} ta
+              </span>
+            </span>
           )}
+        </div>
+      </section>
 
-          {rangeError ? (
-            <ErrorState title="Davr noto'g'ri tanlangan" message={rangeError} />
-          ) : error && !current ? (
-            <ErrorState message={error} onRetry={() => setReloadNonce((n) => n + 1)} />
-          ) : !current ? (
-            <ReportSkeleton />
-          ) : (
-            <div ref={viewRef}>
-              <ReportView analytics={current} />
-            </div>
-          )}
-        </>
-      ) : opened ? (
-        <>
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/70 bg-white/50 p-3">
-            <div className="flex min-w-0 items-center gap-3">
+      {criteriaError && <ErrorState message={criteriaError} onRetry={reload} />}
+
+      {level === 'cards' && (
+        <CriteriaCards
+          criteria={criteria?.criteria ?? []}
+          loading={criteriaLoading}
+          onOpen={(item, bucketKey) =>
+            setQuery({ kriteriya: item.key, guruh: bucketKey, odam: null })
+          }
+        />
+      )}
+
+      {level === 'people' && criterion && (
+        <CriterionPeople
+          criterion={criterion}
+          bucket={activeBucket}
+          onBucketChange={(value) => setQuery({ guruh: value })}
+          people={people.items}
+          total={people.total}
+          page={people.page}
+          pageSize={PEOPLE_PAGE_SIZE}
+          totalPages={people.totalPages}
+          loading={people.loading}
+          error={people.error}
+          onRetry={people.reload}
+          onPageChange={people.setPage}
+          search={search}
+          onSearchChange={setSearch}
+          onOpenPerson={(row) => setQuery({ odam: row.id })}
+          onBack={() => setQuery({ kriteriya: null, guruh: null })}
+        />
+      )}
+
+      {level === 'events' && criterion && (
+        <section className="glass p-4 sm:p-5">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setOpened(null)}
-                className="btn-glass flex items-center gap-1.5"
+                onClick={() => setQuery({ kriteriya: null, guruh: null })}
+                className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-500 transition hover:bg-white hover:text-indigo-600"
               >
                 <ArrowLeft size={14} />
-                Arxiv
+                Kriteriyalar
               </button>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-slate-900">{opened.periodLabel}</p>
-                <p className="text-[11px] text-slate-500">
-                  Saqlangan: {opened.generatedAt}
-                  {opened.createdBy ? ` · ${opened.createdBy}` : ''}
-                </p>
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-900">{criterion.title}</h3>
+                <p className="text-[11px] text-slate-500">{events.total} ta signal · kadr bilan</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              {opened.analytics &&
-                exportButtons(() => opened.analytics && exportPdf(opened.analytics, `Tahliliy hisobot: ${opened.periodLabel}`), false, true)}
-            </div>
+            <SegmentedControl
+              size="sm"
+              ariaLabel="Signal holati"
+              value={activeBucket}
+              onChange={(value) => setQuery({ guruh: value })}
+              options={criterion.buckets.map((item) => ({
+                value: item.key,
+                label: item.label,
+                count: item.count,
+              }))}
+            />
           </div>
-          {opened.analytics ? (
-            <div ref={viewRef}>
-              <ReportView analytics={opened.analytics} />
-            </div>
+
+          {events.error && <ErrorState message={events.error} onRetry={events.reload} />}
+
+          {events.loading && events.items.length === 0 ? (
+            <SkeletonTable rows={5} columns={4} />
+          ) : events.items.length === 0 ? (
+            <EmptyState compact title="Bu davrda signal yo'q" description="Boshqa davrni tanlab ko'ring." />
           ) : (
-            <LegacyReportView report={opened} />
+            <div className="overflow-x-auto rounded-xl border border-white/70">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="bg-white/50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="px-4 py-3">Vaqt</th>
+                    <th className="px-4 py-3">Kamera</th>
+                    <th className="px-4 py-3">Kim</th>
+                    <th className="px-4 py-3">Holat</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/60">
+                  {events.items.map((event) => (
+                    <tr
+                      key={event.id}
+                      onClick={() => setOpenEvent(event)}
+                      className="cursor-pointer transition-colors hover:bg-white/50"
+                    >
+                      <td className="px-4 py-2.5 text-slate-700" title={event.timestamp}>
+                        {event.occurredAt ? relativeTime(event.occurredAt) : event.timestamp}
+                        <span className="block font-mono text-[11px] text-slate-400">{event.timestamp}</span>
+                      </td>
+                      <td className="px-4 py-2.5 text-slate-600">
+                        {event.cameraName}
+                        <span className="block text-[11px] text-slate-400">{event.building}</span>
+                      </td>
+                      <td className="px-4 py-2.5 text-slate-600">{event.personName || '—'}</td>
+                      <td className="px-4 py-2.5">
+                        <Badge
+                          tone={
+                            event.status === 'tasdiqlangan'
+                              ? 'red'
+                              : event.status === 'rad_etilgan'
+                                ? 'slate'
+                                : 'amber'
+                          }
+                        >
+                          {event.status === 'tasdiqlangan'
+                            ? 'Tasdiqlangan'
+                            : event.status === 'rad_etilgan'
+                              ? 'Rad etilgan'
+                              : "Ko'rilmagan"}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="px-4">
+                <Pagination
+                  page={events.page}
+                  totalPages={events.totalPages}
+                  total={events.total}
+                  pageSize={EVENTS_PAGE_SIZE}
+                  onChange={events.setPage}
+                />
+              </div>
+            </div>
           )}
-        </>
-      ) : (
-        <ArchiveList onOpen={openReport} opening={opening} />
+        </section>
       )}
-    </section>
+
+      {level === 'person' && (
+        <PersonReport
+          person={person}
+          loading={personLoading}
+          error={personError}
+          onRetry={reloadPerson}
+          onBack={() => setQuery({ odam: null })}
+          backLabel={criterion ? criterion.title : 'Kriteriyalar'}
+        />
+      )}
+
+      <EventDrawer
+        event={openEvent}
+        onClose={() => setOpenEvent(null)}
+        onReview={() => setOpenEvent(null)}
+      />
+    </div>
   );
 }
