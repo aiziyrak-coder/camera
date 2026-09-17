@@ -14,6 +14,7 @@ from app.rate_limit import limiter
 from app.schemas.permission import PermissionEntryOut, PermissionToggleIn
 from app.schemas.user import AdminUserOut, ResetUserPasswordIn, UserCreateIn, UserUpdateIn
 from app.security import hash_password
+from app.services.security_checks import forget_default_password_check
 from app.timezone import to_local
 from app.utils import compute_initials
 
@@ -121,6 +122,7 @@ async def reset_user_password(
 
     user.password_hash = hash_password(body.new_password)
     user.token_version += 1
+    forget_default_password_check()
 
     await log_action(
         db, request, current_user.id, f"Foydalanuvchi parolini tikladi: {user.login}", "Foydalanuvchilar"
@@ -196,4 +198,11 @@ async def toggle_permission(
     )
     await db.commit()
     await db.refresh(permission)
-    return PermissionEntryOut(super_admin=permission.super_admin, admin=permission.admin)
+    # camera_steward ham qaytarilishi SHART: frontend matritsadagi qatorni
+    # shu javob bilan almashtiradi, maydon tushib qolsa "Kamera mas'uli"
+    # ustuni doim o'chiq ko'rinib, keyingi bosish bazaga teskari yozardi.
+    return PermissionEntryOut(
+        super_admin=permission.super_admin,
+        admin=permission.admin,
+        camera_steward=permission.camera_steward,
+    )

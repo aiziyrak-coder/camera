@@ -34,6 +34,7 @@ from app.models import AuditLog, Camera
 from app.services.frame_grabber import camera_video_source
 from app.services.stream_cache import peek_cached_frame
 from app.services.connectivity import tcp_check
+from app.services.thumbnail_cache import frames_seen_at
 
 logger = logging.getLogger("app.camera_health")
 
@@ -131,6 +132,22 @@ def reset_camera_health_state_for_tests() -> None:
     _alerted.clear()
 
 
+def _latest_frame_moment(camera: Camera, seen_at: dict[str, float], now: datetime) -> datetime | None:
+    """Kameradan oxirgi yaroqli kadr qachon kelgan — bilsak.
+
+    Faqat shu jarayondagi o'quvchiga qarash yetmas edi: miniatyurani
+    ikkinchi worker oladi, kirish kamerasini esa AI asosiy oqimdan
+    o'qiydi (bu yerdagi manzil boshqa). Productionda "TASVIRSIZ" deb
+    ko'rsatilgan 8 kameradan 7 tasi aslida rasm berayotgan edi."""
+    source = camera_video_source(camera)
+    if source and peek_cached_frame(source) is not None:
+        return now
+    moment = seen_at.get(str(camera.id))
+    if moment is None:
+        return None
+    return min(now, datetime.fromtimestamp(moment, tz=timezone.utc))
+
+
 async def run_camera_health_sweep_once(db: AsyncSession) -> int:
     """Checks every 'faol' camera CONCURRENTLY (bounded by
     _health_semaphore), stamps last_seen_at on the reachable ones. Returns
@@ -141,6 +158,7 @@ async def run_camera_health_sweep_once(db: AsyncSession) -> int:
 
     now = datetime.now(timezone.utc)
     results = await asyncio.gather(*(_check_one(camera) for camera in cameras), return_exceptions=True)
+    seen_at = await frames_seen_at([str(camera.id) for camera in cameras])
 
     reachable_count = 0
     frames_count = 0
@@ -160,9 +178,10 @@ async def run_camera_health_sweep_once(db: AsyncSession) -> int:
             # ochmaydi va uni "so'ralgan" deb belgilamaydi — ya'ni bu
             # tekshiruv hech qanday ffmpeg jarayonini tirik ushlab
             # turmaydi.
-            source = camera_video_source(camera)
-            if source and peek_cached_frame(source) is not None:
-                camera.last_frame_at = now
+            frame_at = _latest_frame_moment(camera, seen_at, now)
+            if frame_at is not None and (camera.last_frame_at is None or frame_at > camera.last_frame_at):
+                camera.last_frame_at = frame_at
+            if is_video_flowing(camera.last_frame_at):
                 frames_count += 1
         else:
             offline_since = _track_offline_camera(camera, now)

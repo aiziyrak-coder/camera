@@ -1,7 +1,5 @@
 import { useRef, useState } from 'react';
 import { AlertTriangle, FileText, Loader2, Upload } from 'lucide-react';
-import { uploadFile } from '../../lib/fileUpload';
-import { useAuth } from '../../lib/auth';
 
 const MAX_SIZE_MB = 10;
 
@@ -10,7 +8,6 @@ interface PassportUploadStepProps {
 }
 
 export default function PassportUploadStep({ onLoaded }: PassportUploadStepProps) {
-  const { token } = useAuth();
   const inputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,10 +31,9 @@ export default function PassportUploadStep({ onLoaded }: PassportUploadStepProps
     let pdf: typeof import('../../lib/pdf') | null = null;
     try {
       pdf = await import('../../lib/pdf');
-      // Asl PDF faylni "arxiv" xizmati orqali saqlaymiz (backend tayyor bo'lganda
-      // shu joyda haqiqiy serverga yuklanadi) — vizual preview esa alohida,
-      // yuzni solishtirish uchun kerakli piksel ma'lumotini beruvchi rasmga render qilinadi.
-      await uploadFile(file, file.name, token, 'passports');
+      // Pasport faqat brauzerda — yuzni solishtirish uchun rasmga aylantiriladi.
+      // Serverga yuklanmaydi: ilgari har bir PDF "passports/" ga tushib, hech
+      // qaysi yozuvga bog'lanmagan shaxsiy hujjat bo'lib qolardi.
       const dataUrl = await pdf.renderPdfFirstPageToDataUrl(file);
       setPreview({ url: dataUrl, name: file.name });
       onLoaded(dataUrl, file.name);

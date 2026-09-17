@@ -13,7 +13,12 @@ export type PermissionKey =
   | 'viewLive'
   | 'manageRoles'
   | 'exportData'
-  | 'editCameraLocation';
+  | 'editCameraLocation'
+  | 'reviewEvents'
+  | 'deleteEvents'
+  | 'manageAttendance'
+  | 'manageOrgStructure'
+  | 'manageLessons';
 
 export const PERMISSION_LABELS: Record<PermissionKey, string> = {
   manageCameras: "Kameralarni qo'shish va o'chirish",
@@ -25,6 +30,11 @@ export const PERMISSION_LABELS: Record<PermissionKey, string> = {
   manageRoles: 'Foydalanuvchi rollarini boshqarish',
   exportData: "Ma'lumotlarni eksport qilish",
   editCameraLocation: "Kamera joylashuvini to'g'rilash (bino, qavat, zona)",
+  reviewEvents: "Hodisalar jurnalini ko'rish va ko'rib chiqish",
+  deleteEvents: "Hodisani butunlay o'chirish",
+  manageAttendance: "Davomat va o'qituvchilar kuzatuvini ko'rish, davomatni tuzatish",
+  manageOrgStructure: "Tashkiliy tuzilmani o'zgartirish (bino, fakultet, guruh, kafedra)",
+  manageLessons: 'Dars jadvali va dars monitoringi',
 };
 
 export type PermissionMatrix = Record<
@@ -45,6 +55,13 @@ export const DEFAULT_PERMISSIONS: PermissionMatrix = {
   manageRoles: { superAdmin: true, admin: false, cameraSteward: false },
   exportData: { superAdmin: true, admin: false, cameraSteward: false },
   editCameraLocation: { superAdmin: true, admin: true, cameraSteward: true },
+  // Backenddagi app/seed.py va alembic n7b8c9d0e1f2 bilan bir xil.
+  reviewEvents: { superAdmin: true, admin: true, cameraSteward: false },
+  // Hodisa — dalil: admin uni tasdiqlaydi yoki rad etadi, o'chirmaydi.
+  deleteEvents: { superAdmin: true, admin: false, cameraSteward: false },
+  manageAttendance: { superAdmin: true, admin: true, cameraSteward: false },
+  manageOrgStructure: { superAdmin: true, admin: true, cameraSteward: false },
+  manageLessons: { superAdmin: true, admin: true, cameraSteward: false },
 };
 
 /** Rol qaysi ustundan o'qiladi — backenddagi _PERMISSION_COLUMN bilan bir xil. */
@@ -92,7 +109,11 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
     };
   }, [token]);
 
-  const matrix = isBackendConfigured ? remoteMatrix : localMatrix;
+  // Demo rejimda brauzerda eski (yangi kalitlarsiz) matritsa saqlangan
+  // bo'lishi mumkin — yetishmagan kalitlar standartdan olinadi. Server
+  // rejimida bunday to'ldirish YO'Q: server bilmagan kalitni server
+  // baribir rad etadi, UI esa uni ochiq ko'rsatmasligi kerak.
+  const matrix = isBackendConfigured ? remoteMatrix : { ...DEFAULT_PERMISSIONS, ...localMatrix };
 
   function can(key: PermissionKey, role: Role | null): boolean {
     if (!role) return false;
@@ -103,10 +124,10 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
 
   function toggle(key: PermissionKey, role: PermissionRoleColumn) {
     if (!isBackendConfigured) {
-      setLocalMatrix((prev) => ({
-        ...prev,
-        [key]: { ...prev[key], [role]: !prev[key][role] },
-      }));
+      setLocalMatrix((prev) => {
+        const row = prev[key] ?? DEFAULT_PERMISSIONS[key];
+        return { ...prev, [key]: { ...row, [role]: !row[role] } };
+      });
       return;
     }
     if (!token) return;

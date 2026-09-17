@@ -9,6 +9,7 @@ import asyncio
 import inspect
 
 import numpy as np
+import pytest
 
 from app.jobs import attendance_ai
 from app.services.face_matching import CandidateMatrix
@@ -79,3 +80,57 @@ class TestAttendanceUsesItsPriority:
         from app.jobs import unified_face_sweep
 
         assert "PRIORITY_ATTENDANCE" not in inspect.getsource(unified_face_sweep)
+
+
+class TestCancelledWaitersDoNotLeakSlots:
+    """Kutayotgan so'rov bekor qilinsa, slot abadiy band bo'lib qolmasligi kerak."""
+
+    async def test_cancel_while_queued(self):
+        gate = PriorityInferenceGate(1)
+        holder_in = asyncio.Event()
+        release = asyncio.Event()
+
+        async def holder():
+            async with gate.slot():
+                holder_in.set()
+                await release.wait()
+
+        async def waiter():
+            async with gate.slot():
+                pass
+
+        holding = asyncio.create_task(holder())
+        await holder_in.wait()
+        waiting = asyncio.create_task(waiter())
+        await asyncio.sleep(0)
+        assert gate.snapshot()["waiting"] == 1
+
+        waiting.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiting
+        release.set()
+        await holding
+
+        assert gate.snapshot() == {"max": 1, "in_use": 0, "waiting": 0}
+        async with gate.slot():  # darhol olinadi
+            assert gate.snapshot()["in_use"] == 1
+
+    async def test_cancel_right_after_the_slot_was_granted(self):
+        gate = PriorityInferenceGate(1)
+        entered = []
+
+        async def waiter():
+            async with gate.slot():
+                entered.append(True)
+
+        async with gate.slot():
+            waiting = asyncio.create_task(waiter())
+            await asyncio.sleep(0)
+        # Chiqishda slot kutuvchiga berildi (event o'rnatildi), lekin u hali
+        # davom etmadi — aynan shu lahzada bekor qilamiz.
+        waiting.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiting
+
+        assert entered == []
+        assert gate.snapshot() == {"max": 1, "in_use": 0, "waiting": 0}

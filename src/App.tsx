@@ -53,11 +53,20 @@ export default function App() {
         <Route element={<RequireAuth />}>
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<DashboardPage />} />
-            <Route path="events" element={<EventsPage />} />
+            {/* Menyu bu bo'limlarni allaqachon yashiradi; bu yerdagi
+                himoya to'g'ridan-to'g'ri havola bilan kirilganda kerak.
+                Haqiqiy chegara baribir backendda. */}
+            <Route element={<RequirePermission permission="reviewEvents" />}>
+              <Route path="events" element={<EventsPage />} />
+            </Route>
             <Route path="students-staff" element={<StudentsStaffPage />} />
-            <Route path="attendance" element={<AttendancePage />} />
-            <Route path="presence" element={<PresencePage />} />
-            <Route path="teaching" element={<TeachingPage />} />
+            <Route element={<RequirePermission permission="manageAttendance" />}>
+              <Route path="attendance" element={<AttendancePage />} />
+              <Route path="presence" element={<PresencePage />} />
+            </Route>
+            <Route element={<RequirePermission permission="manageLessons" />}>
+              <Route path="teaching" element={<TeachingPage />} />
+            </Route>
             <Route path="org-structure" element={<OrgStructurePage />} />
             <Route path="cameras" element={<CamerasZonesPage />} />
             <Route path="ai-modules" element={<AIModulesPage />} />

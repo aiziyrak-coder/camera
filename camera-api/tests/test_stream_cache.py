@@ -55,7 +55,7 @@ class TestExtractCompleteJpegFrames:
         assert remainder == b""
 
 
-def _real_jpeg(flat: bool = False) -> bytes:
+def _real_jpeg(flat: bool = False, seed: int = 7) -> bytes:
     """A decodable frame. The freshness tests below used a placeholder
     byte string, which stopped working the moment get_frame() started
     judging picture quality: undecodable bytes are exactly what a
@@ -63,7 +63,7 @@ def _real_jpeg(flat: bool = False) -> bytes:
     import cv2
     import numpy as np
 
-    rng = np.random.default_rng(7)
+    rng = np.random.default_rng(seed)
     image = rng.integers(20, 200, size=(240, 320, 3), dtype=np.uint8)
     if flat:
         image[:, 80:] = 255
@@ -168,3 +168,54 @@ class TestStreamCacheIdleReaping:
         await cache.stop_all()
 
         assert cache._readers == {}
+
+
+class TestFrameSequence:
+    def test_each_published_frame_gets_a_higher_number(self):
+        reader = _StreamReader("rtsp://fake")
+        reader.publish(_real_jpeg(seed=1))
+        first = reader.get_latest()
+        reader.publish(_real_jpeg(seed=2))
+        second = reader.get_latest()
+
+        assert first is not None and second is not None
+        assert second[1] > first[1]
+
+    def test_numbers_keep_growing_across_readers(self):
+        """O'quvchi qayta ishga tushsa ham raqam kichraymasligi kerak —
+        aks holda "yangiroq kadr" kutayotgan chaqiruv hech qachon uni ko'rmasdi."""
+        old = _StreamReader("rtsp://fake")
+        old.publish(_real_jpeg())
+        new = _StreamReader("rtsp://fake")
+        new.publish(_real_jpeg())
+
+        assert new.get_latest()[1] > old.get_latest()[1]
+
+    def test_the_same_frame_keeps_its_number(self):
+        reader = _StreamReader("rtsp://fake")
+        reader.publish(_real_jpeg())
+
+        assert reader.get_latest()[1] == reader.get_latest()[1]
+
+    def test_stale_frame_has_no_number_either(self):
+        reader = _StreamReader("rtsp://fake")
+        reader.publish(_real_jpeg())
+        reader._latest_frame_at = time.monotonic() - settings.stream_cache_max_age_seconds - 1
+
+        assert reader.get_latest() is None
+
+    def test_a_byte_identical_repeat_is_not_a_new_frame(self):
+        """Faqat kalit kadrlar dekodlanganda ffmpeg oxirgi kadrni takrorlab
+        yuborishi mumkin — u "ikkinchi kadr" bo'lib o'tib ketmasligi kerak,
+        lekin oqimni tirik deb hisoblashga yetadi."""
+        frame = _real_jpeg()
+        reader = _StreamReader("rtsp://fake")
+        reader.publish(frame)
+        before = reader.get_latest()[1]
+        reader._latest_frame_at = time.monotonic() - settings.stream_cache_max_age_seconds - 1
+
+        reader.publish(bytes(frame))
+
+        latest = reader.get_latest()
+        assert latest is not None, "a repeat still proves the stream is alive"
+        assert latest[1] == before

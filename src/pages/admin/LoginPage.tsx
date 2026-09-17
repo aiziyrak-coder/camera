@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AlertCircle, Eye, EyeOff, Loader2, Lock, ShieldCheck, User } from 'lucide-react';
 import { useAuth, DEMO_CREDENTIALS, type DemoRole } from '../../lib/auth';
+import { isBackendConfigured } from '../../lib/config';
 import ForgotPasswordModal from '../../components/admin/ForgotPasswordModal';
 
 interface FieldErrors {
@@ -85,30 +86,35 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <div className="mb-6 grid grid-cols-2 gap-2 rounded-xl border border-white/80 bg-white/40 p-1">
-          <button
-            type="button"
-            onClick={() => setRole('super-admin')}
-            className={`rounded-lg py-2 text-sm font-semibold transition-colors ${
-              role === 'super-admin'
-                ? 'bg-white text-indigo-600 shadow-btn'
-                : 'text-slate-500'
-            }`}
-          >
-            Super Admin
-          </button>
-          <button
-            type="button"
-            onClick={() => setRole('admin')}
-            className={`rounded-lg py-2 text-sm font-semibold transition-colors ${
-              role === 'admin'
-                ? 'bg-white text-indigo-600 shadow-btn'
-                : 'text-slate-500'
-            }`}
-          >
-            Admin
-          </button>
-        </div>
+        {/* Rol tanlash faqat DEMO rejimida (backendsiz) ma'noli — qaysi demo
+            hisobni ko'rsatishni tanlaydi. Haqiqiy tizimda rolni server
+            hisobning o'zidan aniqlaydi. */}
+        {!isBackendConfigured && (
+          <div className="mb-6 grid grid-cols-2 gap-2 rounded-xl border border-white/80 bg-white/40 p-1">
+            <button
+              type="button"
+              onClick={() => setRole('super-admin')}
+              className={`rounded-lg py-2 text-sm font-semibold transition-colors ${
+                role === 'super-admin'
+                  ? 'bg-white text-indigo-600 shadow-btn'
+                  : 'text-slate-500'
+              }`}
+            >
+              Super Admin
+            </button>
+            <button
+              type="button"
+              onClick={() => setRole('admin')}
+              className={`rounded-lg py-2 text-sm font-semibold transition-colors ${
+                role === 'admin'
+                  ? 'bg-white text-indigo-600 shadow-btn'
+                  : 'text-slate-500'
+              }`}
+            >
+              Admin
+            </button>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
           {errors.form && (
@@ -129,7 +135,8 @@ export default function LoginPage() {
               />
               <input
                 type="text"
-                placeholder="admin"
+                placeholder={isBackendConfigured ? 'Loginingiz' : 'admin'}
+                autoComplete="username"
                 value={login}
                 onChange={(e) => setLogin(e.target.value)}
                 onBlur={() => handleBlur('login')}
@@ -158,6 +165,7 @@ export default function LoginPage() {
               <input
                 type={showPassword ? 'text' : 'password'}
                 placeholder="••••••••"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 onBlur={() => handleBlur('password')}
@@ -209,9 +217,12 @@ export default function LoginPage() {
             {loading ? 'Tekshirilmoqda...' : 'Tizimga kirish'}
           </button>
 
-          <p className="text-center text-[11px] text-slate-400">
-            Demo: {DEMO_CREDENTIALS[role].login} / {DEMO_CREDENTIALS[role].password}
-          </p>
+          {/* Production'da bu yozuv Super Admin parolini hammaga ko'rsatardi. */}
+          {!isBackendConfigured && (
+            <p className="text-center text-[11px] text-slate-400">
+              Demo: {DEMO_CREDENTIALS[role].login} / {DEMO_CREDENTIALS[role].password}
+            </p>
+          )}
         </form>
 
         <p className="mt-6 flex items-center justify-center gap-1.5 text-xs text-slate-400">

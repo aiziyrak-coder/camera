@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_action
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_user
+from app.dependencies import CurrentUser, require_permission
 from app.models import Camera, LessonAttendance, LessonSession, StudentStaff
 from app.pagination import Page, PageParams, build_page, paginate
 from app.schemas.lesson_session import (
@@ -31,6 +31,11 @@ from app.services.lesson_import import import_lesson_sessions_csv, parse_schedul
 
 router = APIRouter(prefix="/api/lesson-sessions", tags=["lesson-sessions"])
 
+# Dars jadvali va monitoring natijalarini o'qish hisobotlardan ham kerak;
+# jadvalni kiritish, import qilish va o'chirish — faqat manageLessons bilan.
+ReadDep = Annotated[CurrentUser, Depends(require_permission("manageLessons", "viewReports"))]
+EditDep = Annotated[CurrentUser, Depends(require_permission("manageLessons"))]
+
 
 def _to_out(s: LessonSession) -> LessonSessionOut:
     return LessonSessionOut(
@@ -40,9 +45,9 @@ def _to_out(s: LessonSession) -> LessonSessionOut:
         faculty=s.faculty,
         teacher=s.teacher,
         subject=s.subject,
-        attention_score=s.attention_score,
+        attention_score=s.attention_score if s.attention_samples else None,
         sleep_incidents=s.sleep_incidents,
-        teacher_activity_score=s.teacher_activity_score,
+        teacher_activity_score=s.teacher_activity_score if s.activity_samples else None,
         teacher_on_time=s.teacher_on_time,
         teacher_id=str(s.teacher_id) if s.teacher_id else None,
         camera_id=str(s.camera_id) if s.camera_id else None,
@@ -80,7 +85,7 @@ def _parse_scheduled_start_time(value: str | None) -> datetime | None:
 @router.get("", response_model=Page[LessonSessionOut])
 async def list_lesson_sessions(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[CurrentUser, Depends(get_current_user)],
+    _: ReadDep,
     page_params: Annotated[PageParams, Depends()],
     group: Annotated[str | None, Query()] = None,
     faculty: Annotated[str | None, Query()] = None,
@@ -101,7 +106,7 @@ async def create_lesson_session(
     body: LessonSessionCreateIn,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    current_user: EditDep,
 ) -> LessonSessionOut:
     teacher = await _resolve_teacher(db, body.teacher_id)
     camera = await _resolve_camera(db, body.camera_id)
@@ -114,9 +119,11 @@ async def create_lesson_session(
         faculty=body.faculty,
         teacher=teacher.full_name if teacher else body.teacher,
         subject=body.subject,
-        attention_score=body.attention_score,
+        attention_score=body.attention_score or 0,
+        attention_samples=0 if body.attention_score is None else 1,
         sleep_incidents=body.sleep_incidents,
-        teacher_activity_score=body.teacher_activity_score,
+        teacher_activity_score=body.teacher_activity_score or 0,
+        activity_samples=0 if body.teacher_activity_score is None else 1,
         teacher_on_time=body.teacher_on_time,
         teacher_id=teacher.id if teacher else None,
         camera_id=camera.id if camera else None,
@@ -137,7 +144,7 @@ async def schedule_lesson_session(
     body: LessonSessionScheduleIn,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    current_user: EditDep,
 ) -> LessonSessionOut:
     session = await db.get(LessonSession, session_id)
     if session is None:
@@ -166,7 +173,7 @@ async def schedule_lesson_session(
 async def import_lesson_sessions(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    current_user: EditDep,
     file: Annotated[UploadFile, File(description="UTF-8 CSV: date,group,faculty,subject,...")],
 ) -> LessonSessionImportResultOut:
     """Bulk-import dars jadvali — teacher_id, camera_id, scheduled_start_time ixtiyoriy."""
@@ -188,7 +195,7 @@ async def import_lesson_sessions(
 
 @router.get("/{session_id}/attendance", response_model=LessonAttendanceOut)
 async def lesson_attendance(
-    session_id: str, db: Annotated[AsyncSession, Depends(get_db)], _: Annotated[CurrentUser, Depends(get_current_user)]
+    session_id: str, db: Annotated[AsyncSession, Depends(get_db)], _: ReadDep
 ) -> LessonAttendanceOut:
     """Bitta darsning davomat ro'yxati — TT kriteriya 7/8 ning dars
     darajasidagi javobi (app/jobs/lesson_attendance.py to'ldiradi).
@@ -238,7 +245,7 @@ async def delete_lesson_session(
     session_id: str,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    current_user: EditDep,
 ) -> None:
     session = await db.get(LessonSession, session_id)
     if session is None:

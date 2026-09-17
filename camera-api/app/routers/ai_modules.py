@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_action
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_user, require_permission
+from app.dependencies import CurrentUser, require_permission
 from app.models import AIModuleConfig, Camera, Event, ModuleCameraSuppression, User
 from app.schemas.ai_module import AIModuleOut, AIModuleUpdateIn, ModuleSuppressionOut
 from app.schemas.event import EventOut
@@ -36,6 +36,8 @@ from app.timezone import to_local
 router = APIRouter(prefix="/api/ai-modules", tags=["ai-modules"])
 
 PermDep = Annotated[CurrentUser, Depends(require_permission("configureAi"))]
+# Sinov namunasini Hodisalar sahifasidagi operator ham baholaydi.
+TrialSampleDep = Annotated[CurrentUser, Depends(require_permission("reviewEvents", "configureAi"))]
 
 # Hodisa bermaydigan, davomat yozadigan mezonlar.
 ATTENDANCE_MODULE_CODES = {6, 7, 8, 9}
@@ -154,7 +156,7 @@ async def list_ai_modules(db: Annotated[AsyncSession, Depends(get_db)], _: PermD
 @router.get("/suppressions", response_model=list[ModuleSuppressionOut])
 async def list_suppressions(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[CurrentUser, Depends(get_current_user)],
+    _: PermDep,
 ) -> list[ModuleSuppressionOut]:
     """Operatorlar ko'p rad etgani uchun avtomatik o'chirilgan kamera × modul juftliklari."""
     rows = (
@@ -217,7 +219,7 @@ async def restore_suppression(
 async def trial_sample(
     code: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[CurrentUser, Depends(get_current_user)],
+    _: TrialSampleDep,
     limit: Annotated[int, Query(ge=1, le=TRIAL_SAMPLE_MAX)] = 12,
 ) -> list[EventOut]:
     """Sinov signallaridan TASODIFIY, hali baholanmagan namuna.

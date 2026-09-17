@@ -55,6 +55,11 @@ MEDIAMTX_HLS_BASE_URL=https://${STREAM_DOMAIN}
 AI_SWEEP_CAMERA_CONCURRENCY=8
 FACE_RECOGNITION_GPU_ENABLED=false
 FACE_RECOGNITION_INFERENCE_CONCURRENCY=2
+
+# Birinchi Super Admin — API bo'sh bazada birinchi ishga tushganda yaratadi.
+# Demo hisoblar (admin/admin123) production'da YARATILMAYDI.
+INITIAL_ADMIN_LOGIN=${PROD_ADMIN_LOGIN}
+INITIAL_ADMIN_PASSWORD=${PROD_ADMIN_PASSWORD}
 EOF
 chmod 600 "${APP_DIR}/camera-api/.env"
 
@@ -98,17 +103,12 @@ log "SSL certificates..."
 certbot --nginx -d "${FRONTEND_DOMAIN}" -d "${API_DOMAIN}" -d "${STORAGE_DOMAIN}" -d "${STREAM_DOMAIN}" \
   --non-interactive --agree-tos -m "${CERT_EMAIL}" --redirect 2>/dev/null || log "Certbot skipped (check DNS)"
 
-log "Creating production admin..."
-TOKEN=$(curl -sf -X POST http://127.0.0.1:18080/api/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"login":"admin","password":"admin123"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])") || true
-if [[ -n "${TOKEN:-}" ]]; then
-  curl -sf -X POST http://127.0.0.1:18080/api/users \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -H 'Content-Type: application/json' \
-    -d "{\"login\":\"${PROD_ADMIN_LOGIN}\",\"password\":\"${PROD_ADMIN_PASSWORD}\",\"name\":\"Production Admin\",\"role\":\"Super Admin\"}" \
-    >/dev/null 2>&1 || true
-fi
+log "Checking production admin login (the API creates it from INITIAL_ADMIN_*)..."
+LOGIN_BODY=$(LOGIN="${PROD_ADMIN_LOGIN}" PASSWORD="${PROD_ADMIN_PASSWORD}" python3 -c \
+  'import json, os; print(json.dumps({"login": os.environ["LOGIN"], "password": os.environ["PASSWORD"]}))')
+curl -sf -o /dev/null -X POST http://127.0.0.1:18080/api/auth/login \
+  -H 'Content-Type: application/json' --data-binary "${LOGIN_BODY}" \
+  || log "WARN: production admin login failed — check 'docker compose logs api'"
 
 log "DONE"
 cat "$SECRETS_FILE"

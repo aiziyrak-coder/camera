@@ -44,6 +44,24 @@ class TestLessonSessionScheduling:
         assert body["teacherId"] == teacher_id
         assert body["cameraId"] == camera_id
         assert body["scheduledStartTime"] is not None
+        # Dars hali o'tmagan: o'lchov yo'q — "—", soxta 50% yoki "vaqtida" emas.
+        assert (body["attentionScore"], body["teacherActivityScore"], body["teacherOnTime"]) == (None, None, None)
+
+    async def test_a_manually_reported_score_is_kept(self, client: AsyncClient):
+        headers = await auth_headers(client, "admin", "admin123")
+        resp = await client.post(
+            "/api/lesson-sessions",
+            headers=headers,
+            json={
+                "date": "2026-08-13", "group": "IT-21", "faculty": "F", "subject": "S", "teacher": "Qo'lda O.",
+                "attentionScore": 0, "teacherOnTime": False,
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["attentionScore"] == 0  # haqiqiy 0% — o'lchanmagandan farqli
+        assert body["teacherActivityScore"] is None
+        assert body["teacherOnTime"] is False
 
     async def test_create_without_teacher_or_teacher_id_is_rejected(self, client: AsyncClient):
         headers = await auth_headers(client, "admin", "admin123")
@@ -130,6 +148,10 @@ class TestLessonSessionImport:
         body = resp.json()
         assert body["imported"] == 2
         assert body["skipped"] == 0
+        listed = (await client.get("/api/lesson-sessions", headers=headers)).json()["items"]
+        assert {(row["attentionScore"], row["teacherActivityScore"], row["teacherOnTime"]) for row in listed} == {
+            (None, None, None)
+        }
 
     async def test_csv_import_skips_duplicate(self, client: AsyncClient):
         headers = await auth_headers(client, "admin", "admin123")

@@ -32,14 +32,9 @@ app/jobs/unauthorized_person_ai.py's lack of face tracking.
 
 Both scores are RUNNING AVERAGES, sampled once per active sweep tick and
 written to LessonSession.attention_score / teacher_activity_score. The
-running sample count is kept in memory only (module-level dict, keyed by
-LessonSession id — not persisted, resets on restart, same tradeoff as
-app/jobs/crowd_density_ai.py's baseline history): a restart mid-lesson
-makes the next sample count as the "first" one again rather than
-resuming the true running average, which biases the score toward
-whatever's sampled right after a restart. A real deployment tracking
-this across restarts would need to persist the sample count, not just
-the score — noted, not built, since it's a real but secondary gap.
+sample counts live next to them (attention_samples / activity_samples),
+so a restart mid-lesson resumes the true average, and a lesson nobody
+measured yet (count 0) reads as "—" rather than "0%".
 
 Dars davomati (2026-09-07 dan). #19 uchun har bir faol darsning
 kadridagi yuzlar allaqachon ro'yxatdagi odamlar bilan solishtiriladi —
@@ -63,10 +58,8 @@ import asyncio
 import json
 import logging
 import math
-from collections import defaultdict
 from datetime import timedelta
 
-import cv2
 import numpy as np
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -82,6 +75,7 @@ from app.models import LessonSession, StudentStaff
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
 from app.services.frame_grabber import grab_frame_pair_for_camera
+from app.services.image_size import jpeg_dimensions
 from app.services.object_detection import detect_objects
 from app.services.pose_detection import NOSE, PoseLandmarks, detect_poses
 from app.services.sleep_detection import is_plausible_frontal
@@ -100,10 +94,6 @@ TEACHER_ACTIVITY_MODULE_CODE = 21
 
 _sweep_guard = SweepGuard("lesson_quality_ai")
 
-# {lesson_session_id: sample_count} — see module docstring's "kept in
-# memory only" note.
-_attention_sample_counts: dict[str, int] = defaultdict(int)
-_activity_sample_counts: dict[str, int] = defaultdict(int)
 
 
 async def _active_sessions(db: AsyncSession) -> list[LessonSession]:
@@ -114,11 +104,14 @@ async def _active_sessions(db: AsyncSession) -> list[LessonSession]:
     excludes BOTH #19 and #21 — same "any" rule run_lesson_quality_ai_
     sweep_once itself already applies at the whole-sweep level."""
     now = local_now()
+    # Faqat hozir davom etayotgan darslar SQL'da tanlanadi — ilgari har
+    # 30-45 soniyada butun jadval tarixi o'qilib, Python'da saralanardi.
     result = await db.execute(
         select(LessonSession)
         .where(LessonSession.teacher_id.is_not(None))
         .where(LessonSession.camera_id.is_not(None))
-        .where(LessonSession.scheduled_start_time.is_not(None))
+        .where(LessonSession.scheduled_start_time <= now)
+        .where(LessonSession.scheduled_start_time >= now - timedelta(minutes=settings.lesson_duration_minutes))
     )
     active = []
     for row in result.scalars().all():
@@ -148,12 +141,9 @@ async def _group_student_ids(db: AsyncSession, group_name: str) -> set[str]:
     return {str(row) for row in result.scalars().all()}
 
 
-def _running_average_update(counts: dict[str, int], session_id: str, current_score: int, sample: float) -> int:
-    count = counts.get(session_id, 0)
-    new_count = count + 1
-    new_avg = (current_score * count + sample) / new_count
-    counts[session_id] = new_count
-    return round(new_avg)
+def _running_average(current_score: int, count: int, sample: float) -> int:
+    # count == 0: yaratilgandagi qiymat o'lchov emas — birinchi namuna o'rnini egallaydi.
+    return round((current_score * count + sample) / (count + 1))
 
 
 async def _match_enrolled(frame_bytes: bytes, candidates) -> list[tuple[object, tuple]]:
@@ -228,12 +218,9 @@ def _pose_movement(pose_a: PoseLandmarks, pose_b: PoseLandmarks) -> float:
 
 
 def _decoded_frame_size(frame_bytes: bytes) -> tuple[int, int] | None:
-    arr = np.frombuffer(frame_bytes, dtype=np.uint8)
-    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-    if img is None:
-        return None
-    height, width = img.shape[0], img.shape[1]
-    return width, height
+    """(eni, bo'yi). JPEG sarlavhasidan — to'liq dekodlash (va event
+    loop'ni to'xtatish) ikki son uchun ortiqcha (app/services/image_size.py)."""
+    return jpeg_dimensions(frame_bytes)
 
 
 async def _sample_activity(frame_a: bytes, frame_b: bytes, teacher_embedding: list[float]) -> float | None:
@@ -293,8 +280,6 @@ async def process_lesson_session(
     tick" (see _sample_attention/_sample_activity), in which case that
     score is simply left unchanged. Dars davomati ham shu yerda qayd
     etiladi, xuddi o'sha bitta yuz solishtiruvidan."""
-    session_id = str(session_row.id)
-
     # Bitta solishtiruv, ikkita iste'molchi. Faqat kerak bo'lsa
     # bajariladi — ikkala modul ham o'chirilgan bo'lsa, kadr umuman
     # tahlil qilinmaydi.
@@ -313,18 +298,20 @@ async def process_lesson_session(
 
     attention_sample = await _sample_attention(frame_b, matched) if attention_module_active else None
     if attention_sample is not None:
-        session_row.attention_score = _running_average_update(
-            _attention_sample_counts, session_id, session_row.attention_score, attention_sample
+        session_row.attention_score = _running_average(
+            session_row.attention_score, session_row.attention_samples, attention_sample
         )
+        session_row.attention_samples += 1
 
     teacher = session_row.teacher_ref
     if teacher_activity_module_active and teacher is not None and teacher.biometric_embedding:
         teacher_embedding = json.loads(teacher.biometric_embedding)
         activity_sample = await _sample_activity(frame_a, frame_b, teacher_embedding)
         if activity_sample is not None:
-            session_row.teacher_activity_score = _running_average_update(
-                _activity_sample_counts, session_id, session_row.teacher_activity_score, activity_sample
+            session_row.teacher_activity_score = _running_average(
+                session_row.teacher_activity_score, session_row.activity_samples, activity_sample
             )
+            session_row.activity_samples += 1
 
     await db.commit()
 

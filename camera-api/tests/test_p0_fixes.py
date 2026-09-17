@@ -51,5 +51,8 @@ class TestLessonImportDefaults:
         listed = await client.get("/api/lesson-sessions", headers=headers)
         assert listed.status_code == 200
         row = next(item for item in listed.json()["items"] if item["subject"] == "Patologiya")
-        assert row["attentionScore"] == 50
-        assert row["teacherActivityScore"] == 50
+        # NOT NULL ustunlar to'ldirilgan (import yiqilmaydi), lekin dars hali
+        # o'tmagan — ko'rsatkichlar "o'lchanmagan", soxta 50% emas.
+        assert row["attentionScore"] is None
+        assert row["teacherActivityScore"] is None
+        assert row["teacherOnTime"] is None

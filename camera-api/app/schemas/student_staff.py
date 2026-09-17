@@ -21,6 +21,10 @@ class StudentStaffOut(CamelModel):
     group: str | None = None
     # "14.09.2026 13:57" — yuz tasdiqlangan payt, Toshkent vaqti
     confirmed_label: str | None = None
+    # Ochiq sahifada o'zini o'zi ro'yxatdan o'tkazgan; awaiting_approval —
+    # yuzi yuborilgan va administrator qarorini kutmoqda.
+    self_registered: bool = False
+    awaiting_approval: bool = False
 
 
 class StudentStaffCreateIn(CamelModel):
@@ -132,6 +136,8 @@ class BiometricsCoverageOut(CamelModel):
     by_faculty: list[BiometricsFacultyRowOut]
     by_course: list[BiometricsCourseRowOut] = []
     """Faqat type=talaba so'ralganda to'ldiriladi."""
+    awaiting_approval: int = 0
+    """O'zini o'zi ro'yxatdan o'tkazib, administrator qarorini kutayotganlar."""
 
 
 class BiometricsConfirmationOut(StudentStaffOut):

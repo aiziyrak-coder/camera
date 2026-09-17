@@ -60,6 +60,11 @@ def _cutoff_time() -> time_type:
 
 STAFF_ATTENDANCE_MODULE_CODE = 6
 STUDENT_ATTENDANCE_MODULE_CODE = 7
+PRESENT_STATUSES = ("keldi", "kech_keldi")
+# Bitta INSERT dagi qatorlar soni. Har qator 3 ta parametr, Postgres esa
+# bitta so'rovda 32767 dan ortiq parametr qabul qilmaydi — 10 000+ odamni
+# bir so'rovda yozish xato bilan tugardi.
+INSERT_CHUNK_SIZE = 5000
 
 
 async def tracked_types(db: AsyncSession) -> list[str]:
@@ -94,35 +99,64 @@ async def mark_absences_for_day(db: AsyncSession, day: date_type) -> int:
     types = await tracked_types(db)
     if not types:
         return 0
-    enrolled = (
+    enrolled_rows = (
         await db.execute(
-            select(StudentStaff.id)
+            select(StudentStaff.id, StudentStaff.type)
             .where(StudentStaff.biometrics_status == "tasdiqlangan")
             .where(StudentStaff.type.in_(types))
         )
-    ).scalars().all()
-    if not enrolled:
+    ).all()
+    if not enrolled_rows:
         return 0
 
-    already_recorded = set(
+    day_statuses = dict(
         (
             await db.execute(
-                select(AttendanceRecord.student_staff_id).where(AttendanceRecord.date == day)
+                select(AttendanceRecord.student_staff_id, AttendanceRecord.status).where(AttendanceRecord.date == day)
             )
-        ).scalars().all()
+        ).all()
     )
-    missing = [person_id for person_id in enrolled if person_id not in already_recorded]
+
+    missing: list = []
+    for person_type in types:
+        people = [person_id for person_id, row_type in enrolled_rows if row_type == person_type]
+        if not people:
+            continue
+        seen = sum(1 for person_id in people if day_statuses.get(person_id) in PRESENT_STATUSES)
+        coverage = seen / len(people)
+        if coverage < settings.attendance_absence_min_coverage:
+            # To'rtinchi himoya: kameralar shu kuni odamlarning ozgina
+            # qismini tanigan bo'lsa, qolganlarning "kelmadi"si ularning
+            # emas, TIZIMNING holati. Productionda (2026-09-17) 687 xodimdan
+            # 22 tasi tanilgan — qolgan 665 tasini kelmadi deb yozish
+            # yolg'on ayblov bo'lardi. Bunday kun "ma'lumot yo'q" bo'lib
+            # qoladi.
+            logger.warning(
+                "absence marking skipped: recognition coverage too low to trust",
+                extra={
+                    "date": day.isoformat(),
+                    "type": person_type,
+                    "recognized": seen,
+                    "enrolled": len(people),
+                    "required_coverage": settings.attendance_absence_min_coverage,
+                },
+            )
+            continue
+        missing.extend(person_id for person_id in people if person_id not in day_statuses)
     if not missing:
         return 0
 
-    stmt = (
-        insert(AttendanceRecord)
-        .values([{"student_staff_id": person_id, "date": day, "status": "kelmadi"} for person_id in missing])
-        .on_conflict_do_nothing(index_elements=["student_staff_id", "date"])
-    )
-    result = await db.execute(stmt)
+    inserted = 0
+    for start in range(0, len(missing), INSERT_CHUNK_SIZE):
+        chunk = missing[start : start + INSERT_CHUNK_SIZE]
+        stmt = (
+            insert(AttendanceRecord)
+            .values([{"student_staff_id": person_id, "date": day, "status": "kelmadi"} for person_id in chunk])
+            .on_conflict_do_nothing(index_elements=["student_staff_id", "date"])
+        )
+        result = await db.execute(stmt)
+        inserted += result.rowcount or 0
     await db.commit()
-    inserted = result.rowcount or 0
     if inserted:
         logger.info("marked absences", extra={"date": day.isoformat(), "count": inserted})
     return inserted

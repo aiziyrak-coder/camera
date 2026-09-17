@@ -57,11 +57,15 @@ class EnrollmentLookupOut(CamelModel):
     type_label: str  # "Talaba" / "Xodim" — precomputed so the frontend doesn't need its own type->label map
     group_or_position: str
     already_enrolled: bool
+    # Yuz yuborilgan, administrator tasdig'ini kutmoqda (o'zini o'zi
+    # ro'yxatdan o'tkazganlar uchun).
+    awaiting_approval: bool = False
 
 
 class EnrollmentSubmitOut(CamelModel):
     full_name: str
     biometrics_status: str
+    awaiting_approval: bool = False
 
 
 class EnrollmentRegisterIn(CamelModel):

@@ -181,10 +181,12 @@ async def import_lesson_sessions_csv(db: AsyncSession, raw: bytes) -> LessonSess
                 teacher_id=teacher_uuid,
                 camera_id=camera_uuid,
                 scheduled_start_time=scheduled_start,
-                attention_score=50,
+                # O'lchovlar dars o'tganda yoziladi (lesson_quality_ai,
+                # teacher_punctuality_ai) — import ularni o'ylab topmaydi.
+                attention_score=0,
                 sleep_incidents=0,
-                teacher_activity_score=50,
-                teacher_on_time=True,
+                teacher_activity_score=0,
+                teacher_on_time=None,
             )
         )
         pending_keys.add(lesson_key)

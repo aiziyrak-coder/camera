@@ -7,12 +7,17 @@ import AddFacultyModal from '../../components/admin/AddFacultyModal';
 import AddGroupModal from '../../components/admin/AddGroupModal';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
+import { usePermissions } from '../../lib/permissions';
 import type { Building, Department, Faculty, StudentGroup } from '../../types';
 
 const TABS = ["O'quv korpuslari", 'Kafedralar', 'Fakultetlar va Kurslar', "Guruhlar ro'yxati"] as const;
 
 export default function OrgStructurePage() {
-  const { token } = useAuth();
+  const { token, role } = useAuth();
+  const { can } = usePermissions();
+  // O'qish hammaga ochiq (kamera mas'uli binolar ro'yxatini ko'radi),
+  // o'zgartirish tugmalari faqat huquqi borlarga. Server ham tekshiradi.
+  const canEdit = can('manageOrgStructure', role);
   const [tab, setTab] = useState<(typeof TABS)[number]>(TABS[0]);
 
   const [buildings, setBuildings] = useState<Building[]>([]);
@@ -97,7 +102,11 @@ export default function OrgStructurePage() {
     <section className="glass p-6">
       <PageHeader
         title="Tashkiliy tuzilma"
-        subtitle="Binolar, kafedralar, fakultetlar, kurslar va guruhlar boshqaruvi"
+        subtitle={
+          canEdit
+            ? 'Binolar, kafedralar, fakultetlar, kurslar va guruhlar boshqaruvi'
+            : "Binolar, kafedralar, fakultetlar va guruhlar — faqat ko'rish"
+        }
       />
 
       {error && (
@@ -143,32 +152,36 @@ export default function OrgStructurePage() {
                       {b.floors ? ` · ${b.floors} qavat` : ' · qavatlar soni kiritilmagan'}
                     </p>
                   </div>
-                  <div className="flex gap-3 border-t border-white/70 pt-3 text-xs font-semibold">
-                    <button
-                      onClick={() => setEditingBuilding(b)}
-                      className="flex items-center gap-1 text-indigo-600 hover:underline"
-                    >
-                      <Pencil size={12} />
-                      Tahrirlash
-                    </button>
-                    <button
-                      onClick={() => handleDeleteBuilding(b.id)}
-                      className="flex items-center gap-1 text-red-500 hover:underline"
-                    >
-                      <Trash2 size={12} />
-                      O'chirish
-                    </button>
-                  </div>
+                  {canEdit && (
+                    <div className="flex gap-3 border-t border-white/70 pt-3 text-xs font-semibold">
+                      <button
+                        onClick={() => setEditingBuilding(b)}
+                        className="flex items-center gap-1 text-indigo-600 hover:underline"
+                      >
+                        <Pencil size={12} />
+                        Tahrirlash
+                      </button>
+                      <button
+                        onClick={() => handleDeleteBuilding(b.id)}
+                        className="flex items-center gap-1 text-red-500 hover:underline"
+                      >
+                        <Trash2 size={12} />
+                        O'chirish
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
 
-              <button
-                onClick={() => setBuildingModalOpen(true)}
-                className="glass-deep flex min-h-[140px] flex-col items-center justify-center gap-2 border-dashed text-sm font-semibold text-slate-500 transition-colors hover:text-indigo-600"
-              >
-                <Plus size={20} />
-                Yangi korpus qo'shish
-              </button>
+              {canEdit && (
+                <button
+                  onClick={() => setBuildingModalOpen(true)}
+                  className="glass-deep flex min-h-[140px] flex-col items-center justify-center gap-2 border-dashed text-sm font-semibold text-slate-500 transition-colors hover:text-indigo-600"
+                >
+                  <Plus size={20} />
+                  Yangi korpus qo'shish
+                </button>
+              )}
             </div>
           )}
 
@@ -186,13 +199,13 @@ export default function OrgStructurePage() {
                       <th className="px-4 py-3">Kafedra</th>
                       <th className="px-4 py-3">Bino</th>
                       <th className="px-4 py-3">Kameralar</th>
-                      <th className="px-4 py-3">Amallar</th>
+                      {canEdit && <th className="px-4 py-3">Amallar</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/60">
                     {departments.length === 0 && (
                       <tr>
-                        <td colSpan={4} className="px-4 py-8 text-center text-xs text-slate-400">
+                        <td colSpan={canEdit ? 4 : 3} className="px-4 py-8 text-center text-xs text-slate-400">
                           Hozircha kafedra qo&apos;shilmagan.
                         </td>
                       </tr>
@@ -209,24 +222,28 @@ export default function OrgStructurePage() {
                           {d.buildingName || <span className="text-slate-400">— ko&apos;rsatilmagan</span>}
                         </td>
                         <td className="px-4 py-3 text-slate-600">{d.cameraCount}</td>
-                        <td className="px-4 py-3">
-                          <button
-                            onClick={() => handleDeleteDepartment(d.id)}
-                            className="flex items-center gap-1 text-xs font-semibold text-red-500 hover:underline"
-                          >
-                            <Trash2 size={12} />
-                            O&apos;chirish
-                          </button>
-                        </td>
+                        {canEdit && (
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => handleDeleteDepartment(d.id)}
+                              className="flex items-center gap-1 text-xs font-semibold text-red-500 hover:underline"
+                            >
+                              <Trash2 size={12} />
+                              O&apos;chirish
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <button onClick={() => setDepartmentModalOpen(true)} className="btn-glass flex items-center gap-1.5">
-                <Plus size={14} />
-                Yangi kafedra qo&apos;shish
-              </button>
+              {canEdit && (
+                <button onClick={() => setDepartmentModalOpen(true)} className="btn-glass flex items-center gap-1.5">
+                  <Plus size={14} />
+                  Yangi kafedra qo&apos;shish
+                </button>
+              )}
             </div>
           )}
 
@@ -239,7 +256,7 @@ export default function OrgStructurePage() {
                       <th className="px-4 py-3">Fakultet</th>
                       <th className="px-4 py-3">Kurslar soni</th>
                       <th className="px-4 py-3">Talabalar soni</th>
-                      <th className="px-4 py-3">Amallar</th>
+                      {canEdit && <th className="px-4 py-3">Amallar</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/60">
@@ -255,27 +272,31 @@ export default function OrgStructurePage() {
                         <td className="px-4 py-3 text-slate-600">
                           {f.studentCount.toLocaleString('ru-RU')}
                         </td>
-                        <td className="px-4 py-3">
-                          <button
-                            onClick={() => handleDeleteFaculty(f.id)}
-                            className="flex items-center gap-1 text-xs font-semibold text-red-500 hover:underline"
-                          >
-                            <Trash2 size={12} />
-                            O'chirish
-                          </button>
-                        </td>
+                        {canEdit && (
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => handleDeleteFaculty(f.id)}
+                              className="flex items-center gap-1 text-xs font-semibold text-red-500 hover:underline"
+                            >
+                              <Trash2 size={12} />
+                              O'chirish
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <button
-                onClick={() => setFacultyModalOpen(true)}
-                className="btn-glass flex items-center gap-1.5"
-              >
-                <Plus size={14} />
-                Yangi fakultet qo'shish
-              </button>
+              {canEdit && (
+                <button
+                  onClick={() => setFacultyModalOpen(true)}
+                  className="btn-glass flex items-center gap-1.5"
+                >
+                  <Plus size={14} />
+                  Yangi fakultet qo'shish
+                </button>
+              )}
             </div>
           )}
 
@@ -289,7 +310,7 @@ export default function OrgStructurePage() {
                       <th className="px-4 py-3">Fakultet</th>
                       <th className="px-4 py-3">Kurs</th>
                       <th className="px-4 py-3">Talabalar soni</th>
-                      <th className="px-4 py-3">Amallar</th>
+                      {canEdit && <th className="px-4 py-3">Amallar</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/60">
@@ -304,27 +325,31 @@ export default function OrgStructurePage() {
                         <td className="px-4 py-3 text-slate-600">{g.faculty}</td>
                         <td className="px-4 py-3 text-slate-600">{g.course}-kurs</td>
                         <td className="px-4 py-3 text-slate-600">{g.studentCount}</td>
-                        <td className="px-4 py-3">
-                          <button
-                            onClick={() => handleDeleteGroup(g.id)}
-                            className="flex items-center gap-1 text-xs font-semibold text-red-500 hover:underline"
-                          >
-                            <Trash2 size={12} />
-                            O'chirish
-                          </button>
-                        </td>
+                        {canEdit && (
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => handleDeleteGroup(g.id)}
+                              className="flex items-center gap-1 text-xs font-semibold text-red-500 hover:underline"
+                            >
+                              <Trash2 size={12} />
+                              O'chirish
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <button
-                onClick={() => setGroupModalOpen(true)}
-                className="btn-glass flex items-center gap-1.5"
-              >
-                <Plus size={14} />
-                Yangi guruh qo'shish
-              </button>
+              {canEdit && (
+                <button
+                  onClick={() => setGroupModalOpen(true)}
+                  className="btn-glass flex items-center gap-1.5"
+                >
+                  <Plus size={14} />
+                  Yangi guruh qo'shish
+                </button>
+              )}
             </div>
           )}
         </>

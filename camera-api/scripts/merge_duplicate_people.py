@@ -63,6 +63,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.database import SessionLocal
 from app.models import AttendanceRecord, AuditLog, Faculty, LessonAttendance, LessonSession, StudentStaff
+from app.services.face_matching import announce_roster_change
 from app.services.name_matching import name_key, name_tokens, names_match  # noqa: F401  (testlar ham shu yerdan oladi)
 from app.timezone import to_local
 
@@ -267,6 +268,7 @@ async def run(
             for key, value in (await _merge(db, pair)).items():
                 totals[key] += value
         await db.commit()
+        await announce_roster_change()
         left = await db.scalar(select(func.count()).select_from(StudentStaff).where(StudentStaff.id.in_(removed_ids)))
 
     _print_totals(len(to_merge), totals, left, deleted_face)
@@ -313,6 +315,8 @@ async def run_pair(
         removed_id = remove.id
         totals = await _merge(db, pair)
         await db.commit()
+        # Yuz vektorlari ro'yxati o'zgardi — API jarayonlaridagi kesh ham.
+        await announce_roster_change()
         left = await db.scalar(select(func.count()).select_from(StudentStaff).where(StudentStaff.id == removed_id))
 
     _print_totals(1, defaultdict(int, totals), left, deleted_face)

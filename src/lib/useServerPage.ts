@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from './auth';
 import { api, buildQuery, isAbortError, type Page } from './apiClient';
 import { useDebouncedValue } from './useDebouncedValue';
@@ -56,6 +56,8 @@ export function useServerPage<T>(
   const [error, setError] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
   const hasData = useRef(false);
+  // Barqaror havola: chaqiruvchi uni effekt bog'liqligiga qo'ya oladi.
+  const reload = useCallback(() => setReloadNonce((n) => n + 1), []);
 
   const paramsKey = useDebouncedValue(JSON.stringify(params), options.debounceMs ?? 300);
 
@@ -114,6 +116,6 @@ export function useServerPage<T>(
     loading,
     refreshing,
     error,
-    reload: () => setReloadNonce((n) => n + 1),
+    reload,
   };
 }

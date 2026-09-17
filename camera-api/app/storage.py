@@ -1,8 +1,7 @@
 """S3-compatible object storage (MinIO locally, real S3/MinIO cluster in
 production — the boto3 client code is identical either way, only
-S3_ENDPOINT_URL changes). Replaces the frontend's fileUpload.ts, which
-only ever created a temporary browser object URL — nothing was actually
-persisted anywhere."""
+S3_ENDPOINT_URL changes). Holds event snapshots (events/) and confirmed
+biometric photos (biometrics/) — both referenced from DB rows."""
 
 import asyncio
 import logging
@@ -63,7 +62,7 @@ def check_bucket() -> None:
     """Raises if MinIO/S3 is unreachable or the configured bucket doesn't
     exist — used by GET /health so a broken storage backend shows up as
     "degraded" instead of surfacing only when someone happens to hit
-    /api/uploads or biometric enrollment."""
+    biometric enrollment."""
     _s3.head_bucket(Bucket=settings.s3_bucket)
 
 

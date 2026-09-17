@@ -38,7 +38,7 @@ from sqlalchemy import select
 
 from app.database import SessionLocal
 from app.models import Faculty, StudentStaff
-from app.services.face_matching import invalidate_candidate_matrix_cache
+from app.services.face_matching import announce_roster_change
 
 PINFL = "00000000000000"
 FULL_NAME = "Soyibnazarov Hojiakbar"
@@ -100,7 +100,8 @@ async def remove() -> int:
     # Yuz biriktirilgan bo'lsa, keshdagi vektorlar ro'yxati eskiradi:
     # o'chirilgan odam kameralarda hali ham tanilib turardi.
     if had_face:
-        invalidate_candidate_matrix_cache()
+        # Bu skript alohida jarayon: API jarayonlarining keshi Redis orqali yangilanadi.
+        await announce_roster_change()
 
     print(f"Sinov yozuvi o'chirildi (yuz biriktirilgan edi: {'ha' if had_face else 'yo‘q'}).")
     return 0

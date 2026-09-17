@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from app.audit import log_action
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_user
+from app.dependencies import CurrentUser, get_current_user, require_permission
 from app.models import Building, Camera, Department, Faculty, StudentGroup
 from app.schemas.org import (
     DepartmentCreateIn,
@@ -22,10 +22,14 @@ from app.schemas.org import (
 
 router = APIRouter(prefix="/api", tags=["org-structure"])
 
-# Tashkiliy tuzilma sahifasi frontendda alohida ruxsat talab qilmaydi
-# (AdminLayout.tsx NAV_ITEMS'da `permission` maydoni yo'q) — shuning uchun
-# bu yerda faqat autentifikatsiya talab qilinadi, aniq huquq emas.
+# O'QISH har bir tizimga kirgan foydalanuvchiga ochiq: kamera mas'uli
+# kamerani joylashtirish uchun binolar va kafedralar ro'yxatini ko'radi,
+# boshqa sahifalar ham fakultetlar ro'yxatini filtr sifatida ishlatadi.
 AuthDep = Annotated[CurrentUser, Depends(get_current_user)]
+# O'ZGARTIRISH (qo'shish, tahrirlash, o'chirish) — alohida huquq bilan.
+# Ilgari bu ham faqat tizimga kirishni talab qilardi va kamera mas'uli
+# fakultetni o'chira olardi (guruhlari bilan birga — CASCADE).
+EditDep = Annotated[CurrentUser, Depends(require_permission("manageOrgStructure"))]
 
 
 def _building_out(building: Building, camera_count: int = 0) -> BuildingOut:
@@ -62,7 +66,7 @@ async def list_buildings(db: Annotated[AsyncSession, Depends(get_db)], _: AuthDe
 
 @router.post("/buildings", response_model=BuildingOut, status_code=status.HTTP_201_CREATED)
 async def create_building(
-    body: BuildingCreateIn, request: Request, db: Annotated[AsyncSession, Depends(get_db)], current_user: AuthDep
+    body: BuildingCreateIn, request: Request, db: Annotated[AsyncSession, Depends(get_db)], current_user: EditDep
 ) -> BuildingOut:
     building = Building(
         name=body.name,
@@ -83,7 +87,7 @@ async def update_building(
     body: BuildingCreateIn,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: AuthDep,
+    current_user: EditDep,
 ) -> BuildingOut:
     result = await db.execute(select(Building).where(Building.id == building_id))
     building = result.scalar_one_or_none()
@@ -105,7 +109,7 @@ async def update_building(
 
 @router.delete("/buildings/{building_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_building(
-    building_id: str, request: Request, db: Annotated[AsyncSession, Depends(get_db)], current_user: AuthDep
+    building_id: str, request: Request, db: Annotated[AsyncSession, Depends(get_db)], current_user: EditDep
 ) -> None:
     result = await db.execute(select(Building).where(Building.id == building_id))
     building = result.scalar_one_or_none()
@@ -127,7 +131,7 @@ async def list_faculties(db: Annotated[AsyncSession, Depends(get_db)], _: AuthDe
 
 @router.post("/faculties", response_model=FacultyOut, status_code=status.HTTP_201_CREATED)
 async def create_faculty(
-    body: FacultyCreateIn, request: Request, db: Annotated[AsyncSession, Depends(get_db)], current_user: AuthDep
+    body: FacultyCreateIn, request: Request, db: Annotated[AsyncSession, Depends(get_db)], current_user: EditDep
 ) -> FacultyOut:
     faculty = Faculty(name=body.name, course_count=body.course_count, student_count=0)
     db.add(faculty)
@@ -141,7 +145,7 @@ async def create_faculty(
 
 @router.delete("/faculties/{faculty_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_faculty(
-    faculty_id: str, request: Request, db: Annotated[AsyncSession, Depends(get_db)], current_user: AuthDep
+    faculty_id: str, request: Request, db: Annotated[AsyncSession, Depends(get_db)], current_user: EditDep
 ) -> None:
     result = await db.execute(select(Faculty).where(Faculty.id == faculty_id))
     faculty = result.scalar_one_or_none()
@@ -165,7 +169,7 @@ async def list_student_groups(db: Annotated[AsyncSession, Depends(get_db)], _: A
 
 @router.post("/student-groups", response_model=StudentGroupOut, status_code=status.HTTP_201_CREATED)
 async def create_student_group(
-    body: StudentGroupCreateIn, request: Request, db: Annotated[AsyncSession, Depends(get_db)], current_user: AuthDep
+    body: StudentGroupCreateIn, request: Request, db: Annotated[AsyncSession, Depends(get_db)], current_user: EditDep
 ) -> StudentGroupOut:
     result = await db.execute(select(Faculty).where(Faculty.id == body.faculty_id))
     faculty = result.scalar_one_or_none()
@@ -184,7 +188,7 @@ async def create_student_group(
 
 @router.delete("/student-groups/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_student_group(
-    group_id: str, request: Request, db: Annotated[AsyncSession, Depends(get_db)], current_user: AuthDep
+    group_id: str, request: Request, db: Annotated[AsyncSession, Depends(get_db)], current_user: EditDep
 ) -> None:
     result = await db.execute(select(StudentGroup).where(StudentGroup.id == group_id))
     group = result.scalar_one_or_none()
@@ -228,7 +232,7 @@ async def list_departments(db: Annotated[AsyncSession, Depends(get_db)], _: Auth
 
 @router.post("/departments", response_model=DepartmentOut, status_code=status.HTTP_201_CREATED)
 async def create_department(
-    body: DepartmentCreateIn, request: Request, db: Annotated[AsyncSession, Depends(get_db)], current_user: AuthDep
+    body: DepartmentCreateIn, request: Request, db: Annotated[AsyncSession, Depends(get_db)], current_user: EditDep
 ) -> DepartmentOut:
     building = None
     if body.building_id:
@@ -252,7 +256,7 @@ async def create_department(
 
 @router.delete("/departments/{department_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_department(
-    department_id: str, request: Request, db: Annotated[AsyncSession, Depends(get_db)], current_user: AuthDep
+    department_id: str, request: Request, db: Annotated[AsyncSession, Depends(get_db)], current_user: EditDep
 ) -> None:
     """Kameralar o'chirilmaydi — ular kafedrasiz qoladi va bino bo'yicha
     filtrlanaveradi (Camera.department_id ON DELETE SET NULL)."""

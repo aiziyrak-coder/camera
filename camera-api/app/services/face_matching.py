@@ -8,17 +8,19 @@ when N >= face_match_faiss_min_size and faiss-cpu is installed, an
 IndexFlatIP approximate path is used (exact for normalized vectors).
 """
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 import numpy as np
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models import StudentStaff
+from app.redis_bus import _get_redis, _redis_url
 
 logger = logging.getLogger("app.face_matching")
 
@@ -170,16 +172,10 @@ def _maybe_build_faiss_index(matrix: np.ndarray) -> object | None:
     return index
 
 
-async def load_candidate_matrix(db: AsyncSession) -> CandidateMatrix:
-    result = await db.execute(
-        select(StudentStaff.id, StudentStaff.biometric_embedding, StudentStaff.type).where(
-            StudentStaff.biometric_embedding.is_not(None)
-        )
-    )
-    rows = result.all()
-    if not rows:
-        return CandidateMatrix(ids=[], matrix=np.empty((0, 0)), person_types={})
-
+def _build_candidate_matrix(rows: list) -> CandidateMatrix:
+    """JSON matnlaridan matritsa — CPU ishi (10 000 odam × 512 son), shuning
+    uchun chaqiruvchi uni alohida oqimda bajaradi: event loop'da bir necha
+    soniya turib qolsa, shu vaqt ichida API ham, sweeplar ham to'xtaydi."""
     ids = [str(row_id) for row_id, _, _ in rows]
     matrix = _normalize_rows(np.array([json.loads(embedding_json) for _, embedding_json, _ in rows], dtype=np.float64))
     person_types = {str(row_id): person_type for row_id, _, person_type in rows}
@@ -189,52 +185,119 @@ async def load_candidate_matrix(db: AsyncSession) -> CandidateMatrix:
     return CandidateMatrix(ids=ids, matrix=matrix, person_types=person_types, _faiss_index=faiss_index)
 
 
-_cache: CandidateMatrix | None = None
-_cache_loaded_at: datetime | None = None
-_sweep_cache: CandidateMatrix | None = None
-_sweep_cache_loaded_at: datetime | None = None
+async def load_candidate_matrix(db: AsyncSession) -> CandidateMatrix:
+    result = await db.execute(
+        select(StudentStaff.id, StudentStaff.biometric_embedding, StudentStaff.type).where(
+            StudentStaff.biometric_embedding.is_not(None),
+            # O'zini o'zi ro'yxatdan o'tkazgan odam administrator
+            # tasdiqlagunicha tanilmaydi (app/routers/enrollment.py).
+            or_(StudentStaff.self_registered.is_(False), StudentStaff.biometrics_status == "tasdiqlangan"),
+        )
+    )
+    rows = result.all()
+    if not rows:
+        return CandidateMatrix(ids=[], matrix=np.empty((0, 0)), person_types={})
+    return await asyncio.to_thread(_build_candidate_matrix, rows)
+
+
+# Ro'yxat versiyasi — worker'lar o'rtasida kesh bekor qilinishini ulashish.
+#
+# Productionda ikkita API jarayoni bor, AI sweeplari esa faqat bittasida.
+# Odam o'chirilganda yoki yuzi qayta tasdiqlanganda so'rov IKKINCHI
+# jarayonga tushsa, uning xotirasidagi keshni tozalash AI jarayoniga yetib
+# bormasdi — o'chirilgan odam yana 5 daqiqagacha tanilardi. Endi
+# o'zgarish Redis'dagi hisoblagichni oshiradi, har bir jarayon keshni
+# ishlatishdan oldin uni solishtiradi (bitta GET).
+ROSTER_VERSION_KEY = "camera:faces:roster_version"
+
+
+@dataclass
+class _CacheSlot:
+    ttl_setting: str
+    matrix: CandidateMatrix | None = None
+    loaded_at: datetime | None = None
+    version: str | None = None
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+    def clear(self) -> None:
+        self.matrix = None
+        self.loaded_at = None
+        self.version = None
+
+    def is_fresh(self, now: datetime, version: str | None) -> bool:
+        if self.matrix is None or self.loaded_at is None:
+            return False
+        if (now - self.loaded_at).total_seconds() > getattr(settings, self.ttl_setting):
+            return False
+        return version is None or version == self.version
+
+    async def get(self, db: AsyncSession) -> CandidateMatrix:
+        version = await _roster_version()
+        if self.is_fresh(datetime.now(timezone.utc), version):
+            return self.matrix
+        # Muddati bir vaqtda tugagan bir nechta sweep bazani birdaniga
+        # o'qimasligi uchun: birinchisi yuklaydi, qolganlari uni kutadi.
+        async with self.lock:
+            now = datetime.now(timezone.utc)
+            if not self.is_fresh(now, version):
+                self.matrix = await load_candidate_matrix(db)
+                self.loaded_at = now
+                self.version = version
+            return self.matrix
+
+
+_live_cache = _CacheSlot("candidate_matrix_cache_ttl_seconds")
+_sweep_cache = _CacheSlot("candidate_matrix_sweep_cache_ttl_seconds")
+
+
+async def _roster_version() -> str | None:
+    """Redis'dagi ro'yxat versiyasi; Redis yo'q bo'lsa None (bitta
+    jarayonli o'rnatish — mahalliy bekor qilish yetarli)."""
+    if not _redis_url():
+        return None
+    client = await _get_redis()
+    if client is None:
+        return None
+    try:
+        return str(await client.get(ROSTER_VERSION_KEY) or "0")
+    except Exception:
+        logger.warning("could not read face roster version", exc_info=True)
+        return None
 
 
 async def load_candidate_matrix_cached(db: AsyncSession) -> CandidateMatrix:
-    global _cache, _cache_loaded_at
-    now = datetime.now(timezone.utc)
-    ttl = settings.candidate_matrix_cache_ttl_seconds
-    if (
-        _cache is None
-        or _cache_loaded_at is None
-        or (now - _cache_loaded_at).total_seconds() > ttl
-    ):
-        _cache = await load_candidate_matrix(db)
-        _cache_loaded_at = now
-    return _cache
+    return await _live_cache.get(db)
 
 
 async def load_candidate_matrix_for_sweep(db: AsyncSession) -> CandidateMatrix:
     """Longer-TTL cache for AI sweep loops — one DB read per few minutes
     instead of every camera tick across 10k+ enrolled embeddings."""
-    global _sweep_cache, _sweep_cache_loaded_at
-    now = datetime.now(timezone.utc)
-    ttl = settings.candidate_matrix_sweep_cache_ttl_seconds
-    if (
-        _sweep_cache is None
-        or _sweep_cache_loaded_at is None
-        or (now - _sweep_cache_loaded_at).total_seconds() > ttl
-    ):
-        _sweep_cache = await load_candidate_matrix(db)
-        _sweep_cache_loaded_at = now
-        logger.debug(
-            "sweep candidate matrix loaded",
-            extra={"candidates": len(_sweep_cache.ids), "ttl_seconds": ttl},
-        )
-    return _sweep_cache
+    matrix = await _sweep_cache.get(db)
+    logger.debug("sweep candidate matrix ready", extra={"candidates": len(matrix.ids)})
+    return matrix
 
 
 def invalidate_candidate_matrix_cache() -> None:
-    global _cache, _cache_loaded_at, _sweep_cache, _sweep_cache_loaded_at
-    _cache = None
-    _cache_loaded_at = None
-    _sweep_cache = None
-    _sweep_cache_loaded_at = None
+    """Faqat SHU jarayonning keshi. Ro'yxat o'zgarganda
+    announce_roster_change() ni chaqiring — u boshqa jarayonlarga ham yetadi."""
+    _live_cache.clear()
+    _sweep_cache.clear()
+
+
+async def announce_roster_change() -> None:
+    """Yuzlar ro'yxati o'zgardi (odam qo'shildi, o'chirildi, yuzi yoki turi
+    o'zgardi) — barcha API jarayonlaridagi kesh keyingi so'rovda qayta
+    yuklanadi. Redis ishlamasa, kamida shu jarayonniki tozalanadi."""
+    invalidate_candidate_matrix_cache()
+    if not _redis_url():
+        return
+    client = await _get_redis()
+    if client is None:
+        return
+    try:
+        await client.incr(ROSTER_VERSION_KEY)
+    except Exception:
+        logger.warning("could not publish face roster change", exc_info=True)
 
 
 def find_best_match(

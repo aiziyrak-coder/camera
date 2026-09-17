@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from pathlib import Path
 
 import insightface
@@ -32,6 +32,19 @@ def _local_time(hour: int, minute: int) -> datetime:
 async def a_camera(db_session, seeded):
     building = (await db_session.execute(select(Building))).scalars().first()
     camera = Camera(name="Kirish kamerasi", ip="10.0.9.1", building_id=building.id, zone="Kirish", resolution="1080p", status="faol")
+    db_session.add(camera)
+    await db_session.commit()
+    await db_session.refresh(camera, attribute_names=["building"])
+    return camera
+
+
+@pytest.fixture
+async def an_entrance_camera(db_session, seeded):
+    building = (await db_session.execute(select(Building))).scalars().first()
+    camera = Camera(
+        name="Asosiy eshik", ip="10.0.9.3", building_id=building.id, zone="Kirish",
+        resolution="1080p", status="faol", is_entrance=True,
+    )
     db_session.add(camera)
     await db_session.commit()
     await db_session.refresh(camera, attribute_names=["building"])
@@ -204,7 +217,7 @@ class TestUpsertAttendanceFromRecognition:
         assert "Audit Sinovi" in entries[0].action
         assert entries[0].user_id is None
 
-    async def test_off_hours_first_sighting_raises_a_security_event(self, db_session, a_camera):
+    async def test_off_hours_first_sighting_raises_a_security_event(self, db_session, an_entrance_camera):
         faculty = (await db_session.execute(select(Faculty))).scalars().first()
         student = StudentStaff(full_name="Tungi Kirgan", type="talaba", faculty_id=faculty.id, group_or_position="1")
         db_session.add(student)
@@ -212,14 +225,14 @@ class TestUpsertAttendanceFromRecognition:
 
         # default off-hours window is [07:00, 20:00) — 22:30 is well outside it
         occurred_at = _local_time(22, 30)
-        await upsert_attendance_from_recognition(db_session, str(student.id), occurred_at, a_camera)
+        await upsert_attendance_from_recognition(db_session, str(student.id), occurred_at, an_entrance_camera)
 
         events = (await db_session.execute(select(Event))).scalars().all()
         assert len(events) == 1
         assert events[0].module_code == 3
         assert events[0].module_name == "Notekis/kechki vaqtda kirish"
         assert events[0].person_name == "Tungi Kirgan"
-        assert events[0].camera_name == "Kirish kamerasi"
+        assert events[0].camera_name == "Asosiy eshik"
         assert events[0].group == "A"
 
     async def test_within_hours_sighting_raises_no_event(self, db_session, a_camera):
@@ -234,21 +247,21 @@ class TestUpsertAttendanceFromRecognition:
         events = (await db_session.execute(select(Event))).scalars().all()
         assert len(events) == 0
 
-    async def test_second_off_hours_sighting_same_day_does_not_duplicate_the_event(self, db_session, a_camera):
+    async def test_second_off_hours_sighting_same_day_does_not_duplicate_the_event(self, db_session, an_entrance_camera):
         faculty = (await db_session.execute(select(Faculty))).scalars().first()
         student = StudentStaff(full_name="Ikki Marta Tunda", type="talaba", faculty_id=faculty.id, group_or_position="1")
         db_session.add(student)
         await db_session.commit()
 
         first = _local_time(21, 0)
-        await upsert_attendance_from_recognition(db_session, str(student.id), first, a_camera)
+        await upsert_attendance_from_recognition(db_session, str(student.id), first, an_entrance_camera)
         second = first + timedelta(hours=2)
-        await upsert_attendance_from_recognition(db_session, str(student.id), second, a_camera)
+        await upsert_attendance_from_recognition(db_session, str(student.id), second, an_entrance_camera)
 
         events = (await db_session.execute(select(Event))).scalars().all()
         assert len(events) == 1  # not re-flagged on the later "last seen" update
 
-    async def test_off_hours_sighting_with_module_disabled_raises_no_event(self, db_session, a_camera):
+    async def test_off_hours_sighting_with_module_disabled_raises_no_event(self, db_session, an_entrance_camera):
         """AIModuleConfig code 3 toggled off — same off-hours sighting that
         would normally raise an Event must not, once the caller (the real
         sweep loop) has determined the module is inactive."""
@@ -259,7 +272,7 @@ class TestUpsertAttendanceFromRecognition:
 
         occurred_at = _local_time(22, 30)
         await upsert_attendance_from_recognition(
-            db_session, str(student.id), occurred_at, a_camera, off_hours_module_active=False
+            db_session, str(student.id), occurred_at, an_entrance_camera, off_hours_module_active=False
         )
 
         events = (await db_session.execute(select(Event))).scalars().all()
@@ -342,3 +355,50 @@ class TestProcessCameraFrame:
         enrolled embedding yet — must not match anyone."""
         records = await process_camera_frame(FACE_IMAGE_PATH.read_bytes(), db_session)
         assert records == []
+
+
+@pytest.mark.usefixtures("seeded")
+class TestArrivalIsOnlyKnownAtTheDoor:
+    """2026-09-17: bir kunda tanilgan 22 kishidan 20 tasi "kech keldi" deb
+    yozilgan edi — kamera ularni birinchi marta 14:00-15:40 da xonada
+    ko'rgan, ular esa ertalab ishlamayotgan eshikdan kirgan bo'lishi mumkin."""
+
+    async def _person(self, db_session, name: str) -> StudentStaff:
+        faculty = (await db_session.execute(select(Faculty))).scalars().first()
+        person = StudentStaff(full_name=name, type="xodim", faculty_id=faculty.id, group_or_position="Laborant")
+        db_session.add(person)
+        await db_session.commit()
+        return person
+
+    async def test_late_first_sighting_inside_is_present_with_unknown_arrival(self, db_session, a_camera):
+        person = await self._person(db_session, "Xonada Ko'ringan")
+        record = await upsert_attendance_from_recognition(db_session, str(person.id), _local_time(15, 40), a_camera)
+        assert record.status == "keldi"
+        assert record.check_in is None
+
+    async def test_late_first_sighting_at_the_door_is_late(self, db_session, an_entrance_camera):
+        person = await self._person(db_session, "Eshikda Kech")
+        record = await upsert_attendance_from_recognition(
+            db_session, str(person.id), _local_time(9, 40), an_entrance_camera
+        )
+        assert record.status == "kech_keldi"
+        assert record.check_in == time(9, 40)
+
+    async def test_early_first_sighting_anywhere_is_on_time(self, db_session, a_camera):
+        person = await self._person(db_session, "Erta Xonada")
+        record = await upsert_attendance_from_recognition(db_session, str(person.id), _local_time(8, 20), a_camera)
+        assert record.status == "keldi"
+        assert record.check_in == time(8, 20)
+
+    async def test_evening_first_sighting_inside_is_not_an_off_hours_entry(self, db_session, a_camera):
+        """Kun bo'yi kameraga tushmagan xodimni kechqurun xonada ko'rish
+        uning shu paytda binoga kirganini bildirmaydi."""
+        person = await self._person(db_session, "Kechqurun Xonada")
+        await upsert_attendance_from_recognition(db_session, str(person.id), _local_time(20, 57), a_camera)
+        assert (await db_session.execute(select(Event))).scalars().all() == []
+
+    async def test_early_morning_presence_anywhere_is_off_hours(self, db_session, a_camera):
+        person = await self._person(db_session, "Tongda Xonada")
+        await upsert_attendance_from_recognition(db_session, str(person.id), _local_time(6, 10), a_camera)
+        events = (await db_session.execute(select(Event))).scalars().all()
+        assert [e.module_code for e in events] == [3]

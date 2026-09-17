@@ -34,10 +34,15 @@ class LessonSession(Base):
     faculty: Mapped[str] = mapped_column(String, nullable=False)
     teacher: Mapped[str] = mapped_column(String, nullable=False)
     subject: Mapped[str] = mapped_column(String, nullable=False)
-    attention_score: Mapped[int] = mapped_column(Integer, nullable=False)
+    attention_score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     sleep_incidents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    teacher_activity_score: Mapped[int] = mapped_column(Integer, nullable=False)
-    teacher_on_time: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    teacher_activity_score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Davomiy o'rtachaning namunalar soni (app/jobs/lesson_quality_ai.py).
+    # 0 — hali o'lchanmagan: ball ko'rsatilmaydi ("—"), hisobotga kirmaydi.
+    attention_samples: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    activity_samples: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # NULL — tekshirilmagan (kamera/kadr bo'lmagan yoki muddati o'tgan).
+    teacher_on_time: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=None)
 
     teacher_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("students_staff.id", ondelete="SET NULL"), nullable=True, index=True
@@ -46,10 +51,9 @@ class LessonSession(Base):
         UUID(as_uuid=True), ForeignKey("cameras.id", ondelete="SET NULL"), nullable=True, index=True
     )
     scheduled_start_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # Set by teacher_punctuality_ai.py once it has actually checked this
-    # row (vs. teacher_on_time, which starts default=True and could just
-    # be an untouched manual value) — lets the job tell "already checked,
-    # teacher was on time" apart from "never checked yet".
+    # Set by teacher_punctuality_ai.py once it has handled this row — also
+    # when the check could not run (no frame) or its window had passed, in
+    # which case teacher_on_time stays NULL. Keeps the job from retrying.
     punctuality_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     teacher_ref: Mapped["StudentStaff | None"] = relationship("StudentStaff", lazy="joined")

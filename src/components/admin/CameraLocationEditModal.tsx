@@ -6,7 +6,7 @@ import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { useBuildings } from '../../lib/useBuildings';
 import { useCameraZones } from '../../lib/useCameraZones';
-import type { CameraConfig } from '../../types';
+import type { CameraConfig, Department } from '../../types';
 
 /** Oynaga kerak bo'ladigan minimal ma'lumot.
  *
@@ -19,9 +19,11 @@ export interface CameraLocationTarget {
   building: string;
   zone: string;
   floor?: number | null;
+  /** Kafedra nomi; biriktirilmagan bo'lsa bo'sh. */
+  department?: string;
 }
 
-/** Kameraning JOYLASHUVINI to'g'rilash: nomi, binosi, qavati, zonasi.
+/** Kameraning JOYLASHUVINI to'g'rilash: nomi, binosi, qavati, zonasi, kafedrasi.
  *
  * Nega alohida oyna: to'liq tahrirlash formasi IP, port, RTSP yo'li va
  * login/parolni ham yuboradi — bitta noto'g'ri yuborilgan maydon
@@ -43,6 +45,8 @@ export default function CameraLocationEditModal({
   const [building, setBuilding] = useState('');
   const [floor, setFloor] = useState('');
   const [zone, setZone] = useState('');
+  const [department, setDepartment] = useState('');
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { zones } = useCameraZones(building || undefined);
@@ -53,8 +57,31 @@ export default function CameraLocationEditModal({
     setBuilding(camera.building);
     setFloor(camera.floor === null || camera.floor === undefined ? '' : String(camera.floor));
     setZone(camera.zone);
+    setDepartment(camera.department ?? '');
     setError(null);
   }, [camera]);
+
+  useEffect(() => {
+    if (!camera || !token) return;
+    let cancelled = false;
+    api
+      .get<Department[]>('/api/departments', token)
+      .then((rows) => {
+        if (!cancelled) setDepartments(rows);
+      })
+      .catch(() => {
+        /* ro'yxat kelmasa kafedra tanlovi bo'sh qoladi — joylashuv baribir saqlanadi */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [camera, token]);
+
+  // Kafedra jismonan bitta binoda: tanlangan binoniki ko'rsatiladi, hozir
+  // biriktirilgani esa (boshqa binoda bo'lsa ham) ro'yxatdan tushib qolmaydi.
+  const departmentOptions = departments
+    .filter((item) => !building || item.buildingName === building || item.name === department)
+    .map((item) => ({ value: item.name, label: item.name }));
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -80,6 +107,8 @@ export default function CameraLocationEditModal({
           floor: floor.trim() === '' ? null : Number(floor),
           clearFloor: floor.trim() === '',
           zone: zone.trim(),
+          department: department || undefined,
+          clearDepartment: department === '',
         },
         token,
       );
@@ -142,6 +171,21 @@ export default function CameraLocationEditModal({
               ))}
             </datalist>
           </div>
+        </div>
+
+        <div>
+          <SelectField
+            label="Kafedra"
+            placeholder="Kafedrasiz"
+            value={department}
+            onChange={(event) => setDepartment(event.target.value)}
+            options={departmentOptions}
+          />
+          {departmentOptions.length === 0 && (
+            <p className="mt-1 text-[11px] text-slate-400">
+              Bu binoda kafedra yo&apos;q — &quot;Tashkiliy tuzilma&quot; sahifasida qo&apos;shiladi.
+            </p>
+          )}
         </div>
 
         {error && (

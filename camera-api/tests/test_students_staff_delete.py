@@ -87,7 +87,10 @@ class TestDeletePerson:
         from app.routers import students_staff
 
         calls: list[int] = []
-        monkeypatch.setattr(students_staff, "invalidate_candidate_matrix_cache", lambda: calls.append(1))
+        async def record_change():
+            calls.append(1)
+
+        monkeypatch.setattr(students_staff, "announce_roster_change", record_change)
         headers = await auth_headers(client, "admin", "admin123")
         person_id = await _person(client, headers, "Keshdagi Talaba")
 

@@ -83,10 +83,41 @@ def _relaxed_threshold() -> float:
     return relaxed
 
 
-def _is_off_hours(occurred_time: time_type) -> bool:
+def _is_off_hours(occurred_time: time_type, *, at_entrance: bool = True) -> bool:
+    """Kunning birinchi ko'rinishi ish vaqtidan tashqaridami.
+
+    Erta tomon (start dan oldin) har qanday kamerada ma'noli: odam shu
+    paytda binoda bo'lgan. Kech tomon (end dan keyin) esa faqat KIRISH
+    kamerasida "kirish" degani — kun bo'yi kameralarga tushmagan xodimni
+    kechqurun xonada birinchi marta ko'rish uning 20:57 da kirganini
+    bildirmaydi."""
     start = time_type.fromisoformat(settings.attendance_off_hours_start)
     end = time_type.fromisoformat(settings.attendance_off_hours_end)
-    return occurred_time < start or occurred_time >= end
+    return occurred_time < start or (at_entrance and occurred_time >= end)
+
+
+def first_sighting_status(occurred_time: time_type, camera: Camera | None) -> tuple[str, time_type | None]:
+    """Kunning birinchi ko'rinishidan davomat holati va kelish vaqti.
+
+    Kelish vaqti faqat KIRISH kamerasi ko'rganda ma'lum. Boshqa kamera odamni
+    birinchi marta 15:40 da ko'rsa, bu uning 15:40 da kelgani emas — u
+    ertalab ishlamayotgan eshikdan kirib, kun bo'yi kameralarga tushmagan
+    bo'lishi mumkin. Productionda (2026-09-17) bir kunda tanilgan 22 kishidan
+    20 tasi shu sababdan "kech keldi" deb yozilgan edi.
+
+      * chegaradan oldin, istalgan kamera  -> keldi, vaqt yoziladi (odam
+        shu paytda allaqachon binoda — kechikmagani aniq);
+      * chegaradan keyin, kirish kamerasi  -> kech_keldi, vaqt yoziladi;
+      * chegaradan keyin, boshqa kamera    -> keldi, kelish vaqti NOMA'LUM
+        (check_in yozilmaydi — kechikish ham, erta ketish ham hisoblanmaydi).
+
+    `camera` bo'lmasa (qo'lda/test chaqiruvi) — avvalgi xatti-harakat."""
+    cutoff = time_type.fromisoformat(settings.attendance_ai_late_cutoff)
+    if occurred_time < cutoff:
+        return "keldi", occurred_time
+    if camera is None or camera.is_entrance:
+        return "kech_keldi", occurred_time
+    return "keldi", None
 
 
 def find_best_match(
@@ -158,8 +189,7 @@ async def upsert_attendance_from_recognition(
     person: StudentStaff | None = None
 
     if is_first_sighting_today:
-        cutoff = time_type.fromisoformat(settings.attendance_ai_late_cutoff)
-        status = "kech_keldi" if occurred_time >= cutoff else "keldi"
+        status, check_in = first_sighting_status(occurred_time, camera)
 
         # on_conflict_do_nothing (not do_update): a concurrent sighting on
         # another camera may have inserted the row a moment ago — that
@@ -172,7 +202,7 @@ async def upsert_attendance_from_recognition(
                 student_staff_id=student_staff_id,
                 date=record_date,
                 status=status,
-                check_in=occurred_time,
+                check_in=check_in,
                 check_out=None,
             )
             .on_conflict_do_nothing(index_elements=[AttendanceRecord.student_staff_id, AttendanceRecord.date])
@@ -226,7 +256,12 @@ async def upsert_attendance_from_recognition(
             )
         )
 
-    if off_hours_module_active and camera is not None and is_first_sighting_today and _is_off_hours(occurred_time):
+    if (
+        off_hours_module_active
+        and camera is not None
+        and is_first_sighting_today
+        and _is_off_hours(occurred_time, at_entrance=camera.is_entrance)
+    ):
         await raise_event(
             db,
             camera=camera,

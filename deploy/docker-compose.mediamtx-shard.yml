@@ -1,5 +1,10 @@
 # MediaMTX horizontal sharding — 3 nodes on one host (path-based nginx: /s0 /s1 /s2).
 # Disables the single-node mediamtx service (profile legacy-single).
+# Portlar faqat 127.0.0.1 da: brauzer videoni host'dagi nginx orqali oladi
+# (imzolangan havolalar — deploy/nginx/cam-fermi-stream-locations.conf),
+# API konteyneri esa Docker tarmog'i orqali (mediamtx-N:8888). LAN'dan
+# to'g'ridan-to'g'ri 192.168.0.101:8888 ga kirib himoyani chetlab o'tib
+# bo'lmaydi.
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.override.yml \
 #     -f deploy/docker-compose.mediamtx-shard.yml up -d
@@ -20,8 +25,8 @@ services:
       MTX_API: "yes"
       MTX_APIADDRESS: ":9997"
     ports:
-      - "8554:8554"
-      - "8888:8888"
+      - "127.0.0.1:8554:8554"
+      - "127.0.0.1:8888:8888"
       - "127.0.0.1:9997:9997"
 
   mediamtx-1:
@@ -36,8 +41,8 @@ services:
       MTX_API: "yes"
       MTX_APIADDRESS: ":9997"
     ports:
-      - "8555:8554"
-      - "8889:8888"
+      - "127.0.0.1:8555:8554"
+      - "127.0.0.1:8889:8888"
       - "127.0.0.1:9998:9997"
 
   mediamtx-2:
@@ -52,8 +57,8 @@ services:
       MTX_API: "yes"
       MTX_APIADDRESS: ":9997"
     ports:
-      - "8556:8554"
-      - "8890:8888"
+      - "127.0.0.1:8556:8554"
+      - "127.0.0.1:8890:8888"
       - "127.0.0.1:9999:9997"
 
   api:

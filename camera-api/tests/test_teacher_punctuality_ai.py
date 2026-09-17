@@ -14,7 +14,8 @@ from app.jobs.teacher_punctuality_ai import (
     check_lesson_session,
     run_teacher_punctuality_sweep_once,
 )
-from app.models import Building, Camera, Event, Faculty, LessonSession, StudentStaff
+from app.config import settings
+from app.models import AIModuleConfig, Building, Camera, Event, Faculty, LessonSession, StudentStaff
 from app.services.face_recognition import extract_embedding
 from app.timezone import local_now
 from tests.conftest import TestSessionLocal
@@ -52,7 +53,7 @@ async def a_camera(db_session, seeded):
 async def _make_session(db_session, teacher, camera, minutes_ago_start: int, checked: bool = False) -> LessonSession:
     row = LessonSession(
         date=local_now().date(), group_name="1-guruh", faculty="Davolash ishi", teacher=teacher.full_name,
-        subject="Anatomiya", attention_score=80, teacher_activity_score=80, teacher_on_time=True,
+        subject="Anatomiya", attention_score=80, teacher_activity_score=80,
         teacher_id=teacher.id, camera_id=camera.id,
         scheduled_start_time=local_now() - timedelta(minutes=minutes_ago_start),
         punctuality_checked_at=local_now() if checked else None,
@@ -88,6 +89,34 @@ class TestDueSessions:
         await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=15, checked=True)
         assert await _due_sessions(db_session) == []
 
+    async def test_a_lesson_past_its_window_is_closed_without_a_check(
+        self, db_session, a_teacher, a_camera, monkeypatch
+    ):
+        """Kechagi (yoki o'tgan sana bilan import qilingan) dars hozirgi kadr
+        bilan tekshirilmaydi — u bu dars haqida hech narsa demaydi."""
+        grabbed = []
+
+        async def fake_grab_pair(camera, gap_seconds=1.0):
+            grabbed.append(camera.id)
+            return b"a", b"b"
+
+        monkeypatch.setattr(teacher_punctuality_ai, "grab_frame_pair_for_camera", fake_grab_pair)
+        minutes = settings.teacher_punctuality_grace_minutes + settings.teacher_punctuality_check_window_minutes + 30
+        row = await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=minutes)
+
+        assert await _due_sessions(db_session) == []
+        assert await run_teacher_punctuality_sweep_once(session_factory=TestSessionLocal) == 0
+        await db_session.refresh(row)
+        assert row.punctuality_checked_at is not None
+        assert row.teacher_on_time is None
+        assert grabbed == []
+        assert (await db_session.execute(select(Event))).scalars().all() == []
+
+    async def test_a_lesson_inside_its_window_is_still_due(self, db_session, a_teacher, a_camera):
+        minutes = settings.teacher_punctuality_grace_minutes + settings.teacher_punctuality_check_window_minutes - 5
+        row = await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=minutes)
+        assert [r.id for r in await _due_sessions(db_session)] == [row.id]
+
     async def test_camera_excluding_module_22_is_not_due(self, db_session, a_teacher, a_camera):
         a_camera.excluded_module_codes = [22]
         await db_session.commit()
@@ -116,7 +145,7 @@ class TestCheckLessonSession:
 
         raised = await check_lesson_session(row, db_session)
         assert raised is False
-        assert row.teacher_on_time is True  # left at its default, not accused
+        assert row.teacher_on_time is None  # tekshirilmadi — na "vaqtida", na "kechikdi"
         assert row.punctuality_checked_at is not None
 
         events = (await db_session.execute(select(Event))).scalars().all()
@@ -284,7 +313,7 @@ class TestSubstitution:
         invalidate_candidate_matrix_cache()
         return staff
 
-    async def _run(self, db_session, a_teacher, a_camera, monkeypatch, faces_a, faces_b):
+    async def _run(self, db_session, a_teacher, a_camera, monkeypatch, faces_a, faces_b, **switches):
         frame_a, frame_b = b"kadr-a", b"kadr-b"
 
         async def fake_grab_pair(camera, gap_seconds=1.0):
@@ -296,9 +325,58 @@ class TestSubstitution:
         monkeypatch.setattr(teacher_punctuality_ai, "grab_frame_pair_for_camera", fake_grab_pair)
         monkeypatch.setattr(teacher_punctuality_ai, "detect_faces", fake_detect_faces)
         row = await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=15)
-        raised = await check_lesson_session(row, db_session)
+        raised = await check_lesson_session(row, db_session, **switches)
         events = (await db_session.execute(select(Event))).scalars().all()
         return row, raised, events
+
+    async def test_substitution_switched_off_is_a_plain_absence(
+        self, db_session, a_teacher, a_camera, another_staff_member, monkeypatch
+    ):
+        """#26 o'chirilgan: boshqa xodim qidirilmaydi, faqat #22."""
+        face = _FakeFace(json.loads(another_staff_member.biometric_embedding))
+        row, raised, events = await self._run(
+            db_session, a_teacher, a_camera, monkeypatch, faces_a=[face], faces_b=[face], substitution_active=False
+        )
+
+        assert raised is True
+        assert [e.module_code for e in events] == [PUNCTUALITY_MODULE_CODE]
+
+    async def test_punctuality_switched_off_still_reports_a_substitution(
+        self, db_session, a_teacher, a_camera, another_staff_member, monkeypatch
+    ):
+        face = _FakeFace(json.loads(another_staff_member.biometric_embedding))
+        _row, raised, events = await self._run(
+            db_session, a_teacher, a_camera, monkeypatch, faces_a=[face], faces_b=[face], punctuality_active=False
+        )
+
+        assert raised is True
+        assert [e.module_code for e in events] == [SUBSTITUTION_MODULE_CODE]
+
+    async def test_punctuality_switched_off_raises_no_absence_but_records_it(
+        self, db_session, a_teacher, a_camera, monkeypatch
+    ):
+        row, raised, events = await self._run(
+            db_session, a_teacher, a_camera, monkeypatch, faces_a=[], faces_b=[], punctuality_active=False
+        )
+
+        assert raised is False
+        assert events == []
+        assert row.teacher_on_time is False
+
+    async def test_an_absence_in_trial_mode_stays_off_the_operator_queue(
+        self, db_session, a_teacher, a_camera, monkeypatch
+    ):
+        """#22 endi raise_event orqali: sinov rejimi unga ham tegishli."""
+        module = (
+            await db_session.execute(select(AIModuleConfig).where(AIModuleConfig.code == PUNCTUALITY_MODULE_CODE))
+        ).scalar_one()
+        module.mode = "sinov"
+        await db_session.commit()
+
+        _row, raised, events = await self._run(db_session, a_teacher, a_camera, monkeypatch, faces_a=[], faces_b=[])
+
+        assert raised is True
+        assert len(events) == 1 and events[0].is_trial is True
 
     async def test_another_staff_member_in_both_frames_raises_a_substitution_event(
         self, db_session, a_teacher, a_camera, another_staff_member, monkeypatch

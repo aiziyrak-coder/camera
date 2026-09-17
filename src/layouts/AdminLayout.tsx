@@ -31,11 +31,13 @@ const NAV_ITEMS: {
   permission?: PermissionKey;
 }[] = [
   { to: '/admin', label: 'Boshqaruv paneli', icon: LayoutDashboard, end: true },
-  { to: '/admin/events', label: 'Hodisalar jurnali', icon: Siren },
+  { to: '/admin/events', label: 'Hodisalar jurnali', icon: Siren, permission: 'reviewEvents' },
   { to: '/admin/students-staff', label: 'Talabalar va Xodimlar', icon: Users, permission: 'registerPeople' },
-  { to: '/admin/attendance', label: 'Davomat kalendari', icon: CalendarCheck },
-  { to: '/admin/presence', label: "O'qituvchilar kuzatuvi", icon: MapPin },
-  { to: '/admin/teaching', label: 'Dars monitoring', icon: Presentation },
+  { to: '/admin/attendance', label: 'Davomat kalendari', icon: CalendarCheck, permission: 'manageAttendance' },
+  { to: '/admin/presence', label: "O'qituvchilar kuzatuvi", icon: MapPin, permission: 'manageAttendance' },
+  { to: '/admin/teaching', label: 'Dars monitoring', icon: Presentation, permission: 'manageLessons' },
+  // Ruxsatsiz: o'qish hammaga ochiq, o'zgartirish tugmalari sahifaning
+  // o'zida manageOrgStructure bo'yicha yashiriladi.
   { to: '/admin/org-structure', label: 'Tashkiliy tuzilma', icon: Building2 },
   { to: '/admin/cameras', label: 'Kameralar va Zonalar', icon: Video, permission: 'editCameraLocation' },
   { to: '/admin/ai-modules', label: 'AI Modullari', icon: BrainCircuit, permission: 'configureAi' },
@@ -74,7 +76,10 @@ export default function AdminLayout() {
   const [unreadEvents, setUnreadEvents] = useState(0);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  useLiveEvents(() => setUnreadEvents((n) => n + 1));
+  // Hodisalarni ko'rish huquqi bo'lmasa, server WebSocket'ni baribir
+  // yopadi (4403) — ulanishga umuman urinmaymiz.
+  const canReviewEvents = can('reviewEvents', role);
+  useLiveEvents(() => setUnreadEvents((n) => n + 1), canReviewEvents);
 
   const { pathname } = useLocation();
   const allowedPaths = role ? ROLE_PAGES[role] : undefined;
@@ -202,19 +207,21 @@ export default function AdminLayout() {
               <Video size={16} />
               <span className="hidden sm:inline">Kamera</span>
             </Link>
-            <button
-              onClick={handleBellClick}
-              aria-label={unreadEvents > 0 ? `${unreadEvents} ta yangi hodisa` : 'Bildirishnomalar'}
-              title={unreadEvents > 0 ? `${unreadEvents} ta yangi hodisa` : 'Bildirishnomalar'}
-              className="relative glass-deep rounded-xl p-2 text-slate-500 transition-colors hover:text-indigo-500"
-            >
-              <Bell size={18} />
-              {unreadEvents > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
-                  {unreadEvents > 9 ? '9+' : unreadEvents}
-                </span>
-              )}
-            </button>
+            {canReviewEvents && (
+              <button
+                onClick={handleBellClick}
+                aria-label={unreadEvents > 0 ? `${unreadEvents} ta yangi hodisa` : 'Bildirishnomalar'}
+                title={unreadEvents > 0 ? `${unreadEvents} ta yangi hodisa` : 'Bildirishnomalar'}
+                className="relative glass-deep rounded-xl p-2 text-slate-500 transition-colors hover:text-indigo-500"
+              >
+                <Bell size={18} />
+                {unreadEvents > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                    {unreadEvents > 9 ? '9+' : unreadEvents}
+                  </span>
+                )}
+              </button>
+            )}
           </div>
         </header>
 

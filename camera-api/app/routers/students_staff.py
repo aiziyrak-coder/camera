@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import Response
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -30,7 +30,7 @@ from app.schemas.student_staff import (
     PeopleOverviewOut,
 )
 from app.schemas.student_staff_import import StudentStaffImportResultOut
-from app.services.face_matching import invalidate_candidate_matrix_cache
+from app.services.face_matching import announce_roster_change
 from app.services.name_matching import name_key, name_tokens, names_match
 from app.services.face_recognition import NoFaceDetectedError, extract_embedding
 from app.services.staff_export import (
@@ -91,6 +91,8 @@ def _to_out(record: StudentStaff, faculty_name: str) -> StudentStaffOut:
         course=course,
         group=group or None,
         confirmed_label=_confirmed_label(record),
+        self_registered=record.self_registered,
+        awaiting_approval=record.awaiting_approval,
     )
 
 
@@ -118,11 +120,21 @@ def _search_words(search: str | None) -> list[str]:
 # "kutilmoqda" ham. Faqat "yoq" bo'yicha filtrlansa, kutilmoqda
 # holatidagilar ikkala ro'yxatdan ham tushib qolardi.
 UNCONFIRMED_FILTER = "tasdiqlanmagan"
+# O'zini o'zi ro'yxatdan o'tkazib, yuzini yuborgan va administrator
+# qarorini kutayotganlar (enrollment.register_self).
+AWAITING_APPROVAL_FILTER = "tasdiq_kutmoqda"
 
 BIOMETRICS_FILTER_LABELS = {
     "tasdiqlangan": "Ro'yxatdan o'tganlar (yuzi tasdiqlangan)",
     UNCONFIRMED_FILTER: "Ro'yxatdan o'tmaganlar (yuzi tasdiqlanmagan)",
+    AWAITING_APPROVAL_FILTER: "O'zi ro'yxatdan o'tgan, tasdiq kutmoqda",
 }
+
+AWAITING_APPROVAL = and_(
+    StudentStaff.self_registered.is_(True),
+    StudentStaff.biometrics_status == "kutilmoqda",
+    StudentStaff.biometric_embedding.is_not(None),
+)
 
 
 def _filtered_query(
@@ -156,6 +168,8 @@ def _filtered_query(
         )
     if biometrics == UNCONFIRMED_FILTER:
         stmt = stmt.where(StudentStaff.biometrics_status != "tasdiqlangan")
+    elif biometrics == AWAITING_APPROVAL_FILTER:
+        stmt = stmt.where(AWAITING_APPROVAL)
     elif biometrics:
         stmt = stmt.where(StudentStaff.biometrics_status == biometrics)
     if course:
@@ -270,6 +284,9 @@ async def _coverage(db: AsyncSession, type: str | None) -> BiometricsCoverageOut
             )
         )
 
+    awaiting_stmt = select(func.count()).select_from(StudentStaff).where(AWAITING_APPROVAL)
+    if type:
+        awaiting_stmt = awaiting_stmt.where(StudentStaff.type == type)
     grand = sum(totals.values())
     return BiometricsCoverageOut(
         total=grand,
@@ -279,6 +296,7 @@ async def _coverage(db: AsyncSession, type: str | None) -> BiometricsCoverageOut
         percent=round(totals["tasdiqlangan"] * 100 / grand, 1) if grand else None,
         by_faculty=rows,
         by_course=await _course_rows(db) if type == "talaba" else [],
+        awaiting_approval=await db.scalar(awaiting_stmt) or 0,
     )
 
 
@@ -544,7 +562,7 @@ async def import_students_staff(
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "CSV hajmi 5 MB dan oshmasligi kerak")
     result = await import_students_staff_csv(db, raw)
     if result.imported:
-        invalidate_candidate_matrix_cache()
+        await announce_roster_change()
     await log_action(
         db,
         request,
@@ -686,6 +704,7 @@ async def update_student_staff(
             record.passport_number = number
             changed_identity.append("pasport")
 
+    type_changed = record.type != body.type
     record.full_name = body.full_name
     record.type = body.type
     record.faculty_id = faculty.id
@@ -695,6 +714,10 @@ async def update_student_staff(
     suffix = f" ({', '.join(changed_identity)} yangilandi)" if changed_identity else ""
     await log_action(db, request, current_user.id, f"Yozuvni tahrirladi: {body.full_name}{suffix}", "Talabalar")
     await db.commit()
+    if type_changed and record.biometric_embedding:
+        # Xodim/talaba ajratmasi yuz matritsasida saqlanadi (#6/#7 davomati,
+        # #26 faqat xodimlarni qidiradi) — eski tur bilan qolmasin.
+        await announce_roster_change()
     return _to_detail(await _load_record(db, record_id))
 
 
@@ -810,7 +833,61 @@ async def enroll_biometrics(
     # photo stays in object storage with nothing referencing it, forever.
     if previous_key and previous_key != key:
         await delete_files_quietly([previous_key])
-    invalidate_candidate_matrix_cache()
+    await announce_roster_change()
+    return _to_out(record, record.faculty.name if record.faculty else "")
+
+
+async def _awaiting_record(db: AsyncSession, record_id: str) -> StudentStaff:
+    record = await _load_record(db, record_id)
+    if not record.awaiting_approval:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Bu yozuv tasdiqlashni kutmayapti")
+    return record
+
+
+@router.post("/{record_id}/biometrics/approve", response_model=StudentStaffOut)
+async def approve_self_enrollment(
+    record_id: str,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
+) -> StudentStaffOut:
+    """O'zini o'zi ro'yxatdan o'tkazgan odamning yuzini tasdiqlash.
+
+    Shu paytdan u davomatga tushadi va kameralar uni begona deb
+    hisoblamaydi. Qaror audit jurnaliga yoziladi."""
+    record = await _awaiting_record(db, record_id)
+    record.biometrics_status = "tasdiqlangan"
+    record.biometrics_confirmed_at = datetime.now(timezone.utc)
+    await log_action(
+        db, request, current_user.id, f"O'zi ro'yxatdan o'tgan odamni tasdiqladi: {record.full_name}", "Talabalar"
+    )
+    await db.commit()
+    await announce_roster_change()
+    return _to_out(record, record.faculty.name if record.faculty else "")
+
+
+@router.post("/{record_id}/biometrics/reject", response_model=StudentStaffOut)
+async def reject_self_enrollment(
+    record_id: str,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
+) -> StudentStaffOut:
+    """Yuborilgan yuzni rad etish: rasm va yuz vektori o'chiriladi, yozuv
+    "yo'q" holatiga qaytadi (odam qayta yuborishi mumkin). Yozuvning
+    o'zini butunlay o'chirish — DELETE."""
+    record = await _awaiting_record(db, record_id)
+    photo_key = record.biometric_photo_key
+    record.biometric_photo_key = None
+    record.biometric_embedding = None
+    record.biometrics_status = "yoq"
+    record.biometrics_confirmed_at = None
+    await log_action(
+        db, request, current_user.id, f"O'zi ro'yxatdan o'tgan odamning yuzini rad etdi: {record.full_name}", "Talabalar"
+    )
+    await db.commit()
+    if photo_key:
+        await delete_files_quietly([photo_key])
     return _to_out(record, record.faculty.name if record.faculty else "")
 
 
@@ -852,5 +929,5 @@ async def delete_student_staff(
 
     if photo_key:
         await delete_files_quietly([photo_key])
-    invalidate_candidate_matrix_cache()
+    await announce_roster_change()
     logger.info("person deleted", extra={"record_id": record_id, "type": person_type})

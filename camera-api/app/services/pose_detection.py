@@ -50,7 +50,8 @@ left in both BlazePose and COCO, so the mapping needs no mirroring.
 import asyncio
 import logging
 import multiprocessing
-from concurrent.futures import ProcessPoolExecutor
+import threading
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
 from pathlib import Path
@@ -93,7 +94,12 @@ BACKEND_YOLO = "yolo"
 # in the worker subprocess — keeps the heavy native mediapipe .so out of the
 # main API process's address space entirely.
 _landmarker = None  # mediapipe PoseLandmarker, set inside the worker process
-_yolo_model = None  # ultralytics YOLO pose model, set in the API process
+# YOLOv8-pose: har bir inference oqimi modelning o'z nusxasini ishlatadi
+# (object_detection.py dagi izohga qarang — Ultralytics modeli oqimlar
+# orasida bo'lishish uchun xavfsiz emas).
+_yolo_thread_models = threading.local()
+_yolo_load_lock = threading.Lock()
+_yolo_executor: ThreadPoolExecutor | None = None
 _inference_semaphore = asyncio.Semaphore(settings.pose_detection_inference_concurrency)
 _pool: ProcessPoolExecutor | None = None
 _backend: str | None = None  # resolved on first use, see _resolve_backend
@@ -242,7 +248,7 @@ async def _detect_mediapipe(image_bytes: bytes) -> list[PoseLandmarks]:
                 extra={"consecutive_crashes": _consecutive_crashes},
             )
             _backend = BACKEND_YOLO
-        return await asyncio.to_thread(_detect_yolo_sync, image_bytes)
+        return await _run_yolo(_detect_yolo_sync, image_bytes)
     _consecutive_crashes = 0
     return poses
 
@@ -251,16 +257,32 @@ async def _detect_mediapipe(image_bytes: bytes) -> list[PoseLandmarks]:
 
 
 def _get_yolo_model():
-    global _yolo_model
-    if _yolo_model is None:
+    model = getattr(_yolo_thread_models, "model", None)
+    if model is None:
         from ultralytics import YOLO
 
-        logger.info(
-            "loading YOLOv8-pose model (first use)",
-            extra={"model": settings.pose_detection_yolo_model_path},
+        with _yolo_load_lock:
+            logger.info(
+                "loading YOLOv8-pose model for a worker thread",
+                extra={"model": settings.pose_detection_yolo_model_path},
+            )
+            model = YOLO(settings.pose_detection_yolo_model_path)
+        _yolo_thread_models.model = model
+    return model
+
+
+def _get_yolo_executor() -> ThreadPoolExecutor:
+    global _yolo_executor
+    if _yolo_executor is None:
+        _yolo_executor = ThreadPoolExecutor(
+            max_workers=max(1, settings.pose_detection_inference_concurrency),
+            thread_name_prefix="yolo-pose",
         )
-        _yolo_model = YOLO(settings.pose_detection_yolo_model_path)
-    return _yolo_model
+    return _yolo_executor
+
+
+async def _run_yolo(func, *args):
+    return await asyncio.get_running_loop().run_in_executor(_get_yolo_executor(), func, *args)
 
 
 def coco_keypoints_to_poses(
@@ -327,7 +349,7 @@ async def detect_poses(image_bytes: bytes) -> list[PoseLandmarks]:
     crash sees "no poses" (or, once the breaker trips, the YOLO result)."""
     async with _inference_semaphore:
         if _resolve_backend() == BACKEND_YOLO:
-            return await asyncio.to_thread(_detect_yolo_sync, image_bytes)
+            return await _run_yolo(_detect_yolo_sync, image_bytes)
         return await _detect_mediapipe(image_bytes)
 
 

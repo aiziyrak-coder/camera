@@ -154,17 +154,23 @@ class TestLessonsAndSystem:
     async def test_unanalyzed_lessons_do_not_drag_attention_down(self, db_session, world):
         common = dict(date=DAY, group_name="DI-1", faculty="Davolash ishi", teacher="Soxtaov O.", subject="Anatomiya")
         db_session.add_all([
-            LessonSession(**common, attention_score=80, sleep_incidents=2, teacher_activity_score=70,
+            LessonSession(**common, attention_score=80, attention_samples=4, sleep_incidents=2,
+                          teacher_activity_score=70, activity_samples=4,
                           teacher_on_time=True, punctuality_checked_at=datetime.now(timezone.utc)),
+            # Import qilingan, hali o'tmagan dars: soxta 50% endi hisobga kirmaydi.
+            LessonSession(**common, attention_score=50, sleep_incidents=0, teacher_activity_score=50),
+            # Kadr olinmay yopilgan: tekshirilgan hisoblanmaydi.
             LessonSession(**common, attention_score=0, sleep_incidents=0, teacher_activity_score=0,
-                          teacher_on_time=False),
+                          punctuality_checked_at=datetime.now(timezone.utc)),
         ])
         await db_session.commit()
 
         a = await build_analytics(db_session, DAY, DAY)
-        assert a.lessons.sessions == 2 and a.lessons.analyzed_sessions == 1
+        assert a.lessons.sessions == 3 and a.lessons.analyzed_sessions == 1
         assert a.lessons.avg_attention == 80.0
+        assert a.lessons.avg_teacher_activity == 70.0
         assert a.lessons.sleep_incidents == 2
+        assert a.lessons.checked_sessions == 1
         assert a.lessons.teacher_on_time_rate == 100.0
 
         system = a.system

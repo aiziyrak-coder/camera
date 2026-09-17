@@ -18,14 +18,27 @@ rtspAddress: :8554
 
 authMethod: internal
 authInternalUsers:
+  # Oqimni faqat konteyner ichidagi ffmpeg nashr qiladi (runOnDemand ->
+  # rtsp://127.0.0.1, camera-api/app/services/video_gateway.py). Ilgari
+  # LAN'dagi har kim istalgan nomga o'z videosini nashr qila olardi.
   - user: any
     pass:
-    ips: []
+    ips: ["127.0.0.1", "::1"]
     permissions:
-      - action: api
-      - action: read
       - action: publish
+      - action: read
       - action: playback
+      - action: api
+  # Ko'rish va boshqaruv — faqat ichki tarmoqlardan: API konteyneri (Docker
+  # tarmog'i) va host'dagi nginx (Docker ko'prigi orqali). Brauzer bu yerga
+  # to'g'ridan-to'g'ri emas, faqat nginx'dagi imzolangan havola orqali keladi.
+  - user: any
+    pass:
+    ips: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"]
+    permissions:
+      - action: read
+      - action: playback
+      - action: api
 
 paths:
   all_others:

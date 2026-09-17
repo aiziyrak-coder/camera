@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Camera, Check, RotateCcw } from 'lucide-react';
-import { uploadFile } from '../../lib/fileUpload';
-import { useAuth } from '../../lib/auth';
 
 const OVAL_WIDTH_RATIO = 0.42;
 const OVAL_HEIGHT_RATIO = 0.62;
@@ -14,7 +12,6 @@ interface FaceCaptureProps {
 }
 
 export default function FaceCapture({ onConfirm }: FaceCaptureProps) {
-  const { token } = useAuth();
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -99,18 +96,12 @@ export default function FaceCapture({ onConfirm }: FaceCaptureProps) {
 
     streamRef.current?.getTracks().forEach((t) => t.stop());
 
-    // Yuz solishtirish uchun mahalliy dataURL zudlik bilan ishlatiladi (ekranda
-    // ko'rsatish + FaceMatchStep uchun) — real arxivlash MinIO'ga fon rejimida
-    // amalga oshiriladi, muvaffaqiyatsiz bo'lsa ham enrollment jarayoni davom etadi.
+    // Surat faqat brauzerda ishlatiladi (ekranda ko'rsatish + FaceMatchStep).
+    // Omborga alohida yuklanmaydi: ilgari har bir urinish "face-captures/"
+    // ga tushib, hech qaysi yozuvga bog'lanmay qolardi. Saqlanadigan yuz —
+    // solishtiruvdan o'tgani, /api/students-staff/{id}/biometrics orqali.
     const dataUrl = canvas.toDataURL('image/png');
     setCaptured(dataUrl);
-
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      uploadFile(blob, 'live-face-capture.png', token, 'face-captures').catch(() => {
-        /* arxivlash muvaffaqiyatsiz — solishtirish jarayoniga ta'sir qilmaydi */
-      });
-    }, 'image/png');
   }
 
   function handleRetake() {

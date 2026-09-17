@@ -21,7 +21,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_user
+from app.dependencies import CurrentUser, require_permission
 from app.jobs.camera_health import is_reachable, is_video_flowing
 from app.models import AIModuleConfig, AttendanceRecord, Camera, LessonSession, PresenceVisit, StudentStaff
 from app.schemas.presence import (
@@ -39,6 +39,10 @@ from app.services.staff_export import split_course
 from app.timezone import INSTITUTE_TZ, local_now, to_local
 
 router = APIRouter(prefix="/api/presence", tags=["presence"])
+
+# Kim qayerda va qachon bo'lgani — shaxsiy ma'lumot. Davomat sahifasi
+# (kun oynasi) va hisobot (odam kartasi) ikkalasi ham shu yerdan o'qiydi.
+ReadDep = Annotated[CurrentUser, Depends(require_permission("manageAttendance", "viewReports"))]
 
 STAFF_ATTENDANCE_CODE = 6
 STUDENT_ATTENDANCE_CODE = 7
@@ -210,7 +214,7 @@ def _buildings(visits: list[PresenceVisit]) -> list[str]:
 async def person_day(
     person_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[CurrentUser, Depends(get_current_user)],
+    _: ReadDep,
     date: Annotated[str | None, Query()] = None,
 ) -> PersonDayOut:
     """Bir odamning bir kuni: davomat, barcha tashriflari (qayerda, qachon)
@@ -256,7 +260,7 @@ async def person_day(
 @router.get("/teachers", response_model=list[TeacherDaySummaryOut])
 async def teachers_day(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[CurrentUser, Depends(get_current_user)],
+    _: ReadDep,
     date: Annotated[str | None, Query()] = None,
     search: Annotated[str | None, Query(max_length=100)] = None,
 ) -> list[TeacherDaySummaryOut]:
@@ -360,7 +364,7 @@ def _diagnose(enabled: bool, online: bool, live, recognized: int, enrolled: int)
 @router.get("/cameras", response_model=AttendanceCamerasOut)
 async def attendance_cameras(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[CurrentUser, Depends(get_current_user)],
+    _: ReadDep,
 ) -> AttendanceCamerasOut:
     """Qaysi kameralar davomatda ishlaydi va hozir haqiqatan ishlayaptimi."""
     modules = dict(

@@ -66,7 +66,7 @@ from datetime import timedelta
 
 import numpy as np
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
@@ -76,9 +76,8 @@ from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import is_module_active
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
-from app.models import Event, LessonSession, StudentStaff
-from app.schemas.event import EventOut
-from app.services.event_bus import event_to_out, raise_event
+from app.models import LessonSession, StudentStaff
+from app.services.event_bus import raise_event
 from app.services.face_matching import (
     CandidateMatrix,
     find_best_match,
@@ -87,7 +86,6 @@ from app.services.face_matching import (
 from app.services.face_recognition import detect_faces
 from app.services.frame_grabber import grab_frame_pair_for_camera
 from app.timezone import local_now, to_local
-from app.ws import manager
 
 logger = logging.getLogger("app.teacher_punctuality_ai")
 
@@ -128,22 +126,43 @@ async def _due_sessions(db: AsyncSession) -> list[LessonSession]:
     no extra query), and the "due" set is small (only sessions past their
     deadline right now), unlike the hundreds-of-cameras case the other
     sweep loops' queries are optimizing for."""
-    cutoff = local_now()
+    now = local_now()
+    started_before = now - timedelta(minutes=settings.teacher_punctuality_grace_minutes)
+    oldest_checkable = started_before - timedelta(minutes=settings.teacher_punctuality_check_window_minutes)
+    unchecked = (
+        LessonSession.teacher_id.is_not(None),
+        LessonSession.camera_id.is_not(None),
+        LessonSession.punctuality_checked_at.is_(None),
+    )
+
+    # Tekshiruv payti allaqachon o'tib ketgan darslar: hozirgi kadr ular
+    # haqida hech narsa demaydi (o'tgan sana bilan import qilingan jadval,
+    # yoki server o'sha paytda ishlamagan). Tekshirilmagan holda yopiladi —
+    # teacher_on_time o'zgarmaydi, signal yozilmaydi.
+    expired = await db.execute(
+        update(LessonSession)
+        .where(*unchecked)
+        .where(LessonSession.scheduled_start_time < oldest_checkable)
+        .values(punctuality_checked_at=now)
+    )
+    if expired.rowcount:
+        await db.commit()
+        logger.warning(
+            "lessons past their punctuality check window closed without a check",
+            extra={"lessons": expired.rowcount, "window_minutes": settings.teacher_punctuality_check_window_minutes},
+        )
+
     result = await db.execute(
         select(LessonSession)
-        .where(LessonSession.teacher_id.is_not(None))
-        .where(LessonSession.camera_id.is_not(None))
-        .where(LessonSession.scheduled_start_time.is_not(None))
-        .where(LessonSession.punctuality_checked_at.is_(None))
+        .where(*unchecked)
+        .where(LessonSession.scheduled_start_time <= started_before)
+        .where(LessonSession.scheduled_start_time >= oldest_checkable)
     )
-    due = []
-    for row in result.scalars().all():
-        if row.camera is None or PUNCTUALITY_MODULE_CODE in (row.camera.excluded_module_codes or []):
-            continue
-        deadline = row.scheduled_start_time + timedelta(minutes=settings.teacher_punctuality_grace_minutes)
-        if deadline <= cutoff:
-            due.append(row)
-    return due
+    return [
+        row
+        for row in result.scalars().unique().all()
+        if row.camera is not None and PUNCTUALITY_MODULE_CODE not in (row.camera.excluded_module_codes or [])
+    ]
 
 
 async def _find_known_staff(db: AsyncSession, faces, *, exclude_id) -> tuple[StudentStaff, float] | None:
@@ -205,7 +224,13 @@ def _matches_teacher(faces, teacher) -> bool:
     return False
 
 
-async def check_lesson_session(session_row: LessonSession, db: AsyncSession) -> bool:
+async def check_lesson_session(
+    session_row: LessonSession,
+    db: AsyncSession,
+    *,
+    punctuality_active: bool = True,
+    substitution_active: bool = True,
+) -> bool:
     """Grabs one frame from the session's assigned camera and checks
     whether the scheduled teacher is in it — see the module docstring for
     the full contract, including why a failed/unavailable check does NOT
@@ -243,8 +268,11 @@ async def check_lesson_session(session_row: LessonSession, db: AsyncSession) -> 
                     faces_in_both = bool(faces_a) and bool(faces_b)
                     # Ikkala kadrda ham yo'q. Endi almashinuvni
                     # tekshiramiz: BIR XIL boshqa xodim ikkalasida ham
-                    # bo'lsagina almashinuv deb hisoblanadi.
-                    found_b = await _find_known_staff(db, faces_b, exclude_id=teacher.id)
+                    # bo'lsagina almashinuv deb hisoblanadi (#26 o'chirilgan
+                    # bo'lsa umuman qidirilmaydi).
+                    found_b = (
+                        await _find_known_staff(db, faces_b, exclude_id=teacher.id) if substitution_active else None
+                    )
                     if found_b is not None:
                         found_a = await _find_known_staff(db, faces_a, exclude_id=teacher.id)
                         if found_a is not None and found_a[0].id == found_b[0].id:
@@ -269,8 +297,7 @@ async def check_lesson_session(session_row: LessonSession, db: AsyncSession) -> 
     if substitute is not None:
         # Almashinuv hodisasi raise_event orqali yoziladi, chunki bu yerda
         # DALIL RASM hal qiluvchi ahamiyatga ega: "kim kirgan" degan
-        # savolga faqat rasm javob beradi. #22 esa tarixiy sabablarga
-        # ko'ra Event'ni qo'lda quradi (pastda).
+        # savolga faqat rasm javob beradi.
         event = await raise_event(
             db,
             camera=camera,
@@ -309,28 +336,30 @@ async def check_lesson_session(session_row: LessonSession, db: AsyncSession) -> 
         await db.commit()
         return event is not None
 
-    event = Event(
-        camera_id=camera.id,
-        camera_name=camera.name,
-        building=camera.building.name if camera.building else "",
+    if not punctuality_active:
+        await db.commit()
+        return False
+
+    # raise_event orqali — boshqa modullar kabi sinov rejimi, modul chegarasi
+    # va dalil rasmi shu yerda ham qo'llanadi. Ilgari Event bevosita
+    # yaratilardi: #22 sinovga o'tkazilsa ham signal operatorga ketardi.
+    event = await raise_event(
+        db,
+        camera=camera,
         module_code=PUNCTUALITY_MODULE_CODE,
         module_name=PUNCTUALITY_MODULE_NAME,
         group="E",
         confidence=80 if faces_in_both else 70,
         severity="o'rta",
+        frame_bytes=evidence_frame,
         person_name=teacher.full_name if teacher else None,
-        status="yangi",
         details={
             "reason": "Dars boshlanganidan keyin o'qituvchi xonada ko'rinmadi"
             + (" — xonada boshqa odamlar bor" if faces_in_both else ""),
         },
     )
-    db.add(event)
-    await db.flush()
-    event_out = event_to_out(event)
     await db.commit()
-    await manager.broadcast(event_out.model_dump(by_alias=True))
-    return True
+    return event is not None
 
 
 async def run_teacher_punctuality_sweep_once(
@@ -341,7 +370,9 @@ async def run_teacher_punctuality_sweep_once(
     app/jobs/attendance_ai.py's run_attendance_ai_sweep_once). Returns how
     many "not on time" Events were raised."""
     async with session_factory() as db:
-        if not await is_module_active(db, PUNCTUALITY_MODULE_CODE):
+        punctuality_active = await is_module_active(db, PUNCTUALITY_MODULE_CODE)
+        substitution_active = await is_module_active(db, SUBSTITUTION_MODULE_CODE)
+        if not punctuality_active and not substitution_active:
             return 0
         due = await _due_sessions(db)
 
@@ -353,7 +384,12 @@ async def run_teacher_punctuality_sweep_once(
             row = await db.get(LessonSession, session_id)
             if row is None or row.punctuality_checked_at is not None:
                 return False  # already handled by a previous tick/another worker
-            return await check_lesson_session(row, db)
+            return await check_lesson_session(
+                row,
+                db,
+                punctuality_active=punctuality_active,
+                substitution_active=substitution_active,
+            )
 
     results = await asyncio.gather(*(_process_one(row.id) for row in due), return_exceptions=True)
 

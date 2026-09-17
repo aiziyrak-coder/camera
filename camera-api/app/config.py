@@ -177,6 +177,11 @@ class Settings(BaseSettings):
     attendance_absence_mark_after: str = "20:00"
     attendance_working_weekdays: str = "1,2,3,4,5,6"
     attendance_absence_marking_interval_seconds: int = 900
+    # Shu kuni ro'yxatdagi odamlarning kamida shuncha ulushi tanilgan
+    # bo'lsagina qolganlar "kelmadi" deb belgilanadi (tur bo'yicha alohida
+    # — xodim va talaba). Aks holda kameralar ishlamagan kun butun jamoani
+    # "kelmadi" qilib qo'yardi. 0 — himoya o'chiq.
+    attendance_absence_min_coverage: float = 0.3
 
     # TT kriteriya 3 ("Notekis/kechki vaqtda kirish") — also pure rule-based:
     # a face-recognized check-in outside [start, end) raises a real Event
@@ -300,6 +305,11 @@ class Settings(BaseSettings):
     # check runs and (if not seen) raises an Event.
     teacher_punctuality_interval_seconds: int = 60
     teacher_punctuality_grace_minutes: int = 10
+    # Tekshiruv muddati (dars boshi + grace) shundan ko'p o'tgan dars
+    # HOZIRGI kadr bilan tekshirilmaydi: o'tgan sana bilan import
+    # qilingan jadval "o'qituvchi kelmadi" degan yolg'on signallar
+    # to'lqinini keltirardi. Bunday darslar tekshirilmagan holda yopiladi.
+    teacher_punctuality_check_window_minutes: int = 30
 
     # TT kriteriya 1 ("Notanish/begona shaxsni aniqlash") —
     # app/jobs/unauthorized_person_ai.py.
@@ -404,6 +414,10 @@ class Settings(BaseSettings):
     # Yakunlash ishi tugagan darslarni qidiradi — tez-tez ishlashi shart
     # emas, lekin dars tugagach hisobot uzoq kutmasligi kerak.
     lesson_attendance_finalize_interval_seconds: int = 300
+    # Yakunlanmagan darslar shuncha kun orqaga qidiriladi. Kamerasi
+    # hech kimni ko'rmagan dars hech qachon yakunlanmaydi — chegarasiz
+    # qidiruv har 5 daqiqada butun semestr jadvalini o'qirdi.
+    lesson_attendance_finalize_lookback_days: int = 3
     attention_score_frontal: float = 100.0
     attention_score_not_frontal: float = 40.0
     attention_score_phone_visible: float = 20.0
@@ -510,6 +524,11 @@ class Settings(BaseSettings):
     # almashtirishga sarflardi. Umumiy oqimlar ≈ concurrency × shu qiymat —
     # cpus chegarasidan (ffmpeg o'quvchilari ham shu konteynerda!) oshmasin.
     face_recognition_intra_op_threads: int = 2
+    # Klassik OpenCV hisoblari (yong'in, optik oqim, xalat/niqob rangi) uchun
+    # oqimlar soni — app/services/cpu_pool.py. Bular ilgari event loop'da
+    # ketma-ket bajarilardi; havza ularni parallel qiladi, lekin CPU'ni
+    # yuz tanishdan tortib olmasligi uchun kichik qoldiriladi.
+    cv_thread_pool_size: int = 4
 
     # Persistent per-camera frame cache (app/services/stream_cache.py) —
     # replaces spawning a fresh ffmpeg process on every single frame grab
@@ -622,7 +641,13 @@ class Settings(BaseSettings):
     # otherwise (see stream_cache.is_stream_known_broken) — keeps one dead
     # RTSP camera from holding a shared sweep slot for its full per-camera
     # timeout, over and over, on every sweep.
-    stream_broken_grace_seconds: float = 5.0
+    #
+    # 5 -> 15 (2026-09-17): sog'lom oqimning birinchi kadri ham ~5 soniyada
+    # keladi (ffmpeg oqimni tahlil qiladi, keyin birinchi KALIT kadrni
+    # kutadi) — lokal sinovda aynan shu chegarada tashlab ketilgan.
+    # Kirish kameralarining asosiy oqimida (2560x1440, H.265) kalit kadr
+    # oralig'i undan ham uzun bo'lishi mumkin.
+    stream_broken_grace_seconds: float = 15.0
 
     # Unified face sweep (app/jobs/unified_face_sweep.py) — one frame grab +
     # one face-detect pass per camera tick, feeding attendance/crowd/unauthorized/
@@ -674,6 +699,12 @@ class Settings(BaseSettings):
     # AI uchun asosiy oqim (101, masalan 2560x1440) ishlatiladi.
     ai_entrance_use_main_stream: bool = True
     ai_entrance_frame_wait_seconds: float = 18.0
+    # Asosiy oqim kadr bermasa, kamera shuncha vaqt substream'da ishlaydi,
+    # keyin asosiy oqim qayta sinaladi (app/services/frame_grabber.py).
+    # Productionda (2026-09-17) 11 ta kirish kamerasidan 7 tasining asosiy
+    # oqimi kun bo'yi birorta kadr bermagan — ular davomatdan butunlay
+    # chiqib qolgan edi.
+    ai_entrance_main_stream_retry_seconds: float = 1800.0
 
     # MediaMTX horizontal sharding — comma-separated URLs, equal length pairs.
     # Empty = single MEDIAMTX_API_URL / MEDIAMTX_HLS_BASE_URL.
@@ -808,6 +839,22 @@ class Settings(BaseSettings):
     smoking_min_landmark_visibility: float = 0.5
     smoking_wrist_mouth_distance: float = 0.12
 
+    # Bo'sh bazaga birinchi foydalanuvchi. Production'da shu ikkisi
+    # (INITIAL_ADMIN_LOGIN / INITIAL_ADMIN_PASSWORD) orqali yaratiladi.
+    initial_admin_login: str = ""
+    initial_admin_password: str = ""
+    # Demo hisoblar (admin/admin123, operator/operator123) — faqat lokal
+    # ishlab chiqish va testlar uchun. Ularning paroli ochiq repozitoriyda
+    # yozilgan, shuning uchun standart bo'yicha YARATILMAYDI.
+    seed_demo_users: bool = False
+    # Imzolangan HLS havolalari (app/services/stream_links.py). Bo'sh —
+    # imzolanmaydi (lokal ishlab chiqish). Production'da nginx'dagi
+    # /etc/nginx/snippets/cam-stream-secret.conf bilan AYNAN bir xil
+    # bo'lishi shart — deploy/enable-stream-auth.sh ikkalasini yozadi.
+    stream_url_secret: str = ""
+    # FastAPI hujjatlari (/docs, /redoc, /openapi.json). Production'da
+    # butun API xaritasini internetga ochib qo'ymaslik uchun o'chiq.
+    api_docs_enabled: bool = False
 
     frontend_base_url: str = "http://localhost:5173"
     smtp_host: str = ""

@@ -37,12 +37,14 @@ from app.schemas.public import (
     PublicStatsOut,
     PublicTopStudentOut,
 )
+from app.services.event_scope import NOT_SUPPRESSED, OPERATOR_EVENTS
 from app.services.face_matching import load_candidate_matrix_cached
 from app.services.face_recognition import detect_faces
 from app.services.inference_gate import PRIORITY_LIVE
 from app.services.frame_grabber import frame_wait_seconds_for_camera, grab_frame_for_camera
 from app.services.image_size import jpeg_dimensions
 from app.services.sleep_detection import is_asleep, is_face_measurable
+from app.services.stream_links import signed_stream_url
 from app.services.sweep_result_cache import get_camera_sweep
 from app.services.thumbnail_cache import ensure_thumbnail
 
@@ -85,7 +87,7 @@ def _to_public_camera(camera: Camera) -> PublicCameraOut:
         department=camera.department.name if camera.department else "",
         status="live" if live else "offline",
         has_video=has_video,
-        stream_url=camera.stream_url,
+        stream_url=signed_stream_url(camera.stream_url),
         floor=camera.floor,
     )
 
@@ -177,7 +179,8 @@ async def get_public_stats(db: Annotated[AsyncSession, Depends(get_db)]) -> Publ
         await db.execute(
             select(func.count())
             .select_from(Event)
-            .where(Event.is_trial.is_(False))
+            # Devordagi signal paneli bilan bir xil doira (event_scope).
+            .where(OPERATOR_EVENTS, NOT_SUPPRESSED)
             .where(Event.occurred_at >= start_of_today)
             .where(Event.severity.in_(["o'rta", "yuqori"]))
         )

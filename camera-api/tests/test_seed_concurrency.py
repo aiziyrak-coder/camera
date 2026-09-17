@@ -29,3 +29,31 @@ class TestSeedConcurrency:
 
         assert faculty_count == 4  # len(DEFAULT_FACULTIES)
         assert building_count == 3  # len(DEFAULT_BUILDINGS)
+
+
+class TestModuleDocsFollowTheCode:
+    """Productionda 7 ta modul tavsifida kodda yo'q texnologiya yozilgan edi —
+    seed faqat bo'sh jadvalni to'ldirgani uchun tuzatishlar yetib bormagan."""
+
+    async def test_stale_docs_are_replaced_but_admin_settings_are_kept(self, db_session):
+        from sqlalchemy import select
+
+        from app.models import AIModuleConfig
+        from app.seed import DEFAULT_AI_MODULES, seed_all
+
+        await seed_all(db_session)
+        row = (await db_session.execute(select(AIModuleConfig).where(AIModuleConfig.code == 1))).scalar_one()
+        row.method = "YOLOv8-face + ArcFace, mahalliy GPU"
+        row.description = "eski matn"
+        row.threshold = 91
+        row.active = False
+        row.mode = "sinov"
+        await db_session.commit()
+
+        await seed_all(db_session)
+        await db_session.refresh(row)
+
+        expected = next(m for m in DEFAULT_AI_MODULES if m["code"] == 1)
+        assert row.method == expected["method"]
+        assert row.description == expected["description"]
+        assert (row.threshold, row.active, row.mode) == (91, False, "sinov")

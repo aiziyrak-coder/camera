@@ -50,7 +50,22 @@ class PriorityInferenceGate:
                 heapq.heappush(self._waiters, (priority, next(_counter), event))
                 granted = False
         if not granted:
-            await event.wait()
+            try:
+                await event.wait()
+            except asyncio.CancelledError:
+                # Kutayotgan so'rov bekor qilindi (mijoz uzildi, vazifa
+                # to'xtatildi). Ikki holat: slot hali berilmagan bo'lsa —
+                # navbatdan chiqariladi; aynan shu lahzada berilgan bo'lsa —
+                # qaytariladi. Aks holda slot abadiy "band" qolardi va har
+                # bekor qilish chegarani bittaga kamaytirardi.
+                async with self._lock:
+                    if event.is_set():
+                        self._in_use -= 1
+                        self._grant_next()
+                    else:
+                        self._waiters = [w for w in self._waiters if w[2] is not event]
+                        heapq.heapify(self._waiters)
+                raise
         try:
             yield
         finally:

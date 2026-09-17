@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_user, require_permission
+from app.dependencies import CurrentUser, require_permission
 from app.schemas.system import (
     CameraHealthSweepOut,
     ConcurrencySlotOut,
@@ -27,11 +27,18 @@ from app.schemas.system import (
 )
 from app.services.ai_runtime_status import build_ai_runtime_status
 from app.services.camera_network_status import build_camera_network_status
-from app.services.stream_cache import active_stream_reader_count
+from app.services.runtime_snapshot import total_stream_readers
+from app.services.security_checks import default_password_logins
 from app.services.stream_status import build_stream_status
 from app.services.stream_sync import sync_all_active_camera_streams
 
 router = APIRouter(prefix="/api/system", tags=["system"])
+
+# Boshqaruv panelidagi server va AI holati. Kamera mas'uli bu panelni
+# ko'rmaydi; qolgan operator rollaridan birortasi yetarli.
+StatusDep = Annotated[
+    CurrentUser, Depends(require_permission("viewReports", "reviewEvents", "systemSettings"))
+]
 
 
 def _ffmpeg_process_count() -> int:
@@ -78,12 +85,16 @@ def _build_alerts(cpu: int, ram: int, disk: int, ffmpeg_count: int) -> list[Reso
 
 
 @router.get("/resources", response_model=SystemResourcesOut)
-async def get_system_resources(_: Annotated[CurrentUser, Depends(get_current_user)]) -> SystemResourcesOut:
+async def get_system_resources(
+    _: StatusDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> SystemResourcesOut:
     cpu = round(psutil.cpu_percent(interval=0.1))
     ram = round(psutil.virtual_memory().percent)
     disk = round(psutil.disk_usage("/").percent)
     ffmpeg_count = _ffmpeg_process_count()
-    stream_readers = active_stream_reader_count()
+    # Barcha API jarayonlari bo'yicha — javob bergan jarayonniki emas.
+    stream_readers = await total_stream_readers()
 
     return SystemResourcesOut(
         cpu=cpu,
@@ -91,12 +102,27 @@ async def get_system_resources(_: Annotated[CurrentUser, Depends(get_current_use
         disk=disk,
         ffmpeg_process_count=ffmpeg_count,
         stream_reader_count=stream_readers,
-        alerts=_build_alerts(cpu, ram, disk, ffmpeg_count),
+        alerts=_security_alerts(await default_password_logins(db)) + _build_alerts(cpu, ram, disk, ffmpeg_count),
     )
 
 
+def _security_alerts(default_logins: list[str]) -> list[ResourceAlertOut]:
+    if not default_logins:
+        return []
+    return [
+        ResourceAlertOut(
+            metric="security",
+            level="critical",
+            message=(
+                f"Ochiq e'lon qilingan standart parol bilan hisob: {', '.join(default_logins)} — "
+                "parolni darhol almashtiring (Foydalanuvchilar va Rollar)"
+            ),
+        )
+    ]
+
+
 @router.get("/ai-status", response_model=SystemAiStatusOut)
-async def get_ai_status(_: Annotated[CurrentUser, Depends(get_current_user)]) -> SystemAiStatusOut:
+async def get_ai_status(_: StatusDep) -> SystemAiStatusOut:
     raw = await build_ai_runtime_status()
     return SystemAiStatusOut(
         scheduler_enabled=bool(raw["scheduler_enabled"]),
@@ -121,7 +147,7 @@ async def get_ai_status(_: Annotated[CurrentUser, Depends(get_current_user)]) ->
 @router.get("/stream-status", response_model=SystemStreamStatusOut)
 async def get_stream_status(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[CurrentUser, Depends(get_current_user)],
+    _: StatusDep,
 ) -> SystemStreamStatusOut:
     raw = await build_stream_status(db)
     return SystemStreamStatusOut(
@@ -139,7 +165,7 @@ async def get_stream_status(
 @router.get("/camera-network", response_model=SystemCameraNetworkOut)
 async def get_camera_network(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[CurrentUser, Depends(get_current_user)],
+    _: StatusDep,
 ) -> SystemCameraNetworkOut:
     raw = await build_camera_network_status(db)
     return SystemCameraNetworkOut(

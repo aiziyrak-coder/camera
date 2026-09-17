@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Activity, ArrowRight, Camera, GraduationCap, Loader2, Users } from 'lucide-react';
+import { Activity, ArrowRight, Camera, GraduationCap, Loader2, ShieldAlert, Users } from 'lucide-react';
 import StatCard from '../../components/StatCard';
 import CampusMap from '../../components/admin/CampusMap';
 import { api, buildQuery, type Page } from '../../lib/apiClient';
@@ -159,9 +159,23 @@ export default function DashboardPage() {
 
   const activeModules = aiModules.filter((m) => m.active);
   const topModules = activeModules.slice(0, 5);
+  // Xavfsizlik ogohlantirishi (masalan, ochiq demo parol) resurs kartasi
+  // ichida ko'rinmay qolmasligi uchun sahifa tepasida alohida chiqadi.
+  const securityAlerts = resources?.alerts.filter((a) => a.metric === 'security') ?? [];
+  const resourceAlerts = resources?.alerts.filter((a) => a.metric !== 'security') ?? [];
 
   return (
     <div className="space-y-4">
+      {securityAlerts.map((a) => (
+        <div
+          key={a.message}
+          role="alert"
+          className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
+        >
+          <ShieldAlert size={18} className="mt-0.5 shrink-0" />
+          <span>{a.message}</span>
+        </div>
+      ))}
       <section className="glass p-6">
         <h2 className="mb-1 text-lg font-extrabold text-slate-900">
           Boshqaruv paneli
@@ -290,9 +304,9 @@ export default function DashboardPage() {
                 <span>ffmpeg: {resources.ffmpegProcessCount}</span>
                 <span>Stream o'quvchilar: {resources.streamReaderCount}</span>
               </div>
-              {resources.alerts.length > 0 && (
+              {resourceAlerts.length > 0 && (
                 <ul className="space-y-1.5">
-                  {resources.alerts.map((a) => (
+                  {resourceAlerts.map((a) => (
                     <li
                       key={`${a.metric}-${a.message}`}
                       className={`rounded-lg px-2.5 py-1.5 text-xs font-medium ${

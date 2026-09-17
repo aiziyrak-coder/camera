@@ -44,6 +44,33 @@ describe('usePermissions', () => {
     expect(result.current.can('manageRoles', 'admin')).toBe(true);
   });
 
+  it('keeps the camera steward out of operator sections by default', () => {
+    const { result } = renderHook(() => usePermissions(), { wrapper });
+    for (const key of ['reviewEvents', 'deleteEvents', 'manageAttendance', 'manageOrgStructure', 'manageLessons'] as const) {
+      expect(result.current.can(key, 'kamera-masuli')).toBe(false);
+      expect(result.current.can(key, 'super-admin')).toBe(true);
+    }
+    expect(result.current.can('editCameraLocation', 'kamera-masuli')).toBe(true);
+  });
+
+  it('lets admin review events but not delete them', () => {
+    const { result } = renderHook(() => usePermissions(), { wrapper });
+    expect(result.current.can('reviewEvents', 'admin')).toBe(true);
+    expect(result.current.can('deleteEvents', 'admin')).toBe(false);
+  });
+
+  it('fills keys missing from an older saved matrix with defaults', () => {
+    const stored = { manageRoles: { superAdmin: true, admin: false, cameraSteward: false } };
+    localStorage.setItem('camera-permissions', JSON.stringify(stored));
+    const { result } = renderHook(() => usePermissions(), { wrapper });
+
+    expect(result.current.can('reviewEvents', 'super-admin')).toBe(true);
+    act(() => {
+      result.current.toggle('manageLessons', 'admin');
+    });
+    expect(result.current.can('manageLessons', 'admin')).toBe(false);
+  });
+
   it('toggle() never affects the other role', () => {
     const { result } = renderHook(() => usePermissions(), { wrapper });
 

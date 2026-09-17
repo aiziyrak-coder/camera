@@ -32,6 +32,7 @@ export default function EnrollmentPage() {
   const [error, setError] = useState<string | null>(null);
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [awaitingApproval, setAwaitingApproval] = useState(false);
 
   const identity: EnrollmentIdentity =
     method === 'pinfl'
@@ -80,7 +81,8 @@ export default function EnrollmentPage() {
     setCaptureError(null);
     setLoading(true);
     try {
-      await submitEnrollment(found.recordId, identity, frames);
+      const result = await submitEnrollment(found.recordId, identity, frames);
+      setAwaitingApproval(Boolean(result.awaitingApproval));
       setStep('success');
     } catch (err) {
       // Xato bo'lsa kamera qadamida qolamiz va bosqichlar boshidan
@@ -211,6 +213,21 @@ export default function EnrollmentPage() {
               <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-700">
                 Siz allaqachon ro'yxatdan o'tgansiz. O'zgartirish kerak bo'lsa, administratorga murojaat qiling.
               </p>
+            ) : found.awaitingApproval ? (
+              <>
+                <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-700">
+                  Yuzingiz qabul qilingan va administrator tasdig'ini kutmoqda. Rasmni almashtirmoqchi bo'lsangiz,
+                  qayta skanerlashingiz mumkin.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setStep('photo')}
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-4 py-2.5 text-sm font-semibold text-indigo-600 transition-colors hover:bg-indigo-50"
+                >
+                  <ScanFace size={16} />
+                  Qayta skanerlash
+                </button>
+              </>
             ) : (
               <>
                 <p className="text-sm text-slate-500">
@@ -266,7 +283,9 @@ export default function EnrollmentPage() {
             <CheckCircle2 size={40} className="text-emerald-500" />
             <p className="text-sm font-bold text-slate-900">Muvaffaqiyatli saqlandi!</p>
             <p className="text-sm text-slate-500">
-              {found.fullName}, yuzingiz endi kameralar orqali tanib olinadi.
+              {awaitingApproval
+                ? `${found.fullName}, ma'lumotlaringiz qabul qilindi. Siz institut ro'yxatida yo'q edingiz, shuning uchun administrator tasdiqlagandan keyin kameralar sizni taniy boshlaydi.`
+                : `${found.fullName}, yuzingiz endi kameralar orqali tanib olinadi.`}
             </p>
           </div>
         )}

@@ -183,3 +183,76 @@ class TestSweepRecordsVideo:
 
 async def _reachable(_ip, _port):
     return True, 1.0
+
+
+@pytest.mark.usefixtures("seeded")
+class TestVideoSeenByAnotherWorker:
+    """Kadrni boshqa worker (miniatyura so'rovi) yoki boshqa oqim manzili
+    olgan bo'lsa ham kamera tasvirsiz deb belgilanmasligi kerak."""
+
+    @staticmethod
+    async def _camera(db_session, a_building, ip, last_frame_at=None):
+        camera = Camera(
+            name=f"Kamera {ip}", ip=ip, building_id=a_building.id, zone="Z", resolution="1080p",
+            status="faol", stream_url=f"rtsp://fake/{ip}", last_frame_at=last_frame_at,
+        )
+        db_session.add(camera)
+        await db_session.commit()
+        return camera
+
+    @staticmethod
+    def _seen_elsewhere(monkeypatch, camera, moment):
+        async def seen(ids):
+            return {str(camera.id): moment.timestamp()}
+
+        monkeypatch.setattr("app.jobs.camera_health.tcp_check", _reachable)
+        monkeypatch.setattr("app.jobs.camera_health.peek_cached_frame", lambda _url: None)
+        monkeypatch.setattr("app.jobs.camera_health.frames_seen_at", seen)
+
+    async def test_a_recent_frame_from_the_shared_cache_counts(self, db_session, a_building, monkeypatch):
+        camera = await self._camera(db_session, a_building, "10.0.0.71")
+        moment = datetime.now(timezone.utc) - timedelta(seconds=40)
+        self._seen_elsewhere(monkeypatch, camera, moment)
+
+        await run_camera_health_sweep_once(db_session)
+        await db_session.refresh(camera)
+
+        assert abs(camera.last_frame_at - moment) < timedelta(seconds=1)
+        assert is_video_flowing(camera.last_frame_at) is True
+
+    async def test_an_old_frame_does_not_bring_the_video_back(self, db_session, a_building, monkeypatch):
+        camera = await self._camera(db_session, a_building, "10.0.0.72")
+        old = datetime.now(timezone.utc) - timedelta(seconds=settings.camera_video_stale_seconds + 60)
+        self._seen_elsewhere(monkeypatch, camera, old)
+
+        await run_camera_health_sweep_once(db_session)
+        await db_session.refresh(camera)
+
+        assert is_video_flowing(camera.last_frame_at) is False
+
+    async def test_a_newer_stamp_is_never_moved_back(self, db_session, a_building, monkeypatch):
+        fresh = datetime.now(timezone.utc) - timedelta(seconds=5)
+        camera = await self._camera(db_session, a_building, "10.0.0.73", last_frame_at=fresh)
+        self._seen_elsewhere(monkeypatch, camera, fresh - timedelta(seconds=100))
+
+        await run_camera_health_sweep_once(db_session)
+        await db_session.refresh(camera)
+
+        assert camera.last_frame_at == fresh
+
+
+class TestSharedFrameTimestamps:
+    async def test_a_stored_thumbnail_marks_the_frame_moment(self, monkeypatch):
+        from app.services import thumbnail_cache
+
+        thumbnail_cache.reset_thumbnail_cache_for_tests()
+        monkeypatch.setattr(thumbnail_cache, "_redis", None)
+        monkeypatch.setattr(thumbnail_cache, "_redis_tried", True)
+        before = datetime.now(timezone.utc).timestamp()
+
+        await thumbnail_cache._store("cam-a", b"jpeg")
+        seen = await thumbnail_cache.frames_seen_at(["cam-a", "cam-b"])
+
+        assert set(seen) == {"cam-a"}
+        assert seen["cam-a"] >= int(before) - 1
+        thumbnail_cache.reset_thumbnail_cache_for_tests()

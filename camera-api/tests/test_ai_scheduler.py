@@ -113,3 +113,31 @@ class TestBuildRegistry:
         names = {e.name for e in registry}
         assert "unified_face" not in names
         assert {"attendance", "vision_sleep", "unauthorized"} <= names
+
+
+class TestLaggingIncludesChronicSlowness:
+    """Productionda yuz tekshiruvi 30 s o'rniga 296 s davom etgan, panel esa
+    "kechikmayapti" degan edi."""
+
+    def _stats(self, *, interval: int, duration: float, finished_ago: float):
+        from datetime import datetime, timedelta, timezone
+
+        from app.jobs.scheduler_metrics import SweepRunStats
+
+        now = datetime.now(timezone.utc)
+        stats = SweepRunStats(name="unified_face", tier="critical", interval_seconds=interval)
+        stats.last_duration_seconds = duration
+        stats.last_finished_at = now - timedelta(seconds=finished_ago)
+        return stats, now
+
+    def test_a_round_ten_times_longer_than_its_interval_is_lagging(self):
+        stats, now = self._stats(interval=30, duration=296, finished_ago=5)
+        assert stats.is_lagging(now) is True
+
+    def test_a_round_within_budget_is_not_lagging(self):
+        stats, now = self._stats(interval=30, duration=12, finished_ago=5)
+        assert stats.is_lagging(now) is False
+
+    def test_short_interval_gets_a_one_minute_floor(self):
+        stats, now = self._stats(interval=6, duration=40, finished_ago=1)
+        assert stats.is_lagging(now) is False

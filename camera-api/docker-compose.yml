@@ -70,8 +70,8 @@ services:
       MTX_API: "yes"
       MTX_APIADDRESS: ":9997"
     ports:
-      - "8554:8554" # RTSP
-      - "8888:8888" # HLS
+      - "127.0.0.1:8554:8554" # RTSP (faqat serverning o'zi)
+      - "127.0.0.1:8888:8888" # HLS (brauzerga nginx orqali)
       - "127.0.0.1:9997:9997" # control API (faqat serverning ozi uchun)
 
   redis:

@@ -1,18 +1,15 @@
 """Aggregated AI runtime snapshot for the admin dashboard.
 
-Sweep ko'rsatkichlari AI ishlayotgan (leader) jarayondan olinadi — so'rov
-boshqa API jarayoniga tushsa ham (app/services/runtime_snapshot.py).
-Konkurentlik/GPU/oqim qatorlari esa javob bergan jarayonning o'ziniki."""
+Sweep ko'rsatkichlari, slotlar, inference navbati va GPU AI ishlayotgan
+(leader) jarayondan olinadi — so'rov boshqa API jarayoniga tushsa ham
+(app/services/runtime_snapshot.py). Stream o'quvchilar — barcha
+jarayonlar yig'indisi."""
 
 from datetime import datetime, timezone
 
 from app.config import settings
 from app.jobs.scheduler_metrics import SweepRunStats, tick_from_sweeps
-from app.jobs.sweep_concurrency import entrance_exit_sweep_concurrency_snapshot, sweep_concurrency_snapshot
-from app.services.gpu_status import get_gpu_status
-from app.services.inference_gate import face_inference_gate
-from app.services.runtime_snapshot import load_sweep_stats
-from app.services.stream_cache import active_stream_reader_count
+from app.services.runtime_snapshot import load_leader_process_view, load_sweep_stats, total_stream_readers
 
 
 def _scheduler_module_lists() -> tuple[list[str], list[str]]:
@@ -51,9 +48,8 @@ def _sweeps_payload(sweeps: list[SweepRunStats]) -> list[dict[str, object]]:
 async def build_ai_runtime_status() -> dict[str, object]:
     sweeps = await load_sweep_stats()
     tick = tick_from_sweeps(sweeps)
-    gpu = get_gpu_status()
+    leader = await load_leader_process_view()
     critical, standard = _scheduler_module_lists()
-    sweep = sweep_concurrency_snapshot()
 
     return {
         "scheduler_enabled": settings.ai_scheduler_enabled,
@@ -73,10 +69,10 @@ async def build_ai_runtime_status() -> dict[str, object]:
             "skipped_overlap": tick.skipped_overlap,
         },
         "sweeps": _sweeps_payload(sweeps),
-        "gpu": gpu,
-        "sweep_slots": sweep,
-        "entrance_exit_sweep_slots": entrance_exit_sweep_concurrency_snapshot(),
-        "face_inference_gate": face_inference_gate.snapshot(),
-        "stream_reader_count": active_stream_reader_count(),
+        "gpu": leader["gpu"],
+        "sweep_slots": leader["sweep_slots"],
+        "entrance_exit_sweep_slots": leader["entrance_exit_sweep_slots"],
+        "face_inference_gate": leader["face_inference_gate"],
+        "stream_reader_count": await total_stream_readers(),
         "embedding_sweep_cache_ttl_seconds": settings.candidate_matrix_sweep_cache_ttl_seconds,
     }

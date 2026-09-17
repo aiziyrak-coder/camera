@@ -1,9 +1,9 @@
 """Persistent per-camera frame cache — replaces spawning a fresh ffmpeg
 process on every single frame grab with one long-lived ffmpeg reader per
 camera stream that continuously decodes frames and keeps only the latest
-one in memory. app/services/frame_grabber.py's grab_frame()/
-grab_frame_pair() now read from this cache instead of shelling out fresh
-each call — same public contract (JPEG bytes or None), different
+one in memory. app/services/frame_grabber.py's grab_frame_for_camera()/
+grab_frame_pair_for_camera() read from this cache instead of shelling out
+fresh each call — same public contract (JPEG bytes or None), different
 implementation underneath.
 
 Why this matters at scale: the old grab_frame() made ffmpeg reconnect to
@@ -26,6 +26,7 @@ and reads as "no frame" until the next request restarts it.
 """
 
 import asyncio
+import itertools
 import logging
 import re
 import time
@@ -41,6 +42,12 @@ _MAX_BUFFER_BYTES = 5_000_000  # guards against unbounded growth if a stream nev
 _STDERR_TAIL_LINES = 20  # enough to see the actual RTSP failure reason without unbounded memory growth
 
 _CREDENTIALS_IN_URL = re.compile(r"(rtsp://)[^@/]+@")
+
+# Har bir YANGI kadrga beriladigan tartib raqami (publish()) — BUTUN jarayon
+# bo'yicha o'sib boradi, o'quvchi qayta ishga tushganda ham noldan
+# boshlanmaydi. Ikki kadrli tasdiq aynan shunga tayanadi: "ikkinchi kadr"
+# birinchisidan keyin dekodlangan bo'lishi shart (frame_grabber.py).
+_frame_seq = itertools.count(1)
 
 
 def _redact(text: str) -> str:
@@ -87,11 +94,13 @@ class _StreamReader:
         self._proc_started_at: float = 0.0
         self._latest_frame: bytes | None = None
         self._latest_frame_at: float = 0.0
+        # _latest_frame ning tartib raqami (_frame_seq); 0 — hali kadr yo'q.
+        self._latest_seq: int = 0
         self._last_requested_at: float = time.monotonic()
         self._lock = asyncio.Lock()
         # Buzilgan kadr tekshiruvi (frame_quality.py) uchun holat.
         # `_last_judged` — AYNAN o'sha bayt obyekti: grab_frame_for_camera
-        # kadr paydo bo'lguncha har 0.5 soniyada qayta so'raydi, va bitta
+        # kadr paydo bo'lguncha qayta-qayta so'raydi (frame_grabber._POLL_SECONDS), va bitta
         # kadrni o'nlab marta dekodlab o'tirish behuda bo'lardi.
         self._last_judged: bytes | None = None
         self._last_judged_corrupt = False
@@ -108,13 +117,35 @@ class _StreamReader:
     def idle_seconds(self) -> float:
         return time.monotonic() - self._last_requested_at
 
+    def publish(self, frame: bytes) -> None:
+        """Yangi dekodlangan kadrni keshga qo'yadi va unga tartib raqami beradi.
+
+        Bayt-bayt bir xil kadr YANGI kadr hisoblanmaydi: faqat kalit
+        kadrlar dekodlanganda (stream_cache_keyframes_only) ffmpeg `-r`
+        chiqish tezligini ushlab turish uchun oxirgi kadrni takrorlab
+        yuborishi mumkin. Haqiqiy kamera kadrida sensor shovqini bor, ya'ni
+        ikki xil payt hech qachon aynan bir xil JPEG bermaydi. Takror kadr
+        oqim tirikligini bildiradi (vaqt yangilanadi), lekin raqam o'zgarmaydi."""
+        self._latest_frame_at = time.monotonic()
+        if frame == self._latest_frame:
+            return
+        self._latest_frame = frame
+        self._latest_seq = next(_frame_seq)
+
     def get_frame(self) -> bytes | None:
+        latest = self.get_latest()
+        return latest[0] if latest is not None else None
+
+    def get_latest(self) -> tuple[bytes, int] | None:
+        """(kadr, tartib raqami) yoki None — get_frame() bilan bir xil
+        tekshiruvlar (eskirgan, buzilgan kadr) bilan."""
         if self._latest_frame is None:
             return None
         if time.monotonic() - self._latest_frame_at > settings.stream_cache_max_age_seconds:
             return None  # stale — reader is running but hasn't decoded anything recent (stream stalled)
 
         frame = self._latest_frame
+        seq = self._latest_seq
         if frame is not self._last_judged:
             self._last_judged = frame
             block = measure_frame(frame)
@@ -142,7 +173,7 @@ class _StreamReader:
 
         if self._last_judged_corrupt:
             return None
-        return frame
+        return frame, seq
 
     def is_known_broken(self) -> bool:
         """True once this reader has had stream_broken_grace_seconds to
@@ -240,8 +271,7 @@ class _StreamReader:
                 buffer += chunk
                 frames, buffer = extract_complete_jpeg_frames(buffer)
                 if frames:
-                    self._latest_frame = frames[-1]  # only the most recent decoded frame is kept
-                    self._latest_frame_at = time.monotonic()
+                    self.publish(frames[-1])  # only the most recent decoded frame is kept
                     self._frames_decoded += len(frames)
                 if len(buffer) > _MAX_BUFFER_BYTES:
                     logger.warning("stream reader buffer overflow, resetting", extra={"stream_url": self._log_url})
@@ -286,11 +316,11 @@ class StreamCache:
         self._readers: dict[str, _StreamReader] = {}
         self._lock = asyncio.Lock()
 
-    async def get_frame(self, stream_url: str) -> bytes | None:
+    async def get_latest(self, stream_url: str) -> tuple[bytes, int] | None:
         reader = await self._get_or_create_reader(stream_url)
         reader.touch()
         await reader.ensure_started()
-        return reader.get_frame()
+        return reader.get_latest()
 
     def peek_frame(self, stream_url: str) -> bytes | None:
         """The reader's latest usable frame, WITHOUT starting one.
@@ -334,8 +364,11 @@ class StreamCache:
 _cache = StreamCache()
 
 
-async def get_cached_frame(stream_url: str) -> bytes | None:
-    return await _cache.get_frame(stream_url)
+async def get_cached_frame_with_seq(stream_url: str) -> tuple[bytes, int] | None:
+    """Oqimning eng oxirgi yaroqli kadri va uning tartib raqami (o'quvchi
+    kerak bo'lsa ishga tushiriladi). Raqam ikki kadr aynan bitta kadr
+    emasligini tekshirish uchun — app/services/frame_grabber.py."""
+    return await _cache.get_latest(stream_url)
 
 
 def peek_cached_frame(stream_url: str) -> bytes | None:

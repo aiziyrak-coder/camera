@@ -25,6 +25,16 @@ import type { LessonSession } from '../../types';
 
 type ScheduleFilter = 'all' | 'scheduled' | 'pending' | 'ai_ready';
 
+/** O'lchanmagan qiymat — "—", "0%" emas: 0% haqiqiy natija bo'lishi mumkin. */
+function percentLabel(value: number | null): string {
+  return value === null ? '—' : `${value}%`;
+}
+
+function average(values: (number | null)[]): number | null {
+  const measured = values.filter((value): value is number => value !== null);
+  if (!measured.length) return null;
+  return Math.round(measured.reduce((sum, value) => sum + value, 0) / measured.length);
+}
 
 export default function TeachingPage() {
   const { token } = useAuth();
@@ -82,24 +92,22 @@ export default function TeachingPage() {
     return rows;
   }, [sessions, groupFilter, scheduleFilter]);
 
+  // O'rtachalar faqat O'LCHANGAN darslardan: o'lchovi yo'q dars "0%" emas.
   const stats = useMemo(() => {
-    if (!filtered.length) return { attention: 0, sleep: 0, activity: 0, onTime: 0 };
-    const attention = Math.round(
-      filtered.reduce((sum, s) => sum + s.attentionScore, 0) / filtered.length,
-    );
-    const activity = Math.round(
-      filtered.reduce((sum, s) => sum + s.teacherActivityScore, 0) / filtered.length,
-    );
+    const attention = average(filtered.map((s) => s.attentionScore));
+    const activity = average(filtered.map((s) => s.teacherActivityScore));
     const sleep = filtered.reduce((sum, s) => sum + s.sleepIncidents, 0);
-    const onTime = Math.round(
-      (filtered.filter((s) => s.teacherOnTime).length / filtered.length) * 100,
-    );
+    const checked = filtered.filter((s) => s.teacherOnTime !== null);
+    const onTime = checked.length
+      ? Math.round((checked.filter((s) => s.teacherOnTime).length / checked.length) * 100)
+      : null;
     return { attention, sleep, activity, onTime };
   }, [filtered]);
 
   const trendData = useMemo(() => {
     const byDate = new Map<string, { date: string; total: number; count: number }>();
     for (const s of filtered) {
+      if (s.attentionScore === null) continue;
       const entry = byDate.get(s.date) ?? { date: s.date, total: 0, count: 0 };
       entry.total += s.attentionScore;
       entry.count += 1;
@@ -113,6 +121,7 @@ export default function TeachingPage() {
   const teacherData = useMemo(() => {
     const byTeacher = new Map<string, { teacher: string; total: number; count: number }>();
     for (const s of filtered) {
+      if (s.teacherActivityScore === null) continue;
       const entry = byTeacher.get(s.teacher) ?? { teacher: s.teacher, total: 0, count: 0 };
       entry.total += s.teacherActivityScore;
       entry.count += 1;
@@ -197,10 +206,10 @@ export default function TeachingPage() {
       )}
 
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard icon={<Brain size={20} />} value={`${stats.attention}%`} label="O'rtacha diqqat" tone="indigo" />
+        <StatCard icon={<Brain size={20} />} value={percentLabel(stats.attention)} label="O'rtacha diqqat" tone="indigo" />
         <StatCard icon={<Moon size={20} />} value={stats.sleep} label="Uxlash holatlari" tone="amber" />
-        <StatCard icon={<Presentation size={20} />} value={`${stats.activity}%`} label="O'qituvchi faolligi" tone="green" />
-        <StatCard icon={<Timer size={20} />} value={`${stats.onTime}%`} label="Vaqtida kelish" tone="indigo" />
+        <StatCard icon={<Presentation size={20} />} value={percentLabel(stats.activity)} label="O'qituvchi faolligi" tone="green" />
+        <StatCard icon={<Timer size={20} />} value={percentLabel(stats.onTime)} label="Vaqtida kelish" tone="indigo" />
       </div>
 
       {loading && sessions.length === 0 ? (
@@ -296,16 +305,22 @@ export default function TeachingPage() {
                       <td className="px-4 py-3 text-slate-700">{s.subject}</td>
                       <td className="px-4 py-3 text-slate-700">{s.teacher}</td>
                       <td className="px-4 py-3 font-semibold text-slate-900">
-                        {s.attentionScore}%
+                        {percentLabel(s.attentionScore)}
                       </td>
                       <td className="px-4 py-3 text-slate-600">{s.sleepIncidents}</td>
                       <td className="px-4 py-3 font-semibold text-slate-900">
-                        {s.teacherActivityScore}%
+                        {percentLabel(s.teacherActivityScore)}
                       </td>
                       <td className="px-4 py-3">
-                        <Badge tone={s.teacherOnTime ? 'green' : 'amber'}>
-                          {s.teacherOnTime ? 'Ha' : "Yo'q"}
-                        </Badge>
+                        {s.teacherOnTime === null ? (
+                          <span className="text-slate-400" title="Tekshirilmagan">
+                            —
+                          </span>
+                        ) : (
+                          <Badge tone={s.teacherOnTime ? 'green' : 'amber'}>
+                            {s.teacherOnTime ? 'Ha' : "Yo'q"}
+                          </Badge>
+                        )}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-600">
                         {formatLessonScheduleTime(s.scheduledStartTime)}

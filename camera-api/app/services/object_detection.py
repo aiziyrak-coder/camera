@@ -21,6 +21,8 @@ resource being shared across concurrent sweep loops.
 
 import asyncio
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import cv2
@@ -31,19 +33,45 @@ from app.config import settings
 
 logger = logging.getLogger("app.object_detection")
 
-_model: YOLO | None = None
 _inference_semaphore = asyncio.Semaphore(settings.object_detection_inference_concurrency)
+
+# Ultralytics bitta YOLO obyektini bir nechta oqimda birga ishlatishni
+# xavfsiz deb hisoblamaydi (predictor holati umumiy). Shuning uchun
+# inference o'z kichik havzasida ishlaydi va HAR BIR oqim modelning o'z
+# nusxasiga ega. Havza hajmi = bir vaqtdagi chaqiruvlar chegarasi, ya'ni
+# nusxalar soni ham shu bilan cheklangan.
+_thread_models = threading.local()
+_model_load_lock = threading.Lock()
+_executor: ThreadPoolExecutor | None = None
 
 
 def _get_model() -> YOLO:
-    global _model
-    if _model is None:
-        logger.info(
-            "loading YOLO object detection model (first use)",
-            extra={"model": settings.object_detection_model_path, "gpu_enabled": settings.object_detection_gpu_enabled},
+    model = getattr(_thread_models, "model", None)
+    if model is None:
+        # Birinchi yuklash (kerak bo'lsa vazn faylini yuklab olish ham) bir
+        # vaqtda bitta oqimda — aks holda bir nechta oqim bitta faylga yozardi.
+        with _model_load_lock:
+            logger.info(
+                "loading YOLO object detection model for a worker thread",
+                extra={"model": settings.object_detection_model_path, "gpu_enabled": settings.object_detection_gpu_enabled},
+            )
+            model = YOLO(settings.object_detection_model_path)
+        _thread_models.model = model
+    return model
+
+
+def _get_executor() -> ThreadPoolExecutor:
+    global _executor
+    if _executor is None:
+        _executor = ThreadPoolExecutor(
+            max_workers=max(1, settings.object_detection_inference_concurrency),
+            thread_name_prefix="yolo-object",
         )
-        _model = YOLO(settings.object_detection_model_path)
-    return _model
+    return _executor
+
+
+async def _run_inference(func, *args):
+    return await asyncio.get_running_loop().run_in_executor(_get_executor(), func, *args)
 
 
 @dataclass
@@ -129,7 +157,7 @@ async def detect_objects(image_bytes: bytes, class_ids: list[int], confidence: f
     about one or two kinds of object — cheaper and avoids irrelevant
     matches entirely, not just filtering them out after the fact."""
     async with _inference_semaphore:
-        return await asyncio.to_thread(_detect_sync, image_bytes, class_ids, confidence)
+        return await _run_inference(_detect_sync, image_bytes, class_ids, confidence)
 
 
 async def detect_objects_batch(
@@ -139,4 +167,4 @@ async def detect_objects_batch(
     if not image_bytes_list:
         return []
     async with _inference_semaphore:
-        return await asyncio.to_thread(_detect_batch_sync, image_bytes_list, class_ids, confidence)
+        return await _run_inference(_detect_batch_sync, image_bytes_list, class_ids, confidence)

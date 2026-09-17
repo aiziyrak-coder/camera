@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, String, false, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -65,6 +65,19 @@ class StudentStaff(Base):
     # oldin tasdiqlaganlarda NULL — ular uchun vaqt yuz rasmining
     # saqlangan paytidan tiklanadi (students_staff.biometrics_confirmation).
     biometrics_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Ochiq sahifada o'zini o'zi ro'yxatdan o'tkazgan (institut ro'yxatida
+    # bo'lmagan) odam. Uning yuzi administrator tasdiqlagunicha
+    # "kutilmoqda" bo'lib turadi va tanish ro'yxatiga kirmaydi.
+    self_registered: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     faculty: Mapped[Faculty | None] = relationship("Faculty", lazy="joined")
+
+    @property
+    def awaiting_approval(self) -> bool:
+        """Yuzi yuborilgan, lekin administrator hali ko'rib chiqmagan."""
+        return (
+            self.self_registered
+            and self.biometrics_status == "kutilmoqda"
+            and self.biometric_embedding is not None
+        )

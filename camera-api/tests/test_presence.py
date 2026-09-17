@@ -91,7 +91,12 @@ class TestRecordingVisits:
 
         visit = (await db_session.execute(select(PresenceVisit))).scalar_one()
         assert visit.camera_id == place.room.id
-        assert (await db_session.execute(select(AttendanceRecord))).scalar_one().status == "kech_keldi"
+        # Xona kamerasi odam binoga qachon kirganini bilmaydi: 09:05 da
+        # xonada ko'rinish "kech keldi" degani emas (eshik kamerasi
+        # ko'rmay qolgan bo'lishi mumkin). Faqat "keldi", kelish vaqti yo'q.
+        record = (await db_session.execute(select(AttendanceRecord))).scalar_one()
+        assert record.status == "keldi"
+        assert record.check_in is None
 
 
 class TestPersonDay:

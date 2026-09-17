@@ -30,7 +30,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from sqlalchemy import and_, case, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AttendanceRecord, Camera, Event, Faculty, LessonSession, StudentStaff
+from app.models import AIModuleConfig, AttendanceRecord, Camera, Event, Faculty, LessonSession, StudentStaff
 from app.schemas.report import (
     AttendanceAnalyticsOut,
     AttendancePopulationOut,
@@ -351,8 +351,16 @@ async def _security(
             .limit(TOP_CAMERAS)
         )
     ).all()
+    # "Ko'rib chiqilmagan" ogohlantirishlari faqat hozirgi modullar bo'yicha:
+    # olib tashlangan kriteriyaning eski signalini endi hech kim ko'rib
+    # chiqmaydi, u abadiy "shoshilinch" bo'lib turardi.
+    registered = select(AIModuleConfig.code)
+    registered_codes = set((await db.execute(registered)).scalars().all())
     oldest = await db.scalar(
-        select(func.min(Event.occurred_at)).where(Event.is_trial.is_(False)).where(Event.status == "yangi")
+        select(func.min(Event.occurred_at))
+        .where(Event.is_trial.is_(False))
+        .where(Event.status == "yangi")
+        .where(Event.module_code.in_(registered))
     )
     now = datetime.now(timezone.utc)
     stale_serious = (
@@ -361,6 +369,7 @@ async def _security(
             .select_from(Event)
             .where(Event.is_trial.is_(False))
             .where(Event.status == "yangi")
+            .where(Event.module_code.in_(registered))
             .where(Event.severity.in_(SERIOUS))
             .where(Event.occurred_at < now - timedelta(hours=24))
         )
@@ -411,7 +420,8 @@ async def _security(
                 precision=precision,
             )
         )
-        if precision is not None and precision < WEAK_PRECISION:
+        # "Chegarani oshiring" maslahati faqat hali mavjud modulga ma'noli.
+        if precision is not None and precision < WEAK_PRECISION and code in registered_codes:
             weak.append((str(r["name"]), precision, reviewed))
     module_out.sort(key=lambda m: -m.count)
 
@@ -452,11 +462,13 @@ async def _security(
 
 
 async def _lessons(db: AsyncSession, start: date, end: date, days: list[date]) -> LessonsAnalyticsOut:
-    # attention_score = 0 — dars hali AI tomonidan tahlil qilinmagan; o'rtachaga
-    # qo'shilsa diqqat foizi sun'iy ravishda past chiqardi.
-    analyzed = LessonSession.attention_score > 0
-    checked = LessonSession.punctuality_checked_at.is_not(None)
-    active_teacher = LessonSession.teacher_activity_score > 0
+    # Faqat haqiqatan o'lchangan darslar: namunasi yo'q dars o'rtachaga
+    # qo'shilsa foiz sun'iy ravishda o'zgarardi (ilgari import qilingan
+    # darslar soxta 50% bilan kirardi). "Tekshirilgan" — natijasi bor
+    # dars; kadr olinmay yopilgani hisobga kirmaydi.
+    analyzed = LessonSession.attention_samples > 0
+    checked = LessonSession.teacher_on_time.is_not(None)
+    active_teacher = LessonSession.activity_samples > 0
     rows = (
         await db.execute(
             select(

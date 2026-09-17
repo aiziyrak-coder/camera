@@ -7,11 +7,15 @@ export interface EnrollmentLookupResult {
   typeLabel: string;
   groupOrPosition: string;
   alreadyEnrolled: boolean;
+  /** Yuz yuborilgan, administrator tasdig'ini kutmoqda (o'zini o'zi
+   *  ro'yxatdan o'tkazganlar). */
+  awaitingApproval?: boolean;
 }
 
 export interface EnrollmentSubmitResult {
   fullName: string;
   biometricsStatus: string;
+  awaitingApproval?: boolean;
 }
 
 /** Tiriklik tekshiruvining bosqichlari — server bilan AYNAN bir xil

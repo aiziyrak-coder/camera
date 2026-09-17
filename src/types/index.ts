@@ -120,6 +120,10 @@ export interface StudentStaffRecord {
   group?: string | null;
   /** "14.09.2026 13:57" — yuz tasdiqlangan payt (Toshkent vaqti). */
   confirmedLabel?: string | null;
+  /** Ochiq sahifada o'zini o'zi ro'yxatdan o'tkazgan. */
+  selfRegistered?: boolean;
+  /** Yuzi yuborilgan, administrator qarorini kutmoqda — kameralar hali tanimaydi. */
+  awaitingApproval?: boolean;
 }
 
 /** Tahrirlash oynasi — ro'yxatda yuborilmaydigan shaxsiy identifikatorlar bilan. */
@@ -302,6 +306,8 @@ export interface BiometricsCoverage {
   byFaculty: BiometricsFacultyRow[];
   /** Faqat talabalar uchun to'ldiriladi. */
   byCourse: BiometricsCourseRow[];
+  /** O'zini o'zi ro'yxatdan o'tkazib, tasdiq kutayotganlar. */
+  awaitingApproval?: number;
 }
 
 export interface Building {
@@ -349,6 +355,8 @@ export interface CameraConfig {
   /** Qavat raqami; belgilanmagan bo'lsa null. Monitoring markazining
    * bino -> qavat kesimi shu maydon bo'yicha quriladi. */
   floor?: number | null;
+  /** Kafedra nomi; biriktirilmagan bo'lsa bo'sh satr. */
+  department?: string;
   resolution: string;
   fps: number | null;
   status: 'faol' | 'nofaol' | 'tamirda';
@@ -858,10 +866,12 @@ export interface LessonSession {
   faculty: string;
   teacher: string;
   subject: string;
-  attentionScore: number;
+  /** null — hali o'lchanmagan (dars o'tmagan yoki kamera kadr bermagan). */
+  attentionScore: number | null;
   sleepIncidents: number;
-  teacherActivityScore: number;
-  teacherOnTime: boolean;
+  teacherActivityScore: number | null;
+  /** null — o'qituvchining kelishi tekshirilmagan. */
+  teacherOnTime: boolean | null;
   /** Uchalasi birga o'rnatiladi (ScheduleLessonModal) — shundan so'ng
    * app/jobs/teacher_punctuality_ai.py va app/jobs/lesson_quality_ai.py bu
    * darsni avtomatik kuzata boshlaydi. */

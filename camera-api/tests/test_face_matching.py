@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 
@@ -164,7 +165,7 @@ class TestLoadCandidateMatrixCached:
         await load_candidate_matrix_cached(db_session)
 
         # Simulate the TTL having elapsed without needing a real sleep.
-        face_matching._cache_loaded_at = datetime.now(timezone.utc) - timedelta(
+        face_matching._live_cache.loaded_at = datetime.now(timezone.utc) - timedelta(
             seconds=settings.candidate_matrix_cache_ttl_seconds + 1
         )
 
@@ -235,3 +236,94 @@ class TestLoadCandidateMatrixForSweep:
         sweep = await load_candidate_matrix_for_sweep(db_session)
         live = await load_candidate_matrix_cached(db_session)
         assert sweep.ids == live.ids == [str(person.id)]
+
+
+class _FakeRedis:
+    def __init__(self):
+        self.values: dict[str, int] = {}
+
+    async def get(self, key):
+        value = self.values.get(key)
+        return None if value is None else str(value)
+
+    async def incr(self, key):
+        self.values[key] = self.values.get(key, 0) + 1
+        return self.values[key]
+
+
+@pytest.mark.usefixtures("seeded")
+class TestRosterChangeReachesEveryWorker:
+    """Productionda ikkita API jarayoni bor: odam ikkinchi jarayon orqali
+    o'chirilsa, AI jarayonidagi kesh 5 daqiqagacha eskicha qolardi va
+    o'chirilgan odam kameralarda tanilishda davom etardi."""
+
+    @pytest.fixture(autouse=True)
+    def _shared_redis(self, monkeypatch):
+        fake = _FakeRedis()
+
+        async def get_fake():
+            return fake
+
+        monkeypatch.setattr(face_matching, "_redis_url", lambda: "redis://fake")
+        monkeypatch.setattr(face_matching, "_get_redis", get_fake)
+        invalidate_candidate_matrix_cache()
+        yield fake
+        invalidate_candidate_matrix_cache()
+
+    async def _enroll(self, db_session, name):
+        faculty = (await db_session.execute(select(Faculty))).scalars().first()
+        person = StudentStaff(
+            full_name=name, type="xodim", faculty_id=faculty.id, group_or_position="1",
+            biometric_embedding=json.dumps([1.0, 0.0]),
+        )
+        db_session.add(person)
+        await db_session.commit()
+        return person
+
+    async def test_another_workers_change_forces_a_reload(self, db_session, _shared_redis):
+        await self._enroll(db_session, "Birinchi")
+        assert len((await face_matching.load_candidate_matrix_for_sweep(db_session)).ids) == 1
+
+        second = await self._enroll(db_session, "Ikkinchi")
+        # Boshqa jarayon: faqat Redis hisoblagichini oshiradi, BU jarayonning
+        # xotirasiga tegmaydi.
+        await _shared_redis.incr(face_matching.ROSTER_VERSION_KEY)
+
+        candidates = await face_matching.load_candidate_matrix_for_sweep(db_session)
+        assert str(second.id) in candidates.ids
+
+    async def test_unchanged_version_keeps_the_cache(self, db_session, monkeypatch):
+        await self._enroll(db_session, "Birinchi")
+        await face_matching.load_candidate_matrix_for_sweep(db_session)
+        calls = {"n": 0}
+        real_load = face_matching.load_candidate_matrix
+
+        async def counting_load(db):
+            calls["n"] += 1
+            return await real_load(db)
+
+        monkeypatch.setattr(face_matching, "load_candidate_matrix", counting_load)
+        await face_matching.load_candidate_matrix_for_sweep(db_session)
+        assert calls["n"] == 0
+
+    async def test_announce_bumps_the_shared_version(self, _shared_redis):
+        await face_matching.announce_roster_change()
+        await face_matching.announce_roster_change()
+        assert _shared_redis.values[face_matching.ROSTER_VERSION_KEY] == 2
+
+    async def test_concurrent_callers_load_the_database_once(self, db_session, monkeypatch):
+        await self._enroll(db_session, "Birinchi")
+        calls = {"n": 0}
+        real_load = face_matching.load_candidate_matrix
+
+        async def slow_load(db):
+            calls["n"] += 1
+            await asyncio.sleep(0.05)
+            return await real_load(db)
+
+        monkeypatch.setattr(face_matching, "load_candidate_matrix", slow_load)
+        results = await asyncio.gather(
+            *(face_matching.load_candidate_matrix_for_sweep(db_session) for _ in range(5))
+        )
+        assert calls["n"] == 1
+        assert all(len(r.ids) == 1 for r in results)

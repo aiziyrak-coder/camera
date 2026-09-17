@@ -31,6 +31,10 @@ from app.config import settings
 logger = logging.getLogger("app.thumbnail")
 
 _REDIS_KEY_PREFIX = "camera:thumb:"
+# Oxirgi yaroqli kadr payti (epoch) — faqat raqam. camera_health "tasvir
+# kelyaptimi" degan savolga shu orqali javob beradi: kadrni qaysi worker
+# olgani muhim emas (camera_health.run_camera_health_sweep_once).
+_FRAME_AT_KEY_PREFIX = "camera:frame_at:"
 
 # Kesh: camera_id -> (epoch_seconds, jpeg). Redis yo'q bo'lganda ishlaydi.
 _cache: dict[str, tuple[float, bytes]] = {}
@@ -126,6 +130,36 @@ async def _store(camera_id: str, jpeg: bytes) -> None:
     redis = await _get_redis()
     if redis is not None:
         await redis.setex(f"{_REDIS_KEY_PREFIX}{camera_id}", settings.thumbnail_ttl_seconds, _encode(stored_at, jpeg))
+        await redis.setex(
+            f"{_FRAME_AT_KEY_PREFIX}{camera_id}", max(1, settings.camera_video_stale_seconds), str(int(stored_at))
+        )
+
+
+async def frames_seen_at(camera_ids: list[str]) -> dict[str, float]:
+    """Har bir kameraning oxirgi yaroqli kadri qachon olingan (epoch).
+
+    Kadr AI sweep'da ham, miniatyura so'rovida ham olinadi va bu ikkisi
+    turli worker'larda bo'lishi mumkin — shuning uchun javob Redis'dan
+    (bitta MGET), u bo'lmasa jarayon ichidagi keshdan. Yozuvi yo'q
+    kamera lug'atga kirmaydi."""
+    seen = {cid: entry[0] for cid in camera_ids if (entry := _cache.get(cid)) is not None}
+    redis = await _get_redis()
+    if redis is None or not camera_ids:
+        return seen
+    try:
+        values = await redis.mget([f"{_FRAME_AT_KEY_PREFIX}{cid}" for cid in camera_ids])
+    except Exception:
+        logger.debug("frame timestamps unavailable", exc_info=True)
+        return seen
+    for cid, raw in zip(camera_ids, values, strict=True):
+        if not raw:
+            continue
+        try:
+            moment = float(raw)
+        except ValueError:
+            continue
+        seen[cid] = max(moment, seen.get(cid, 0.0))
+    return seen
 
 
 async def get_thumbnail(camera_id: str) -> tuple[bytes, int] | None:

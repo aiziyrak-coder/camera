@@ -19,6 +19,12 @@ export type LiveReviewHandler = (message: LiveReviewMessage) => void;
 
 const RECONNECT_DELAY_MS = 3_000;
 
+/** Server ulanishni rad etgan kodlar (app/routers/events.py): token
+ * yaroqsiz (4401) yoki hodisalarni ko'rish huquqi yo'q (4403). Bularda
+ * qayta ulanish ma'nosiz — xuddi shu token bilan javob o'zgarmaydi.
+ * Sessiya tugagani HTTP so'rovlaridagi 401 orqali alohida aniqlanadi. */
+export const WS_REJECTED_CODES: ReadonlySet<number> = new Set([4401, 4403]);
+
 /**
  * Haqiqiy backend'ga /ws/events orqali ulanadi (app/routers/events.py) —
  * yangi AI hodisa yaratilganda yoki ko'rib chiqilganda backend shu ulanish
@@ -49,8 +55,8 @@ function subscribeWebSocket(token: string, onEvent: LiveEventHandler, onReviewed
       }
     };
 
-    socket.onclose = () => {
-      if (cancelled) return;
+    socket.onclose = (e) => {
+      if (cancelled || WS_REJECTED_CODES.has(e.code)) return;
       reconnectTimer = window.setTimeout(connect, RECONNECT_DELAY_MS);
     };
   }

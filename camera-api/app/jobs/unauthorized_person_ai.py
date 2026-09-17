@@ -78,8 +78,11 @@ async def _recently_flagged(db: AsyncSession, camera_id) -> bool:
         .where(Event.module_code == UNAUTHORIZED_MODULE_CODE)
         .where(Event.camera_id == camera_id)
         .where(Event.occurred_at >= cutoff)
+        .limit(1)
     )
-    return result.scalar_one_or_none() is not None
+    # first(), scalar_one_or_none() emas: oynada ikkita hodisa bo'lsa
+    # (parallel kameralar, qo'lda yaratilgan hodisa) u xato otardi.
+    return result.scalars().first() is not None
 
 
 def _frame_height(image_bytes: bytes) -> int:

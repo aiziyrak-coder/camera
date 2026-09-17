@@ -18,6 +18,7 @@ from app.models import AuditLog, PasswordResetToken, RevokedToken, User
 from app.rate_limit import limiter
 from app.schemas.auth import ForgotPasswordIn, LoginRequest, LoginResponse, ResetPasswordIn
 from app.security import create_access_token, hash_password, verify_password
+from app.services.security_checks import forget_default_password_check
 
 logger = logging.getLogger("app.auth")
 
@@ -151,6 +152,7 @@ async def reset_password(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Havola yaroqsiz yoki muddati tugagan")
 
     user.password_hash = hash_password(body.new_password)
+    forget_default_password_check()
     # Parol o'zgarganda barcha eski sessiyalar (barcha qurilmalardagi JWT'lar)
     # avtomatik yaroqsiz bo'ladi — get_current_user token_version'ni solishtiradi.
     user.token_version += 1

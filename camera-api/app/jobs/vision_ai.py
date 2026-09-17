@@ -83,8 +83,10 @@ async def _recently_flagged(db: AsyncSession, camera_id, person_name: str | None
         stmt = stmt.where(Event.person_name == person_name)
     else:
         stmt = stmt.where(Event.camera_id == camera_id).where(Event.person_name.is_(None))
-    result = await db.execute(stmt)
-    return result.scalar_one_or_none() is not None
+    result = await db.execute(stmt.limit(1))
+    # first(): bir xil ismli uyqu signali bir vaqtda ikki kamerada yozilishi
+    # mumkin — scalar_one_or_none() keyingi har tekshiruvda xato otardi.
+    return result.scalars().first() is not None
 
 
 def _tally_votes(

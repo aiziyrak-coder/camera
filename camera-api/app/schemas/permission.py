@@ -6,7 +6,9 @@ from app.schemas.base import CamelModel
 class PermissionEntryOut(CamelModel):
     super_admin: bool
     admin: bool
-    camera_steward: bool = False
+    # Standart qiymatsiz: bu maydonni qaytarmagan joy jimgina "false" emas,
+    # darhol xato bersin (PATCH /api/permissions aynan shunday buzilgan edi).
+    camera_steward: bool
 
 
 class PermissionToggleIn(CamelModel):

@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
+from app.services.cpu_pool import run_cpu
 from app.services.confidence import below_confidence, weakest
 from app.services.ppe_detection import mask_fraction, uses_heuristic
 from app.database import SessionLocal
@@ -38,8 +39,11 @@ async def _recently_flagged(db: AsyncSession, camera_id) -> bool:
         .where(Event.module_code == PPE_MODULE_CODE)
         .where(Event.camera_id == camera_id)
         .where(Event.occurred_at >= cutoff)
+        .limit(1)
     )
-    return result.scalar_one_or_none() is not None
+    # first(), scalar_one_or_none() emas: oynada ikkita hodisa bo'lsa
+    # (parallel kameralar, qo'lda yaratilgan hodisa) u xato otardi.
+    return result.scalars().first() is not None
 
 
 def _decode(frame_bytes: bytes) -> np.ndarray | None:
@@ -48,11 +52,12 @@ def _decode(frame_bytes: bytes) -> np.ndarray | None:
 
 
 async def _frame_missing_ppe(frame_bytes: bytes) -> bool:
-    image = _decode(frame_bytes)
-    if image is None:
-        return False
     faces = await detect_faces(frame_bytes)
     if not faces:
+        return False
+    # Yuz topilgandagina, va event loop'dan tashqarida dekodlanadi.
+    image = await run_cpu(_decode, frame_bytes)
+    if image is None:
         return False
     global _last_mask_fraction
     fractions: list[float] = []

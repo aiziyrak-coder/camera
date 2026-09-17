@@ -19,6 +19,14 @@ from app.models import AttendanceRecord, Faculty, StudentStaff
 from tests.conftest import TestSessionLocal
 
 
+@pytest.fixture(autouse=True)
+def _no_coverage_guard(monkeypatch):
+    """Bu fayldagi ko'p test bitta-ikkita odam bilan ishlaydi — qamrov
+    chegarasi (attendance_absence_min_coverage) ularni har doim to'xtatardi.
+    Chegaraning o'zi TestCoverageGuard da alohida tekshiriladi."""
+    monkeypatch.setattr(settings, "attendance_absence_min_coverage", 0.0)
+
+
 async def _person(db, name: str, *, enrolled: bool, person_type: str = "xodim") -> StudentStaff:
     """Standart tur — xodim: talabalar davomati (#7) 2026-09-16 dan beri
     to'xtatilgan, shuning uchun bu yerdagi qoidalar xodimda tekshiriladi."""
@@ -215,3 +223,67 @@ class TestRunAbsenceMarkingOnce:
             )
         ).scalars().all()
         assert rows == []
+
+
+@pytest.mark.usefixtures("seeded")
+class TestCoverageGuard:
+    """Kameralar shu kuni ozgina odamni tanigan bo'lsa, qolganlar "kelmadi"
+    bo'lmaydi — productionda bir kunda 687 xodimdan 22 tasi tanilgan edi."""
+
+    async def test_low_coverage_day_marks_nobody(self, db_session, monkeypatch):
+        monkeypatch.setattr(settings, "attendance_absence_min_coverage", 0.3)
+        day = date(2026, 8, 3)
+        seen = await _person(db_session, "Tanilgan Bitta", enrolled=True)
+        for i in range(4):
+            await _person(db_session, f"Tanilmagan {i}", enrolled=True)
+        db_session.add(AttendanceRecord(student_staff_id=seen.id, date=day, status="keldi", check_in=time(8, 0)))
+        await db_session.commit()
+
+        assert await mark_absences_for_day(db_session, day) == 0  # 1/5 = 20% < 30%
+
+    async def test_enough_coverage_marks_the_rest(self, db_session, monkeypatch):
+        monkeypatch.setattr(settings, "attendance_absence_min_coverage", 0.3)
+        day = date(2026, 8, 3)
+        for i in range(2):
+            person = await _person(db_session, f"Kelgan {i}", enrolled=True)
+            db_session.add(AttendanceRecord(student_staff_id=person.id, date=day, status="kech_keldi"))
+        absent = await _person(db_session, "Kelmagan", enrolled=True)
+        await db_session.commit()
+
+        assert await mark_absences_for_day(db_session, day) == 1  # 2/3 tanilgan
+        row = (
+            await db_session.execute(select(AttendanceRecord).where(AttendanceRecord.student_staff_id == absent.id))
+        ).scalar_one()
+        assert row.status == "kelmadi"
+
+    async def test_coverage_is_judged_per_population(self, db_session, monkeypatch):
+        """Xodimlar yaxshi tanilgan kun talabalarning past qamrovini
+        "oqlamaydi" — har tur o'z qamrovi bilan."""
+        monkeypatch.setattr(settings, "attendance_absence_min_coverage", 0.5)
+        day = date(2026, 8, 3)
+        staff = await _person(db_session, "Xodim Kelgan", enrolled=True)
+        db_session.add(AttendanceRecord(student_staff_id=staff.id, date=day, status="keldi"))
+        await _person(db_session, "Xodim Kelmagan", enrolled=True)
+        for i in range(3):
+            await _person(db_session, f"Talaba {i}", enrolled=True, person_type="talaba")
+        await db_session.commit()
+        monkeypatch.setattr(absence_marker, "tracked_types", _both_types)
+
+        assert await mark_absences_for_day(db_session, day) == 1  # faqat xodim
+
+
+async def _both_types(db):
+    return ["xodim", "talaba"]
+
+
+@pytest.mark.usefixtures("seeded")
+class TestLargeRoster:
+    async def test_more_people_than_one_insert_allows(self, db_session, monkeypatch):
+        """Postgres bitta so'rovda 32767 dan ortiq parametr olmaydi — katta
+        ro'yxat bo'laklab yoziladi."""
+        monkeypatch.setattr(absence_marker, "INSERT_CHUNK_SIZE", 2)
+        day = date(2026, 8, 3)
+        for i in range(5):
+            await _person(db_session, f"Katta Ro'yxat {i}", enrolled=True)
+
+        assert await mark_absences_for_day(db_session, day) == 5

@@ -18,7 +18,7 @@ from app.jobs.disorder_ai import disorder_ai_loop
 from app.jobs.dress_code_ai import dress_code_ai_loop
 from app.jobs.fight_ai import fight_ai_loop
 from app.jobs.leader_lock import release_leadership, try_become_leader
-from app.jobs.ai_scheduler import ai_scheduler_loop
+from app.jobs.ai_scheduler import ai_scheduler_loop, standalone_sweep_loops
 from app.jobs.lesson_attendance import lesson_attendance_loop
 from app.jobs.lesson_quality_ai import lesson_quality_ai_loop
 from app.jobs.ppe_ai import ppe_ai_loop
@@ -32,8 +32,9 @@ from app.logging_config import configure_logging
 from app.rate_limit import limiter
 from app.redis_bus import start_redis_listener, stop_redis_listener
 from app.services import video_gateway
-from app.services.runtime_snapshot import runtime_snapshot_loop
+from app.services.runtime_snapshot import process_snapshot_loop, runtime_snapshot_loop
 from app.ws import manager
+from app.services.cpu_pool import shutdown_cpu_pool
 from app.services.pose_detection import shutdown_pose_detection_pool
 from app.services.stream_cache import shutdown_stream_cache, stream_cache_reaper_loop
 from app.storage import check_bucket
@@ -53,7 +54,6 @@ from app.routers import (
     reports,
     students_staff,
     system,
-    uploads,
     users,
 )
 from app.seed import seed_all
@@ -99,7 +99,16 @@ async def lifespan(app: FastAPI):
     # loops — otherwise every camera gets swept once per worker, per
     # interval, producing duplicate writes. cleanup_loop stays ungated
     # (its deletes are idempotent; redundant runs are harmless).
-    tasks = [asyncio.create_task(cleanup_loop())]
+    # Bo'sh ffmpeg o'quvchilarini yopish HAR BIR jarayonda kerak: AI
+    # bo'lmagan jarayon ham miniatyura va jonli aniqlash uchun o'quvchi
+    # ochadi. Ilgari yopuvchi faqat leader'da ishlardi va productionda
+    # ikkinchi jarayonda 66 ta ffmpeg abadiy ochiq turardi.
+    tasks = [
+        asyncio.create_task(cleanup_loop()),
+        asyncio.create_task(stream_cache_reaper_loop()),
+        # Har jarayon o'z ffmpeg o'quvchilari sonini e'lon qiladi — panel yig'indini ko'rsatadi.
+        asyncio.create_task(process_snapshot_loop()),
+    ]
     if settings.redis_url.strip():
         await start_redis_listener(manager.deliver_from_redis)
     if is_leader:
@@ -137,11 +146,11 @@ async def lifespan(app: FastAPI):
                 lesson_quality_ai_loop(),
                 lesson_attendance_loop(),
                 fight_ai_loop(),
+                *standalone_sweep_loops(),
             ]
             tasks += [
                 asyncio.create_task(_staggered(i * stagger, loop_coro)) for i, loop_coro in enumerate(ai_loops)
             ]
-        tasks.append(asyncio.create_task(stream_cache_reaper_loop()))
         logger.info(
             "acquired AI sweep leader lock — sweep loops running in this worker",
             extra={
@@ -161,15 +170,23 @@ async def lifespan(app: FastAPI):
     yield
     for task in tasks:
         task.cancel()
+    await shutdown_stream_cache()
+    shutdown_cpu_pool()
     if is_leader:
-        await shutdown_stream_cache()
         await shutdown_pose_detection_pool()
     await stop_redis_listener()
     await release_leadership()
     logger.info("shutting down", extra={"event": "shutdown"})
 
 
-app = FastAPI(title="Situatsion Markaz API", lifespan=lifespan)
+app = FastAPI(
+    title="Situatsion Markaz API",
+    lifespan=lifespan,
+    # Hujjatlar standart bo'yicha yopiq — settings.api_docs_enabled izohiga qarang.
+    docs_url="/docs" if settings.api_docs_enabled else None,
+    redoc_url="/redoc" if settings.api_docs_enabled else None,
+    openapi_url="/openapi.json" if settings.api_docs_enabled else None,
+)
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -189,7 +206,6 @@ app.include_router(org_structure.router)
 app.include_router(audit_log.router)
 app.include_router(cameras.router)
 app.include_router(events.router)
-app.include_router(uploads.router)
 app.include_router(face.router)
 app.include_router(ai_modules.router)
 app.include_router(attendance.router)

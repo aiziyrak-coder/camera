@@ -27,7 +27,13 @@ export default function AlarmPanel({
     loading,
     error,
     reload,
-  } = useServerPage<AIEvent>('/api/events', { severity: 'yuqori' }, PAGE_SIZE);
+  } = useServerPage<AIEvent>(
+    '/api/events',
+    // Avtomatik o'chirilgan kamera×modul juftligining eski signallari
+    // "hozirgi xavf" emas — devorda ko'rsatilmaydi (Hodisalar sahifasida qoladi).
+    { severity: 'yuqori', excludeSuppressed: 'true' },
+    PAGE_SIZE,
+  );
 
   useLiveEvents(
     (event) => {

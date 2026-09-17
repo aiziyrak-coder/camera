@@ -5,6 +5,7 @@ Ilgari so'rov leader bo'lmagan jarayonga tushsa, "Davomat kameralari"
 tashxisi "hali tekshirilmadi", boshqaruv paneli esa "0 modul" ko'rsatardi."""
 
 import json
+import time
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -20,9 +21,20 @@ class FakeRedis:
     def __init__(self):
         self.store: dict[str, str] = {}
         self.ttl: dict[str, int] = {}
+        self.hashes: dict[str, dict[str, str]] = {}
 
     async def get(self, key):
         return self.store.get(key)
+
+    async def hset(self, key, field, value):
+        self.hashes.setdefault(key, {})[field] = value
+
+    async def hgetall(self, key):
+        return dict(self.hashes.get(key, {}))
+
+    async def hdel(self, key, *fields):
+        for field in fields:
+            self.hashes.get(key, {}).pop(field, None)
 
     def pipeline(self, transaction=False):
         redis = self
@@ -140,3 +152,45 @@ class TestSweepsShared:
         }
         rows = [ok, {"tier": "critical"}, {"name": "x", "tier": "s", "interval_seconds": "nope"}]
         assert [s.name for s in scheduler_metrics.sweeps_from_dicts(rows)] == ["fire"]
+
+
+class TestDashboardIsTheSameOnEveryWorker:
+    """Productionda panel so'rov qaysi jarayonga tushganiga qarab
+    "slotlar 0/18" yoki "18/18", "o'quvchilar 66" yoki "107" ko'rsatardi."""
+
+    async def test_other_worker_shows_the_leaders_slots_and_gpu(self, fake_redis, monkeypatch):
+        leader_view = {
+            "sweep_slots": {"max": 18, "in_use": 18},
+            "entrance_exit_sweep_slots": {"max": 4, "in_use": 2},
+            "face_inference_gate": {"max": 2, "in_use": 2, "waiting": 5},
+            "gpu": {"cuda_available": True, "face_gpu_active": True},
+        }
+        monkeypatch.setattr(runtime_snapshot, "local_process_view", lambda: leader_view)
+        await runtime_snapshot.publish_once()
+
+        idle_view = {**leader_view, "sweep_slots": {"max": 18, "in_use": 0}}
+        monkeypatch.setattr(runtime_snapshot, "local_process_view", lambda: idle_view)  # boshqa jarayon
+        assert await runtime_snapshot.load_leader_process_view() == leader_view
+
+    async def test_the_leader_answers_from_its_own_memory(self, fake_redis, monkeypatch):
+        runtime_snapshot._is_publisher = True
+        monkeypatch.setattr(runtime_snapshot, "local_process_view", lambda: {"sweep_slots": {"in_use": 3}})
+        assert await runtime_snapshot.load_leader_process_view() == {"sweep_slots": {"in_use": 3}}
+
+    async def test_stream_readers_are_summed_over_live_workers(self, fake_redis, monkeypatch):
+        monkeypatch.setattr(runtime_snapshot, "active_stream_reader_count", lambda: 66)
+        monkeypatch.setattr(runtime_snapshot, "_process_id", lambda: "api:7")
+        await runtime_snapshot.publish_stream_readers_once()
+
+        now = int(time.time())
+        fake_redis.hashes[runtime_snapshot.KEY_STREAM_READERS]["api:8"] = f"107:{now}"
+        fake_redis.hashes[runtime_snapshot.KEY_STREAM_READERS]["api:3"] = f"40:{now - 600}"  # to'xtagan jarayon
+        fake_redis.hashes[runtime_snapshot.KEY_STREAM_READERS]["api:4"] = "buzuq"
+
+        assert await runtime_snapshot.total_stream_readers() == 66 + 107
+        assert set(fake_redis.hashes[runtime_snapshot.KEY_STREAM_READERS]) == {"api:7", "api:8"}
+
+    async def test_without_redis_only_this_process_counts(self, monkeypatch):
+        monkeypatch.setattr(runtime_snapshot, "_redis_url", lambda: None)
+        monkeypatch.setattr(runtime_snapshot, "active_stream_reader_count", lambda: 5)
+        assert await runtime_snapshot.total_stream_readers() == 5

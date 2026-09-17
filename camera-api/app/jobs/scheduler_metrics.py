@@ -44,6 +44,11 @@ class SweepRunStats:
         server yuklamasi ko'tara olmayapti)."""
         if self.paused:
             return False
+        # Surunkali sekinlik ham kechikish: productionda yuz tekshiruvi 30 s
+        # o'rniga 296 s davom etgan, lekin "kechikmayapti" deb ko'rsatilgan —
+        # pastdagi tekshiruv faqat butunlay osilib qolgan sweepni ko'radi.
+        if self.last_duration_seconds > max(self.interval_seconds * 3, 60):
+            return True
         reference = self.last_finished_at or self.last_started_at
         if reference is None:
             return False

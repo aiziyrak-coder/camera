@@ -35,8 +35,11 @@ from app.database import SessionLocal  # noqa: E402
 from app.models import Event, StudentStaff  # noqa: E402
 from app.storage import _s3, delete_file  # noqa: E402
 
-# Prefixes app/storage.py's upload_file() writes under.
-MANAGED_PREFIXES = ("events/", "biometrics/")
+# Prefixes app/storage.py's upload_file() writes under. The last three were
+# written by the removed /api/uploads endpoint (passport PDFs and live face
+# captures from the admin wizard). No DB row has ever referenced them, so
+# every object there is an orphan — and a personal document at that.
+MANAGED_PREFIXES = ("events/", "biometrics/", "passports/", "face-captures/", "misc/")
 
 
 def _list_all_objects() -> list[tuple[str, int]]:

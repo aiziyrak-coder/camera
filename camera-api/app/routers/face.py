@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
-from app.dependencies import CurrentUser, get_current_user
+from app.dependencies import CurrentUser, require_permission
 from app.schemas.face import FaceCompareOut
 from app.services.face_recognition import NoFaceDetectedError, compare_faces
 
@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api/face", tags=["face"])
 
 @router.post("/compare", response_model=FaceCompareOut)
 async def compare(
-    _: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
     image_a: Annotated[UploadFile, File(description="Pasportdan olingan surat")],
     image_b: Annotated[UploadFile, File(description="Kamerada suratga olingan jonli yuz")],
 ) -> FaceCompareOut:

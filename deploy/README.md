@@ -27,6 +27,37 @@ Remove duplicate nginx configs (if `cam-fermi-*` warnings appear):
 sudo bash /opt/camera/deploy/nginx-cleanup-fermi.sh
 ```
 
+## Updating production (on the server)
+
+After changes are pushed to `main`:
+
+```bash
+sudo bash /opt/camera/deploy/server-pull.sh
+```
+
+It pulls `main`, merges `deploy/env.production.scale` into `camera-api/.env`
+(`deploy/merge_env.py` — other keys and secrets are left alone), builds the
+frontend, copies `deploy/mediamtx.yml`, updates nginx with
+`deploy/nginx_sync.py` (backups + automatic rollback when `nginx -t` fails;
+`--dry-run` shows the diff only) and recreates the Docker stack with the
+three MediaMTX shards. Database migrations run when the API starts.
+
+### Live video access (one time)
+
+MediaMTX has no user check of its own. HLS links handed out by the API are
+signed (`/sN/<md5>,<expires>/cam-<uuid>/...`, see
+`camera-api/app/services/stream_links.py`) and nginx rejects everything else.
+Enable it once, after `server-pull.sh`:
+
+```bash
+sudo bash /opt/camera/deploy/enable-stream-auth.sh
+```
+
+The script shares one secret between `camera-api/.env` (`STREAM_URL_SECRET`)
+and `/etc/nginx/snippets/cam-stream-secret.conf`, checks that a signed link
+really plays and only then closes unsigned links. MediaMTX ports are bound to
+`127.0.0.1`, so the LAN cannot bypass nginx either.
+
 ## One-command deploy (on the server)
 
 ```bash
@@ -58,14 +89,18 @@ If port 22 is blocked externally, use the port that responds (often `2222`):
 ssh admin_root@87.192.230.208 -p 2222
 ```
 
-## Default login users (seed)
+## Login users
 
-| Login | Password | Role |
-|-------|----------|------|
-| `admin` | `admin123` | super-admin |
-| `operator` | `operator123` | admin |
+Production creates **no demo users**. On an empty database the API creates one
+Super Admin from `INITIAL_ADMIN_LOGIN` / `INITIAL_ADMIN_PASSWORD` in
+`camera-api/.env`; the setup scripts generate these (`camadmin` + a random
+password) and save them in `/opt/camera/deploy/.secrets.env` (never committed).
 
-A stronger production admin (`camadmin`) is created automatically; credentials are saved in `/opt/camera/deploy/.secrets.env` (never committed).
+The demo users `admin` / `admin123` and `operator` / `operator123` exist only
+when `SEED_DEMO_USERS=true` (local development and tests). Their passwords are
+public — if an older install still has them, change both passwords. While any
+of them still works, the admin dashboard and *Tizim jurnali* show a critical
+alert. `bash deploy/test-login.sh` checks that the demo passwords are rejected.
 
 ## Manual checks
 

@@ -75,9 +75,12 @@ MEDIAMTX_SHARD_HLS_INTERNAL_BASE_URLS=http://mediamtx-0:8888,http://mediamtx-1:8
 ### 4) Nginx
 
 ```bash
-sudo cp /opt/camera/deploy/nginx/cam-fermi-stream.conf /etc/nginx/sites-available/stream.cam.fermi.uz.conf
-sudo nginx -t && sudo systemctl reload nginx
+sudo python3 /opt/camera/deploy/nginx_sync.py
 ```
+
+HLS location'lari `deploy/nginx/cam-fermi-stream-locations.conf` da (cam.fermi.uz
+va stream.cam.fermi.uz ikkalasi shuni `include` qiladi); havolalar imzolanadi —
+`deploy/README.md` → *Live video access*.
 
 ### 5) Tekshiruv
 

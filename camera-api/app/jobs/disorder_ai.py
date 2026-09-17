@@ -43,6 +43,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
+from app.services.cpu_pool import run_cpu
 from app.services.confidence import exceed_confidence
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
@@ -78,6 +79,24 @@ def _mean_flow_magnitude(frame_a: np.ndarray, frame_b: np.ndarray) -> float:
     flow = cv2.calcOpticalFlowFarneback(frame_a, frame_b, None, 0.5, 3, 15, 3, 5, 1.2, 0)
     magnitude, _ = cv2.cartToPolar(flow[..., 0], flow[..., 1])
     return float(np.mean(magnitude))
+
+
+def _motion_between_sync(frame_a: bytes, frame_b: bytes) -> float | None:
+    img_a = _decode_grayscale(frame_a)
+    img_b = _decode_grayscale(frame_b)
+    if img_a is None or img_b is None or img_a.shape != img_b.shape:
+        return None
+    return _mean_flow_magnitude(img_a, img_b)
+
+
+async def frame_motion(frame_a: bytes, frame_b: bytes) -> float | None:
+    """Ikki kadr orasidagi o'rtacha optik oqim; kadrlar o'qilmasa None.
+
+    Alohida oqimda: Farneback bitta kamera uchun 432p da ~90 ms, 1440p da
+    ~1 s (o'lchangan). Event loop'da bajarilganda shu vaqt ichida API,
+    WebSocket va kirish davomati to'xtab turardi — 100 dan ortiq kamerada
+    har sweep'da jami o'nlab soniya."""
+    return await run_cpu(_motion_between_sync, frame_a, frame_b)
 
 
 def _is_motion_spike(
@@ -130,8 +149,11 @@ async def _recently_flagged(db: AsyncSession, camera_id) -> bool:
         .where(Event.module_code == DISORDER_MODULE_CODE)
         .where(Event.camera_id == camera_id)
         .where(Event.occurred_at >= cutoff)
+        .limit(1)
     )
-    return result.scalar_one_or_none() is not None
+    # first(), scalar_one_or_none() emas: oynada ikkita hodisa bo'lsa
+    # (parallel kameralar, qo'lda yaratilgan hodisa) u xato otardi.
+    return result.scalars().first() is not None
 
 
 async def process_camera_frame_pair_for_disorder(
@@ -139,12 +161,9 @@ async def process_camera_frame_pair_for_disorder(
 ) -> bool:
     """Returns True if a (deduped) disorder/motion-anomaly Event was
     raised."""
-    img_a = _decode_grayscale(frame_a)
-    img_b = _decode_grayscale(frame_b)
-    if img_a is None or img_b is None or img_a.shape != img_b.shape:
+    magnitude = await frame_motion(frame_a, frame_b)
+    if magnitude is None:
         return False
-
-    magnitude = _mean_flow_magnitude(img_a, img_b)
     if not _is_motion_spike(str(camera.id), magnitude):
         return False
 

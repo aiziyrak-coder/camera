@@ -7,12 +7,18 @@ working once wired to this API), and the starting org-structure reference
 data (matching src/mock/admin.ts) — only when each table is still empty.
 """
 
-from sqlalchemy import func, select
+import logging
+
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models import AIModuleConfig, Building, Faculty, Permission, User
 from app.security import hash_password
+from app.services.security_checks import DEMO_PASSWORDS
+
+logger = logging.getLogger("app.seed")
 
 # (super_admin, admin, kamera_masuli)
 DEFAULT_PERMISSIONS = {
@@ -28,11 +34,24 @@ DEFAULT_PERMISSIONS = {
     # qo'shish/o'chirish va ulanish sozlamalari bunga KIRMAYDI — shuning
     # uchun bu alohida huquq (app/routers/cameras.py location endpointi).
     "editCameraLocation": (True, True, True),
+    # 2026-09-17: shu sahifalar ilgari faqat "tizimga kirgan" bo'lishni
+    # talab qilardi, ya'ni kamera mas'uli ham hodisalarni o'chira,
+    # davomatni tuzata va fakultetlarni o'chira olardi. Alembic
+    # n7b8c9d0e1f2 mavjud bazalarga aynan shu qiymatlarni qo'shadi.
+    "reviewEvents": (True, True, False),
+    # Hodisa — dalil. Admin uni tasdiqlaydi yoki rad etadi, o'chirmaydi.
+    "deleteEvents": (True, False, False),
+    "manageAttendance": (True, True, False),
+    # Faqat O'ZGARTIRISH: binolar va kafedralar ro'yxatini kamera
+    # mas'uli ham o'qiydi — kamerani joylashtirish uchun kerak.
+    "manageOrgStructure": (True, True, False),
+    "manageLessons": (True, True, False),
 }
 
+# Faqat settings.seed_demo_users yoqilganda (lokal ishlab chiqish, testlar).
 DEMO_USERS = [
-    {"login": "admin", "password": "admin123", "full_name": "Jamshid Alimov", "role": "super-admin"},
-    {"login": "operator", "password": "operator123", "full_name": "Behzod Karimov", "role": "admin"},
+    {"login": "admin", "password": DEMO_PASSWORDS["admin"], "full_name": "Jamshid Alimov", "role": "super-admin"},
+    {"login": "operator", "password": DEMO_PASSWORDS["operator"], "full_name": "Behzod Karimov", "role": "admin"},
 ]
 
 DEFAULT_FACULTIES = [
@@ -87,7 +106,7 @@ TRIAL_MODULE_CODES = {2, 10, 13, 14, 15, 17, 19, 21, 23}
 
 DEFAULT_AI_MODULES = [
     {"code": 1, "group": "A", "name": "Notanish/begona shaxsni aniqlash", "description": "Yuzni tanish (Face-ID) — xodimlar/talabalar bazasida yo'q shaxs binoga kirsa signal. attendance_ai.py bilan bir xil InsightFace pipeline, teskari mantiq bilan: mos kelmagan yuz = begona. Ikki kadrli tasdiqlash (bad-angle/yorug'lik xatosini kamaytirish uchun), lekin real kuzatuv/identifikatsiya (tracking) yo'q — bir xil begona odam har safar yangi deb hisoblanishi mumkin", "method": "InsightFace + face_matching (teskari moslik) + ikki-kadrli tasdiqlash (app/jobs/unauthorized_person_ai.py)", "accuracy": 0, "threshold": 70, "sensitivity": "yuqori", "camera_count": 0, "active": True},
-    {"code": 2, "group": "A", "name": "Taqiqlangan zonaga kirish", "description": "Rentgen xonasi, laboratoriya, arxiv kabi cheklangan hududlarga ruxsatsiz kirish — mediapipe Pose orqali odamning oyoq (yoki son, agar oyoq ko'rinmasa) o'rni kamera poligoniga (Camera.restricted_zone_polygon) solishtiriladi. Hozircha poligon chizish uchun admin interfeysi yo'q — bu haqiqiy, ishlaydigan aniqlash logikasi, faqat konfiguratsiya ma'lumoti kutmoqda. To'liq DeepSORT kuzatuvi emas, ikki-kadrli tasdiqlash bilan", "method": "mediapipe Pose + nuqta-poligon tekshiruvi + ikki-kadrli tasdiqlash (app/jobs/zone_entry_ai.py, app/services/zone_detection.py)", "accuracy": 0, "threshold": 65, "sensitivity": "yuqori", "camera_count": 0, "active": True},
+    {"code": 2, "group": "A", "name": "Taqiqlangan zonaga kirish", "description": "Rentgen xonasi, laboratoriya, arxiv kabi cheklangan hududlarga ruxsatsiz kirish — mediapipe Pose orqali odamning oyoq (yoki son, agar oyoq ko'rinmasa) o'rni kamera poligoniga (Camera.restricted_zone_polygon) solishtiriladi. Poligon «Kameralar va Zonalar» sahifasidagi «Zona» tugmasi bilan kamera tasviri ustiga chiziladi; poligoni yo'q kamera tekshirilmaydi. Odam kuzatuvi (tracking) yo'q — ikki kadrli tasdiqlash bilan", "method": "mediapipe Pose + nuqta-poligon tekshiruvi + ikki-kadrli tasdiqlash (app/jobs/zone_entry_ai.py, app/services/zone_detection.py)", "accuracy": 0, "threshold": 65, "sensitivity": "yuqori", "camera_count": 0, "active": True},
     {"code": 3, "group": "A", "name": "Notekis/kechki vaqtda kirish", "description": "Ish vaqtidan tashqari binoga kirish holatlari", "method": "Yuzni tanish orqali avtomatik davomat (app/jobs/attendance_ai.py) + ish vaqti oynasi qoidasi", "accuracy": 96.4, "threshold": 70, "sensitivity": "o'rta", "camera_count": 28, "active": True},
     {"code": 6, "group": "B", "name": "Xodim/o'qituvchi davomati", "description": "Ish boshlanish/tugash vaqtini yuz orqali avtomatik qayd etish", "method": "Face recognition + timestamp log", "accuracy": 98.6, "threshold": 88, "sensitivity": "yuqori", "camera_count": 30, "active": True},
     # #7 buyurtmachi qarori bilan to'xtatilgan (2026-09-16, migratsiya
@@ -108,7 +127,7 @@ DEFAULT_AI_MODULES = [
     {"code": 19, "group": "E", "name": "Talabaning darsga diqqati", "description": "Boshning yo'nalishi, ko'z harakati, telefon bilan chalg'ishi asosida diqqat balli — dedicated gaze-estimation modeli o'rniga ikkita mavjud signal qo'shiladi: InsightFace orqali yuz yo'nalishi (frontality) + YOLO orqali telefon ko'rinishi (#16 bilan bir xil). Telefon signali butun kadr bo'yicha — aynan qaysi talaba ushlab turganini bilmaydi. LessonSession.attention_score'ga davomiy o'rtacha sifatida yoziladi, faqat dars faol vaqti oynasida (jadval kerak)", "method": "InsightFace frontality + YOLO telefon aniqlash + davomiy o'rtacha (app/jobs/lesson_quality_ai.py)", "accuracy": 0, "threshold": 60, "sensitivity": "o'rta", "camera_count": 0, "active": True},
     {"code": 20, "group": "E", "name": "Talabaning uxlab qolishi", "description": "Ko'zning uzoq muddat yopiq qolishi (EAR) orqali uxlab qolishni aniqlash — bir necha kadrli (burst) ko'pchilik ovoz qoidasi + boshning kameraga qaragan-qaramaganini tekshiruvchi filtr bilan kuchaytirilgan (avvalgi 2-kadrli usuldan farqli); accuracy raqami hali yangi usul bilan qayta o'lchanmagan, eski qiymat sifatida qoldirilgan", "method": "Facial landmark + eye-closure (EAR) + burst-vote + pose-gate tahlili (app/jobs/vision_ai.py, app/services/sleep_detection.py)", "accuracy": 65.0, "threshold": 70, "sensitivity": "past", "camera_count": 28, "active": True},
     {"code": 21, "group": "E", "name": "O'qituvchi faolligi", "description": "Doska oldida faol harakat, talabalar bilan interaktivlik vaqti — mediapipe Pose orqali o'qituvchining (yuz orqali aniqlangan) tanasi ikki kadr orasida qancha harakatlanganini o'lchaydi. LessonSession.teacher_activity_score'ga davomiy o'rtacha sifatida yoziladi, faqat dars faol vaqti oynasida (jadval kerak) — #19 bilan bir xil sweep, bitta kamera so'rovi", "method": "mediapipe Pose + landmark harakati + davomiy o'rtacha (app/jobs/lesson_quality_ai.py)", "accuracy": 0, "threshold": 60, "sensitivity": "past", "camera_count": 0, "active": True},
-    {"code": 22, "group": "E", "name": "O'qituvchining darsga aniq kelishi", "description": "Dars boshlanishi bilan xonada mavjudligi — attendance_ai.py bilan bir xil InsightFace pipeline'dan foydalanadi, faqat aniq dars jadvali (teacher_id/camera_id/scheduled_start_time — LessonSession jadvalida) kiritilgan darslarni tekshiradi. Hozircha jadval kiritish uchun admin interfeysi yo'q, shu sabab hech qanday dars avtomatik tekshirilmaydi — model tayyor va sinovdan o'tgan, faqat ma'lumot kiritilishini kutmoqda", "method": "Face recognition + jadval taqqoslash (app/jobs/teacher_punctuality_ai.py)", "accuracy": 0, "threshold": 70, "sensitivity": "o'rta", "camera_count": 0, "active": True},
+    {"code": 22, "group": "E", "name": "O'qituvchining darsga aniq kelishi", "description": "Dars boshlanishi bilan xonada mavjudligi — attendance_ai.py bilan bir xil InsightFace pipeline'dan foydalanadi, faqat aniq dars jadvali (teacher_id/camera_id/scheduled_start_time — LessonSession jadvalida) kiritilgan darslarni tekshiradi. Jadval «Dars monitoring» sahifasida kiritiladi (qo'lda yoki CSV); jadval bo'lmasa hech qanday dars tekshirilmaydi. Tekshiruv dars boshlanib grace muddati o'tgach bir marta bajariladi", "method": "Face recognition + jadval taqqoslash (app/jobs/teacher_punctuality_ai.py)", "accuracy": 0, "threshold": 70, "sensitivity": "o'rta", "camera_count": 0, "active": True},
     {"code": 26, "group": "E", "name": "O'qituvchi o'rniga boshqasi kirgani", "description": "Jadvalga ko'ra dars o'tishi kerak bo'lgan o'qituvchi o'rniga BOSHQA ro'yxatdan o'tgan xodim auditoriyada bo'lsa signal. #22 bilan bitta kadr, bitta detect_faces() chaqiruvidan foydalanadi — farq faqat solishtirish doirasida: #22 faqat rejadagi o'qituvchini qidiradi, bu esa barcha tasdiqlangan biometrikaga ega xodimlarni. Uch holat aniq ajratiladi: o'qituvchi joyida (hodisa yo'q), boshqa xodim joyida (#26), hech kim tanilmadi (#22 kelmagan). Talabalar solishtirishga kiritilmaydi — auditoriyada talaba bo'lishi tabiiy. Har bir signal dalil rasm bilan yoziladi, chunki \"kim kirgan\" degan savolga faqat rasm javob beradi", "method": "InsightFace + xodimlar bo'yicha to'liq moslik qidiruvi + LessonSession jadvali (app/jobs/teacher_punctuality_ai.py)", "accuracy": 0, "threshold": 70, "sensitivity": "o'rta", "camera_count": 0, "active": True},
     {"code": 23, "group": "F", "name": "Yong'in / tutun aniqlash", "description": "Rang (olov spektri) va vaqt bo'yicha chayqalish (flicker) birgalikda tekshiriladi — faqat rangga asoslangan usul odam terisida yolg'on signal berishi aniqlanib, rad etilgan edi; haqiqiy yong'in videosida sinab ko'rilmagan, shu sabab har bir signal operator tasdig'ini talab qiladi", "method": "HSV rang + kadrlararo yorqinlik o'zgarishi (flicker) tahlili (app/jobs/fire_ai.py)", "accuracy": 0, "threshold": 15, "sensitivity": "yuqori", "camera_count": 28, "active": True},
 ]
@@ -123,7 +142,14 @@ async def seed_all(db: AsyncSession) -> None:
     they're separate DB connections), the loser hits a unique-constraint
     conflict at commit time — caught and treated as "another worker
     already seeded this," not a startup failure."""
-    for seed_table in (_seed_permissions, _seed_users, _seed_faculties, _seed_buildings, _seed_ai_modules):
+    for seed_table in (
+        _seed_permissions,
+        _seed_users,
+        _seed_faculties,
+        _seed_buildings,
+        _seed_ai_modules,
+        _sync_ai_module_docs,
+    ):
         try:
             await seed_table(db)
             await db.commit()
@@ -144,6 +170,22 @@ async def _seed_permissions(db: AsyncSession) -> None:
 async def _seed_users(db: AsyncSession) -> None:
     count = await db.scalar(select(func.count()).select_from(User))
     if count:
+        return
+    if settings.initial_admin_login and settings.initial_admin_password:
+        db.add(
+            User(
+                login=settings.initial_admin_login,
+                password_hash=hash_password(settings.initial_admin_password),
+                full_name="Bosh administrator",
+                role="super-admin",
+            )
+        )
+        return
+    if not settings.seed_demo_users:
+        logger.error(
+            "no users exist and no initial admin is configured — set INITIAL_ADMIN_LOGIN and "
+            "INITIAL_ADMIN_PASSWORD (or SEED_DEMO_USERS=true for local development)"
+        )
         return
     for u in DEMO_USERS:
         db.add(
@@ -178,3 +220,29 @@ async def _seed_ai_modules(db: AsyncSession) -> None:
         return
     for m in DEFAULT_AI_MODULES:
         db.add(AIModuleConfig(**m, mode="sinov" if m["code"] in TRIAL_MODULE_CODES else "ishchi"))
+
+
+# Kod egalik qiladigan hujjat maydonlari. Admin panel ularni tahrirlamaydi
+# (AIModuleUpdateIn — faqat active/threshold/sensitivity/mode).
+AI_MODULE_DOC_FIELDS = ("group", "name", "description", "method")
+
+
+async def _sync_ai_module_docs(db: AsyncSession) -> None:
+    """Mavjud bazadagi modul tavsiflarini koddagi (yuqoridagi) matn bilan
+    tenglashtiradi.
+
+    _seed_ai_modules faqat BO'SH jadvalni to'ldiradi, shuning uchun seed.py
+    dagi tuzatilgan tavsiflar production bazasiga hech qachon yetib
+    bormagan: 2026-09-17 da 18 ta modulning 7 tasida kodda yo'q texnologiya
+    yozilgan edi ("YOLOv8-face, mahalliy GPU", "DeepSORT", "Gaze
+    estimation"...). Admin sozlamalariga (active, threshold, sensitivity,
+    mode) va o'lchangan ko'rsatkichlarga tegilmaydi."""
+    for module in DEFAULT_AI_MODULES:
+        await db.execute(
+            update(AIModuleConfig)
+            .where(AIModuleConfig.code == module["code"])
+            .values(
+                **{field: module[field] for field in AI_MODULE_DOC_FIELDS},
+                has_detector=module.get("has_detector", True),
+            )
+        )

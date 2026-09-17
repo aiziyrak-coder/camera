@@ -132,7 +132,9 @@ export default function UsersRolesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/60">
-              {PERMISSION_KEYS.map((key) => (
+              {/* Server bilmagan kalit (backend hali yangilanmagan) qator
+                  sifatida chiqmaydi — aks holda matrix[key] bo'sh va sahifa yiqiladi. */}
+              {PERMISSION_KEYS.filter((key) => matrix[key]).map((key) => (
                 <tr key={key} className="transition-colors hover:bg-white/40">
                   <td className="px-4 py-3 font-medium text-slate-800">
                     {PERMISSION_LABELS[key]}

@@ -58,7 +58,7 @@ from app.schemas.enrollment import (
     EnrollmentRegisterIn,
     EnrollmentSubmitOut,
 )
-from app.services.face_matching import invalidate_candidate_matrix_cache
+from app.services.face_matching import announce_roster_change
 from app.services.inference_gate import PRIORITY_LIVE
 from app.services.face_recognition import (
     InconsistentFacesError,
@@ -171,6 +171,7 @@ def _lookup_out(record: StudentStaff) -> EnrollmentLookupOut:
         type_label="Talaba" if record.type == "talaba" else "Xodim",
         group_or_position=record.group_or_position,
         already_enrolled=record.biometrics_status == "tasdiqlangan",
+        awaiting_approval=record.awaiting_approval,
     )
 
 
@@ -217,8 +218,12 @@ async def register_self(
     edi.
 
     Yaratilgan yozuv biometrics_status='yoq' bilan boshlanadi: bu faqat
-    shaxs ma'lumoti, hali yuz emas. Yuz keyingi qadamda qo'shiladi va
-    aynan o'sha yerda 'tasdiqlangan' bo'ladi.
+    shaxs ma'lumoti, hali yuz emas. Yuz keyingi qadamda qo'shiladi, lekin
+    'tasdiqlangan' EMAS, 'kutilmoqda' bo'ladi (self_registered): bu odam
+    institut ro'yxatida yo'q, ya'ni u kimligini hech kim tasdiqlamagan.
+    Aks holda istalgan begona o'zini shu yerda ro'yxatdan o'tkazib,
+    "begona shaxs" tekshiruvidan chiqib ketardi. Administrator
+    "Talabalar va Xodimlar" sahifasida tasdiqlaydi yoki rad etadi.
 
     Cheklov (3/minute) va pasport takrorlanmasligi tekshiruvi ataylab:
     endpoint ochiq, ya'ni uni bazani to'ldirish uchun ishlatib bo'lmasligi
@@ -249,6 +254,7 @@ async def register_self(
         passport_series=series or None,
         passport_number=number or None,
         biometrics_status="yoq",
+        self_registered=True,
     )
     db.add(record)
     await db.commit()
@@ -433,12 +439,26 @@ async def submit_enrollment(
     _file_id, key = await asyncio.to_thread(upload_file, frames[0], "face.jpg", "image/jpeg", "biometrics")
     record.biometric_photo_key = key
     record.biometric_embedding = json.dumps(embedding)
-    record.biometrics_status = "tasdiqlangan"
-    record.biometrics_confirmed_at = datetime.now(timezone.utc)
+    if record.self_registered:
+        # Institut ro'yxatida yo'q odam — administrator tasdiqlaguncha
+        # tanish ro'yxatiga kirmaydi (register_self izohiga qarang).
+        record.biometrics_status = "kutilmoqda"
+        record.biometrics_confirmed_at = None
+    else:
+        record.biometrics_status = "tasdiqlangan"
+        record.biometrics_confirmed_at = datetime.now(timezone.utc)
 
     await db.commit()
     if previous_key and previous_key != key:
         await delete_files_quietly([previous_key])
-    logger.info("self-service biometric enrollment completed", extra={"record_id": record_id})
-    invalidate_candidate_matrix_cache()
-    return EnrollmentSubmitOut(full_name=record.full_name, biometrics_status=record.biometrics_status)
+    logger.info(
+        "self-service biometric enrollment completed",
+        extra={"record_id": record_id, "biometrics_status": record.biometrics_status},
+    )
+    if record.biometrics_status == "tasdiqlangan":
+        await announce_roster_change()
+    return EnrollmentSubmitOut(
+        full_name=record.full_name,
+        biometrics_status=record.biometrics_status,
+        awaiting_approval=record.awaiting_approval,
+    )

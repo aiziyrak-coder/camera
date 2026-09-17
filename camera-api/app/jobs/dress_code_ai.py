@@ -42,6 +42,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
+from app.services.cpu_pool import run_cpu
 from app.services.confidence import below_confidence, weakest
 from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
@@ -49,7 +50,7 @@ from app.jobs.module_status import camera_allows_module, is_module_active
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.models import Camera, Event, StudentStaff
-from app.services.coat_detection import is_wearing_white_coat, torso_bbox, white_fraction
+from app.services.coat_detection import torso_bbox, white_fraction
 from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
@@ -77,8 +78,11 @@ async def _recently_flagged(db: AsyncSession, camera_id) -> bool:
         .where(Event.module_code == COAT_MODULE_CODE)
         .where(Event.camera_id == camera_id)
         .where(Event.occurred_at >= cutoff)
+        .limit(1)
     )
-    return result.scalar_one_or_none() is not None
+    # first(), scalar_one_or_none() emas: oynada ikkita hodisa bo'lsa
+    # (parallel kameralar, qo'lda yaratilgan hodisa) u xato otardi.
+    return result.scalars().first() is not None
 
 
 def _decode(frame_bytes: bytes) -> np.ndarray | None:
@@ -133,8 +137,11 @@ async def _staff_missing_coat(
         return False
 
     poses = await detect_poses(frame_bytes)
-    image = _decode(frame_bytes)
-    if not poses or image is None:
+    if not poses:
+        return False
+    # To'liq dekodlash va HSV — CPU ishi, event loop'dan tashqarida.
+    image = await run_cpu(_decode, frame_bytes)
+    if image is None:
         return False
 
     for face in staff_faces:
@@ -143,8 +150,12 @@ async def _staff_missing_coat(
         pose = _closest_pose_to_point(poses, center)
         if pose is None:
             continue
-        if not is_wearing_white_coat(image, pose.points):
-            _last_white_fraction = _torso_white_fraction(image, pose.points)
+        fraction = await run_cpu(_torso_white_fraction, image, pose.points)
+        if fraction is None:
+            # Tanasi kadrda ko'rinmaydi — o'lchab bo'lmaydi, bu qoidabuzarlik emas.
+            continue
+        if fraction < settings.coat_white_fraction_threshold:
+            _last_white_fraction = fraction
             return True
 
     return False

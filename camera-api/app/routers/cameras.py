@@ -13,7 +13,7 @@ from app.crypto import decrypt, encrypt
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.jobs.camera_health import is_reachable
-from app.models import AIModuleConfig, Building, Camera
+from app.models import AIModuleConfig, Building, Camera, Department
 from app.pagination import Page, PageParams, build_page, paginate
 from app.schemas.camera import (
     CameraBulkLocationIn,
@@ -38,6 +38,7 @@ from app.schemas.camera_import import CameraImportResultOut
 from app.services.camera_import import import_cameras_csv
 from app.services.camera_module_mapping import camera_allows_module_code, set_camera_module_enabled
 from app.services.connectivity import test_camera_connection
+from app.services.stream_links import signed_stream_url
 from app.services.stream_sync import sync_camera_stream
 
 router = APIRouter(prefix="/api/cameras", tags=["cameras"])
@@ -103,7 +104,7 @@ def _to_out(camera: Camera) -> CameraOut:
         resolution=camera.resolution,
         fps=camera.fps,
         status=camera.status,
-        stream_url=camera.stream_url,
+        stream_url=signed_stream_url(camera.stream_url),
         is_reachable=is_reachable(camera.last_seen_at),
         restricted_zone_polygon=camera.restricted_zone_polygon,
         excluded_module_codes=camera.excluded_module_codes,
@@ -375,8 +376,12 @@ async def update_camera(
     if body.rtsp_password is not None:
         camera.rtsp_password = encrypt(body.rtsp_password)
     camera.building_id = building.id
-    department = await _resolve_department(db, body.department)
-    camera.department_id = department.id if department else None
+    # Kafedra ham qavat kabi faqat YUBORILGANDA o'zgaradi: to'liq tahrirlash
+    # formasi bu maydonni bilmaydi va har saqlashda kafedrani jimgina
+    # o'chirib yuborardi.
+    if "department" in body.model_fields_set:
+        department = await _resolve_department(db, body.department)
+        camera.department_id = department.id if department else None
     camera.zone = body.zone
     # Qavat faqat YUBORILGAN bo'lsa o'zgaradi: bu maydon keyin qo'shilgan
     # va uni bilmaydigan mijoz (eski forma, skript) kameraning qavatini
@@ -519,31 +524,41 @@ async def set_cameras_location(
     found_ids = {str(camera.id) for camera in cameras}
     not_found.extend(str(camera_id) for camera_id in ids if str(camera_id) not in found_ids)
 
+    # Jurnalga faqat HAQIQATAN o'zgargan narsa yoziladi: ilgari qavati
+    # allaqachon bo'sh kameralar uchun ham "qavat: bo'shatildi" yozilardi.
+    changed = 0
+    fields: set[str] = set()
     for camera in cameras:
-        if building is not None:
+        before = (camera.building_id, camera.floor, camera.zone)
+        if building is not None and camera.building_id != building.id:
             camera.building_id = building.id
+            fields.add("building")
         if body.clear_floor:
-            camera.floor = None
-        elif body.floor is not None:
+            if camera.floor is not None:
+                camera.floor = None
+                fields.add("floor")
+        elif body.floor is not None and camera.floor != body.floor:
             camera.floor = body.floor
-        if body.zone:
+            fields.add("floor")
+        if body.zone and camera.zone != body.zone:
             camera.zone = body.zone
+            fields.add("zone")
+        if (camera.building_id, camera.floor, camera.zone) != before:
+            changed += 1
 
-    if cameras:
+    if changed:
         parts = []
-        if building is not None:
+        if "building" in fields:
             parts.append(f"bino: {building.name}")
-        if body.clear_floor:
-            parts.append("qavat: bo'shatildi")
-        elif body.floor is not None:
-            parts.append(f"qavat: {body.floor}")
-        if body.zone:
+        if "floor" in fields:
+            parts.append("qavat: bo'shatildi" if body.clear_floor else f"qavat: {body.floor}")
+        if "zone" in fields:
             parts.append(f"zona: {body.zone}")
         await log_action(
             db,
             request,
             current_user.id,
-            f"{len(cameras)} ta kameraning joylashuvini o'zgartirdi ({', '.join(parts) or 'o\'zgarishsiz'})",
+            f"{changed} ta kameraning joylashuvini o'zgartirdi ({', '.join(parts)})",
             "Kameralar",
         )
         await db.commit()
@@ -587,14 +602,24 @@ async def update_camera_location(
             camera.building_id = building.id
             changes.append(f"bino: {building.name}")
     if body.clear_floor:
-        camera.floor = None
-        changes.append("qavat: bo'shatildi")
-    elif body.floor is not None:
+        if camera.floor is not None:
+            camera.floor = None
+            changes.append("qavat: bo'shatildi")
+    elif body.floor is not None and body.floor != camera.floor:
         camera.floor = body.floor
         changes.append(f"qavat: {body.floor}")
     if body.zone is not None and body.zone.strip() and body.zone.strip() != camera.zone:
         camera.zone = body.zone.strip()
         changes.append(f"zona: {camera.zone}")
+    if body.clear_department:
+        if camera.department_id is not None:
+            camera.department_id = None
+            changes.append("kafedra: olib tashlandi")
+    elif body.department:
+        department = await _resolve_department(db, body.department)
+        if department is not None and camera.department_id != department.id:
+            camera.department_id = department.id
+            changes.append(f"kafedra: {department.name}")
 
     if changes:
         await log_action(
@@ -605,5 +630,5 @@ async def update_camera_location(
             "Kameralar",
         )
         await db.commit()
-    await db.refresh(camera, attribute_names=["building"])
+    await db.refresh(camera, attribute_names=["building", "department"])
     return _to_out(camera)

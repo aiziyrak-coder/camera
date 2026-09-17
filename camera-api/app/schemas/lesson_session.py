@@ -1,3 +1,5 @@
+from pydantic import Field
+
 from app.schemas.base import CamelModel
 
 
@@ -10,10 +12,11 @@ class LessonSessionOut(CamelModel):
     faculty: str
     teacher: str
     subject: str
-    attention_score: int
+    # None — hali o'lchanmagan/tekshirilmagan (0% yoki "kechikdi" emas).
+    attention_score: int | None = None
     sleep_incidents: int
-    teacher_activity_score: int
-    teacher_on_time: bool
+    teacher_activity_score: int | None = None
+    teacher_on_time: bool | None = None
     # Set together (see app/routers/lesson_sessions.py's _resolve_teacher) —
     # once all three are present, app/jobs/teacher_punctuality_ai.py and
     # app/jobs/lesson_quality_ai.py pick this session up automatically.
@@ -31,15 +34,14 @@ class LessonSessionCreateIn(CamelModel):
     # when one is given — see _resolve_teacher — so it's optional here
     # even though LessonSessionOut always returns it.
     teacher: str | None = None
-    # Scores default to a neutral 50 rather than being required — a
-    # freshly SCHEDULED lesson hasn't happened yet, so there's no real
-    # attention/activity data to report; these get overwritten by
-    # app/jobs/lesson_quality_ai.py once the lesson is actually in
-    # progress.
-    attention_score: int = 50
+    # Rejalashtirilgan dars hali o'tmagan — o'lchov yo'q. Ilgari bu yerda
+    # "neytral" 50 / 50 / vaqtida turardi va hisobotda haqiqiy o'lchovdek
+    # ko'rinardi. Qiymat berilsa (qo'lda kiritilgan hisobot) — bitta
+    # o'lchov sifatida saqlanadi.
+    attention_score: int | None = Field(default=None, ge=0, le=100)
     sleep_incidents: int = 0
-    teacher_activity_score: int = 50
-    teacher_on_time: bool = True
+    teacher_activity_score: int | None = Field(default=None, ge=0, le=100)
+    teacher_on_time: bool | None = None
     teacher_id: str | None = None
     camera_id: str | None = None
     scheduled_start_time: str | None = None

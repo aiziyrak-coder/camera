@@ -27,8 +27,17 @@ async def get_current_user(
 ) -> CurrentUser:
     if credentials is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Autentifikatsiya talab qilinadi")
+    return await user_from_token(credentials.credentials, db)
+
+
+async def user_from_token(token: str, db: AsyncSession) -> CurrentUser:
+    """Tokenni to'liq tekshiradi: imzo va muddat, chiqish (logout)
+    blocklisti va token_version. HTTP so'rovlar ham, WebSocket ham shu
+    yerdan o'tadi — ikkinchisida faqat imzo tekshirilsa, chiqib ketgan
+    yoki paroli almashtirilgan foydalanuvchi signallarni olishda davom
+    etardi."""
     try:
-        payload: TokenPayload = decode_access_token(credentials.credentials)
+        payload: TokenPayload = decode_access_token(token)
     except jwt.PyJWTError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token yaroqsiz yoki muddati tugagan") from exc
 
@@ -72,23 +81,34 @@ _PERMISSION_COLUMN = {
 }
 
 
-def require_permission(key: str):
+async def has_any_permission(db: AsyncSession, role: str, keys: tuple[str, ...]) -> bool:
+    """Rol berilgan huquqlardan kamida bittasiga egami.
+
+    Noma'lum rol — huquq yo'q. Yangi rol qo'shilganda uni
+    _PERMISSION_COLUMN ga kiritish esdan chiqsa, tizim ochilib qolmasin.
+    Matritsada yo'q kalit ham — huquq yo'q."""
+    column = _PERMISSION_COLUMN.get(role)
+    if column is None:
+        return False
+    result = await db.execute(select(column).where(Permission.key.in_(keys)))
+    return any(result.scalars().all())
+
+
+def require_permission(key: str, *alternatives: str):
     """Server-side equivalent of the frontend's usePermissions().can(key, role) —
     this is the real security boundary; the frontend's own check is UX-only.
+
+    `alternatives` — o'qish endpointlari bir nechta sahifadan chaqiriladi
+    (masalan davomat kalendari ham, hisobot ham bitta odamning kunini
+    ko'rsatadi). Sanab o'tilgan huquqlardan birortasi yetarli.
     """
+    keys = (key, *alternatives)
 
     async def checker(
         current_user: Annotated[CurrentUser, Depends(get_current_user)],
         db: Annotated[AsyncSession, Depends(get_db)],
     ) -> CurrentUser:
-        column = _PERMISSION_COLUMN.get(current_user.role)
-        if column is None:
-            # Noma'lum rol — huquq yo'q. Yangi rol qo'shilganda uni shu
-            # jadvalga kiritish esdan chiqsa, tizim ochilib qolmasin.
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "Sizda bu amal uchun huquq yo'q")
-        result = await db.execute(select(column).where(Permission.key == key))
-        allowed = result.scalar_one_or_none()
-        if not allowed:
+        if not await has_any_permission(db, current_user.role, keys):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Sizda bu amal uchun huquq yo'q")
         return current_user
 

@@ -45,8 +45,10 @@ class TestRBAC:
         resp = await client.get("/api/users", headers={"Authorization": "Bearer not-a-real-token"})
         assert resp.status_code == 401
 
-    async def test_org_structure_needs_no_specific_permission(self, client: AsyncClient):
-        """Matches AdminLayout.tsx: org-structure nav has no `permission` key."""
+    async def test_org_structure_reads_need_no_specific_permission(self, client: AsyncClient):
+        """O'qish ochiq: binolar ro'yxati kamera formasida ham kerak.
+        O'zgartirish esa manageOrgStructure talab qiladi —
+        tests/test_operator_permissions.py."""
         headers = await auth_headers(client, "operator", "operator123")
         resp = await client.get("/api/buildings", headers=headers)
         assert resp.status_code == 200

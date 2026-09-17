@@ -15,7 +15,7 @@ from app.jobs.lesson_quality_ai import (
     _active_sessions,
     _closest_pose_to_point,
     _pose_movement,
-    _running_average_update,
+    _running_average,
     _sample_activity,
     _sample_attention,
     process_lesson_session,
@@ -112,18 +112,15 @@ async def _make_session(db_session, teacher, camera, minutes_ago_start: int) -> 
     return row
 
 
-class TestRunningAverageUpdate:
+class TestRunningAverage:
     def test_first_sample_becomes_the_score(self):
-        counts = {}
-        result = _running_average_update(counts, "s1", current_score=50, sample=100.0)
-        assert result == 100
-        assert counts["s1"] == 1
+        assert _running_average(50, 0, 100.0) == 100
 
     def test_second_sample_averages_with_the_first(self):
-        counts = {"s1": 1}
-        result = _running_average_update(counts, "s1", current_score=100, sample=0.0)
-        assert result == 50
-        assert counts["s1"] == 2
+        assert _running_average(100, 1, 0.0) == 50
+
+    def test_later_samples_weigh_by_count(self):
+        assert _running_average(80, 3, 40.0) == 70
 
 
 class TestClosestPoseToPoint:
@@ -319,6 +316,15 @@ class TestProcessLessonSession:
         await process_lesson_session(row, _blank_frame(), _blank_frame(), db_session, candidates)
 
         assert row.attention_score == 100  # frontal, no phone, first sample
+        assert row.attention_samples == 1
+
+        # Namunalar soni bazada: qayta ishga tushgandan keyin ham o'rtacha
+        # davom etadi (ilgari xotiradagi hisoblagich nollanardi).
+        row.attention_score, row.attention_samples = 40, 3
+        await db_session.commit()
+        await process_lesson_session(row, _blank_frame(), _blank_frame(), db_session, candidates)
+        await db_session.refresh(row)
+        assert (row.attention_score, row.attention_samples) == (55, 4)
 
 
 @pytest.mark.usefixtures("seeded")

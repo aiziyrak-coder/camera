@@ -67,5 +67,5 @@ curl -sfI -X OPTIONS "http://127.0.0.1:18080/api/auth/login" \
 log "=== DEPLOY COMPLETE ==="
 log "Frontend: https://${FRONTEND}"
 log "API:      https://${API}/health"
-log "Login:    admin / admin123  (see deploy/.secrets.env for camadmin)"
+log "Login:    see deploy/.secrets.env (PROD_ADMIN_LOGIN / PROD_ADMIN_PASSWORD)"
 [[ -f deploy/.secrets.env ]] && log "Secrets:  ${APP_DIR}/deploy/.secrets.env"

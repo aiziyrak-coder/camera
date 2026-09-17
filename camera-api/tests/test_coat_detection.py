@@ -61,10 +61,11 @@ class TestIsWearingWhiteCoat:
         frame = _colored_frame()
         assert is_wearing_white_coat(frame, points) is False
 
-    def test_low_visibility_landmarks_is_not_detected(self):
+    def test_low_visibility_landmarks_cannot_be_judged(self):
+        """Tana ko'rinmasa — "xalat yo'q" emas, "o'lchab bo'lmaydi"."""
         points = _make_points(visibility=0.1)
         frame = _white_frame()
-        assert is_wearing_white_coat(frame, points) is False
+        assert is_wearing_white_coat(frame, points) is None
 
     def test_borderline_white_fraction_respects_threshold(self, monkeypatch):
         from app.config import settings

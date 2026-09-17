@@ -108,6 +108,11 @@ MEDIAMTX_HLS_BASE_URL=https://${STREAM_DOMAIN}
 AI_SWEEP_CAMERA_CONCURRENCY=8
 FACE_RECOGNITION_GPU_ENABLED=false
 FACE_RECOGNITION_INFERENCE_CONCURRENCY=2
+
+# Birinchi Super Admin — API bo'sh bazada birinchi ishga tushganda yaratadi.
+# Demo hisoblar (admin/admin123) production'da YARATILMAYDI.
+INITIAL_ADMIN_LOGIN=${PROD_ADMIN_LOGIN}
+INITIAL_ADMIN_PASSWORD=${PROD_ADMIN_PASSWORD}
 EOF
   chmod 600 "${APP_DIR}/camera-api/.env"
 }
@@ -179,17 +184,16 @@ issue_ssl() {
     }
 }
 
-create_prod_admin() {
-  log "Creating production admin user..."
-  TOKEN=$(curl -sf -X POST "http://127.0.0.1:8080/api/auth/login" \
-    -H 'Content-Type: application/json' \
-    -d '{"login":"admin","password":"admin123"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])") || return 0
-
-  curl -sf -X POST "http://127.0.0.1:8080/api/users" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -H 'Content-Type: application/json' \
-    -d "{\"login\":\"${PROD_ADMIN_LOGIN}\",\"password\":\"${PROD_ADMIN_PASSWORD}\",\"name\":\"Production Admin\",\"role\":\"Super Admin\"}" \
-    >/dev/null 2>&1 || log "Production admin may already exist or seed not ready"
+check_prod_admin() {
+  # Admin API ichida yaratiladi (INITIAL_ADMIN_* — write_backend_env).
+  # Bu yerda faqat u bilan kira olishni tekshiramiz.
+  log "Checking production admin login..."
+  local body
+  body=$(LOGIN="${PROD_ADMIN_LOGIN}" PASSWORD="${PROD_ADMIN_PASSWORD}" python3 -c \
+    'import json, os; print(json.dumps({"login": os.environ["LOGIN"], "password": os.environ["PASSWORD"]}))')
+  curl -sf -o /dev/null -X POST "http://127.0.0.1:8080/api/auth/login" \
+    -H 'Content-Type: application/json' --data-binary "${body}" \
+    || log "WARN: production admin login failed — check 'docker compose logs api'"
 }
 
 print_summary() {
@@ -203,9 +207,8 @@ print_summary() {
  Storage:   https://${STORAGE_DOMAIN}
  HLS:       https://${STREAM_DOMAIN}
 
- SEED USERS (from app/seed.py — created on first API boot):
-   admin    / admin123      (super-admin — Jamshid Alimov)
-   operator / operator123   (admin — Behzod Karimov)
+ Demo users (admin/admin123, operator/operator123) are NOT created in
+ production (SEED_DEMO_USERS is off). The only account is:
 
  PRODUCTION ADMIN (strong password — saved in deploy/.secrets.env):
    ${PROD_ADMIN_LOGIN} / ${PROD_ADMIN_PASSWORD}
@@ -238,7 +241,7 @@ main() {
   build_frontend
   write_nginx
   issue_ssl
-  create_prod_admin
+  check_prod_admin
   print_summary
 }
 

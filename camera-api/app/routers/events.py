@@ -2,7 +2,6 @@ import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Annotated, Literal
 
-import jwt
 from fastapi import (
     APIRouter,
     Depends,
@@ -18,8 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.audit import log_action
-from app.database import get_db
-from app.dependencies import CurrentUser, get_current_user
+from app.database import SessionLocal, get_db
+from app.dependencies import CurrentUser, has_any_permission, require_permission, user_from_token
 from app.models import Camera, Event, User
 from app.pagination import Page, PageParams, build_page, paginate
 from app.schemas.event import (
@@ -31,8 +30,8 @@ from app.schemas.event import (
     EventReviewIn,
     EventSummaryOut,
 )
-from app.security import decode_access_token
 from app.services.event_bus import event_to_out
+from app.services.event_scope import NOT_SUPPRESSED, OPERATOR_EVENTS, REGISTERED_MODULE
 from app.storage import delete_files_quietly
 from app.timezone import INSTITUTE_TZ, local_now
 from app.ws import manager
@@ -44,9 +43,14 @@ REVIEW_STATS_DAYS = 30
 MIN_REVIEWS_FOR_PRECISION = 10
 FACET_LIMIT = 40
 
-# Operator va rahbar ko'rinishlari faqat ishchi rejimdagi modullar signalini
-# ko'radi — sinov signallari (is_trial) navbat va statistikaga aralashmaydi.
-OPERATOR_EVENTS = Event.is_trial == false()
+# Hodisalarni ko'rish va ko'rib chiqish huquqi (app/seed.py).
+ReviewDep = Annotated[CurrentUser, Depends(require_permission("reviewEvents"))]
+
+# WebSocket yopilish kodlari — src/lib/realtime.ts ular kelganda qayta
+# ulanmaydi: token yaroqsiz yoki huquq yo'q bo'lsa, har 3 soniyada qayta
+# urinish faqat shovqin.
+WS_CLOSE_UNAUTHORIZED = 4401
+WS_CLOSE_FORBIDDEN = 4403
 
 
 def _to_out(event: Event) -> EventOut:
@@ -57,20 +61,39 @@ def _local_day_start(day: date) -> datetime:
     return datetime.combine(day, time.min, tzinfo=INSTITUTE_TZ)
 
 
+async def authorize_events_socket(token: str | None, session_factory=SessionLocal) -> int | None:
+    """None — ulanish mumkin; aks holda WebSocket yopilish kodi.
+
+    Sessiya faqat tekshiruv uchun ochiladi va darhol yopiladi: ulanish
+    soatlab ochiq turadi, butun umri davomida pool'dan bitta bog'lanishni
+    band qilib turish mumkin emas."""
+    if not token:
+        return WS_CLOSE_UNAUTHORIZED
+    async with session_factory() as db:
+        try:
+            user = await user_from_token(token, db)
+        except HTTPException:
+            return WS_CLOSE_UNAUTHORIZED
+        if not await has_any_permission(db, user.role, ("reviewEvents",)):
+            return WS_CLOSE_FORBIDDEN
+    return None
+
+
 @router.websocket("/ws/events")
 async def events_websocket(websocket: WebSocket) -> None:
     """Real-time push for new AI events — replaces the frontend's
     setInterval-based simulation (camera/src/lib/realtime.ts) with an
     actual persistent connection. Auth via ?token=<jwt> since browser
-    WebSocket APIs can't set an Authorization header."""
-    token = websocket.query_params.get("token")
-    if not token:
-        await websocket.close(code=4401)
-        return
-    try:
-        decode_access_token(token)
-    except jwt.PyJWTError:
-        await websocket.close(code=4401)
+    WebSocket APIs can't set an Authorization header.
+
+    HTTP endpointlar bilan bir xil tekshiruv: chiqib ketilgan token ham,
+    hodisalarni ko'rish huquqi bo'lmagan rol ham ulanmaydi."""
+    close_code = await authorize_events_socket(websocket.query_params.get("token"))
+    if close_code is not None:
+        # Avval qabul qilinadi: qabul qilinmagan ulanish yopilsa, brauzer
+        # kodni ko'rmaydi (1006) va sababini ajrata olmaydi.
+        await websocket.accept()
+        await websocket.close(code=close_code)
         return
 
     await manager.connect(websocket)
@@ -84,7 +107,7 @@ async def events_websocket(websocket: WebSocket) -> None:
 @router.get("/api/events", response_model=Page[EventOut])
 async def list_events(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[CurrentUser, Depends(get_current_user)],
+    _: ReviewDep,
     page_params: Annotated[PageParams, Depends()],
     severity: Annotated[str | None, Query()] = None,
     status_filter: Annotated[str | None, Query(alias="status")] = None,
@@ -99,9 +122,13 @@ async def list_events(
     date_to: Annotated[date | None, Query(alias="to")] = None,
     sort: Annotated[Literal["newest", "oldest", "severity"], Query()] = "newest",
     trial: Annotated[bool, Query()] = False,
+    exclude_suppressed: Annotated[bool, Query(alias="excludeSuppressed")] = False,
 ) -> Page[EventOut]:
     # trial=true — faqat sinov rejimidagi modullar signallari (baholash uchun).
-    stmt = select(Event).where(Event.is_trial == (true() if trial else false()))
+    stmt = select(Event).where(Event.is_trial == (true() if trial else false())).where(REGISTERED_MODULE)
+    if exclude_suppressed:
+        # Monitoring devoridagi alarm (event_scope.NOT_SUPPRESSED).
+        stmt = stmt.where(NOT_SUPPRESSED)
     if severity:
         stmt = stmt.where(Event.severity == severity)
     if status_filter:
@@ -167,7 +194,7 @@ async def list_events(
 @router.get("/api/events/summary", response_model=EventSummaryOut)
 async def events_summary(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[CurrentUser, Depends(get_current_user)],
+    _: ReviewDep,
 ) -> EventSummaryOut:
     now = datetime.now(timezone.utc)
     status_counts = dict(
@@ -245,6 +272,7 @@ async def events_summary(
         await db.execute(
             select(Event.module_code, Event.module_name, func.count())
             .where(Event.is_trial == true())
+            .where(REGISTERED_MODULE)
             .where(Event.status == "yangi")
             .group_by(Event.module_code, Event.module_name)
             .order_by(func.count().desc())
@@ -280,7 +308,7 @@ async def create_event(
     body: EventCreateIn,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    current_user: Annotated[CurrentUser, Depends(require_permission("configureAi"))],
 ) -> EventOut:
     result = await db.execute(select(Camera).options(selectinload(Camera.building)).where(Camera.id == body.camera_id))
     camera = result.scalar_one_or_none()
@@ -314,7 +342,7 @@ async def review_events_bulk(
     body: EventBulkReviewIn,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    current_user: ReviewDep,
 ) -> EventBulkReviewOut:
     """Bir nechta hodisani bitta tranzaksiyada tasdiqlash yoki rad etish.
 
@@ -356,7 +384,7 @@ async def delete_event(
     event_id: str,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    current_user: Annotated[CurrentUser, Depends(require_permission("deleteEvents"))],
 ) -> None:
     result = await db.execute(select(Event).where(Event.id == event_id))
     event = result.scalar_one_or_none()
@@ -380,7 +408,7 @@ async def review_event(
     body: EventReviewIn,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    current_user: ReviewDep,
 ) -> EventOut:
     result = await db.execute(select(Event).where(Event.id == event_id))
     event = result.scalar_one_or_none()

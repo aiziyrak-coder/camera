@@ -16,6 +16,7 @@ import { SkeletonCards, SkeletonTable } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
 import { ApiError, api, isAbortError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
+import { usePermissions } from '../../lib/permissions';
 import { SEVERITY_LABEL, SEVERITY_STRIPE, SEVERITY_TONE, STATUS_LABEL, STATUS_TONE } from '../../lib/eventLabels';
 import { useLiveEvents } from '../../lib/realtime';
 import { invalidateServerPageCache, useServerPage } from '../../lib/useServerPage';
@@ -138,7 +139,10 @@ function ReviewCard({
 }
 
 export default function EventsPage() {
-  const { token } = useAuth();
+  const { token, role } = useAuth();
+  const { can } = usePermissions();
+  // Hodisa — dalil: standart bo'yicha faqat Super Admin o'chiradi.
+  const canDelete = can('deleteEvents', role);
   const toast = useToast();
   const [params, setParams] = useSearchParams();
 
@@ -724,7 +728,7 @@ export default function EventsPage() {
         event={openEvent}
         onClose={() => setOpenId(null)}
         onReview={review}
-        onDelete={setDeleting}
+        onDelete={canDelete ? setDeleting : undefined}
         onPrev={openIndex > 0 ? () => setOpenId(rows[openIndex - 1].id) : undefined}
         onNext={openIndex >= 0 && openIndex < rows.length - 1 ? () => setOpenId(rows[openIndex + 1].id) : undefined}
         position={openEvent ? `${openIndex + 1} / ${rows.length}` : undefined}

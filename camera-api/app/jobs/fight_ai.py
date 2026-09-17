@@ -51,7 +51,7 @@ from app.jobs.module_status import camera_allows_module, is_module_active
 from app.services.evidence import pose_box
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
-from app.jobs.disorder_ai import _decode_grayscale, _is_motion_spike, _last_decision, _mean_flow_magnitude
+from app.jobs.disorder_ai import _is_motion_spike, _last_decision, frame_motion
 from app.models import Camera, Event
 from app.services.event_bus import raise_event
 from app.services.frame_grabber import grab_frame_pair_for_camera
@@ -97,8 +97,11 @@ async def _recently_flagged(db: AsyncSession, camera_id) -> bool:
         .where(Event.module_code == FIGHT_MODULE_CODE)
         .where(Event.camera_id == camera_id)
         .where(Event.occurred_at >= cutoff)
+        .limit(1)
     )
-    return result.scalar_one_or_none() is not None
+    # first(), scalar_one_or_none() emas: oynada ikkita hodisa bo'lsa
+    # (parallel kameralar, qo'lda yaratilgan hodisa) u xato otardi.
+    return result.scalars().first() is not None
 
 
 async def process_camera_frame_pair_for_fight(frame_a: bytes, frame_b: bytes, db: AsyncSession, camera: Camera) -> bool:
@@ -108,12 +111,9 @@ async def process_camera_frame_pair_for_fight(frame_a: bytes, frame_b: bytes, db
     if len(poses_b) < 2 or not _people_in_close_proximity(poses_b):
         return False
 
-    img_a = _decode_grayscale(frame_a)
-    img_b = _decode_grayscale(frame_b)
-    if img_a is None or img_b is None or img_a.shape != img_b.shape:
+    magnitude = await frame_motion(frame_a, frame_b)
+    if magnitude is None:
         return False
-
-    magnitude = _mean_flow_magnitude(img_a, img_b)
     # Namespaced key ("...:fight") so this doesn't share (and distort)
     # app/jobs/disorder_ai.py's own per-camera "normal motion" baseline
     # for kriteriya 17 — the two criteria may reasonably want different

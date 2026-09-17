@@ -32,6 +32,7 @@ from app.jobs.module_status import camera_allows_module, is_module_active
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.models import Camera, Event
+from app.services.cpu_pool import run_cpu
 from app.services.event_bus import raise_event
 from app.services.fire_detection import fire_pixel_fraction, is_likely_fire
 from app.services.frame_grabber import grab_frame_pair_for_camera
@@ -57,21 +58,25 @@ async def _recently_flagged(db: AsyncSession, camera_id) -> bool:
         .where(Event.module_code == FIRE_MODULE_CODE)
         .where(Event.camera_id == camera_id)
         .where(Event.occurred_at >= cutoff)
+        .limit(1)
     )
-    return result.scalar_one_or_none() is not None
+    # first(), scalar_one_or_none() emas: oynada ikkita hodisa bo'lsa
+    # (parallel kameralar, qo'lda yaratilgan hodisa) u xato otardi.
+    return result.scalars().first() is not None
 
 
 async def process_camera_frame_pair_for_fire(
     frame_a: bytes, frame_b: bytes, db: AsyncSession, camera: Camera
 ) -> bool:
     """Returns True if a (deduped) fire Event was raised."""
-    if not is_likely_fire(frame_a, frame_b):
+    # Ikki kadrni to'liq dekodlash va HSV — CPU ishi, event loop'dan tashqarida.
+    if not await run_cpu(is_likely_fire, frame_a, frame_b):
         return False
 
     if await _recently_flagged(db, camera.id):
         return False
 
-    fraction = fire_pixel_fraction(frame_a, frame_b)
+    fraction = await run_cpu(fire_pixel_fraction, frame_a, frame_b)
     await raise_event(
         db,
         camera=camera,

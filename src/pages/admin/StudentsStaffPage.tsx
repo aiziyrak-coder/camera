@@ -13,6 +13,7 @@ import {
   Pencil,
   Plus,
   ScanFace,
+  ShieldQuestion,
   Trash2,
   UserRoundX,
   Users,
@@ -25,6 +26,7 @@ import AddStudentStaffModal from '../../components/admin/AddStudentStaffModal';
 import EditStudentStaffModal from '../../components/admin/EditStudentStaffModal';
 import BiometricsTimeLookupModal from '../../components/admin/BiometricsTimeLookupModal';
 import ExportPeopleModal from '../../components/admin/ExportPeopleModal';
+import SelfEnrollmentReviewModal from '../../components/admin/SelfEnrollmentReviewModal';
 import EmptyState from '../../components/ui/EmptyState';
 import ErrorState from '../../components/ui/ErrorState';
 import FilterBar from '../../components/ui/FilterBar';
@@ -65,6 +67,8 @@ const BIOMETRICS_LABEL: Record<StudentStaffRecord['biometricsStatus'], string> =
 };
 
 const PAGE_SIZES = [10, 25, 50];
+/** Backend: o'zini o'zi ro'yxatdan o'tkazib, tasdiq kutayotganlar. */
+const AWAITING_APPROVAL_FILTER = 'tasdiq_kutmoqda';
 
 interface CoverageRow {
   label: string;
@@ -219,6 +223,8 @@ export default function StudentsStaffPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<StudentStaffRecord | null>(null);
   const [deleting, setDeleting] = useState<StudentStaffRecord | null>(null);
+  const [reviewing, setReviewing] = useState<StudentStaffRecord | null>(null);
+  const [awaitingOnly, setAwaitingOnly] = useState(false);
   const [lookup, setLookup] = useState<{ open: boolean; person: StudentStaffRecord | null }>({
     open: false,
     person: null,
@@ -243,7 +249,7 @@ export default function StudentsStaffPage() {
       type: tab,
       faculty: facultyFilter || undefined,
       course: isStudents && courseFilter ? String(courseFilter) : undefined,
-      biometricsStatus: statusFilter || undefined,
+      biometricsStatus: awaitingOnly ? AWAITING_APPROVAL_FILTER : statusFilter || undefined,
       search: search.trim() || undefined,
       sort,
     },
@@ -271,6 +277,7 @@ export default function StudentsStaffPage() {
     setCourseFilter(null);
     setStatusFilter('');
     setSearch('');
+    setAwaitingOnly(false);
   }
 
   function switchTab(next: PersonType) {
@@ -296,7 +303,10 @@ export default function StudentsStaffPage() {
     if (key === 'tasdiqlanmagan') return current.missing + current.pending;
     return current.total;
   };
-  const activeFilters = [facultyFilter, isStudents && courseFilter, statusFilter, search.trim()].filter(Boolean).length;
+  const activeFilters = [facultyFilter, isStudents && courseFilter, statusFilter, search.trim(), awaitingOnly].filter(
+    Boolean,
+  ).length;
+  const awaitingCount = current?.awaitingApproval ?? 0;
 
   return (
     <section className="glass p-4 sm:p-6">
@@ -451,6 +461,27 @@ export default function StudentsStaffPage() {
         </>
       )}
 
+      {(awaitingCount > 0 || awaitingOnly) && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <span className="flex items-center gap-2 font-semibold">
+            <ShieldQuestion size={16} className="shrink-0" />
+            {awaitingCount > 0
+              ? `${formatCount(awaitingCount)} kishi o'zini o'zi ro'yxatdan o'tkazdi — yuzi tasdiqlashingizni kutmoqda. Tasdiqlanmaguncha kameralar ularni tanimaydi.`
+              : "Tasdiq kutayotganlar qolmadi."}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setAwaitingOnly((value) => !value);
+              setPage(1);
+            }}
+            className="rounded-xl bg-white px-3 py-1.5 text-xs font-bold text-amber-700 shadow-sm transition-colors hover:bg-amber-100"
+          >
+            {awaitingOnly ? "Butun ro'yxatga qaytish" : "Ko'rib chiqish"}
+          </button>
+        </div>
+      )}
+
       <FilterBar activeCount={activeFilters} onReset={resetFilters}>
         <SearchInput
           value={search}
@@ -572,9 +603,13 @@ export default function StudentsStaffPage() {
                       <td className="px-4 py-2.5 text-slate-600">{person.groupOrPosition}</td>
                     )}
                     <td className="px-4 py-2.5">
-                      <Badge tone={BIOMETRICS_TONE[person.biometricsStatus]}>
-                        {BIOMETRICS_LABEL[person.biometricsStatus]}
-                      </Badge>
+                      {person.awaitingApproval ? (
+                        <Badge tone="amber">Tasdiq kutmoqda</Badge>
+                      ) : (
+                        <Badge tone={BIOMETRICS_TONE[person.biometricsStatus]}>
+                          {BIOMETRICS_LABEL[person.biometricsStatus]}
+                        </Badge>
+                      )}
                     </td>
                     <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-slate-600">
                       {person.confirmedLabel ??
@@ -593,6 +628,16 @@ export default function StudentsStaffPage() {
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="flex items-center justify-end gap-1">
+                        {person.awaitingApproval && (
+                          <button
+                            type="button"
+                            onClick={() => setReviewing(person)}
+                            className="flex items-center gap-1 rounded-lg bg-amber-100 px-2 py-1.5 text-xs font-semibold text-amber-800 transition-colors hover:bg-amber-200"
+                          >
+                            <ShieldQuestion size={14} />
+                            Ko&apos;rib chiqish
+                          </button>
+                        )}
                         <Link
                           to={`/admin/attendance?person=${person.id}`}
                           title="Davomat kalendarini ochish"
@@ -685,6 +730,19 @@ export default function StudentsStaffPage() {
           if (records.length === 1 && page > 1) setPage(page - 1);
           refresh();
           toast.success(`${removed} ro'yxatdan o'chirildi`);
+        }}
+      />
+      <SelfEnrollmentReviewModal
+        record={reviewing}
+        onClose={() => setReviewing(null)}
+        onDone={(decision, updated) => {
+          setReviewing(null);
+          refresh();
+          toast.success(
+            decision === 'approve'
+              ? `${updated.fullName} tasdiqlandi — endi kameralar uni taniydi`
+              : `${updated.fullName} yuzi rad etildi`,
+          );
         }}
       />
       <EditStudentStaffModal

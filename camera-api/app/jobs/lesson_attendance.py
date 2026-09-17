@@ -145,26 +145,27 @@ async def _finished_unfinalized_sessions(db: AsyncSession) -> list[LessonSession
     "Yakunlangan" belgisi alohida ustunda emas, LessonAttendance da
     status yozilgan qator bor-yo'qligida — shu bilan qo'shimcha ustun va
     uni yangilashdagi nomuvofiqlik xavfi paydo bo'lmaydi."""
-    now = local_now()
+    ended_before = local_now() - timedelta(minutes=settings.lesson_duration_minutes)
+    finalized = (
+        select(LessonAttendance.id)
+        .where(LessonAttendance.lesson_session_id == LessonSession.id)
+        .where(LessonAttendance.status.is_not(None))
+        .exists()
+    )
+    # Bitta so'rov: tugagan, yaqin kunlardagi va hali yakunlanmagan darslar.
+    # Ilgari butun tarix o'qilib, har bir dars uchun alohida so'rov
+    # yuborilardi (N+1).
     result = await db.execute(
         select(LessonSession)
         .where(LessonSession.camera_id.is_not(None))
-        .where(LessonSession.scheduled_start_time.is_not(None))
-    )
-    finished = []
-    for row in result.scalars().all():
-        end = row.scheduled_start_time + timedelta(minutes=settings.lesson_duration_minutes)
-        if now < end:
-            continue
-        already = await db.scalar(
-            select(LessonAttendance.id)
-            .where(LessonAttendance.lesson_session_id == row.id)
-            .where(LessonAttendance.status.is_not(None))
-            .limit(1)
+        .where(LessonSession.scheduled_start_time <= ended_before)
+        .where(
+            LessonSession.scheduled_start_time
+            >= ended_before - timedelta(days=settings.lesson_attendance_finalize_lookback_days)
         )
-        if already is None:
-            finished.append(row)
-    return finished
+        .where(~finalized)
+    )
+    return list(result.scalars().unique().all())
 
 
 async def finalize_lesson(db: AsyncSession, session_row: LessonSession) -> int:

@@ -117,6 +117,9 @@ class CameraLocationIn(CamelModel):
     floor: int | None = Field(default=None, ge=-5, le=50)
     clear_floor: bool = False
     zone: str | None = Field(default=None, min_length=1)
+    department: str | None = None
+    """Kafedra NOMI. Olib tashlash uchun — `clear_department`."""
+    clear_department: bool = False
 
 
 class CameraBulkLocationIn(CamelModel):

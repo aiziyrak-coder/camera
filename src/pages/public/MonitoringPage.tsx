@@ -38,6 +38,11 @@ import type { CameraFeed, CampusBuilding, CampusFloor } from '../../types';
  * yangilash va brauzerning "orqaga" tugmasi ishlaydi. */
 
 const PAGE_SIZE = 12;
+// Video havolalari imzolangan va muddatli (camera-api/app/services/
+// stream_links.py): ro'yxat vaqti-vaqti bilan yangilanib turadi. Havola
+// 6 soat davomida o'zgarmaydi, shuning uchun pleyer bu yangilanishda
+// qayta ulanmaydi.
+const LIST_REFRESH_MS = 30 * 60 * 1000;
 
 export default function MonitoringPage() {
   const [params, setParams] = useSearchParams();
@@ -54,6 +59,8 @@ export default function MonitoringPage() {
   const { can } = usePermissions();
   const toast = useToast();
   const canEditLocation = can('editCameraLocation', role);
+  const canReviewEvents = can('reviewEvents', role);
+  const canViewReports = can('viewReports', role);
 
   const { campus, loading: campusLoading, error: campusError, reload: reloadCampus } = useCampus();
 
@@ -87,6 +94,14 @@ export default function MonitoringPage() {
   const list = useServerPage<CameraFeed>('/api/public/cameras', listParams, PAGE_SIZE, {
     enabled: level === 'floor' || level === 'search',
   });
+
+  const reloadList = list.reload;
+  const listShown = level === 'floor' || level === 'search';
+  useEffect(() => {
+    if (!listShown) return;
+    const timer = window.setInterval(reloadList, LIST_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [listShown, reloadList]);
 
   // Havola bilan kelingan bo'lsa (?kamera=...) — ro'yxat yuklangach
   // o'sha kamerani tanlaymiz. Ro'yxat almashsa va tanlangan kamera unda
@@ -326,9 +341,12 @@ export default function MonitoringPage() {
         </div>
 
         <div className="min-h-0 space-y-4 overflow-y-auto lg:col-span-1">
-          <ReportPanel />
-          <EventsLogPanel />
-          <AlarmPanel cameras={list.items} onSelectCamera={jumpToCamera} />
+          {/* Bu panellar huquqsiz foydalanuvchida (kamera mas'uli) server
+              tomonidan 403 bilan rad etiladi — bo'sh xato oynasi o'rniga
+              ularni umuman ko'rsatmaymiz. */}
+          {canViewReports && <ReportPanel />}
+          {canReviewEvents && <EventsLogPanel />}
+          {canReviewEvents && <AlarmPanel cameras={list.items} onSelectCamera={jumpToCamera} />}
         </div>
       </section>
 
@@ -347,6 +365,7 @@ export default function MonitoringPage() {
                   building: saved.building,
                   zone: saved.zone,
                   floor: saved.floor ?? null,
+                  department: saved.department ?? current.department,
                 }
               : current,
           );

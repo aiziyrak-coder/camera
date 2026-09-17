@@ -26,6 +26,11 @@ MEDIAMTX_HLS_BASE_URL=https://${STREAM}
 AI_SWEEP_CAMERA_CONCURRENCY=8
 FACE_RECOGNITION_GPU_ENABLED=false
 FACE_RECOGNITION_INFERENCE_CONCURRENCY=2
+
+# Birinchi Super Admin — API bo'sh bazada birinchi ishga tushganda yaratadi.
+# Demo hisoblar (admin/admin123) production'da YARATILMAYDI.
+INITIAL_ADMIN_LOGIN=${PROD_ADMIN_LOGIN}
+INITIAL_ADMIN_PASSWORD=${PROD_ADMIN_PASSWORD}
 EOF
 chmod 600 "$APP_DIR/camera-api/.env"
 

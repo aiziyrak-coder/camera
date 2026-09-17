@@ -14,6 +14,10 @@ from app.seed import seed_all
 
 TEST_DATABASE_URL = settings.database_url.rsplit("/", 1)[0] + "/camera_api_test"
 
+# Testlar demo hisoblar (admin/admin123, operator/operator123) bilan
+# ishlaydi. Production'da ular standart bo'yicha yaratilmaydi.
+settings.seed_demo_users = True
+
 test_engine = create_async_engine(TEST_DATABASE_URL)
 TestSessionLocal = async_sessionmaker(test_engine, expire_on_commit=False)
 

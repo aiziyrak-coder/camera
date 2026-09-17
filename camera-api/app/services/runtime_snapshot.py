@@ -20,22 +20,48 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import socket
+import time
 
 from app.jobs import scheduler_metrics
 from app.jobs.scheduler_metrics import SweepRunStats
+from app.jobs.sweep_concurrency import entrance_exit_sweep_concurrency_snapshot, sweep_concurrency_snapshot
 from app.redis_bus import _get_redis, _redis_url
 from app.services import recognition_stats
+from app.services.gpu_status import get_gpu_status
+from app.services.inference_gate import face_inference_gate
 from app.services.recognition_stats import RecognitionView
+from app.services.stream_cache import active_stream_reader_count
 
 logger = logging.getLogger("app.runtime_snapshot")
 
 KEY_RECOGNITION = "camera:runtime:recognition"
 KEY_SWEEPS = "camera:runtime:sweeps"
+# Leader jarayonining slotlari, inference navbati va GPU holati. Boshqaruv
+# paneli bularni so'rov qaysi jarayonga tushganiga qarab 0/18 yoki 18/18
+# deb ko'rsatardi — AI faqat leader'da ishlaydi, demak javob o'shaniki.
+KEY_LEADER_PROCESS = "camera:runtime:leader_process"
+# ffmpeg o'quvchilari HAR jarayonda bor (miniatyura, jonli aniqlash) —
+# bu yerda jarayon -> "soni:epoch", panel yig'indini ko'rsatadi.
+KEY_STREAM_READERS = "camera:runtime:stream_readers"
 SNAPSHOT_INTERVAL_SECONDS = 5
 SNAPSHOT_TTL_SECONDS = 60
+# Shundan eski yozuv — to'xtagan jarayonniki, hisobga olinmaydi.
+STREAM_READERS_FRESH_SECONDS = 20
 
 # Shu jarayon suratni YOZUVCHI (leader) bo'lsa — o'z xotirasi eng yangi manba.
 _is_publisher = False
+
+
+def local_process_view() -> dict[str, object]:
+    """Shu jarayonning AI resurslari — leader'da bu butun tizimning holati."""
+    return {
+        "sweep_slots": sweep_concurrency_snapshot(),
+        "entrance_exit_sweep_slots": entrance_exit_sweep_concurrency_snapshot(),
+        "face_inference_gate": face_inference_gate.snapshot(),
+        "gpu": get_gpu_status(),
+    }
 
 
 async def publish_once() -> bool:
@@ -44,11 +70,77 @@ async def publish_once() -> bool:
         return False
     recognition = json.dumps(recognition_stats.export_snapshot())
     sweeps = json.dumps(scheduler_metrics.export_sweeps())
+    process = json.dumps(local_process_view())
     async with client.pipeline(transaction=False) as pipe:
         pipe.set(KEY_RECOGNITION, recognition, ex=SNAPSHOT_TTL_SECONDS)
         pipe.set(KEY_SWEEPS, sweeps, ex=SNAPSHOT_TTL_SECONDS)
+        pipe.set(KEY_LEADER_PROCESS, process, ex=SNAPSHOT_TTL_SECONDS)
         await pipe.execute()
     return True
+
+
+def _process_id() -> str:
+    # Ikkala worker bitta konteynerda — xost nomi bir xil, pid farq qiladi.
+    return f"{socket.gethostname()}:{os.getpid()}"
+
+
+async def publish_stream_readers_once() -> bool:
+    client = await _get_redis()
+    if client is None:
+        return False
+    await client.hset(KEY_STREAM_READERS, _process_id(), f"{active_stream_reader_count()}:{int(time.time())}")
+    return True
+
+
+async def process_snapshot_loop() -> None:
+    """HAR BIR jarayonda ishlaydi (app/main.py) — o'z o'quvchilari sonini e'lon qiladi."""
+    if not _redis_url():
+        return
+    while True:
+        try:
+            await publish_stream_readers_once()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("stream reader count publish failed")
+        await asyncio.sleep(SNAPSHOT_INTERVAL_SECONDS)
+
+
+async def total_stream_readers() -> int:
+    """Barcha jarayonlardagi ffmpeg o'quvchilari. Redis bo'lmasa — faqat shu jarayon."""
+    total = active_stream_reader_count()
+    if not _redis_url():
+        return total
+    client = await _get_redis()
+    if client is None:
+        return total
+    try:
+        rows = await client.hgetall(KEY_STREAM_READERS)
+    except Exception:
+        logger.exception("stream reader counts unavailable")
+        return total
+    own = _process_id()
+    now = time.time()
+    stale: list[str] = []
+    for process, raw in rows.items():
+        if process == own:
+            continue
+        count, _, stamp = str(raw).partition(":")
+        try:
+            readers, published_at = int(count), float(stamp)
+        except ValueError:
+            stale.append(process)
+            continue
+        if now - published_at > STREAM_READERS_FRESH_SECONDS:
+            stale.append(process)
+            continue
+        total += readers
+    if stale:
+        try:
+            await client.hdel(KEY_STREAM_READERS, *stale)
+        except Exception:
+            logger.debug("could not prune stale reader counts", exc_info=True)
+    return total
 
 
 async def runtime_snapshot_loop() -> None:
@@ -87,6 +179,14 @@ async def load_recognition_views() -> dict[str, RecognitionView]:
         return recognition_stats.local_views()
     views = (recognition_stats.view_from_dict(row) for row in data.values())
     return {camera_id: view for camera_id, view in zip(data.keys(), views, strict=True) if view is not None}
+
+
+async def load_leader_process_view() -> dict[str, object]:
+    data = await _read_json(KEY_LEADER_PROCESS)
+    if not data:
+        # Shu jarayon leader, Redis yo'q, yoki leader hali e'lon qilmagan.
+        return local_process_view()
+    return data
 
 
 async def load_sweep_stats() -> list[SweepRunStats]:

@@ -77,9 +77,14 @@ def white_fraction(image: np.ndarray, bbox: tuple[int, int, int, int]) -> float:
     return float(np.count_nonzero(white_mask)) / float(white_mask.size)
 
 
-def is_wearing_white_coat(image: np.ndarray, points: np.ndarray) -> bool:
-    """image — cv2.imdecode(...) natijasi (BGR), points — PoseLandmarks.points."""
+def is_wearing_white_coat(image: np.ndarray, points: np.ndarray) -> bool | None:
+    """image — cv2.imdecode(...) natijasi (BGR), points — PoseLandmarks.points.
+
+    None — tana (elka-son) kadrda yetarlicha ko'rinmaydi, ya'ni o'lchab
+    bo'lmaydi. Buni "xalat yo'q" deb o'qish mumkin emas: productionda
+    tanasi ko'rinmagan xodim uchun ham "oq xalat kiyilmagan" signali
+    yozilgan edi (o'lchovi null bo'lgan signal)."""
     bbox = torso_bbox(points, image.shape[1], image.shape[0])
     if bbox is None:
-        return False
+        return None
     return white_fraction(image, bbox) >= settings.coat_white_fraction_threshold

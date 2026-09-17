@@ -183,6 +183,21 @@ async def _sweep_loop(entry: _SweepEntry, initial_delay: float) -> None:
         await asyncio.sleep(next_pause(entry.interval_seconds, duration))
 
 
+# O'z alohida sikli (app/main.py dagi *_loop) bo'lmagan sweeplar.
+_STANDALONE_SWEEPS = {"entrance_exit_attendance", "absence_marking", "module_suppression"}
+
+
+def standalone_sweep_loops() -> list:
+    """AI_SCHEDULER_ENABLED=false bo'lganda ham ishlashi kerak bo'lgan
+    sweeplar uchun sikllar. Ilgari bu rejimda kirish/chiqish davomati,
+    "kelmadi" belgilash va avtomatik o'chirish umuman ishga tushmasdi —
+    ularning faqat rejalashtiruvchida yozuvi bor edi."""
+    entries = [e for e in _build_registry() if e.name in _STANDALONE_SWEEPS]
+    for entry in entries:
+        register_sweep(entry.name, entry.tier, entry.interval_seconds)
+    return [_sweep_loop(entry, initial_delay=0) for entry in entries]
+
+
 async def ai_scheduler_loop() -> None:
     registry = _build_registry()
     for entry in registry:
