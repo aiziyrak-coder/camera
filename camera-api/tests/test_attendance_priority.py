@@ -7,12 +7,11 @@ kutgani uchun."""
 
 import asyncio
 from datetime import time
-from types import SimpleNamespace
 
 import pytest
 
 from app.config import settings
-from app.jobs import ai_scheduler, attendance_ai, scheduler_metrics
+from app.jobs import ai_scheduler, scheduler_metrics
 from app.jobs.ai_scheduler import _SweepEntry, _sweep_loop, is_paused_for_attendance
 from app.jobs.module_status import is_within_attendance_priority_window
 from app.services import recognition_stats
@@ -22,13 +21,9 @@ from app.services import recognition_stats
 def _clean():
     scheduler_metrics.reset_for_tests()
     recognition_stats.reset_for_tests()
-    attendance_ai._entrance_tasks.clear()
     yield
     scheduler_metrics.reset_for_tests()
     recognition_stats.reset_for_tests()
-    for task in attendance_ai._entrance_tasks.values():
-        task.cancel()
-    attendance_ai._entrance_tasks.clear()
 
 
 class TestPriorityWindow:
@@ -92,46 +87,6 @@ class TestWhichSweepsPause:
 
         assert stats.is_lagging(datetime.now(timezone.utc) + timedelta(hours=2)) is False
         assert scheduler_metrics.export_sweeps()[0]["paused"] is True
-
-
-class TestEntranceCameraTasks:
-    async def test_slow_camera_does_not_block_fast_one_and_tasks_never_stack(self):
-        release_slow = asyncio.Event()
-        runs = {"fast": 0, "slow": 0}
-
-        async def start(camera):
-            runs[camera.id] += 1
-            if camera.id == "slow":
-                await release_slow.wait()
-                return 2
-            return 1
-
-        cameras = [SimpleNamespace(id="fast"), SimpleNamespace(id="slow")]
-        assert attendance_ai._reconcile_entrance_tasks(cameras, start) == 0
-        await asyncio.sleep(0)  # tez kamera tugaydi
-
-        # Keyingi dispetcherlar: tez kamera natijasi yig'iladi va u qayta boshlanadi,
-        # sekin kamera esa ikkinchi marta boshlanmaydi.
-        matched = 0
-        for _ in range(3):
-            matched += attendance_ai._reconcile_entrance_tasks(cameras, start)
-            await asyncio.sleep(0)
-        assert runs["slow"] == 1
-        assert runs["fast"] >= 3
-        assert matched >= 2
-
-        release_slow.set()
-        await asyncio.sleep(0)
-        assert attendance_ai._reconcile_entrance_tasks(cameras, start) >= 2
-
-    async def test_failed_camera_task_is_logged_not_raised(self):
-        async def start(camera):
-            raise RuntimeError("kamera oqimi uzildi")
-
-        cameras = [SimpleNamespace(id="broken")]
-        attendance_ai._reconcile_entrance_tasks(cameras, start)
-        await asyncio.sleep(0)
-        assert attendance_ai._reconcile_entrance_tasks(cameras, start) == 0
 
 
 class TestCycleTiming:

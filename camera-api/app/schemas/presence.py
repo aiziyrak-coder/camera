@@ -100,6 +100,8 @@ class AttendanceCameraOut(CamelModel):
     cycles_today: int = 0
     last_cycle_seconds: float | None = None
     last_grab_seconds: float | None = None
+    # AI qaysi oqimni o'qiyapti: "asosiy", "substream", "substream (zaxira)".
+    stream_in_use: str | None = None
     diagnosis: str | None = None
 
 

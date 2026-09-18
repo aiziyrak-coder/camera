@@ -62,6 +62,8 @@ class CameraRecognitionStats:
     cycles: int = 0
     last_cycle_seconds: float | None = None
     last_grab_seconds: float | None = None
+    # AI qaysi oqimni o'qiyapti: "asosiy", "substream" yoki "substream (zaxira)".
+    stream: str | None = None
     _face_heights: deque[int] = field(default_factory=lambda: deque(maxlen=500))
 
     @property
@@ -157,15 +159,20 @@ def record_credit(camera_id: str | None, grade: str) -> None:
     stats.last_match_at = local_now()
 
 
-def record_cycle(camera_id: str | None, *, total_seconds: float, grab_seconds: float) -> None:
+def record_cycle(
+    camera_id: str | None, *, total_seconds: float, grab_seconds: float, stream: str | None = None
+) -> None:
     """Kameraning bitta to'liq tekshiruvi qancha davom etdi — CPU yetishmasligi
-    kadr olishdami (oqim/dekodlash) yoki tahlildami, shu ikki raqamdan ko'rinadi."""
+    kadr olishdami (oqim/dekodlash) yoki tahlildami, shu ikki raqamdan ko'rinadi.
+    Doimiy kuzatuvda (kirish kameralari) bu ikki tahlil qilingan kadr orasidagi vaqt."""
     if camera_id is None:
         return
     stats = _camera_stats(camera_id)
     stats.cycles += 1
     stats.last_cycle_seconds = round(total_seconds, 1)
     stats.last_grab_seconds = round(grab_seconds, 1)
+    if stream is not None:
+        stats.stream = stream
 
 
 def confirm_relaxed(person_id: str, *, now: float | None = None) -> bool:
@@ -219,6 +226,7 @@ class RecognitionView:
     cycles: int = 0
     last_cycle_seconds: float | None = None
     last_grab_seconds: float | None = None
+    stream: str | None = None
     last_frame_at: datetime | None = None
     last_face_at: datetime | None = None
     last_match_at: datetime | None = None
@@ -254,6 +262,7 @@ def export_snapshot() -> dict[str, dict]:
             "cycles": s.cycles,
             "last_cycle_seconds": s.last_cycle_seconds,
             "last_grab_seconds": s.last_grab_seconds,
+            "stream": s.stream,
         }
         for camera_id, s in _stats.items()
         if s.day == today
@@ -286,6 +295,7 @@ def view_from_dict(row: dict) -> RecognitionView | None:
         cycles=int(row.get("cycles", 0)),
         last_cycle_seconds=row.get("last_cycle_seconds"),
         last_grab_seconds=row.get("last_grab_seconds"),
+        stream=row.get("stream"),
     )
 
 

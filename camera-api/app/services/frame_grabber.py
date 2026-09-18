@@ -145,6 +145,22 @@ async def _grab_newer(camera: Camera, *, wait_seconds: float, after_seq: int | N
     return None
 
 
+async def grab_newer_frame(camera: Camera, *, wait_seconds: float, after_seq: int | None) -> tuple[bytes, int] | None:
+    """Kadr va uning tartib raqami — doimiy kuzatuvchilar uchun
+    (app/jobs/attendance_ai.py): har kadrni aynan bir marta olish uchun
+    oldingisining raqami beriladi."""
+    return await _grab_newer(camera, wait_seconds=wait_seconds, after_seq=after_seq)
+
+
+def stream_label(camera: Camera) -> str:
+    """AI hozir shu kameraning qaysi oqimini o'qiyapti — diagnostika uchun."""
+    if not settings.ai_use_direct_rtsp:
+        return "hls"
+    if settings.ai_entrance_use_main_stream and _is_security_camera(camera):
+        return "substream (zaxira)" if _main_stream_blocked(camera) else "asosiy"
+    return "substream"
+
+
 async def grab_frame_for_camera(camera: Camera, *, wait_seconds: float | None = None) -> bytes | None:
     latest = await _grab_newer(
         camera,

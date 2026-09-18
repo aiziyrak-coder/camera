@@ -73,6 +73,7 @@ async def build_ai_runtime_status() -> dict[str, object]:
         "sweep_slots": leader["sweep_slots"],
         "entrance_exit_sweep_slots": leader["entrance_exit_sweep_slots"],
         "face_inference_gate": leader["face_inference_gate"],
+        "entrance_watchers": int(leader.get("entrance_watchers") or 0),
         "stream_reader_count": await total_stream_readers(),
         "embedding_sweep_cache_ttl_seconds": settings.candidate_matrix_sweep_cache_ttl_seconds,
     }

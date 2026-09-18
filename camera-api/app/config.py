@@ -209,6 +209,12 @@ class Settings(BaseSettings):
     # (see run_entrance_exit_attendance_sweep_once) - unified_face_sweep
     # still handles crowd/unauthorized/sleep on these same cameras at its
     # normal cadence, and still handles attendance for every other camera.
+    #
+    # 2026-09-18 dan: har kirish/chiqish kamerasining DOIMIY kuzatuvchisi
+    # bor (app/jobs/attendance_ai.py, _watch_entrance_camera) — har yangi
+    # kadr kelishi bilan tahlil qilinadi. Bu oraliq endi faqat dispetcher
+    # sur'ati: kuzatuvchilarni boshlash/yangilash/to'xtatish va natijani
+    # yig'ish. Burst sozlamalari (yuqorida) faqat bir martalik tekshiruvda.
     entrance_exit_attendance_interval_seconds: int = 6
 
     # Entrance/exit cameras get their OWN concurrency budget
@@ -224,6 +230,9 @@ class Settings(BaseSettings):
     # A separate, small pool sized to this sweep's own (much smaller)
     # camera count means it can run at full speed without taking capacity
     # away from anything else.
+    #
+    # Doimiy kuzatuvda slot faqat kadr TAHLILI paytida olinadi (kutish
+    # CPU olmaydi) — ya'ni bu bir vaqtdagi eshik tahlillari chegarasi.
     entrance_exit_sweep_concurrency: int = 6
 
     # TT kriteriya 20 ("Talabaning uxlab qolishi") — app/jobs/vision_ai.py.

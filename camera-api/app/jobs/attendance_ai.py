@@ -31,6 +31,7 @@ originally structured to allow either.
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import datetime, time as time_type
 from time import monotonic
 
@@ -50,7 +51,13 @@ from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, find_best_match as _vectorized_find_best_match, load_candidate_matrix_for_sweep
 from app.services.face_recognition import detect_faces
 from app.services.inference_gate import PRIORITY_ATTENDANCE, PRIORITY_BACKGROUND
-from app.services.frame_grabber import grab_frame_for_camera, grab_frame_burst_for_camera
+from app.services.frame_grabber import (
+    frame_wait_seconds_for_camera,
+    grab_frame_burst_for_camera,
+    grab_frame_for_camera,
+    grab_newer_frame,
+    stream_label,
+)
 from app.services import recognition_stats
 from app.services.presence import record_visit
 from app.timezone import local_now, to_local
@@ -509,56 +516,57 @@ async def run_attendance_ai_sweep_once(
     return match_count
 
 
+async def _entrance_cameras(db: AsyncSession) -> list[Camera]:
+    """Davomat moduli yoqilgan, tarmoqda javob berayotgan kirish/chiqish kameralari."""
+    result = await db.execute(
+        select(Camera)
+        .where(Camera.status == "faol")
+        .where(or_(Camera.is_entrance, Camera.is_exit))
+        .where(
+            or_(
+                camera_allows_module(STAFF_ATTENDANCE_MODULE_CODE),
+                camera_allows_module(STUDENT_ATTENDANCE_MODULE_CODE),
+            )
+        )
+    )
+    cameras = [c for c in result.scalars().all() if c.stream_url and is_reachable(c.last_seen_at)]
+
+    # Konfiguratsiya bo'shlig'i haqida ogohlantirish. is_exit ataylab
+    # standart bo'yicha False (Camera.is_exit izohiga qarang) — uni
+    # admin belgilashi kerak. Lekin hech kim belgilamasa, check_out
+    # HECH QACHON yozilmaydi va 9-modul ("erta ketish") jimgina hech
+    # narsa qilmaydi. Production auditda aynan shu holat: 11 ta kirish
+    # kamerasi bor, chiqish kamerasi 0 ta. Bu jimgina o'tib ketadigan
+    # xato edi — endi u loglarda ko'rinadi.
+    if cameras and not any(c.is_exit for c in cameras):
+        logger.warning(
+            "no camera is flagged is_exit — check_out will never be recorded, "
+            "so early-departure detection cannot work",
+            extra={"entrance_cameras": sum(1 for c in cameras if c.is_entrance)},
+        )
+    return cameras
+
+
 async def run_entrance_exit_attendance_sweep_once(
     session_factory: async_sessionmaker[AsyncSession] = SessionLocal,
-    *,
-    wait: bool = True,
 ) -> int:
-    """Fast-cadence companion to unified_face_sweep.py's attendance check,
-    scoped to ONLY is_entrance/is_exit cameras — registered separately in
-    app/jobs/ai_scheduler.py with its own much shorter interval
-    (settings.entrance_exit_attendance_interval_seconds, see that
-    setting's docstring for why: a 30s-spaced sweep can miss someone who's
-    only in an entrance/exit camera's frame for a couple of seconds).
+    """Har kirish/chiqish kamerasini BIR MARTA tekshiradi (burst) va
+    tugashini kutadi — testlar va qo'lda tekshirish uchun. Productionda
+    rejalashtiruvchi run_entrance_exit_attendance_dispatch_once ni
+    chaqiradi: u har kameraga doimiy kuzatuvchi qo'yadi.
 
-    unified_face_sweep.py excludes is_entrance/is_exit cameras from its
-    OWN attendance check specifically to avoid this sweep and that one
-    redundantly processing the same camera twice — it still covers
-    crowd/unauthorized/sleep on these cameras at the normal cadence, and
-    still covers attendance for every other (non-entrance/exit) camera."""
+    unified_face_sweep.py is_entrance/is_exit kameralarni o'z davomat
+    tekshiruvidan chiqaradi — bir kamerani ikki marta tahlil qilmaslik
+    uchun; u bu kameralarda begona shaxs va boshqa tekshiruvlarni odatiy
+    sur'atda davom ettiradi."""
     async with session_factory() as db:
         staff_module_active = await is_module_active(db, STAFF_ATTENDANCE_MODULE_CODE)
         student_module_active = await is_module_active(db, STUDENT_ATTENDANCE_MODULE_CODE)
         if not staff_module_active and not student_module_active:
             return 0
         off_hours_module_active = await is_module_active(db, OFF_HOURS_MODULE_CODE)
-        result = await db.execute(
-            select(Camera)
-            .where(Camera.status == "faol")
-            .where(or_(Camera.is_entrance, Camera.is_exit))
-            .where(
-                or_(
-                    camera_allows_module(STAFF_ATTENDANCE_MODULE_CODE),
-                    camera_allows_module(STUDENT_ATTENDANCE_MODULE_CODE),
-                )
-            )
-        )
-        cameras = [c for c in result.scalars().all() if c.stream_url and is_reachable(c.last_seen_at)]
+        cameras = await _entrance_cameras(db)
         candidates = await load_candidate_matrix_for_sweep(db)
-
-        # Konfiguratsiya bo'shlig'i haqida ogohlantirish. is_exit ataylab
-        # standart bo'yicha False (Camera.is_exit izohiga qarang) — uni
-        # admin belgilashi kerak. Lekin hech kim belgilamasa, check_out
-        # HECH QACHON yozilmaydi va 9-modul ("erta ketish") jimgina hech
-        # narsa qilmaydi. Production auditda aynan shu holat: 11 ta kirish
-        # kamerasi bor, chiqish kamerasi 0 ta. Bu jimgina o'tib ketadigan
-        # xato edi — endi u loglarda ko'rinadi.
-        if cameras and not any(c.is_exit for c in cameras):
-            logger.warning(
-                "no camera is flagged is_exit — check_out will never be recorded, "
-                "so early-departure detection cannot work",
-                extra={"entrance_cameras": sum(1 for c in cameras if c.is_entrance)},
-            )
 
     if not cameras or candidates.is_empty:
         return 0
@@ -600,9 +608,6 @@ async def run_entrance_exit_attendance_sweep_once(
             )
             return len(credited)
 
-    if not wait:
-        return _reconcile_entrance_tasks(cameras, _process_one)
-
     results = await asyncio.gather(*(_process_one(camera) for camera in cameras), return_exceptions=True)
 
     match_count = 0
@@ -616,50 +621,205 @@ async def run_entrance_exit_attendance_sweep_once(
     return match_count
 
 
-# camera_id -> ishlab turgan tekshiruv vazifasi (fon rejimi).
-_entrance_tasks: dict[str, asyncio.Task] = {}
+# ── Kirish/chiqish kameralarini doimiy kuzatish ─────────────────────────────
+#
+# Ilgari dispetcher har 6 s da har kameraga QISQA vazifa ochardi: vazifa
+# 11 kameraga 6 ta slotdan birini kutar, 3 kadrlik burst yig'ar (har kadr
+# yangi kalit kadrni kutadi — kameralar uni har 4 s da beradi), tahlil
+# qilib tugar va keyingi dispetcherni kutardi. Productionda (2026-09-18)
+# bitta kamera 21-100 s da bir marta tekshirilardi, odam esa eshikdan 2-3 s
+# da o'tib ketadi — ko'pchilik birorta tahlil qilingan kadrga tushmasdi.
+#
+# Endi har kameraning o'z kuzatuvchisi bor: u kesh yangi kadr berishi bilan
+# uni AYNAN bir marta tahlil qiladi va darhol keyingisini kutadi. Kutish
+# CPU olmaydi; slot faqat tahlil paytida olinadi. Dispetcher (rejalashtiruvchi,
+# har 6 s) faqat kuzatuvchilarni boshlaydi, yangilaydi va to'xtatadi.
+
+# Ketma-ket shuncha marta yangi kadr kelmasa, keyingi urinish "yangidan"
+# boshlanadi — asosiy oqim umuman ishlamay qolgan bo'lsa zaxira substream'ga
+# o'tishga imkon beradi (frame_grabber._note_main_stream_result).
+ENTRANCE_MISSES_BEFORE_RESET = 2
+ENTRANCE_MAX_BACKOFF_SECONDS = 5.0
+ENTRANCE_ERROR_PAUSE_SECONDS = 5.0
 
 
-def _reconcile_entrance_tasks(cameras, start) -> int:
-    """Tugagan vazifalar natijasini yig'adi va band bo'lmagan har kamera uchun
-    yangisini boshlaydi. Oldingi tekshiruvi tugamagan kamera o'tkazib
-    yuboriladi — vazifalar ustma-ust yig'ilmaydi.
+@dataclass
+class _EntranceContext:
+    """Dispetcher har safar yangilaydigan umumiy holat: kuzatuvchilar har
+    kadrda eng yangisini o'qiydi (modul o'chirilsa, ro'yxat yangilansa)."""
 
-    Ilgari bitta sweep 11 kamerani gather qilib, ENG SEKIN kamera tugashini
-    kutardi (productionda 263 s): tez kameralar ham shuncha kutib turardi.
-    Endi har kamera o'z sur'atida — tugashi bilan keyingi dispetcherda
-    (entrance_exit_attendance_interval_seconds) qayta boshlanadi."""
+    session_factory: async_sessionmaker[AsyncSession]
+    candidates: CandidateMatrix
+    staff_active: bool
+    student_active: bool
+    off_hours_active: bool
+
+
+@dataclass
+class _EntranceWatcher:
+    signature: tuple
+    task: asyncio.Task | None = None
+    # Oxirgi dispetcherdan beri davomatga yozilgan odamlar soni.
+    matched: int = 0
+
+
+_entrance_context: _EntranceContext | None = None
+_entrance_watchers: dict[str, _EntranceWatcher] = {}
+
+
+def _camera_signature(camera: Camera) -> tuple:
+    """Kuzatuvchi eski Camera nusxasi bilan ishlaydi — shu maydonlardan biri
+    o'zgarsa (ulanish, kirish/chiqish belgisi, modul ro'yxati) u qayta
+    yaratiladi."""
+    return (
+        camera.name,
+        camera.ip,
+        camera.port,
+        camera.rtsp_path,
+        camera.rtsp_username,
+        camera.rtsp_password,
+        camera.is_entrance,
+        camera.is_exit,
+        camera.is_perimeter,
+        tuple(camera.excluded_module_codes or ()),
+        camera.building_id,
+    )
+
+
+async def _analyse_entrance_frame(camera: Camera, frame: bytes, context: _EntranceContext) -> int:
+    async with entrance_exit_sweep_slot():
+        async with context.session_factory() as db:
+            records = await process_camera_frame(
+                frame,
+                db,
+                camera,
+                candidates=context.candidates,
+                off_hours_module_active=context.off_hours_active,
+                staff_module_active=context.staff_active,
+                student_module_active=context.student_active,
+                # Eshik kadri xona kameralaridan oldin tahlil qilinsin
+                # (app/services/inference_gate.py, PRIORITY_ATTENDANCE).
+                inference_priority=PRIORITY_ATTENDANCE,
+            )
+    return len({str(r.student_staff_id) for r in records})
+
+
+async def _watch_entrance_camera(camera: Camera, watcher: _EntranceWatcher) -> None:
+    """Bitta kirish/chiqish kamerasini to'xtovsiz kuzatadi (bekor
+    qilinguncha): har yangi kadr — bitta tahlil."""
+    key = str(camera.id)
+    last_seq: int | None = None
+    misses = 0
+    previous_analysis = monotonic()
+    while True:
+        try:
+            context = _entrance_context
+            if context is None:
+                await asyncio.sleep(1.0)
+                continue
+            waited_from = monotonic()
+            latest = await grab_newer_frame(
+                camera, wait_seconds=frame_wait_seconds_for_camera(camera), after_seq=last_seq
+            )
+            grab_seconds = monotonic() - waited_from
+            if latest is None:
+                misses += 1
+                if misses >= ENTRANCE_MISSES_BEFORE_RESET:
+                    last_seq = None
+                await asyncio.sleep(min(float(misses), ENTRANCE_MAX_BACKOFF_SECONDS))
+                continue
+            misses = 0
+            frame, last_seq = latest
+            watcher.matched += await _analyse_entrance_frame(camera, frame, context)
+            now = monotonic()
+            recognition_stats.record_cycle(
+                key, total_seconds=now - previous_analysis, grab_seconds=grab_seconds, stream=stream_label(camera)
+            )
+            previous_analysis = now
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("entrance/exit watcher failed on a frame", extra={"camera_id": key})
+            await asyncio.sleep(ENTRANCE_ERROR_PAUSE_SECONDS)
+
+
+def _reconcile_entrance_watchers(cameras: list[Camera], start=_watch_entrance_camera) -> int:
+    """Kuzatuvchilar ro'yxatini kerakli kameralarga moslaydi va oxirgi
+    chaqiruvdan beri yozilgan mosliklar sonini qaytaradi.
+
+    - ro'yxatdan chiqqan kamera (o'chirilgan, tarmoqdan tushgan, modul
+      o'chirilgan) — kuzatuvchisi to'xtatiladi;
+    - sozlamasi o'zgargan kamera — yangi nusxa bilan qayta boshlanadi;
+    - kutilmaganda to'xtagan kuzatuvchi — xatosi yozilib, qayta boshlanadi."""
+    wanted = {str(camera.id): camera for camera in cameras}
     matched = 0
-    for key, task in list(_entrance_tasks.items()):
-        if not task.done():
-            continue
-        del _entrance_tasks[key]
-        if task.cancelled():
-            continue
-        error = task.exception()
-        if error is not None:
+    for key, watcher in list(_entrance_watchers.items()):
+        matched += watcher.matched
+        watcher.matched = 0
+        task = watcher.task
+        camera = wanted.get(key)
+        finished = task is None or task.done()
+        if finished and task is not None and not task.cancelled() and task.exception() is not None:
+            error = task.exception()
             logger.error(
-                "entrance/exit attendance camera task failed",
-                extra={"camera_id": key},
+                "entrance/exit watcher stopped", extra={"camera_id": key},
                 exc_info=(type(error), error, error.__traceback__),
             )
+        if camera is not None and not finished and watcher.signature == _camera_signature(camera):
             continue
-        matched += int(task.result() or 0)
+        if task is not None and not task.done():
+            task.cancel()
+        del _entrance_watchers[key]
 
-    for camera in cameras:
-        key = str(camera.id)
-        if key in _entrance_tasks:
+    for key, camera in wanted.items():
+        if key in _entrance_watchers:
             continue
-        _entrance_tasks[key] = asyncio.create_task(start(camera), name=f"entrance-attendance:{key}")
+        watcher = _EntranceWatcher(signature=_camera_signature(camera))
+        watcher.task = asyncio.create_task(start(camera, watcher), name=f"entrance-watch:{key}")
+        _entrance_watchers[key] = watcher
     return matched
 
 
 async def run_entrance_exit_attendance_dispatch_once(
     session_factory: async_sessionmaker[AsyncSession] = SessionLocal,
 ) -> int:
-    """Rejalashtiruvchi uchun: kamera tekshiruvlarini fonda boshlaydi va
-    oldingi dispetcherdan beri TUGAGANLAR bergan mosliklar sonini qaytaradi."""
-    return await run_entrance_exit_attendance_sweep_once(session_factory, wait=False)
+    """Rejalashtiruvchi uchun (har entrance_exit_attendance_interval_seconds):
+    kuzatuvchilarni boshqaradi va oldingi chaqiruvdan beri yozilgan
+    mosliklar sonini qaytaradi. O'zi kadr kutmaydi — darhol qaytadi."""
+    global _entrance_context
+    async with session_factory() as db:
+        staff_active = await is_module_active(db, STAFF_ATTENDANCE_MODULE_CODE)
+        student_active = await is_module_active(db, STUDENT_ATTENDANCE_MODULE_CODE)
+        if not staff_active and not student_active:
+            _entrance_context = None
+            return _reconcile_entrance_watchers([])
+        off_hours_active = await is_module_active(db, OFF_HOURS_MODULE_CODE)
+        cameras = await _entrance_cameras(db)
+        candidates = await load_candidate_matrix_for_sweep(db)
+
+    _entrance_context = _EntranceContext(
+        session_factory=session_factory,
+        candidates=candidates,
+        staff_active=staff_active,
+        student_active=student_active,
+        off_hours_active=off_hours_active,
+    )
+    return _reconcile_entrance_watchers([] if candidates.is_empty else cameras)
+
+
+def entrance_watcher_count() -> int:
+    return sum(1 for w in _entrance_watchers.values() if w.task is not None and not w.task.done())
+
+
+async def stop_entrance_watchers() -> None:
+    """Ilova to'xtaganda: kuzatuvchilar bekor qilinadi va tugashi kutiladi."""
+    global _entrance_context
+    _entrance_context = None
+    tasks = [w.task for w in _entrance_watchers.values() if w.task is not None]
+    _entrance_watchers.clear()
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def attendance_ai_loop() -> None:

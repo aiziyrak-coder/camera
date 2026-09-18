@@ -443,6 +443,7 @@ function CamerasTab() {
                         {camera.lastCycleSeconds != null
                           ? `aylanish ${Math.round(camera.lastCycleSeconds)} s (kadr ${Math.round(camera.lastGrabSeconds ?? 0)} s)`
                           : ''}
+                        {camera.streamInUse ? ` · ${camera.streamInUse}` : ''}
                       </p>
                     </>
                   ) : (

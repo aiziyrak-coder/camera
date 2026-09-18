@@ -141,6 +141,7 @@ async def get_ai_status(_: StatusDep) -> SystemAiStatusOut:
         face_inference_gate=ConcurrencySlotOut(**raw["face_inference_gate"]),
         stream_reader_count=int(raw["stream_reader_count"]),
         embedding_sweep_cache_ttl_seconds=int(raw["embedding_sweep_cache_ttl_seconds"]),
+        entrance_watchers=int(raw.get("entrance_watchers") or 0),
     )
 
 

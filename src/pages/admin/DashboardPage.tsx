@@ -24,6 +24,8 @@ interface SystemResources {
 
 interface SystemAiStatus {
   schedulerEnabled: boolean;
+  /** Doimiy kuzatuvdagi kirish/chiqish kameralari. */
+  entranceWatchers?: number;
   globalSweepConcurrency: number;
   gpu: {
     cudaAvailable: boolean;
@@ -364,11 +366,18 @@ export default function DashboardPage() {
                 const paused = sweeps.filter((s) => s.paused);
                 return (
                   <>
-                    {entrance && (
+                    {(aiStatus.entranceWatchers ?? 0) > 0 ? (
                       <p>
-                        Kirish/chiqish davomati: har {entrance.intervalSeconds} s, oxirgisi {entrance.lastDurationSeconds} s
-                        davom etdi ({entrance.runs} marta ishladi)
+                        Kirish/chiqish davomati: {aiStatus.entranceWatchers} ta kamera doimiy kuzatuvda — har yangi kadr
+                        tahlil qilinadi
                       </p>
+                    ) : (
+                      entrance && (
+                        <p>
+                          Kirish/chiqish davomati: har {entrance.intervalSeconds} s, oxirgisi {entrance.lastDurationSeconds} s
+                          davom etdi ({entrance.runs} marta ishladi)
+                        </p>
+                      )
                     )}
                     {paused.length > 0 && (
                       <p className="font-semibold text-indigo-700">

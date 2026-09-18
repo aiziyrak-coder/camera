@@ -74,6 +74,8 @@ class SystemAiStatusOut(CamelModel):
     face_inference_gate: ConcurrencySlotOut
     stream_reader_count: int
     embedding_sweep_cache_ttl_seconds: int
+    # Doimiy kuzatuvdagi kirish/chiqish kameralari (app/jobs/attendance_ai.py).
+    entrance_watchers: int = 0
 
 
 class MediaMTXShardOut(CamelModel):

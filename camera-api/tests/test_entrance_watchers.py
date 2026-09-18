@@ -1,0 +1,272 @@
+"""Kirish/chiqish kameralarini doimiy kuzatish (app/jobs/attendance_ai.py).
+
+Productionda (2026-09-18) kirish kamerasi 21-100 s da bir marta
+tekshirilardi, odam esa eshikdan 2-3 s da o'tadi. Endi har kameraning o'z
+kuzatuvchisi bor: kesh yangi kadr berishi bilan u aynan bir marta tahlil
+qilinadi.
+"""
+
+import asyncio
+from types import SimpleNamespace
+
+import numpy as np
+import pytest
+from sqlalchemy import select
+
+from app.jobs import attendance_ai
+from app.models import AIModuleConfig, Building, Camera
+from app.services import recognition_stats
+from app.services.face_matching import CandidateMatrix
+from app.timezone import local_now
+from tests.conftest import TestSessionLocal
+
+
+@pytest.fixture(autouse=True)
+async def _clean(monkeypatch):
+    recognition_stats.reset_for_tests()
+    monkeypatch.setattr(attendance_ai, "ENTRANCE_MAX_BACKOFF_SECONDS", 0.01)
+    monkeypatch.setattr(attendance_ai, "ENTRANCE_ERROR_PAUSE_SECONDS", 0.01)
+    yield
+    await attendance_ai.stop_entrance_watchers()
+    recognition_stats.reset_for_tests()
+
+
+def _camera(camera_id: str = "cam-1", **changes):
+    fields = dict(
+        id=camera_id, name="Kirish-1", ip="10.0.0.1", port=554, rtsp_path=None, rtsp_username=None,
+        rtsp_password=None, is_entrance=True, is_exit=True, is_perimeter=False, excluded_module_codes=None,
+        building_id=None,
+    )
+    fields.update(changes)
+    return SimpleNamespace(**fields)
+
+
+def _context():
+    return attendance_ai._EntranceContext(
+        session_factory=TestSessionLocal,
+        candidates=CandidateMatrix(ids=["p1"], matrix=np.array([[1.0, 0.0]])),
+        staff_active=True, student_active=False, off_hours_active=False,
+    )
+
+
+async def _settle(rounds: int = 20) -> None:
+    for _ in range(rounds):
+        await asyncio.sleep(0)
+
+
+class TestWatcher:
+    async def test_every_new_frame_is_analysed_exactly_once(self, monkeypatch):
+        frames = [(b"a", 1), (b"b", 2), (b"c", 3)]
+        asked_after: list[int | None] = []
+        analysed: list[bytes] = []
+        blocked = asyncio.Event()
+
+        async def fake_grab(camera, *, wait_seconds, after_seq):
+            asked_after.append(after_seq)
+            if frames:
+                return frames.pop(0)
+            await blocked.wait()  # yangi kadr hali kelmagan
+
+        async def fake_analyse(camera, frame, context):
+            analysed.append(frame)
+            return 1
+
+        monkeypatch.setattr(attendance_ai, "grab_newer_frame", fake_grab)
+        monkeypatch.setattr(attendance_ai, "_analyse_entrance_frame", fake_analyse)
+        monkeypatch.setattr(attendance_ai, "_entrance_context", _context())
+        watcher = attendance_ai._EntranceWatcher(signature=())
+        task = asyncio.create_task(attendance_ai._watch_entrance_camera(_camera(), watcher))
+        await _settle()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+        assert analysed == [b"a", b"b", b"c"]
+        # Har so'rov oldingi kadrdan KEYINGISINI so'raydi — bir kadr ikki marta emas.
+        assert asked_after == [None, 1, 2, 3]
+        assert watcher.matched == 3
+        assert recognition_stats.export_snapshot()["cam-1"]["cycles"] == 3
+
+    async def test_a_silent_stream_is_retried_from_scratch(self, monkeypatch):
+        """Yangi kadr kelmasa, bir necha urinishdan keyin "yangidan" so'raladi —
+        asosiy oqim o'lgan bo'lsa zaxira substream'ga o'tish shu yerda yuz beradi."""
+        answers = [(b"a", 7), None, None, (b"b", 9)]
+        asked_after: list[int | None] = []
+        done = asyncio.Event()
+
+        async def fake_grab(camera, *, wait_seconds, after_seq):
+            asked_after.append(after_seq)
+            if answers:
+                return answers.pop(0)
+            done.set()
+            await asyncio.Event().wait()
+
+        async def fake_analyse(camera, frame, context):
+            return 0
+
+        monkeypatch.setattr(attendance_ai, "grab_newer_frame", fake_grab)
+        monkeypatch.setattr(attendance_ai, "_analyse_entrance_frame", fake_analyse)
+        monkeypatch.setattr(attendance_ai, "_entrance_context", _context())
+        task = asyncio.create_task(attendance_ai._watch_entrance_camera(_camera(), attendance_ai._EntranceWatcher(())))
+        await asyncio.wait_for(done.wait(), timeout=2)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+        assert asked_after == [None, 7, 7, None, 9]
+
+    async def test_a_failing_frame_does_not_stop_the_watcher(self, monkeypatch):
+        frames = [(b"bad", 1), (b"good", 2)]
+        analysed: list[bytes] = []
+        done = asyncio.Event()
+
+        async def fake_grab(camera, *, wait_seconds, after_seq):
+            if frames:
+                return frames.pop(0)
+            done.set()
+            await asyncio.Event().wait()
+
+        async def fake_analyse(camera, frame, context):
+            if frame == b"bad":
+                raise RuntimeError("baza bir lahza javob bermadi")
+            analysed.append(frame)
+            return 1
+
+        monkeypatch.setattr(attendance_ai, "grab_newer_frame", fake_grab)
+        monkeypatch.setattr(attendance_ai, "_analyse_entrance_frame", fake_analyse)
+        monkeypatch.setattr(attendance_ai, "_entrance_context", _context())
+        task = asyncio.create_task(attendance_ai._watch_entrance_camera(_camera(), attendance_ai._EntranceWatcher(())))
+        await asyncio.wait_for(done.wait(), timeout=2)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+        assert analysed == [b"good"]
+
+
+class TestReconcile:
+    async def test_watchers_follow_the_camera_list(self):
+        started: list[str] = []
+        stop_forever = asyncio.Event()
+
+        async def start(camera, watcher):
+            started.append(f"{camera.id}:{camera.ip}")
+            await stop_forever.wait()
+
+        attendance_ai._reconcile_entrance_watchers([_camera("a"), _camera("b")], start)
+        await _settle()
+        assert sorted(started) == ["a:10.0.0.1", "b:10.0.0.1"]
+
+        # O'zgarishsiz dispetcher — hech kim qayta boshlanmaydi.
+        attendance_ai._reconcile_entrance_watchers([_camera("a"), _camera("b")], start)
+        await _settle()
+        assert len(started) == 2
+
+        # "b" ro'yxatdan chiqdi, "a" ning IP si o'zgardi.
+        attendance_ai._reconcile_entrance_watchers([_camera("a", ip="10.0.0.9")], start)
+        await _settle()
+        assert started[-1] == "a:10.0.0.9"
+        assert set(attendance_ai._entrance_watchers) == {"a"}
+        assert attendance_ai.entrance_watcher_count() == 1
+
+    async def test_a_crashed_watcher_is_restarted_and_matches_are_collected(self):
+        runs = {"n": 0}
+
+        async def start(camera, watcher):
+            runs["n"] += 1
+            watcher.matched += 2
+            if runs["n"] == 1:
+                raise RuntimeError("kutilmagan xato")
+            await asyncio.Event().wait()
+
+        attendance_ai._reconcile_entrance_watchers([_camera("a")], start)
+        await _settle()
+        assert attendance_ai._reconcile_entrance_watchers([_camera("a")], start) == 2  # yiqilgan, qayta boshlandi
+        await _settle()
+        assert runs["n"] == 2
+        assert attendance_ai._reconcile_entrance_watchers([_camera("a")], start) == 2
+        assert attendance_ai._reconcile_entrance_watchers([_camera("a")], start) == 0
+
+
+@pytest.mark.usefixtures("seeded")
+class TestDispatch:
+    @pytest.fixture
+    async def entrance(self, db_session):
+        building = (await db_session.execute(select(Building))).scalars().first()
+        camera = Camera(name="Asosiy kirish", ip="10.0.7.1", building_id=building.id, zone="Kirish",
+                        resolution="1080p", status="faol", is_entrance=True, is_exit=True,
+                        stream_url="/s0/cam-x/index.m3u8", last_seen_at=local_now())
+        db_session.add(camera)
+        await db_session.commit()
+        return camera
+
+    @pytest.fixture(autouse=True)
+    def _no_real_streams(self, monkeypatch):
+        async def idle(camera, *, wait_seconds, after_seq):
+            await asyncio.Event().wait()
+
+        monkeypatch.setattr(attendance_ai, "grab_newer_frame", idle)
+        monkeypatch.setattr(
+            attendance_ai,
+            "load_candidate_matrix_for_sweep",
+            lambda db: _async(CandidateMatrix(ids=["p1"], matrix=np.array([[1.0, 0.0]]))),
+        )
+
+    async def test_dispatch_starts_and_stops_watchers(self, db_session, entrance):
+        await attendance_ai.run_entrance_exit_attendance_dispatch_once(session_factory=TestSessionLocal)
+        await _settle()
+        assert attendance_ai.entrance_watcher_count() == 1
+
+        entrance.status = "nofaol"
+        await db_session.commit()
+        await attendance_ai.run_entrance_exit_attendance_dispatch_once(session_factory=TestSessionLocal)
+        await _settle()
+        assert attendance_ai.entrance_watcher_count() == 0
+
+    async def test_switching_attendance_off_stops_every_watcher(self, db_session, entrance):
+        await attendance_ai.run_entrance_exit_attendance_dispatch_once(session_factory=TestSessionLocal)
+        await _settle()
+        modules = (await db_session.execute(select(AIModuleConfig).where(AIModuleConfig.code.in_([6, 7])))).scalars()
+        for module in modules:
+            module.active = False
+        await db_session.commit()
+
+        await attendance_ai.run_entrance_exit_attendance_dispatch_once(session_factory=TestSessionLocal)
+        await _settle()
+
+        assert attendance_ai.entrance_watcher_count() == 0
+        assert attendance_ai._entrance_context is None
+
+
+async def _async(value):
+    return value
+
+
+class TestWhichStreamIsInUse:
+    @pytest.fixture(autouse=True)
+    def _main_stream_for_entrances(self, monkeypatch):
+        from app.config import settings
+        from app.services import frame_grabber
+
+        monkeypatch.setattr(settings, "ai_use_direct_rtsp", True)
+        monkeypatch.setattr(settings, "ai_entrance_use_main_stream", True)
+        frame_grabber.reset_main_stream_fallbacks_for_tests()
+        yield
+        frame_grabber.reset_main_stream_fallbacks_for_tests()
+
+    def test_labels_follow_the_fallback(self):
+        from app.services import frame_grabber
+
+        entrance, room = _camera("e"), _camera("r", is_entrance=False, is_exit=False)
+        assert frame_grabber.stream_label(entrance) == "asosiy"
+        assert frame_grabber.stream_label(room) == "substream"
+
+        frame_grabber._note_main_stream_result(entrance, ok=False)
+        assert frame_grabber.stream_label(entrance) == "substream (zaxira)"
+
+    def test_the_diagnosis_names_the_fallback(self):
+        from app.routers.presence import _diagnose
+
+        recognition_stats.record_frame("e", [], [])
+        recognition_stats.record_cycle("e", total_seconds=4.0, grab_seconds=3.9, stream="substream (zaxira)")
+        view = recognition_stats.local_views()["e"]
+
+        assert view.stream == "substream (zaxira)"
+        assert "substream" in _diagnose(True, True, view, recognized=3, enrolled=100)

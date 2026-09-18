@@ -340,6 +340,13 @@ def _diagnose(enabled: bool, online: bool, live, recognized: int, enrolled: int)
         return "Kamera tarmoqda emas"
     if live is None or live.frames == 0:
         return "Bugun hali tekshirilmadi (AI navbati yetib kelmagan yoki kadr olinmayapti)"
+    if live.stream == "substream (zaxira)":
+        # Tanish bo'lsa ham aytiladi: past sifatli oqimda yuzlar 3-6 barobar
+        # kichik va ko'pchilik o'tganlar tanilmay qoladi.
+        return (
+            "Asosiy oqim kadr bermadi — vaqtincha past sifatli substream ishlatilmoqda "
+            "(yuzlar kichik). Kameraning asosiy oqimini tekshiring"
+        )
     if recognized > 0 or live.strict or live.relaxed_confirmed:
         return None
     cycle = live.last_cycle_seconds or 0
@@ -449,6 +456,7 @@ async def attendance_cameras(
                 cycles_today=live.cycles if live else 0,
                 last_cycle_seconds=live.last_cycle_seconds if live else None,
                 last_grab_seconds=live.last_grab_seconds if live else None,
+                stream_in_use=live.stream if live else None,
                 diagnosis=_diagnose(enabled, is_reachable(camera.last_seen_at), live, people, enrolled),
             )
         )

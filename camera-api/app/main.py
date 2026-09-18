@@ -10,7 +10,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.database import SessionLocal, engine
-from app.jobs.attendance_ai import attendance_ai_loop
+from app.jobs.attendance_ai import attendance_ai_loop, stop_entrance_watchers
 from app.jobs.camera_health import camera_health_loop
 from app.jobs.cleanup import cleanup_loop
 from app.jobs.fire_ai import fire_ai_loop
@@ -173,6 +173,9 @@ async def lifespan(app: FastAPI):
     await shutdown_stream_cache()
     shutdown_cpu_pool()
     if is_leader:
+        # Kirish kameralarining doimiy kuzatuvchilari rejalashtiruvchi
+        # vazifasidan tashqarida yashaydi — alohida to'xtatiladi.
+        await stop_entrance_watchers()
         await shutdown_pose_detection_pool()
     await stop_redis_listener()
     await release_leadership()

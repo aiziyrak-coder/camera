@@ -266,6 +266,8 @@ export interface AttendanceCamera {
   /** Kameraning bitta to'liq tekshiruvi (kadr olish + tahlil), soniya. */
   lastCycleSeconds?: number | null;
   lastGrabSeconds?: number | null;
+  /** AI o'qiyotgan oqim: "asosiy", "substream" yoki "substream (zaxira)". */
+  streamInUse?: string | null;
   /** Nima uchun kamera hech kimni davomatga yozmayotgani — oddiy tilda. */
   diagnosis: string | null;
 }

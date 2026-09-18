@@ -72,10 +72,10 @@ class TestAttendanceUsesItsPriority:
         assert seen == [PRIORITY_BACKGROUND, PRIORITY_ATTENDANCE]
 
     def test_entrance_camera_loop_requests_attendance_priority(self):
-        # Kirish kamerasi tsikli (run_entrance_exit_attendance_sweep_once ichidagi
-        # _process_one) process_camera_frame'ni PRIORITY_ATTENDANCE bilan chaqiradi.
-        source = inspect.getsource(attendance_ai.run_entrance_exit_attendance_sweep_once)
-        assert "inference_priority=PRIORITY_ATTENDANCE" in source
+        # Kirish kamerasi kuzatuvchisi ham, bir martalik tekshiruv ham
+        # process_camera_frame'ni PRIORITY_ATTENDANCE bilan chaqiradi.
+        for function in (attendance_ai._analyse_entrance_frame, attendance_ai.run_entrance_exit_attendance_sweep_once):
+            assert "inference_priority=PRIORITY_ATTENDANCE" in inspect.getsource(function)
         # Xona kameralari (unified_face_sweep) esa tegilmagan — fon navbatida qoladi.
         from app.jobs import unified_face_sweep
 

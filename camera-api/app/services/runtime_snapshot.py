@@ -56,12 +56,16 @@ _is_publisher = False
 
 def local_process_view() -> dict[str, object]:
     """Shu jarayonning AI resurslari — leader'da bu butun tizimning holati."""
+    # Kech import: attendance_ai katta modul, bu yerdan yuqorida yuklash shart emas.
+    from app.jobs.attendance_ai import entrance_watcher_count
+
     return {
         "sweep_slots": sweep_concurrency_snapshot(),
         "entrance_exit_sweep_slots": entrance_exit_sweep_concurrency_snapshot(),
         "face_inference_gate": face_inference_gate.snapshot(),
         "gpu": get_gpu_status(),
         "camera_health_sweep": camera_health_metrics.export_last_sweep(),
+        "entrance_watchers": entrance_watcher_count(),
     }
 
 
