@@ -23,7 +23,9 @@ class TestWorkerWaitsForTheLock:
         monkeypatch.setattr(main.settings, "ai_worker_lock_retry_seconds", 0)
         monkeypatch.setitem(main._leader_state, "is_leader", False)
 
-        await asyncio.wait_for(main._become_leader_when_free([]), timeout=5)
+        tasks: list = []
+        await asyncio.wait_for(main._become_leader_when_free(tasks), timeout=5)
+        await asyncio.gather(*tasks)
         assert attempts["n"] == 3
         assert started == [True]
         assert main._leader_state["is_leader"] is True

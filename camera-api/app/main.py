@@ -153,8 +153,10 @@ async def _become_leader_when_free(tasks: list[asyncio.Task]) -> None:
         logger.info("AI leader lock is held elsewhere — ai-worker waiting", extra={"event": "leader_waiting"})
         await asyncio.sleep(settings.ai_worker_lock_retry_seconds)
     _leader_state["is_leader"] = True
-    await _sync_streams_once()
     _start_ai_loops(tasks)
+    # MediaMTX ro'yxati (107 kamera, kodek tekshiruvi bilan 2+ daqiqa) AI'ni
+    # kutdirmasin: AI kameralarni to'g'ridan-to'g'ri RTSP orqali o'qiydi.
+    tasks.append(asyncio.create_task(_sync_streams_once()))
 
 
 @asynccontextmanager
@@ -173,8 +175,6 @@ async def lifespan(app: FastAPI):
     # umuman urinmaydi.
     is_leader = settings.ai_role == "all" and await try_become_leader()
     _leader_state["is_leader"] = is_leader
-    if is_leader:
-        await _sync_streams_once()
 
     # Bo'sh ffmpeg o'quvchilarini yopish HAR BIR jarayonda kerak: AI
     # bo'lmagan jarayon ham miniatyura va jonli aniqlash uchun o'quvchi
@@ -190,6 +190,7 @@ async def lifespan(app: FastAPI):
         await start_redis_listener(manager.deliver_from_redis)
     if is_leader:
         _start_ai_loops(tasks)
+        tasks.append(asyncio.create_task(_sync_streams_once()))
     elif settings.ai_role == "worker":
         tasks.append(asyncio.create_task(_become_leader_when_free(tasks)))
     else:
