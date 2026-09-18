@@ -134,6 +134,32 @@ def plan_changes(root: ET.Element, *, want_h264: bool) -> Plan:
     return plan
 
 
+def to_xml(root: ET.Element) -> bytes:
+    """Kameraga qaytariladigan XML — asl ko'rinishida (standart xmlns bilan).
+
+    ElementTree standart bo'yicha nomlar maydonini `ns0:` prefiksiga
+    aylantiradi (`<ns0:GovLength>`). 2026-09-18 da 19 ta kamera shunday
+    XML ga "OK" deb javob berdi, lekin hech bir sozlamani qo'llamadi —
+    firmware prefiksli elementlarni tanimaydi va jimgina e'tiborsiz
+    qoldiradi."""
+    tag = root.tag
+    if tag.startswith("{"):
+        ET.register_namespace("", tag[1:].split("}", 1)[0])
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+
+def not_applied(wanted: StreamState, actual: StreamState) -> list[str]:
+    """Yozilgandan keyin qayta o'qilgan holatda nima qo'llanmay qolgan."""
+    missing: list[str] = []
+    if wanted.codec and (actual.codec or "").upper() != wanted.codec.upper():
+        missing.append(f"kodek {actual.codec}")
+    if wanted.gov is not None and actual.gov != wanted.gov:
+        missing.append(f"GOP {actual.gov}")
+    if wanted.smart == "false" and actual.smart == "true":
+        missing.append("Smart Codec hali yoqiq")
+    return missing
+
+
 def _response_message(text: str) -> str:
     try:
         root = ET.fromstring(text)
@@ -178,15 +204,27 @@ async def handle_camera(camera: Camera, args: argparse.Namespace, semaphore: asy
             lines.extend(f"            -> {change}" for change in plan.changes)
             if not args.qollash:
                 continue
-            body = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+            wanted = read_state(root)
             try:
-                put = await client.put(url, content=body, headers={"Content-Type": "application/xml"})
+                put = await client.put(url, content=to_xml(root), headers={"Content-Type": "application/xml"})
             except httpx.HTTPError as exc:
                 lines.append(f"            ! yozib bo'lmadi: {type(exc).__name__}")
                 continue
             message = _response_message(put.text)
-            ok = put.status_code == 200
-            lines.append(f"            {'YOZILDI' if ok else '! RAD ETILDI'}: {message or put.status_code}")
+            if put.status_code != 200:
+                lines.append(f"            ! RAD ETILDI: {message or put.status_code}")
+                continue
+            # "OK" javobining o'ziga ishonilmaydi — sozlama qayta o'qiladi.
+            try:
+                check = await client.get(url)
+                missing = not_applied(wanted, read_state(ET.fromstring(check.content)))
+            except (httpx.HTTPError, ET.ParseError) as exc:
+                lines.append(f"            YOZILDI ({message}), lekin qayta o'qib bo'lmadi: {type(exc).__name__}")
+                continue
+            if missing:
+                lines.append(f"            ! KAMERA QO'LLAMADI ({message}): {', '.join(missing)}")
+            else:
+                lines.append(f"            QO'LLANDI (qayta o'qib tasdiqlandi){' — ' + message if message else ''}")
     return lines
 
 
