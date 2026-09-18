@@ -131,7 +131,11 @@ def first_sighting_status(occurred_time: time_type, camera: Camera | None) -> tu
       * "chiqish" — kamera chiqayotganlarning yuzini ko'radi: bu ketish,
         kelish vaqti noma'lum ("keldi").
 
-    `camera` bo'lmasa (qo'lda/test chaqiruvi) — avvalgi xatti-harakat."""
+    `camera` bo'lmasa (qo'lda/test chaqiruvi) — avvalgi xatti-harakat.
+
+    ATTENDANCE_ARRIVAL_ONLY: har doim "keldi" va ko'ringan soat."""
+    if settings.attendance_arrival_only:
+        return "keldi", occurred_time
     cutoff = time_type.fromisoformat(settings.attendance_ai_late_cutoff)
     if occurred_time < cutoff:
         return "keldi", occurred_time
@@ -204,8 +208,12 @@ async def upsert_attendance_from_recognition(
     record_date = local_occurred_at.date()
     occurred_time = local_occurred_at.time().replace(microsecond=0)
     # Kirayotganlarning yuzini ko'radigan kamera ketishni qayd etmaydi.
+    # ATTENDANCE_ARRIVAL_ONLY: ketish vaqti umuman yozilmaydi.
     is_exit_sighting = (
-        camera is not None and camera.is_exit and getattr(camera, "face_direction", None) != "kirish"
+        not settings.attendance_arrival_only
+        and camera is not None
+        and camera.is_exit
+        and getattr(camera, "face_direction", None) != "kirish"
     )
 
     existing = (
@@ -597,12 +605,13 @@ async def run_attendance_ai_sweep_once(
 
 
 async def _entrance_cameras(db: AsyncSession) -> list[Camera]:
-    """Davomat moduli yoqilgan, tarmoqda javob berayotgan kirish/chiqish kameralari."""
+    """Davomat moduli yoqilgan, tarmoqda javob berayotgan kirish/chiqish kameralari
+    (ATTENDANCE_ALL_CAMERAS bo'lsa — barcha faol kameralar)."""
+    stmt = select(Camera).where(Camera.status == "faol")
+    if not settings.attendance_all_cameras:
+        stmt = stmt.where(or_(Camera.is_entrance, Camera.is_exit))
     result = await db.execute(
-        select(Camera)
-        .where(Camera.status == "faol")
-        .where(or_(Camera.is_entrance, Camera.is_exit))
-        .where(
+        stmt.where(
             or_(
                 camera_allows_module(STAFF_ATTENDANCE_MODULE_CODE),
                 camera_allows_module(STUDENT_ATTENDANCE_MODULE_CODE),
@@ -618,7 +627,7 @@ async def _entrance_cameras(db: AsyncSession) -> list[Camera]:
     # narsa qilmaydi. Production auditda aynan shu holat: 11 ta kirish
     # kamerasi bor, chiqish kamerasi 0 ta. Bu jimgina o'tib ketadigan
     # xato edi — endi u loglarda ko'rinadi.
-    if cameras and not any(c.is_exit for c in cameras):
+    if cameras and not settings.attendance_arrival_only and not any(c.is_exit for c in cameras):
         logger.warning(
             "no camera is flagged is_exit — check_out will never be recorded, "
             "so early-departure detection cannot work",

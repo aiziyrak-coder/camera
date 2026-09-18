@@ -34,6 +34,7 @@ import re
 from sqlalchemy import and_, false, not_, or_, true
 from sqlalchemy.sql import ColumnElement
 
+from app.config import settings
 from app.models import Camera
 
 ROOM_TYPES: tuple[str, ...] = (
@@ -86,9 +87,20 @@ def effective_room_type(camera) -> str | None:
     return None
 
 
+ATTENDANCE_MODULE_CODES = frozenset({6, 7})
+
+
+def _rooms_for(module_code: int) -> frozenset[str] | None:
+    """None — modul hamma kamerada. ATTENDANCE_ALL_CAMERAS yoqilgan bo'lsa,
+    kunlik davomat (#6, #7) xona turidan qat'i nazar hamma kamerada."""
+    if module_code in ATTENDANCE_MODULE_CODES and settings.attendance_all_cameras:
+        return None
+    return MODULE_ROOM_TYPES.get(module_code)
+
+
 def role_allows(camera, module_code: int) -> bool:
     """Modul shu kameraning turida ishlaydimi (Python tomonidagi tekshiruv)."""
-    allowed = MODULE_ROOM_TYPES.get(module_code)
+    allowed = _rooms_for(module_code)
     if allowed is None:
         return True
     return effective_room_type(camera) in allowed
@@ -98,7 +110,7 @@ def role_allows_clause(module_code: int) -> ColumnElement[bool]:
     """role_allows() ning SQL ko'rinishi — sweeplarning kamera so'roviga
     (module_status.camera_allows_module orqali) qo'shiladi. Ikkalasi bir xil
     natija berishi test bilan tekshiriladi (tests/test_camera_roles.py)."""
-    allowed = MODULE_ROOM_TYPES.get(module_code)
+    allowed = _rooms_for(module_code)
     if allowed is None:
         return true()
     entrance = or_(Camera.is_entrance.is_(True), Camera.is_exit.is_(True))

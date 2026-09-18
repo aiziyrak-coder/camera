@@ -434,7 +434,7 @@ async def attendance_cameras(
         else:
             reason = None
         people, last = stats.get(camera.id, (0, None))
-        security = camera.is_entrance or camera.is_exit
+        security = camera.is_entrance or camera.is_exit or settings.attendance_all_cameras
         live = live_views.get(str(camera.id))
         rows.append(
             AttendanceCameraOut(

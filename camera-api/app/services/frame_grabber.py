@@ -31,7 +31,9 @@ _POLL_SECONDS = 0.25
 
 
 def _is_security_camera(camera: Camera) -> bool:
-    return camera.is_entrance or camera.is_perimeter
+    """Asosiy oqim o'qiladigan kameralar. ATTENDANCE_ALL_CAMERAS da har
+    kamera davomat uchun yuz taniydi — substream'da yuz tanib bo'lmas darajada kichik."""
+    return camera.is_entrance or camera.is_perimeter or settings.attendance_all_cameras
 
 
 # camera_id -> monotonic payt: shu paytgacha asosiy oqim ishlatilmaydi.

@@ -158,6 +158,15 @@ class Settings(BaseSettings):
     # keyin 16:00 dan so'ng yana 5 ta shunday "kech keldi" yozildi.
     # Bo'sh qator — cheklov yo'q (eski xatti-harakat).
     attendance_late_window_end: str = "12:00"
+    # Soddalashtirilgan davomat (2026-09-19 qarori): odam kunda birinchi
+    # marta istalgan kameraga tushganda "keldi" va o'sha soat yoziladi.
+    # "Kech keldi" ham, ketish vaqti (check_out) ham yozilmaydi.
+    attendance_arrival_only: bool = False
+    # Kunlik davomat BARCHA kameralarda (faqat kirish eshigida emas): har
+    # faol kamera doimiy kuzatuvchi oladi va asosiy (yuqori sifatli) oqim
+    # o'qiladi — xona kamerasida yuz substream'da juda kichik.
+    # app/services/camera_roles.py, app/jobs/attendance_ai.py, frame_grabber.py.
+    attendance_all_cameras: bool = False
     # Faqat DARS bo'yicha davomat va o'qituvchilar kuzatuvida: dars
     # boshlanganidan necha daqiqagacha kirish "o'z vaqtida" hisoblanadi
     # (kirish eshigidan auditoriyagacha yurish uchun).
