@@ -72,27 +72,63 @@ async def probe(url: str) -> dict:
 
     code, text = await _run(
         _base(url)
-        + ["-read_intervals", f"%+{READ_SECONDS}", "-show_entries", "packet=pts_time,flags", "-of", "csv=p=0", url]
+        + [
+            "-read_intervals", f"%+{READ_SECONDS}",
+            "-show_entries", "packet=pts_time,dts_time,flags",
+            "-of", "csv=p=0",
+            url,
+        ]
     )
-    keyframes: list[float] = []
-    packets = 0
-    if code == 0:
-        for line in text.splitlines():
-            parts = line.split(",")
-            if len(parts) < 2 or not parts[0]:
-                continue
-            packets += 1
-            if "K" in parts[1]:
-                keyframes.append(float(parts[0]))
-    gaps = [b - a for a, b in zip(keyframes, keyframes[1:], strict=False)]
+    packets, keyframes, untimed_keyframes = parse_packets(text) if code == 0 else (0, [], 0)
     return {
         "codec": f"{info.get('codec_name')} {info.get('profile') or ''}".strip(),
         "size": f"{info.get('width')}x{info.get('height')}",
         "fps": info.get("avg_frame_rate"),
         "packets": packets,
-        "keyframes": len(keyframes),
-        "gop_seconds": round(statistics.median(gaps), 2) if gaps else None,
+        "keyframes": len(keyframes) + untimed_keyframes,
+        "gop_seconds": keyframe_interval(keyframes, untimed_keyframes),
     }
+
+
+def parse_packets(text: str) -> tuple[int, list[float], int]:
+    """ffprobe `packet=pts_time,dts_time,flags` CSV -> (paketlar, kalit kadr vaqtlari, vaqtsiz kalit kadrlar).
+
+    Ba'zi kameralar vaqt belgisini bermaydi — ffprobe "N/A" yozadi (2026-09-18
+    da serverda skript shundan yiqilgan). Unda dts_time olinadi, u ham
+    bo'lmasa kalit kadr faqat sanaladi."""
+    packets = 0
+    keyframes: list[float] = []
+    untimed = 0
+    for line in text.splitlines():
+        parts = [part.strip() for part in line.split(",")]
+        if len(parts) < 2:
+            continue
+        packets += 1
+        if "K" not in parts[-1]:
+            continue
+        moment = next((float(value) for value in parts[:-1] if _is_number(value)), None)
+        if moment is None:
+            untimed += 1
+        else:
+            keyframes.append(moment)
+    return packets, keyframes, untimed
+
+
+def keyframe_interval(keyframes: list[float], untimed: int) -> float | None:
+    gaps = [b - a for a, b in zip(keyframes, keyframes[1:], strict=False) if b > a]
+    if gaps:
+        return round(statistics.median(gaps), 2)
+    total = len(keyframes) + untimed
+    # Vaqt yo'q: o'qilgan oynaga necha kalit kadr sig'gani bo'yicha taxmin.
+    return round(READ_SECONDS / total, 2) if total >= 2 else None
+
+
+def _is_number(value: str) -> bool:
+    try:
+        float(value)
+    except ValueError:
+        return False
+    return True
 
 
 def _describe(result: dict) -> str:
@@ -120,11 +156,18 @@ async def main(all_cameras: bool) -> int:
     )
     semaphore = asyncio.Semaphore(CONCURRENCY)
 
+    async def safe_probe(url: str) -> dict:
+        # Bitta kameradagi kutilmagan javob butun hisobotni to'xtatmasin.
+        try:
+            return await probe(url)
+        except Exception as exc:
+            return {"error": f"{type(exc).__name__}: {exc}"[:120]}
+
     async def one(camera: Camera) -> str:
         async with semaphore:
             main_result, sub_result = await asyncio.gather(
-                probe(rtsp_url_for_camera(camera, substream=False)),
-                probe(rtsp_url_for_camera(camera, substream=True)),
+                safe_probe(rtsp_url_for_camera(camera, substream=False)),
+                safe_probe(rtsp_url_for_camera(camera, substream=True)),
             )
         warning = ""
         gop = main_result.get("gop_seconds")
