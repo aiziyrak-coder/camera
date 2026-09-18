@@ -24,7 +24,7 @@ import os
 import socket
 import time
 
-from app.jobs import scheduler_metrics
+from app.jobs import camera_health_metrics, scheduler_metrics
 from app.jobs.scheduler_metrics import SweepRunStats
 from app.jobs.sweep_concurrency import entrance_exit_sweep_concurrency_snapshot, sweep_concurrency_snapshot
 from app.redis_bus import _get_redis, _redis_url
@@ -61,6 +61,7 @@ def local_process_view() -> dict[str, object]:
         "entrance_exit_sweep_slots": entrance_exit_sweep_concurrency_snapshot(),
         "face_inference_gate": face_inference_gate.snapshot(),
         "gpu": get_gpu_status(),
+        "camera_health_sweep": camera_health_metrics.export_last_sweep(),
     }
 
 

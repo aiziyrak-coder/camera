@@ -46,6 +46,14 @@ main() {
   if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
     compose+=(-f docker-compose.gpu.yml)
   fi
+  # Eski bitta-MediaMTX konteyneri (docker-compose.mediamtx.yml, eski
+  # server-pull.sh ishga tushirardi) shardlar bilan bir portni talab qiladi.
+  local names
+  names=$(docker ps -a --format '{{.Names}}')
+  if grep -qx camera-api-mediamtx-1 <<<"$names"; then
+    echo "    eski bitta-MediaMTX konteyneri olib tashlanadi"
+    docker rm -f camera-api-mediamtx-1
+  fi
   "${compose[@]}" up -d --build
 
   echo "=== 7. Tekshiruv ==="

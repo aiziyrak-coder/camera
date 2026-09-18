@@ -45,3 +45,16 @@ def record_camera_health_skip() -> None:
 
 def get_camera_health_sweep_stats() -> CameraHealthSweepStats:
     return _last_sweep
+
+
+def export_last_sweep() -> dict[str, object]:
+    """JSON ko'rinishi — leader uni Redis orqali boshqa jarayonlarga beradi
+    (app/services/runtime_snapshot.py); sweep faqat leader'da ishlaydi."""
+    sweep = _last_sweep
+    return {
+        "finished_at": sweep.finished_at.isoformat() if sweep.finished_at else None,
+        "duration_seconds": sweep.duration_seconds,
+        "faol_checked": sweep.faol_checked,
+        "reachable": sweep.reachable,
+        "skipped_overlap": sweep.skipped_overlap,
+    }

@@ -186,6 +186,7 @@ async def upsert_attendance_from_recognition(
     ).scalar_one_or_none()
     is_first_sighting_today = existing is None
     wrote_something = False
+    created = False
     person: StudentStaff | None = None
 
     if is_first_sighting_today:
@@ -219,6 +220,7 @@ async def upsert_attendance_from_recognition(
             ).scalar_one()
         else:
             wrote_something = True
+            created = True
     if not wrote_something and existing is not None and is_exit_sighting:
         # populate_existing=True: without it, when this same day's row is
         # already in the session's identity map, SQLAlchemy's ORM-enabled
@@ -242,9 +244,14 @@ async def upsert_attendance_from_recognition(
     # case (a mid-day sighting on an ordinary, non-exit camera writes
     # nothing) — this function runs once per matched face per sweep tick,
     # so an unneeded StudentStaff SELECT here isn't free at scale.
-    if person is None and wrote_something:
+    #
+    # Audit jurnaliga faqat kunning BIRINCHI qaydi yoziladi. Chiqish
+    # kamerasidagi har bir ko'rinish check_out ni yangilaydi — kirish oldida
+    # turgan odam uchun bu har necha soniyada bo'ladi va jurnal bir odamning
+    # bir xil yozuvi bilan to'lib ketardi (2026-09-18: 10 daqiqada 14 ta).
+    if person is None and created:
         person = await db.get(StudentStaff, student_staff_id)
-    if wrote_something:
+    if created:
         db.add(
             AuditLog(
                 user_id=None,

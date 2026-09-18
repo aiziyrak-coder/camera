@@ -7,14 +7,19 @@
 Nima qiladi:
   * cam.fermi.uz — faylni ALMASHTIRMAYDI. Unga ilgari to'g'ridan-to'g'ri
     nusxalangan HLS location bloklarini (scripts/deploy_quick_fixes.py)
-    olib tashlaydi va o'rniga repodagi fayllarni `include` qiladi. Boshqa
-    qatorlarga tegmaydi.
-  * camapi.fermi.uz, stream.cam.fermi.uz — repodagi fayl bilan
-    almashtiriladi, lekin serverdagi SSL sertifikat yo'llari saqlanadi.
-  * storage.camapi.fermi.uz ga tegilmaydi.
+    olib tashlaydi, o'rniga repodagi fayllarni `include` qiladi va
+    repodagi `listen` manzillaridan yo'qlarini qo'shadi.
+  * camapi, stream.cam, storage.camapi — repodagi fayl bilan
+    almashtiriladi. Sertifikat: repodagi yo'l shu serverda bor bo'lsa
+    o'sha, bo'lmasa serverdagisi qoladi.
 
 Har bir fayldan zaxira olinadi; `nginx -t` xato bersa hammasi avvalgi
-holatiga qaytariladi va nginx qayta yuklanmaydi.
+holatiga qaytariladi. Qayta yuklangandan keyin har bir domen har bir
+tinglash manzilida HAQIQATAN o'z sertifikatini berayotgani tekshiriladi:
+avval ishlagan domen buzilsa — yana avvalgi holatga qaytariladi.
+(2026-09-18: `listen 192.168.0.101:443` yo'qligi sababli LAN'dan
+kirganlarga boshqa saytning sertifikati chiqqan, `nginx -t` esa buni
+ko'rmagan edi.)
 """
 
 from __future__ import annotations
@@ -23,6 +28,8 @@ import argparse
 import difflib
 import re
 import shutil
+import socket
+import ssl
 import subprocess
 import sys
 import time
@@ -215,20 +222,29 @@ def migrate_frontend(text: str, desired: str | None = None) -> str:
 _CERT = re.compile(r"^(\s*)(ssl_certificate(?:_key)?)\s+([^;]+);", re.MULTILINE)
 
 
-def keep_certificates(existing: str, desired: str) -> str:
-    """Repodagi faylni oladi, sertifikat yo'llarini serverdagidan qoldiradi."""
+def keep_certificates(existing: str, desired: str, exists=lambda path: Path(path).exists()) -> str:
+    """Repodagi faylni oladi. Sertifikat yo'li: repodagisi shu serverda
+    bor bo'lsa — o'sha (serverdagi fayl eskirgan bo'lishi mumkin, masalan
+    2026-09-18 dagi /etc/ssl/camera-devflix), aks holda serverdagisi."""
     current = {}
     for _, name, value in _CERT.findall(existing):
         current.setdefault(name, value.strip())
     if not current:
         return desired
-    return _CERT.sub(lambda m: f"{m[1]}{m[2]} {current.get(m[2], m[3].strip())};", desired)
+
+    def choose(match: re.Match) -> str:
+        wanted = match[3].strip()
+        path = wanted if exists(wanted) else current.get(match[2], wanted)
+        return f"{match[1]}{match[2]} {path};"
+
+    return _CERT.sub(choose, desired)
 
 
 SITES = {
     "cam.fermi.uz.conf": "cam-fermi-frontend.conf",
     "camapi.fermi.uz.conf": "cam-fermi-api.conf",
     "stream.cam.fermi.uz.conf": "cam-fermi-stream.conf",
+    "storage.camapi.fermi.uz.conf": "cam-fermi-storage.conf",
 }
 
 
@@ -260,6 +276,53 @@ def _nginx_ok() -> bool:
     return result.returncode == 0
 
 
+def https_domains(text: str) -> list[str]:
+    server = _https_server(text)
+    match = re.search(r"^[ \t]*server_name[ \t]+([^;]+);", text[server.open : server.close], re.MULTILINE)
+    return match.group(1).split() if match else []
+
+
+def listen_hosts(texts: list[str]) -> list[str]:
+    """Tekshiriladigan IPv4 manzillar: 127.0.0.1 va `listen IP:443` dagilar."""
+    hosts = {"127.0.0.1"}
+    for text in texts:
+        for value in _LISTEN.findall(text):
+            first = value.split()[0]
+            if ":" in first and not first.startswith("["):
+                host = first.rsplit(":", 1)[0]
+                if host not in ("*", "0.0.0.0"):
+                    hosts.add(host)
+    return sorted(hosts)
+
+
+def certificate_problems(targets: list[tuple[str, str]]) -> dict[str, str]:
+    """"domen @ manzil" -> xato. Bo'sh — hammasi o'z sertifikatini beryapti."""
+    context = ssl.create_default_context()
+    problems: dict[str, str] = {}
+    for domain, host in targets:
+        key = f"{domain} @ {host}"
+        try:
+            with socket.create_connection((host, 443), timeout=5) as raw:
+                with context.wrap_socket(raw, server_hostname=domain):
+                    pass
+        except ssl.SSLCertVerificationError as exc:
+            problems[key] = exc.verify_message or str(exc)
+        except OSError as exc:
+            problems[key] = f"{type(exc).__name__}: {exc}"
+    return problems
+
+
+def _restore(backups: dict[Path, Path | None], removed_links: dict[Path, Path]) -> None:
+    for path, backup in backups.items():
+        if backup is None:
+            path.unlink(missing_ok=True)
+        else:
+            shutil.copy2(backup, path)
+    for link, target in removed_links.items():
+        if not link.exists() and not link.is_symlink():
+            link.symlink_to(target)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true", help="faqat farqni ko'rsatish")
@@ -272,6 +335,12 @@ def main() -> int:
         sys.stdout.writelines(difflib.unified_diff(old, text.splitlines(keepends=True), str(path), f"{path} (yangi)"))
     if not changed:
         print("[nginx-sync] o'zgarish yo'q")
+
+    desired_texts = [text for _, text in changes.values()]
+    targets = [(domain, host) for text in desired_texts for domain in https_domains(text) for host in listen_hosts(desired_texts)]
+    before = certificate_problems(targets)
+    for key, problem in before.items():
+        print(f"[nginx-sync] OGOHLANTIRISH (hozir ham): {key}: {problem}")
     if args.dry_run:
         return 0
 
@@ -289,10 +358,17 @@ def main() -> int:
         path.write_text(text)
 
     # Eski takroriy nomlar (cam-fermi-*.conf) — bir server_name ikki marta bo'lmasin.
+    removed_links: dict[Path, Path] = {}
     for duplicate in ("cam-fermi-frontend", "cam-fermi-api", "cam-fermi-storage", "cam-fermi-stream"):
         link = ENABLED / f"{duplicate}.conf"
         if link.exists() or link.is_symlink():
             print(f"[nginx-sync] takroriy sayt o'chirildi: {link} (nishoni: {link.resolve()})")
+            if link.is_symlink():
+                removed_links[link] = Path(link.readlink())
+            else:
+                backup = AVAILABLE / f"{link.name}.enabled-copy.{stamp}"
+                shutil.copy2(link, backup)
+                removed_links[link] = backup
             link.unlink()
     for site, (target, _) in changes.items():
         link = ENABLED / site
@@ -300,15 +376,25 @@ def main() -> int:
             link.symlink_to(target)
 
     if not _nginx_ok():
-        for path, backup in backups.items():
-            if backup is None:
-                path.unlink(missing_ok=True)
-            else:
-                shutil.copy2(backup, path)
+        _restore(backups, removed_links)
         print("[nginx-sync] XATO: nginx -t o'tmadi — barcha fayllar avvalgi holatiga qaytarildi", file=sys.stderr)
         return 1
     subprocess.run(["systemctl", "reload", "nginx"], check=True)
-    print(f"[nginx-sync] qo'llandi ({len(changed)} fayl), zaxiralar: *.bak.{stamp}")
+    time.sleep(1)
+
+    after = certificate_problems(targets)
+    broken = {key: problem for key, problem in after.items() if key not in before}
+    if broken:
+        for key, problem in broken.items():
+            print(f"[nginx-sync] XATO: {key}: {problem}", file=sys.stderr)
+        _restore(backups, removed_links)
+        if _nginx_ok():
+            subprocess.run(["systemctl", "reload", "nginx"], check=True)
+        print("[nginx-sync] ishlab turgan domen buzildi — barcha fayllar avvalgi holatiga qaytarildi", file=sys.stderr)
+        return 1
+    for key, problem in after.items():
+        print(f"[nginx-sync] OGOHLANTIRISH (avvaldan bor): {key}: {problem}")
+    print(f"[nginx-sync] qo'llandi ({len(changed)} fayl), zaxiralar: *.bak.{stamp}; sertifikatlar tekshirildi")
     return 0
 
 

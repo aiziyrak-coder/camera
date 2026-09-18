@@ -194,3 +194,18 @@ class TestDashboardIsTheSameOnEveryWorker:
         monkeypatch.setattr(runtime_snapshot, "_redis_url", lambda: None)
         monkeypatch.setattr(runtime_snapshot, "active_stream_reader_count", lambda: 5)
         assert await runtime_snapshot.total_stream_readers() == 5
+
+    async def test_camera_network_sweep_is_the_leaders(self, fake_redis, monkeypatch):
+        """"Kamera tarmog'i" paneli leader bo'lmagan jarayonda "0/0" ko'rsatardi."""
+        from app.jobs import camera_health_metrics
+
+        # monkeypatch test oxirida asl qiymatni qaytaradi — boshqa testlarga o'tmaydi.
+        monkeypatch.setattr(camera_health_metrics, "_last_sweep", camera_health_metrics.CameraHealthSweepStats())
+        camera_health_metrics.record_camera_health_sweep(duration_seconds=2.25, faol_checked=107, reachable=107)
+        await runtime_snapshot.publish_once()
+        monkeypatch.setattr(camera_health_metrics, "_last_sweep", camera_health_metrics.CameraHealthSweepStats())
+
+        view = await runtime_snapshot.load_leader_process_view()
+
+        assert view["camera_health_sweep"]["faol_checked"] == 107
+        assert view["camera_health_sweep"]["reachable"] == 107

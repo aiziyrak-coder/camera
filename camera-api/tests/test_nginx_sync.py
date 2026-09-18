@@ -138,12 +138,43 @@ class TestStreamLocations:
 
 
 class TestCertificates:
-    def test_server_certificate_paths_are_kept(self, sync):
+    def test_server_paths_are_kept_when_the_repo_ones_are_not_on_this_server(self, sync):
         desired = (SCRIPT.parent / "nginx" / "cam-fermi-api.conf").read_text(encoding="utf-8")
         existing = desired.replace("/etc/letsencrypt/live/cam.fermi.uz/", "/etc/letsencrypt/live/camapi-0001/")
 
-        kept = sync.keep_certificates(existing, desired)
+        kept = sync.keep_certificates(existing, desired, exists=lambda path: False)
 
         assert "live/camapi-0001/fullchain.pem" in kept
         assert "live/camapi-0001/privkey.pem" in kept
         assert "live/cam.fermi.uz/" not in kept
+
+    def test_a_stale_server_path_gives_way_to_an_existing_repo_path(self, sync):
+        """2026-09-18: serverdagi storage fayli /etc/ssl/camera-devflix ga ishora qilardi."""
+        desired = (SCRIPT.parent / "nginx" / "cam-fermi-storage.conf").read_text(encoding="utf-8")
+        existing = desired.replace("/etc/letsencrypt/live/storage.camapi.fermi.uz/", "/etc/ssl/camera-devflix/")
+
+        kept = sync.keep_certificates(existing, desired, exists=lambda path: "letsencrypt" in path)
+
+        assert "/etc/ssl/camera-devflix/" not in kept
+        assert kept.count("/etc/letsencrypt/live/storage.camapi.fermi.uz/") == 2
+
+
+class TestCertificateCheckTargets:
+    def test_every_managed_domain_is_checked_on_every_listen_address(self, sync):
+        texts = [(SCRIPT.parent / "nginx" / name).read_text(encoding="utf-8") for name in sync.SITES.values()]
+
+        domains = sorted(domain for text in texts for domain in sync.https_domains(text))
+        hosts = sync.listen_hosts(texts)
+
+        assert domains == ["cam.fermi.uz", "camapi.fermi.uz", "storage.camapi.fermi.uz", "stream.cam.fermi.uz"]
+        assert hosts == ["127.0.0.1", "192.168.0.101"]
+
+    def test_every_repo_site_listens_on_the_lan_address(self, sync):
+        for name in sync.SITES.values():
+            text = (SCRIPT.parent / "nginx" / name).read_text(encoding="utf-8")
+            assert "192.168.0.101:443" in sync._listen_addresses(text, sync._https_server(text)), name
+
+    def test_an_unreachable_address_is_reported_not_raised(self, sync):
+        problems = sync.certificate_problems([("cam.fermi.uz", "127.0.0.1")])
+        # Test mashinasida 443 da hech narsa yo'q: xato — lekin istisno emas.
+        assert set(problems) <= {"cam.fermi.uz @ 127.0.0.1"}

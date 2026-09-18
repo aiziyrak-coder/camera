@@ -7,8 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.jobs.camera_health import is_reachable
-from app.jobs.camera_health_metrics import get_camera_health_sweep_stats
+from app.jobs.camera_health_metrics import export_last_sweep
 from app.models import AuditLog, Camera
+from app.services.runtime_snapshot import load_leader_process_view
 
 
 def _is_link_local_ip(ip: str) -> bool:
@@ -56,7 +57,10 @@ async def build_camera_network_status(db: AsyncSession) -> dict[str, object]:
         or 0
     )
 
-    sweep = get_camera_health_sweep_stats()
+    # Tekshiruv faqat leader'da ishlaydi — so'rov boshqa jarayonga tushsa ham
+    # o'sha natija (ilgari har ikkinchi yangilashda "0/0" chiqardi).
+    leader = await load_leader_process_view()
+    sweep = leader.get("camera_health_sweep") or export_last_sweep()
     recommendation = _build_recommendation(
         faol=faol,
         reachable=reachable,
@@ -75,13 +79,7 @@ async def build_camera_network_status(db: AsyncSession) -> dict[str, object]:
         "health_freshness_seconds": settings.camera_health_freshness_seconds,
         "health_concurrency": settings.camera_health_concurrency,
         "recent_offline_alerts_24h": recent_alerts,
-        "last_sweep": {
-            "finished_at": sweep.finished_at.isoformat() if sweep.finished_at else None,
-            "duration_seconds": sweep.duration_seconds,
-            "faol_checked": sweep.faol_checked,
-            "reachable": sweep.reachable,
-            "skipped_overlap": sweep.skipped_overlap,
-        },
+        "last_sweep": sweep,
         "recommendation": recommendation,
     }
 

@@ -9,8 +9,10 @@ izohlar, tartib) joyida qoladi. sed'dan farqli ravishda qiymatdagi `/`, `|`,
 """
 
 import os
+import shutil
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 
@@ -36,7 +38,10 @@ def merge(source: dict[str, str], target_lines: list[str]) -> tuple[list[str], l
             value = pending.pop(key)
             new_line = f"{key}={value}\n"
             if line.rstrip("\n") != new_line.rstrip("\n"):
-                changed.append(key)
+                # Bu kalitlar ochiq repodagi profil fayldan — sir emas, eski
+                # qiymatni ko'rsatish mumkin (qo'lda sozlangan qiymat
+                # ustidan yozilganini sezish uchun).
+                changed.append(f"{key}: {stripped.split('=', 1)[1]} -> {value}")
             out.append(new_line)
         elif key is not None and key in source:
             # Takroriy qator — birinchisi yangilandi, qolganlari chalkashtirmasin.
@@ -47,7 +52,7 @@ def merge(source: dict[str, str], target_lines: list[str]) -> tuple[list[str], l
         out.append("\n# deploy/env.production.scale\n")
         for key, value in pending.items():
             out.append(f"{key}={value}\n")
-            changed.append(key)
+            changed.append(f"{key}: (yo'q edi) -> {value}")
     return out, changed
 
 
@@ -62,13 +67,21 @@ def main() -> int:
     if not changed:
         print("[merge-env] o'zgarish yo'q")
         return 0
+    if target_path.exists():
+        # Qo'lda sozlangan qiymat ustidan yozilgan bo'lsa, qaytarish oson bo'lsin.
+        backup = target_path.with_name(f"{target_path.name}.bak.{time.strftime('%Y%m%d-%H%M%S')}")
+        shutil.copy2(target_path, backup)
+        os.chmod(backup, 0o600)
+        print(f"[merge-env] zaxira: {backup}")
     fd, tmp = tempfile.mkstemp(dir=target_path.parent, prefix=".env.")
     with os.fdopen(fd, "w") as handle:
         handle.writelines(out)
     os.chmod(tmp, 0o600)
     os.replace(tmp, target_path)
-    # Qiymatlar chiqarilmaydi — .env da maxfiy kalitlar ham bor.
-    print("[merge-env] yangilandi: " + ", ".join(changed))
+    # Faqat profil fayldagi kalitlar chiqariladi — maxfiy kalitlar emas.
+    print("[merge-env] yangilandi:")
+    for line in changed:
+        print(f"    {line}")
     return 0
 
 

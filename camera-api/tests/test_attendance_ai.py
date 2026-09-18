@@ -217,6 +217,27 @@ class TestUpsertAttendanceFromRecognition:
         assert "Audit Sinovi" in entries[0].action
         assert entries[0].user_id is None
 
+    async def test_repeated_exit_sightings_do_not_flood_the_audit_log(self, db_session, an_exit_camera):
+        """Chiqish vaqti yangilanadi, lekin jurnalda kunning bitta yozuvi qoladi."""
+        from app.models import AuditLog
+
+        faculty = (await db_session.execute(select(Faculty))).scalars().first()
+        person = StudentStaff(full_name="Kirishda Turgan", type="xodim", faculty_id=faculty.id, group_or_position="1")
+        db_session.add(person)
+        await db_session.commit()
+        first = datetime.now(INSTITUTE_TZ).replace(hour=8, minute=0, second=0, microsecond=0)
+
+        for seconds in (0, 30, 60, 90):
+            record = await upsert_attendance_from_recognition(
+                db_session, str(person.id), first + timedelta(seconds=seconds), an_exit_camera
+            )
+
+        assert record.check_out.strftime("%H:%M:%S") == "08:01:30"
+        entries = (
+            await db_session.execute(select(AuditLog).where(AuditLog.user_name == "AI davomat tizimi"))
+        ).scalars().all()
+        assert len(entries) == 1
+
     async def test_off_hours_first_sighting_raises_a_security_event(self, db_session, an_entrance_camera):
         faculty = (await db_session.execute(select(Faculty))).scalars().first()
         student = StudentStaff(full_name="Tungi Kirgan", type="talaba", faculty_id=faculty.id, group_or_position="1")
