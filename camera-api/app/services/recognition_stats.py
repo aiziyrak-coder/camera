@@ -64,6 +64,10 @@ class CameraRecognitionStats:
     last_grab_seconds: float | None = None
     # AI qaysi oqimni o'qiyapti: "asosiy", "substream" yoki "substream (zaxira)".
     stream: str | None = None
+    # Harakat yo'qligi sababli tahlil qilinmagan kadrlar (app/services/motion_gate.py)
+    # va allaqachon tanilgan odam sifatida qayta hisoblanmagan yuzlar (tracking).
+    motion_skipped: int = 0
+    tracked_faces: int = 0
     _face_heights: deque[int] = field(default_factory=lambda: deque(maxlen=500))
 
     @property
@@ -175,6 +179,18 @@ def record_cycle(
         stats.stream = stream
 
 
+def record_motion_skip(camera_id: str | None) -> None:
+    if camera_id is None:
+        return
+    _camera_stats(camera_id).motion_skipped += 1
+
+
+def record_tracked(camera_id: str | None, count: int) -> None:
+    if camera_id is None or count <= 0:
+        return
+    _camera_stats(camera_id).tracked_faces += count
+
+
 def confirm_relaxed(person_id: str, *, now: float | None = None) -> bool:
     """True — shu odam oynada allaqachon bir marta ko'ringan (tasdiqlandi).
     False — birinchi ko'rinish, eslab qolindi va keyingisi kutiladi."""
@@ -227,6 +243,8 @@ class RecognitionView:
     last_cycle_seconds: float | None = None
     last_grab_seconds: float | None = None
     stream: str | None = None
+    motion_skipped: int = 0
+    tracked_faces: int = 0
     last_frame_at: datetime | None = None
     last_face_at: datetime | None = None
     last_match_at: datetime | None = None
@@ -263,6 +281,8 @@ def export_snapshot() -> dict[str, dict]:
             "last_cycle_seconds": s.last_cycle_seconds,
             "last_grab_seconds": s.last_grab_seconds,
             "stream": s.stream,
+            "motion_skipped": s.motion_skipped,
+            "tracked_faces": s.tracked_faces,
         }
         for camera_id, s in _stats.items()
         if s.day == today
@@ -296,6 +316,8 @@ def view_from_dict(row: dict) -> RecognitionView | None:
         last_cycle_seconds=row.get("last_cycle_seconds"),
         last_grab_seconds=row.get("last_grab_seconds"),
         stream=row.get("stream"),
+        motion_skipped=int(row.get("motion_skipped", 0)),
+        tracked_faces=int(row.get("tracked_faces", 0)),
     )
 
 

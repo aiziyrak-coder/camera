@@ -94,9 +94,32 @@ def _path_name(camera_id: str) -> str:
     return f"cam-{camera_id}"
 
 
-def _path_config(rtsp_url: str) -> dict:
-    """MediaMTX path registration — on-demand RTSP relay or H264 transcode."""
-    if settings.mediamtx_relay_h264_substream or not settings.mediamtx_transcode_h264:
+async def probe_codec(rtsp_url: str) -> str | None:
+    """Oqimning video kodeki ("h264", "hevc", ...) yoki None (o'qib bo'lmadi)."""
+    from app.services.connectivity import _rtsp_probe
+
+    ok, description = await _rtsp_probe(rtsp_url)
+    if not ok or not description:
+        return None
+    return description.split()[0].lower()
+
+
+def _relay_decided_per_camera() -> bool:
+    return (
+        settings.mediamtx_relay_probe_codec
+        and settings.mediamtx_transcode_h264
+        and not settings.mediamtx_relay_h264_substream
+    )
+
+
+def _path_config(rtsp_url: str, *, relay: bool | None = None) -> dict:
+    """MediaMTX path registration — on-demand RTSP relay or H264 transcode.
+
+    relay=None — umumiy sozlama bo'yicha; True/False — kamera kodeki
+    bo'yicha aniqlangan qaror (register_camera_stream)."""
+    if relay is None:
+        relay = settings.mediamtx_relay_h264_substream or not settings.mediamtx_transcode_h264
+    if relay:
         return {
             "source": rtsp_url,
             "sourceOnDemand": True,
@@ -213,7 +236,16 @@ def public_hls_to_internal(public_url: str) -> str:
 async def register_camera_stream(camera_id: str, rtsp_url: str) -> str:
     shard = _shard_for(camera_id)
     name = _path_name(camera_id)
-    payload = _path_config(rtsp_url)
+    relay: bool | None = None
+    if _relay_decided_per_camera():
+        # O'qib bo'lmasa — transkod: brauzer baribir H.264 oladi.
+        codec = await probe_codec(rtsp_url)
+        relay = codec == "h264"
+        logger.info(
+            "video gateway codec decision",
+            extra={"camera_id": camera_id, "codec": codec, "mode": "relay" if relay else "transcode"},
+        )
+    payload = _path_config(rtsp_url, relay=relay)
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             await _upsert_path(client, shard.api_url, name, payload)

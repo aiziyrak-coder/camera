@@ -101,3 +101,49 @@ class TestTranscodeMode:
         """Nothing in this product plays camera audio; encoding it would be
         pure waste on a CPU-bound box."""
         assert "-an" in _path_config(RTSP)["runOnDemand"]
+
+
+class TestPerCameraCodecDecision:
+    """MEDIAMTX_RELAY_PROBE_CODEC: H.264 substream — transkodsiz uzatiladi,
+    H.265 yoki o'qilmagan — transkod (brauzer baribir H.264 oladi)."""
+
+    @pytest.fixture
+    def captured(self, monkeypatch):
+        from app.services import video_gateway
+
+        payloads: dict[str, dict] = {}
+
+        async def fake_upsert(client, api_url, name, payload):
+            payloads[name] = payload
+
+        monkeypatch.setattr(video_gateway, "_upsert_path", fake_upsert)
+        monkeypatch.setattr(settings, "mediamtx_relay_probe_codec", True)
+        return payloads
+
+    @pytest.mark.parametrize(
+        ("codec", "relayed"),
+        [("h264", True), ("hevc", False), (None, False)],
+    )
+    async def test_codec_picks_the_mode(self, monkeypatch, captured, codec, relayed):
+        from app.services import video_gateway
+
+        async def fake_probe(url):
+            return codec
+
+        monkeypatch.setattr(video_gateway, "probe_codec", fake_probe)
+        await video_gateway.register_camera_stream("cam1", RTSP)
+        (payload,) = captured.values()
+        assert ("runOnDemand" not in payload) is relayed
+
+    async def test_no_probe_when_the_setting_is_off(self, monkeypatch, captured):
+        from app.services import video_gateway
+
+        monkeypatch.setattr(settings, "mediamtx_relay_probe_codec", False)
+
+        async def must_not_probe(url):
+            raise AssertionError("probe should not run")
+
+        monkeypatch.setattr(video_gateway, "probe_codec", must_not_probe)
+        await video_gateway.register_camera_stream("cam1", RTSP)
+        (payload,) = captured.values()
+        assert "runOnDemand" in payload  # umumiy sozlama: transkod

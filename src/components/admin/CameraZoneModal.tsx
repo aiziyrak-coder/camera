@@ -11,18 +11,43 @@ import type { CameraConfig } from '../../types';
  * FaceDetectionOverlay/computeBoxes'dagi object-cover koordinata
  * matematikasidan foydalanib (bu safar teskari yo'nalishda,
  * ZoneOverlay.tsx'ga qarang). Kamida 3 ta nuqta kerak — kamroq bo'lsa
- * backend (app/routers/cameras.py) 422 bilan rad etadi. */
+ * backend (app/routers/cameras.py) 422 bilan rad etadi.
+ *
+ * `mode="faceRoi"` — xuddi shu oyna kirish kamerasining ESHIK HUDUDINI
+ * chizadi (Camera.faceRoi): AI yuzni faqat shu hududda, to'liq sifatda
+ * qidiradi — kadrning qolgan qismi tahlil qilinmaydi. */
+type ZoneMode = 'restricted' | 'faceRoi';
+
+const MODE_TEXT: Record<ZoneMode, { title: string; endpoint: string; hint: string; clear: string }> = {
+  restricted: {
+    title: 'Taqiqlangan zona',
+    endpoint: 'zone-polygon',
+    hint: "Video ustiga bosib ko'pburchak nuqtalarini belgilang (kamida 3 ta). Nuqtalar oq nuqta bilan ko'rsatiladi, zona qizil rangda to'ldiriladi.",
+    clear: 'Zonani olib tashlash',
+  },
+  faceRoi: {
+    title: 'Eshik hududi (yuz qidiriladigan joy)',
+    endpoint: 'face-roi',
+    hint: "Odamlar yuzi aniq ko'rinadigan joyni — eshik yoki turniket atrofini — belgilang (kamida 3 ta nuqta). AI yuzni faqat shu hududda, to'liq sifatda qidiradi: yuzlar kattaroq ko'rinadi, CPU kamroq sarflanadi.",
+    clear: 'Hududni olib tashlash',
+  },
+};
+
 export default function CameraZoneModal({
   open,
   camera,
   onClose,
   onSave,
+  mode = 'restricted',
 }: {
   open: boolean;
   camera: CameraConfig | null;
   onClose: () => void;
   onSave: (camera: CameraConfig) => void;
+  mode?: ZoneMode;
 }) {
+  const text = MODE_TEXT[mode];
+  const existing = mode === 'faceRoi' ? camera?.faceRoi : camera?.restrictedZonePolygon;
   const { token } = useAuth();
   const [points, setPoints] = useState<[number, number][]>([]);
   const [saving, setSaving] = useState(false);
@@ -30,10 +55,10 @@ export default function CameraZoneModal({
 
   useEffect(() => {
     if (open) {
-      setPoints(camera?.restrictedZonePolygon ?? []);
+      setPoints((mode === 'faceRoi' ? camera?.faceRoi : camera?.restrictedZonePolygon) ?? []);
       setError(null);
     }
-  }, [open, camera]);
+  }, [open, camera, mode]);
 
   async function handleSave() {
     if (!camera) return;
@@ -45,7 +70,7 @@ export default function CameraZoneModal({
     setError(null);
     try {
       const saved = await api.patch<CameraConfig>(
-        `/api/cameras/${camera.id}/zone-polygon`,
+        `/api/cameras/${camera.id}/${text.endpoint}`,
         { polygon: points.length > 0 ? points : null },
         token,
       );
@@ -63,9 +88,13 @@ export default function CameraZoneModal({
     setSaving(true);
     setError(null);
     try {
-      const saved = await api.patch<CameraConfig>(`/api/cameras/${camera.id}/zone-polygon`, { polygon: null }, token);
+      const cleared = await api.patch<CameraConfig>(
+        `/api/cameras/${camera.id}/${text.endpoint}`,
+        { polygon: null },
+        token,
+      );
       setPoints([]);
-      onSave(saved);
+      onSave(cleared);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi");
     } finally {
@@ -76,7 +105,7 @@ export default function CameraZoneModal({
   const hasStream = !!camera?.streamUrl && camera.status === 'faol';
 
   return (
-    <Modal open={open} onClose={onClose} title={camera ? `Taqiqlangan zona — ${camera.name}` : ''} maxWidth="max-w-lg">
+    <Modal open={open} onClose={onClose} title={camera ? `${text.title} — ${camera.name}` : ''} maxWidth="max-w-lg">
       {camera && (
         <div className="space-y-4">
           <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-xl bg-slate-900">
@@ -98,10 +127,7 @@ export default function CameraZoneModal({
           </div>
 
           {hasStream && (
-            <p className="text-xs text-slate-500">
-              Video ustiga bosib ko'pburchak nuqtalarini belgilang (kamida 3 ta). Nuqtalar oq nuqta bilan
-              ko'rsatiladi, zona qizil rangda to'ldiriladi.
-            </p>
+            <p className="text-xs text-slate-500">{text.hint}</p>
           )}
 
           {error && (
@@ -135,7 +161,7 @@ export default function CameraZoneModal({
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
-            {camera.restrictedZonePolygon && camera.restrictedZonePolygon.length > 0 && (
+            {existing && existing.length > 0 && (
               <button
                 type="button"
                 onClick={handleClear}
@@ -143,7 +169,7 @@ export default function CameraZoneModal({
                 className="btn-glass flex items-center gap-1.5 !text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Ban size={14} />
-                Zonani olib tashlash
+                {text.clear}
               </button>
             )}
             <button type="button" onClick={onClose} className="btn-glass">

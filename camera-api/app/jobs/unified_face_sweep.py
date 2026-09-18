@@ -23,6 +23,7 @@ Non-face modules (fire, pose, etc.) stay on their own loops.
 
 import asyncio
 import logging
+from datetime import timedelta
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -41,7 +42,7 @@ from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.jobs.unauthorized_person_ai import UNAUTHORIZED_MODULE_CODE, process_camera_frame_pair_for_unauthorized
 from app.jobs.vision_ai import SLEEP_MODULE_CODE, process_camera_frame_for_sleep
-from app.models import Camera
+from app.models import Camera, LessonSession
 from app.services.camera_roles import role_allows
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
 from app.services import recognition_stats
@@ -51,6 +52,7 @@ from app.services.frame_grabber import (
     grab_frame_pair_for_camera,
 )
 from app.services.sweep_result_cache import record_camera_sweep
+from app.timezone import local_now
 
 logger = logging.getLogger("app.unified_face_sweep")
 
@@ -195,6 +197,18 @@ async def _process_camera(
     return counts
 
 
+async def cameras_in_lesson(db: AsyncSession) -> set[str]:
+    """Hozir jadvaldagi darsi davom etayotgan kameralar."""
+    now = local_now()
+    result = await db.execute(
+        select(LessonSession.camera_id)
+        .where(LessonSession.camera_id.is_not(None))
+        .where(LessonSession.scheduled_start_time <= now)
+        .where(LessonSession.scheduled_start_time >= now - timedelta(minutes=settings.lesson_duration_minutes))
+    )
+    return {str(camera_id) for camera_id in result.scalars().all()}
+
+
 async def run_unified_face_sweep_once(
     session_factory: async_sessionmaker[AsyncSession] = SessionLocal,
 ) -> dict[str, int]:
@@ -215,6 +229,7 @@ async def run_unified_face_sweep_once(
         reachable_cameras = [c for c in result.scalars().all() if c.stream_url and is_reachable(c.last_seen_at)]
         candidates = await load_candidate_matrix_for_sweep(db)
         suppressed = await load_suppressed_pairs(db)
+        lesson_cameras = await cameras_in_lesson(db) if flags["sleep"] and settings.sleep_only_during_lessons else None
 
         # Ro'yxat juda kichik bo'lsa 1-modulni shu yerda o'chiramiz.
         # Haqiqiy himoya process_camera_frame_pair_for_unauthorized
@@ -264,6 +279,7 @@ async def run_unified_face_sweep_once(
             and (camera_id, UNAUTHORIZED_MODULE_CODE) not in suppressed,
             "sleep": flags["sleep"]
             and role_allows(camera, SLEEP_MODULE_CODE)
+            and (lesson_cameras is None or camera_id in lesson_cameras)
             and (camera_id, SLEEP_MODULE_CODE) not in suppressed,
         }
 

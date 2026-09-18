@@ -40,9 +40,16 @@ main() {
   python3 "$APP_DIR/deploy/nginx_sync.py"
 
   echo "=== 6. Docker ==="
-  cp deploy/docker-compose.override.yml deploy/docker-compose.mediamtx-shard.yml deploy/docker-compose.gpu.yml camera-api/
+  cp deploy/docker-compose.override.yml deploy/docker-compose.mediamtx-shard.yml deploy/docker-compose.ai-worker.yml     deploy/docker-compose.gpu.yml camera-api/
   cd "$APP_DIR/camera-api"
   local compose=(docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.mediamtx-shard.yml)
+  # AI alohida konteynerda (docker-compose.ai-worker.yml izohiga qarang).
+  # O'chirish (favqulodda, eski bitta-konteyner rejimi): CAMERA_AI_WORKER=0
+  if [[ "${CAMERA_AI_WORKER:-1}" != "0" ]]; then
+    compose+=(-f docker-compose.ai-worker.yml)
+  else
+    docker rm -f camera-api-ai-worker-1 2>/dev/null || true
+  fi
   if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
     compose+=(-f docker-compose.gpu.yml)
   fi
@@ -64,6 +71,20 @@ main() {
   done
   curl -s http://127.0.0.1:18080/health; echo
   "${compose[@]}" ps
+  if [[ "${CAMERA_AI_WORKER:-1}" != "0" ]]; then
+    # ai-worker AI qulfini olganini loglardan ko'rsatamiz (eski api
+    # konteyneri to'xtaguncha bir necha soniya kutishi mumkin).
+    local elected=""
+    for _ in $(seq 1 24); do
+      if "${compose[@]}" logs --since 10m ai-worker 2>/dev/null | grep -q leader_elected; then elected=1; break; fi
+      sleep 5
+    done
+    if [[ -n "$elected" ]]; then
+      echo "    ai-worker: AI sweeplari ishga tushdi"
+    else
+      echo "DIQQAT: ai-worker 2 daqiqada AI'ni boshlamadi — '${compose[*]} logs ai-worker'"
+    fi
+  fi
   [[ -n "$healthy" ]] || { echo "XATO: API 3 daqiqada sog'lom holatga kelmadi — '${compose[*]} logs api'"; exit 1; }
   bash "$APP_DIR/deploy/test-login.sh" \
     || echo "DIQQAT: demo parol hali ishlaydi — Foydalanuvchilar va Rollar sahifasida almashtiring"

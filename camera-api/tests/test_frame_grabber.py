@@ -56,9 +56,15 @@ class _FakeCache:
         return self.snapshots[index]
 
 
-def _patch_grabber(monkeypatch, cache: _FakeCache, wait_seconds: float = 0.6):
+def _patch_grabber(monkeypatch, cache: _FakeCache, wait_seconds: float = 0.6, history=None):
     async def no_thumbnail(camera_id, frame):
         return None
+
+    async def fake_history(source):
+        return list(history or [])
+
+    # Standart bo'yicha tarix bo'sh — bu testlar kutish yo'lini tekshiradi.
+    monkeypatch.setattr(frame_grabber, "get_cached_history", fake_history)
 
     monkeypatch.setattr(frame_grabber, "get_cached_frame_with_seq", cache)
     monkeypatch.setattr(frame_grabber, "camera_video_source", lambda camera: "rtsp://fake")
@@ -167,3 +173,32 @@ class TestMainStreamFallback:
 
         await frame_grabber.grab_frame_for_camera(cam, wait_seconds=0.05)
         assert frame_grabber._main_stream_failed_until == {}
+
+
+class TestFramesFromHistory:
+    """Kadr tarixi (stream_cache): juftlik va burst yangi kalit kadrni
+    kutmasdan olinadi — bir vaqtda ishlagan modullar bir xil kadrni oladi."""
+
+    @pytest.fixture(autouse=True)
+    def _clean_frames(self, monkeypatch):
+        monkeypatch.setattr(frame_grabber, "_all_clean", lambda frames: True)
+
+    async def test_pair_comes_from_history_without_waiting(self, monkeypatch):
+        cache = _FakeCache(None)
+        history = [(b"c", 3, 102.0), (b"b", 2, 101.5), (b"a", 1, 101.0)]
+        _patch_grabber(monkeypatch, cache, history=history)
+        pair = await frame_grabber.grab_frame_pair_for_camera(_camera(), gap_seconds=1.0)
+        assert pair == (b"a", b"c")  # 1 s oraliq: b (0.5 s) tashlab ketildi
+        assert cache.calls == 0  # oqimdan yangi kadr kutilmadi
+
+    async def test_burst_comes_from_history_oldest_first(self, monkeypatch):
+        history = [(b"d", 4, 13.0), (b"c", 3, 12.0), (b"b", 2, 11.0), (b"a", 1, 10.0)]
+        _patch_grabber(monkeypatch, _FakeCache(None), history=history)
+        frames = await frame_grabber.grab_frame_burst_for_camera(_camera(), count=4, gap_seconds=1.0)
+        assert frames == [b"a", b"b", b"c", b"d"]
+
+    async def test_too_short_history_falls_back_to_waiting(self, monkeypatch):
+        cache = _FakeCache((b"x", 5), (b"y", 6))
+        _patch_grabber(monkeypatch, cache, history=[(b"only", 1, 5.0)])
+        pair = await frame_grabber.grab_frame_pair_for_camera(_camera(), gap_seconds=0)
+        assert pair == (b"x", b"y")

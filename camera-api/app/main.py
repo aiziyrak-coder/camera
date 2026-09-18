@@ -78,6 +78,85 @@ async def _staggered(delay_seconds: float, loop_coro) -> None:
     await loop_coro
 
 
+async def _sync_streams_once() -> None:
+    try:
+        async with SessionLocal() as session:
+            synced, failed = await sync_all_active_camera_streams(session)
+        logger.info(
+            "startup MediaMTX stream sync complete",
+            extra={"event": "stream_sync", "synced": synced, "failed": failed},
+        )
+    except Exception:
+        logger.exception("startup MediaMTX stream sync failed")
+
+
+def _start_ai_loops(tasks: list[asyncio.Task]) -> None:
+    """Leader jarayonida AI sweeplarini ishga tushiradi."""
+    # AI statistikasi faqat shu jarayon xotirasida — boshqa API
+    # jarayonlari uni Redis orqali ko'radi (app/services/runtime_snapshot.py).
+    tasks.append(asyncio.create_task(runtime_snapshot_loop()))
+    stagger = settings.ai_loop_stagger_seconds
+    if settings.ai_scheduler_enabled:
+        tasks.append(asyncio.create_task(ai_scheduler_loop()))
+        tasks.append(asyncio.create_task(camera_health_loop()))
+        logger.info(
+            "AI central scheduler enabled — individual module loops not started",
+            extra={"event": "ai_scheduler", "poll_seconds": settings.ai_scheduler_poll_seconds},
+        )
+    else:
+        face_loops = (
+            [unified_face_sweep_loop()]
+            if settings.unified_face_sweep_enabled
+            else [
+                attendance_ai_loop(),
+                vision_ai_loop(),
+                unauthorized_person_ai_loop(),
+            ]
+        )
+        ai_loops = [
+            camera_health_loop(),
+            *face_loops,
+            fire_ai_loop(),
+            teacher_punctuality_ai_loop(),
+            disorder_ai_loop(),
+            dress_code_ai_loop(),
+            ppe_ai_loop(),
+            smoking_ai_loop(),
+            zone_entry_ai_loop(),
+            lesson_quality_ai_loop(),
+            lesson_attendance_loop(),
+            fight_ai_loop(),
+            *standalone_sweep_loops(),
+        ]
+        tasks += [asyncio.create_task(_staggered(i * stagger, loop_coro)) for i, loop_coro in enumerate(ai_loops)]
+    logger.info(
+        "acquired AI sweep leader lock — sweep loops running in this worker",
+        extra={
+            "event": "leader_elected",
+            "ai_role": settings.ai_role,
+            "stagger_seconds": stagger if not settings.ai_scheduler_enabled else None,
+            "unified_face_sweep": settings.unified_face_sweep_enabled,
+            "ai_scheduler": settings.ai_scheduler_enabled,
+        },
+    )
+
+
+# Shu jarayon AI leader'imi — to'xtashda AI resurslarini yopish uchun.
+_leader_state = {"is_leader": False}
+
+
+async def _become_leader_when_free(tasks: list[asyncio.Task]) -> None:
+    """ai-worker: qulf bo'shaguncha kutadi. Yangilanish paytida eski
+    ("all" rejimidagi) api konteyneri qulfni bir necha soniya ushlab
+    turishi mumkin — bir martalik urinish AI'ni butunlay to'xtatib qo'yardi."""
+    while not await try_become_leader():
+        logger.info("AI leader lock is held elsewhere — ai-worker waiting", extra={"event": "leader_waiting"})
+        await asyncio.sleep(settings.ai_worker_lock_retry_seconds)
+    _leader_state["is_leader"] = True
+    await _sync_streams_once()
+    _start_ai_loops(tasks)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Birinchi model chaqiruvidan oldin — app/services/thread_limits.py.
@@ -85,23 +164,18 @@ async def lifespan(app: FastAPI):
     async with SessionLocal() as session:
         await seed_all(session)
 
-    is_leader = await try_become_leader()
-    if is_leader:
-        try:
-            async with SessionLocal() as session:
-                synced, failed = await sync_all_active_camera_streams(session)
-            logger.info(
-                "startup MediaMTX stream sync complete",
-                extra={"event": "stream_sync", "synced": synced, "failed": failed},
-            )
-        except Exception:
-            logger.exception("startup MediaMTX stream sync failed")
-
     # See app/jobs/leader_lock.py: with WEB_CONCURRENCY>1 (multiple
     # uvicorn worker processes), only one worker should run the AI sweep
     # loops — otherwise every camera gets swept once per worker, per
     # interval, producing duplicate writes. cleanup_loop stays ungated
     # (its deletes are idempotent; redundant runs are harmless).
+    # "api" rolidagi jarayon (AI alohida ai-worker konteynerida) qulfga
+    # umuman urinmaydi.
+    is_leader = settings.ai_role == "all" and await try_become_leader()
+    _leader_state["is_leader"] = is_leader
+    if is_leader:
+        await _sync_streams_once()
+
     # Bo'sh ffmpeg o'quvchilarini yopish HAR BIR jarayonda kerak: AI
     # bo'lmagan jarayon ham miniatyura va jonli aniqlash uchun o'quvchi
     # ochadi. Ilgari yopuvchi faqat leader'da ishlardi va productionda
@@ -115,67 +189,22 @@ async def lifespan(app: FastAPI):
     if settings.redis_url.strip():
         await start_redis_listener(manager.deliver_from_redis)
     if is_leader:
-        # AI statistikasi faqat shu jarayon xotirasida — boshqa API
-        # jarayonlari uni Redis orqali ko'radi (app/services/runtime_snapshot.py).
-        tasks.append(asyncio.create_task(runtime_snapshot_loop()))
-        stagger = settings.ai_loop_stagger_seconds
-        if settings.ai_scheduler_enabled:
-            tasks.append(asyncio.create_task(ai_scheduler_loop()))
-            tasks.append(asyncio.create_task(camera_health_loop()))
-            logger.info(
-                "AI central scheduler enabled — individual module loops not started",
-                extra={"event": "ai_scheduler", "poll_seconds": settings.ai_scheduler_poll_seconds},
-            )
-        else:
-            face_loops = (
-                [unified_face_sweep_loop()]
-                if settings.unified_face_sweep_enabled
-                else [
-                    attendance_ai_loop(),
-                    vision_ai_loop(),
-                    unauthorized_person_ai_loop(),
-                ]
-            )
-            ai_loops = [
-                camera_health_loop(),
-                *face_loops,
-                fire_ai_loop(),
-                teacher_punctuality_ai_loop(),
-                disorder_ai_loop(),
-                dress_code_ai_loop(),
-                ppe_ai_loop(),
-                smoking_ai_loop(),
-                zone_entry_ai_loop(),
-                lesson_quality_ai_loop(),
-                lesson_attendance_loop(),
-                fight_ai_loop(),
-                *standalone_sweep_loops(),
-            ]
-            tasks += [
-                asyncio.create_task(_staggered(i * stagger, loop_coro)) for i, loop_coro in enumerate(ai_loops)
-            ]
-        logger.info(
-            "acquired AI sweep leader lock — sweep loops running in this worker",
-            extra={
-                "event": "leader_elected",
-                "stagger_seconds": stagger if not settings.ai_scheduler_enabled else None,
-                "unified_face_sweep": settings.unified_face_sweep_enabled,
-                "ai_scheduler": settings.ai_scheduler_enabled,
-            },
-        )
+        _start_ai_loops(tasks)
+    elif settings.ai_role == "worker":
+        tasks.append(asyncio.create_task(_become_leader_when_free(tasks)))
     else:
         logger.info(
-            "another worker already holds the AI sweep leader lock — sweep loops NOT started here",
-            extra={"event": "leader_skipped"},
+            "AI sweep loops NOT started in this worker",
+            extra={"event": "leader_skipped", "ai_role": settings.ai_role},
         )
 
-    logger.info("startup complete", extra={"event": "startup"})
+    logger.info("startup complete", extra={"event": "startup", "ai_role": settings.ai_role})
     yield
     for task in tasks:
         task.cancel()
     await shutdown_stream_cache()
     shutdown_cpu_pool()
-    if is_leader:
+    if _leader_state["is_leader"]:
         # Kirish kameralarining doimiy kuzatuvchilari rejalashtiruvchi
         # vazifasidan tashqarida yashaydi — alohida to'xtatiladi.
         await stop_entrance_watchers()

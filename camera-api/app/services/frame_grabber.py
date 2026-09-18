@@ -18,7 +18,8 @@ from app.config import settings
 from app.crypto import decrypt
 from app.models import Camera
 from app.rtsp import build_rtsp_url
-from app.services.stream_cache import get_cached_frame_with_seq, is_stream_known_broken
+from app.services.frame_quality import looks_like_decode_damage, measure_frame
+from app.services.stream_cache import get_cached_frame_with_seq, get_cached_history, is_stream_known_broken
 from app.services.thumbnail_cache import remember_frame
 from app.services.video_gateway import public_hls_to_internal
 
@@ -170,10 +171,52 @@ async def grab_frame_for_camera(camera: Camera, *, wait_seconds: float | None = 
     return latest[0] if latest is not None else None
 
 
+def _spaced(history: list[tuple[bytes, int, float]], count: int, gap_seconds: float) -> list[bytes] | None:
+    """Tarixdan (eng yangisidan) kamida `gap_seconds` oraliqli `count` ta kadr,
+    eskisidan yangisiga tartibda. Yetmasa None."""
+    if not history:
+        return None
+    chosen = [history[0]]
+    for frame, seq, at in history[1:]:
+        if len(chosen) == count:
+            break
+        if chosen[-1][2] - at >= gap_seconds * 0.9:
+            chosen.append((frame, seq, at))
+    if len(chosen) < count:
+        return None
+    return [frame for frame, _, _ in reversed(chosen)]
+
+
+def _all_clean(frames: list[bytes]) -> bool:
+    """Tarixdagi kadrlar get_latest() tekshiruvidan o'tmagan bo'lishi mumkin —
+    buzilgan (qisman dekodlangan) kadr bo'lsa tarixdan voz kechiladi."""
+    return not any(looks_like_decode_damage(measure_frame(frame), None) for frame in frames)
+
+
+async def _from_history(camera: Camera, count: int, gap_seconds: float) -> list[bytes] | None:
+    """Kadr tarixidan darhol — yangi kalit kadr kutilmaydi. Bir vaqtda
+    ishlayotgan modullar shu yo'l bilan AYNAN bir xil kadrlarni oladi va
+    model natijasini bo'lishadi (app/services/inference_cache.py)."""
+    source = camera_video_source(camera)
+    if not source or count < 1:
+        return None
+    frames = _spaced(await get_cached_history(source), count, gap_seconds)
+    if frames is None:
+        return None
+    if not await asyncio.to_thread(_all_clean, frames):
+        return None
+    await remember_frame(str(camera.id), frames[-1])
+    return frames
+
+
 async def grab_frame_pair_for_camera(camera: Camera, gap_seconds: float = 1.0) -> tuple[bytes, bytes] | None:
-    """Ikki HAR XIL kadr, kamida `gap_seconds` oraliqda. Ikkinchi yangi kadr
+    """Ikki HAR XIL kadr, kamida `gap_seconds` oraliqda. Avval kadr
+    tarixidan (kutishsiz), bo'lmasa yangi kadr kutiladi. Ikkinchi yangi kadr
     kelmasa None — eski kadrni ikkinchi marta berib, tasdiqni
     soxtalashtirgandan ko'ra shu kamerani bu safar tashlab ketgan yaxshi."""
+    recent = await _from_history(camera, 2, gap_seconds)
+    if recent is not None:
+        return recent[0], recent[1]
     wait = frame_wait_seconds_for_camera(camera)
     first = await _grab_newer(camera, wait_seconds=wait, after_seq=None)
     if first is None:
@@ -188,7 +231,11 @@ async def grab_frame_pair_for_camera(camera: Camera, gap_seconds: float = 1.0) -
 async def grab_frame_burst_for_camera(camera: Camera, count: int, gap_seconds: float) -> list[bytes]:
     """`count` tagacha HAR XIL kadr. Oqim yangi kadr bermay qolsa burst
     shu yerda to'xtaydi: qolgan har bir kadr uchun yana kutish sweep
-    slotini behuda band qilardi, eski kadrni takrorlash esa ovozni buzardi."""
+    slotini behuda band qilardi, eski kadrni takrorlash esa ovozni buzardi.
+    Avval kadr tarixidan (kutishsiz) olinadi."""
+    recent = await _from_history(camera, count, gap_seconds)
+    if recent is not None:
+        return recent
     wait = frame_wait_seconds_for_camera(camera)
     frames: list[bytes] = []
     last_seq: int | None = None

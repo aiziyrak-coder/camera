@@ -8,7 +8,8 @@ qaysi qator nega o'qilmaganini — va faqat tasdiqlangandan keyin yozadi.
 
 Qoidalar:
   * kamera `id` bo'yicha topiladi, id bo'lmasa — `ip` bo'yicha;
-  * faqat `xona_turi` va `xona_raqami` o'zgaradi, qolgan ustunlar ma'lumot
+  * faqat `xona_turi`, `xona_raqami` va `yuz_yonalishi` (kirish kamerasi
+    kirayotganlar yoki chiqayotganlarning yuzini ko'radi) o'zgaradi, qolgan ustunlar ma'lumot
     uchun (bino, zona va h.k. alohida sahifada tahrirlanadi);
   * bo'sh katak — o'zgartirmaslik; "-" — belgini olib tashlash;
   * xona turi kod ("auditoriya") yoki to'liq nom ("Auditoriya (dars
@@ -41,6 +42,7 @@ EXPORT_COLUMNS = [
     "amaldagi_tur",
     "xona_turi",
     "xona_raqami",
+    "yuz_yonalishi",
 ]
 CLEAR_MARK = "-"
 MAX_ROWS = 2000
@@ -73,6 +75,7 @@ def export_roles_csv(cameras: list[Camera]) -> bytes:
                 ROOM_TYPE_LABELS.get(effective, "") if effective else "",
                 camera.room_type or "",
                 camera.room_code or "",
+                camera.face_direction or "",
             ]
         )
     return ("﻿" + buffer.getvalue()).encode("utf-8")
@@ -82,7 +85,7 @@ def export_roles_csv(cameras: list[Camera]) -> bytes:
 class RoleChange:
     camera_id: str
     camera_name: str
-    field: str  # "room_type" | "room_code"
+    field: str  # "room_type" | "room_code" | "face_direction"
     old: str | None
     new: str | None
 
@@ -135,7 +138,7 @@ async def import_roles_csv(db: AsyncSession, raw: bytes, *, apply: bool) -> Role
     result = RolesImportResult()
     reader = _reader(_decode(raw))
     columns = set(reader.fieldnames or [])
-    if not ({"id", "ip"} & columns) or not ({"xona_turi", "xona_raqami"} & columns):
+    if not ({"id", "ip"} & columns) or not ({"xona_turi", "xona_raqami", "yuz_yonalishi"} & columns):
         result.errors.append(
             RoleImportError(row=1, message="Sarlavhada 'id' (yoki 'ip') va 'xona_turi'/'xona_raqami' ustunlari bo'lishi kerak")
         )
@@ -201,6 +204,14 @@ async def import_roles_csv(db: AsyncSession, raw: bytes, *, apply: bool) -> Role
                 result.errors.append(RoleImportError(row=line_number, message=f"Xona raqami o'qilmadi: '{raw_code}'"))
                 continue
             new_values["room_code"] = room_code
+        raw_direction = values.get("yuz_yonalishi", "").lower()
+        if raw_direction:
+            if raw_direction not in ("kirish", "chiqish", CLEAR_MARK):
+                result.errors.append(
+                    RoleImportError(row=line_number, message=f"yuz_yonalishi '{raw_direction}' — mumkin: kirish, chiqish yoki '-'")
+                )
+                continue
+            new_values["face_direction"] = None if raw_direction == CLEAR_MARK else raw_direction
 
         for field_name, new_value in new_values.items():
             old_value = getattr(camera, field_name)

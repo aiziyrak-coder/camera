@@ -22,6 +22,8 @@ class GpuStatusOut(CamelModel):
     torch_cuda_available: bool
     face_gpu_enabled: bool
     face_gpu_active: bool
+    # Yuklangan yuz modellari AMALDA ishlatayotgan ONNX provayderlari (bo'sh — hali yuklanmagan).
+    face_session_providers: list[str] = []
     object_gpu_enabled: bool
     object_gpu_active: bool
     recommendation: str

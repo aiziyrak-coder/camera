@@ -10,7 +10,7 @@ import type { RoomType } from '../../types';
 interface RoleChange {
   cameraId: string;
   cameraName: string;
-  field: 'room_type' | 'room_code';
+  field: 'room_type' | 'room_code' | 'face_direction';
   old: string | null;
   new: string | null;
 }
@@ -22,9 +22,19 @@ interface RolesImportResult {
   applied: boolean;
 }
 
+const FIELD_LABELS: Record<RoleChange['field'], string> = {
+  room_type: 'tur',
+  room_code: 'xona',
+  face_direction: 'yuz yo‘nalishi',
+};
+
+const DIRECTION_LABELS: Record<string, string> = { kirish: 'kirayotganlar', chiqish: 'chiqayotganlar' };
+
 function show(field: RoleChange['field'], value: string | null): string {
   if (value === null) return 'belgilanmagan';
-  return field === 'room_type' ? (ROOM_TYPE_LABELS[value as RoomType] ?? value) : value;
+  if (field === 'room_type') return ROOM_TYPE_LABELS[value as RoomType] ?? value;
+  if (field === 'face_direction') return DIRECTION_LABELS[value] ?? value;
+  return value;
 }
 
 /**
@@ -89,8 +99,9 @@ export default function CameraRolesImportModal({
           <li>Shablonni yuklab oling — unda barcha kameralar bor.</li>
           <li>
             Excel&apos;da <span className="font-mono">xona_turi</span> ({Object.keys(ROOM_TYPE_LABELS).join(', ')}) va{' '}
-            <span className="font-mono">xona_raqami</span> ni to&apos;ldiring. Bo&apos;sh katak — o&apos;zgarmaydi,
-            «-» — belgini olib tashlaydi.
+            <span className="font-mono">xona_raqami</span> ni to&apos;ldiring. Kirish kameralarida{' '}
+            <span className="font-mono">yuz_yonalishi</span>: «kirish» — kamera kirayotganlarning yuzini ko&apos;radi,
+            «chiqish» — chiqayotganlarnikini. Bo&apos;sh katak — o&apos;zgarmaydi, «-» — belgini olib tashlaydi.
           </li>
           <li>Faylni yuklab «Tekshirish», keyin «Saqlash».</li>
         </ol>
@@ -142,7 +153,7 @@ export default function CameraRolesImportModal({
                 {result.changes.map((change) => (
                   <li key={`${change.cameraId}-${change.field}`} className="flex flex-wrap gap-x-2 py-1">
                     <span className="font-medium text-slate-900">{change.cameraName}</span>
-                    <span className="text-slate-500">{change.field === 'room_type' ? 'tur' : 'xona'}:</span>
+                    <span className="text-slate-500">{FIELD_LABELS[change.field]}:</span>
                     <span className="text-slate-400 line-through">{show(change.field, change.old)}</span>
                     <span className="text-slate-700">→ {show(change.field, change.new)}</span>
                   </li>

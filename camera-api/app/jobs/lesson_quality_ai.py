@@ -58,10 +58,11 @@ import asyncio
 import json
 import logging
 import math
+import time
 from datetime import timedelta
 
 import numpy as np
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
@@ -72,7 +73,7 @@ from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.jobs.lesson_attendance import STUDENT_ATTENDANCE_MODULE_CODE, group_member_clause, record_sightings
 from app.models import LessonSession, StudentStaff
-from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
+from app.services.face_matching import CandidateMatrix, matrix_from_rows
 from app.services.face_recognition import detect_faces, recognizable_faces
 from app.services.frame_grabber import grab_frame_pair_for_camera
 from app.services.image_size import jpeg_dimensions
@@ -94,6 +95,49 @@ TEACHER_ACTIVITY_MODULE_CODE = 21
 
 _sweep_guard = SweepGuard("lesson_quality_ai")
 
+# Jadvalga asoslangan siyrak namuna olish. Ilgari har faol dars har 45 s da
+# (sweep har aylanishida) tahlil qilinardi — o'nlab dars bir vaqtda bo'lsa,
+# bu xona kameralarini kirish eshigi bilan CPU uchun talashtirardi. Diqqat
+# va faollik davomiy o'rtacha, dars davomati esa 3 ta ko'rinish talab qiladi:
+# 90 daqiqalik darsda 5 daqiqada bir namuna (18 ta) ikkalasiga ham yetarli.
+_last_sampled: dict[str, float] = {}
+# Darsning galereyasi: faqat shu guruh talabalari va o'qituvchisi.
+_gallery_cache: dict[str, tuple[float, CandidateMatrix]] = {}
+GALLERY_TTL_SECONDS = 600.0
+
+
+def reset_sampling_for_tests() -> None:
+    _last_sampled.clear()
+    _gallery_cache.clear()
+
+
+async def _lesson_gallery(db: AsyncSession, session_row: LessonSession) -> CandidateMatrix:
+    """Dars uchun kichik galereya: guruhning tasdiqlangan talabalari va
+    jadvaldagi o'qituvchi. 8800 kishilik umumiy ro'yxat o'rniga ~30 kishi:
+    yolg'on moslik ehtimoli ~300 barobar kam, solishtirish esa deyarli bepul.
+    Guruhdan tashqaridagi odam (boshqa guruh talabasi, mehmon) bu darsda
+    baribir hisobga olinmasdi."""
+    key = str(session_row.id)
+    cached = _gallery_cache.get(key)
+    now = time.monotonic()
+    if cached is not None and now - cached[0] < GALLERY_TTL_SECONDS:
+        return cached[1]
+    members = [(StudentStaff.type == "talaba") & group_member_clause(session_row.group_name)]
+    if session_row.teacher_id is not None:
+        members.append(StudentStaff.id == session_row.teacher_id)
+    rows = (
+        await db.execute(
+            select(StudentStaff.id, StudentStaff.biometric_embedding, StudentStaff.type)
+            .where(StudentStaff.biometric_embedding.is_not(None))
+            # Umumiy ro'yxatdagi qoida (face_matching.load_candidate_matrix):
+            # o'zini o'zi ro'yxatdan o'tkazgan odam tasdiqlangunicha tanilmaydi.
+            .where(or_(StudentStaff.self_registered.is_(False), StudentStaff.biometrics_status == "tasdiqlangan"))
+            .where(or_(*members))
+        )
+    ).all()
+    gallery = await matrix_from_rows(rows)
+    _gallery_cache[key] = (now, gallery)
+    return gallery
 
 
 async def _active_sessions(db: AsyncSession) -> list[LessonSession]:
@@ -350,8 +394,10 @@ async def run_lesson_quality_ai_sweep_once(
         if not attention_module_active and not teacher_activity_module_active and not lesson_attendance_active:
             return 0
         sessions = await _active_sessions(db)
-        candidates = await load_candidate_matrix_for_sweep(db)
 
+    now = time.monotonic()
+    interval = settings.lesson_sample_interval_seconds
+    sessions = [row for row in sessions if now - _last_sampled.get(str(row.id), -interval) >= interval]
     if not sessions:
         return 0
 
@@ -365,11 +411,13 @@ async def run_lesson_quality_ai_sweep_once(
         frames = await grab_frame_pair_for_camera(camera)
         if frames is None:
             return False
+        _last_sampled[str(session_row.id)] = time.monotonic()
         frame_a, frame_b = frames
         async with camera_sweep_slot(), session_factory() as db:
             row = await db.get(LessonSession, session_row.id)
             if row is None:
                 return False
+            candidates = await _lesson_gallery(db, row)
             await process_lesson_session(
                 row,
                 frame_a,

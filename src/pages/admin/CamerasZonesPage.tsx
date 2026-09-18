@@ -82,6 +82,7 @@ export default function CamerasZonesPage() {
   const [locating, setLocating] = useState<CameraConfig | null>(null);
   const [viewing, setViewing] = useState<CameraConfig | null>(null);
   const [drawingZone, setDrawingZone] = useState<CameraConfig | null>(null);
+  const [drawingDoor, setDrawingDoor] = useState<CameraConfig | null>(null);
   const [editingModules, setEditingModules] = useState<CameraConfig | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [locationOpen, setLocationOpen] = useState(false);
@@ -471,6 +472,18 @@ export default function CamerasZonesPage() {
                           <Settings2 size={12} />
                           Sozlash
                         </button>
+                        {c.effectiveRoomType === 'kirish' && (
+                          <button
+                            onClick={() => setDrawingDoor(c)}
+                            title="Eshik hududi — AI yuzni faqat shu yerda qidiradi"
+                            className={`flex items-center gap-1 text-xs font-semibold hover:underline ${
+                              c.faceRoi && c.faceRoi.length > 0 ? 'text-emerald-600' : 'text-amber-600'
+                            }`}
+                          >
+                            <DoorOpen size={12} />
+                            Eshik
+                          </button>
+                        )}
                         {canManage && (
                           <>
                             <button
@@ -562,6 +575,13 @@ export default function CamerasZonesPage() {
         open={!!drawingZone}
         camera={drawingZone}
         onClose={() => setDrawingZone(null)}
+        onSave={() => reload()}
+      />
+      <CameraZoneModal
+        mode="faceRoi"
+        open={!!drawingDoor}
+        camera={drawingDoor}
+        onClose={() => setDrawingDoor(null)}
         onSave={() => reload()}
       />
       <CameraModulesModal

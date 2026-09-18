@@ -14,6 +14,10 @@ class Camera(Base):
     __table_args__ = (
         CheckConstraint("status IN ('faol', 'nofaol', 'tamirda')", name="ck_cameras_status"),
         CheckConstraint(
+            "face_direction IS NULL OR face_direction IN ('kirish', 'chiqish')",
+            name="ck_cameras_face_direction",
+        ),
+        CheckConstraint(
             "room_type IS NULL OR room_type IN "
             "('kirish', 'auditoriya', 'laboratoriya', 'koridor', 'ofis', 'cheklangan', 'tashqi')",
             name="ck_cameras_room_type",
@@ -151,6 +155,18 @@ class Camera(Base):
     # (camera_roles.normalize_room_code: "211-xona" -> "211"). Jadval importi
     # darsni shu raqam orqali kameraga bog'laydi (app/services/lesson_import.py).
     room_code: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    # Eshik hududi — kirish kamerasida yuz faqat shu yerda qidiriladi, kadrning
+    # qolgan qismi tahlil qilinmaydi (app/services/camera_roles.face_roi_box).
+    # restricted_zone_polygon bilan bir xil format: normallashgan [x, y] juftliklari.
+    # 4K kadrda eshik atrofi to'liq sifatda olinadi: detektorga yuz 3-6 barobar
+    # katta ko'rinadi, hisob esa bir necha barobar kam.
+    face_roi: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # Kirish kamerasida yuzi ko'rinayotgan odam qaysi tomonga ketyapti:
+    # "kirish" — kamera binoga kirayotganlarning yuzini ko'radi (ichkaridan
+    # eshikka qaragan), "chiqish" — chiqayotganlarnikini. NULL — noma'lum
+    # (kamera ikkala tomonni ham ko'radi). app/jobs/attendance_ai.py kelish va
+    # ketishni shu bo'yicha ajratadi.
+    face_direction: Mapped[str | None] = mapped_column(String, nullable=True)
 
     building: Mapped[Building | None] = relationship("Building", lazy="joined")
     department: Mapped["Department | None"] = relationship("Department", lazy="joined")

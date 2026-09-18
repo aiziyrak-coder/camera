@@ -30,6 +30,7 @@ import numpy as np
 from ultralytics import YOLO
 
 from app.config import settings
+from app.services.inference_cache import inference_cache
 
 logger = logging.getLogger("app.object_detection")
 
@@ -156,8 +157,12 @@ async def detect_objects(image_bytes: bytes, class_ids: list[int], confidence: f
     rather than running full 80-class detection when a caller only cares
     about one or two kinds of object — cheaper and avoids irrelevant
     matches entirely, not just filtering them out after the fact."""
-    async with _inference_semaphore:
-        return await _run_inference(_detect_sync, image_bytes, class_ids, confidence)
+    async def run() -> list[DetectedObject]:
+        async with _inference_semaphore:
+            return await _run_inference(_detect_sync, image_bytes, class_ids, confidence)
+
+    # Bir xil kadr va sinflar — bir marta (app/services/inference_cache.py).
+    return await inference_cache.get_or_run(image_bytes, ("objects", tuple(class_ids), confidence), run)
 
 
 async def detect_objects_batch(

@@ -59,6 +59,7 @@ from pathlib import Path
 import numpy as np
 
 from app.config import settings
+from app.services.inference_cache import inference_cache
 
 logger = logging.getLogger("app.pose_detection")
 
@@ -223,6 +224,12 @@ def _discard_pool() -> None:
             pass
 
 
+class _WorkerCrashed(Exception):
+    """Ishchi jarayon yiqilgan kadr — natija "poza yo'q", lekin keshga
+    yozilmaydi (inference_cache xatolarni saqlamaydi): shu kadr qayta
+    so'ralsa, qayta urinib ko'riladi."""
+
+
 async def _run_mediapipe_worker(image_bytes: bytes) -> list[PoseLandmarks]:
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(_get_pool(), _detect_sync, image_bytes)
@@ -241,7 +248,7 @@ async def _detect_mediapipe(image_bytes: bytes) -> list[PoseLandmarks]:
                 "pose detection worker crashed (native fault) — resetting pool",
                 extra={"consecutive_crashes": _consecutive_crashes, "limit": limit},
             )
-            return []
+            raise _WorkerCrashed from None
         if _backend != BACKEND_YOLO:
             logger.error(
                 "mediapipe pose worker keeps crashing — switching to YOLOv8-pose for this process",
@@ -323,7 +330,9 @@ def _detect_yolo_sync(image_bytes: bytes) -> list[PoseLandmarks]:
     results = model.predict(
         img,
         conf=settings.pose_detection_yolo_confidence,
-        device="cpu",
+        # YOLO-pose oqimlar hovuzida (process emas) — CUDA xavfsiz. GPU
+        # bayrog'i obyekt aniqlash (YOLO) bilan umumiy: ikkalasi bitta torch.
+        device=0 if settings.object_detection_gpu_enabled else "cpu",
         verbose=False,
     )
     poses: list[PoseLandmarks] = []
@@ -347,10 +356,19 @@ async def detect_poses(image_bytes: bytes) -> list[PoseLandmarks]:
     settings.pose_detection_max_poses poses (order not guaranteed to be
     left-to-right). Never raises for a worker crash: the call that hit the
     crash sees "no poses" (or, once the breaker trips, the YOLO result)."""
-    async with _inference_semaphore:
-        if _resolve_backend() == BACKEND_YOLO:
-            return await _run_yolo(_detect_yolo_sync, image_bytes)
-        return await _detect_mediapipe(image_bytes)
+    async def run() -> list[PoseLandmarks]:
+        async with _inference_semaphore:
+            if _resolve_backend() == BACKEND_YOLO:
+                return await _run_yolo(_detect_yolo_sync, image_bytes)
+            return await _detect_mediapipe(image_bytes)
+
+    # Bir kadrning pozasi bir marta hisoblanadi: jang, zona, chekish, xalat va
+    # dars modullari kadr tarixidan bir xil kadrni olganda natijani bo'lishadi
+    # (app/services/inference_cache.py).
+    try:
+        return await inference_cache.get_or_run(image_bytes, ("poses",), run)
+    except _WorkerCrashed:
+        return []
 
 
 async def shutdown_pose_detection_pool() -> None:

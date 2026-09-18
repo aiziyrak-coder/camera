@@ -19,6 +19,7 @@ from insightface.app.common import Face
 from insightface.utils import face_align
 
 from app.config import settings
+from app.services.inference_cache import inference_cache
 from app.services.inference_gate import PRIORITY_BACKGROUND, PRIORITY_LIVE, face_inference_gate
 
 logger = logging.getLogger("app.face_recognition")
@@ -114,8 +115,34 @@ def _limit_session_threads(app: FaceAnalysis, providers: list[str]) -> None:
     )
 
 
+# Yuklangan modellar AMALDA ishlatayotgan provayderlar. onnxruntime CUDA
+# kutubxonalarini (cuDNN 9, cuBLAS) topa olmasa, ogohlantirish yozib
+# jimgina CPU'ga qaytadi — get_available_providers() esa baribir CUDA'ni
+# ko'rsatadi. Panel (app/services/gpu_status.py) shu ro'yxatga qaraydi.
+_session_providers: list[str] | None = None
+
+
+def face_session_providers() -> list[str] | None:
+    """None — model hali yuklanmagan."""
+    return _session_providers
+
+
+def _preload_cuda_libraries() -> None:
+    """onnxruntime-gpu CUDA/cuDNN kutubxonalarini pip'dagi nvidia-* paketlaridan
+    (torch cu130 ular bilan keladi — Dockerfile.gpu) yuklaydi. Tizimda CUDA
+    toolkit o'rnatilmagan konteynerda busiz CUDA provayderi ishlamaydi."""
+    try:
+        import onnxruntime
+
+        preload = getattr(onnxruntime, "preload_dlls", None)
+        if preload is not None:
+            preload()
+    except Exception:
+        logger.warning("onnxruntime CUDA library preload failed", exc_info=True)
+
+
 def _get_app() -> FaceAnalysis:
-    global _app
+    global _app, _session_providers
     if _app is None:
         # CUDAExecutionProvider first when GPU is enabled: onnxruntime
         # tries providers in list order and falls back to the next one it
@@ -128,6 +155,7 @@ def _get_app() -> FaceAnalysis:
         providers = ["CPUExecutionProvider"]
         if settings.face_recognition_gpu_enabled:
             providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            _preload_cuda_libraries()
         logger.info(
             "loading InsightFace buffalo_l model (first use)",
             extra={"gpu_enabled": settings.face_recognition_gpu_enabled},
@@ -146,6 +174,16 @@ def _get_app() -> FaceAnalysis:
         # this codebase already ran and tested with before GPU support
         # existed also used ctx_id=0).
         _app.prepare(ctx_id=0, det_size=(640, 640))
+        actual: set[str] = set()
+        for model in _app.models.values():
+            session = getattr(model, "session", None)
+            if session is not None:
+                actual.update(session.get_providers())
+        _session_providers = sorted(actual)
+        level = logging.INFO
+        if settings.face_recognition_gpu_enabled and "CUDAExecutionProvider" not in actual:
+            level = logging.ERROR
+        logger.log(level, "InsightFace sessions ready", extra={"providers": _session_providers})
     return _app
 
 
@@ -286,6 +324,8 @@ class DetectedFace:
     embedding: np.ndarray | None
     landmarks_68: np.ndarray | None  # (68, 3) — the standard iBUG scheme; see app/services/sleep_detection.py
     bbox: np.ndarray  # (4,) — [x1, y1, x2, y2] in the source image's pixel coordinates
+    # True — oldingi kadrda tanilgan odam (skip_boxes), ataylab tahlil qilinmagan.
+    tracked: bool = False
 
 
 def recognizable_faces(faces: list) -> list:
@@ -293,7 +333,33 @@ def recognizable_faces(faces: list) -> list:
     return [face for face in faces if getattr(face, "embedding", None) is not None]
 
 
-def _detect_faces_sync(image_bytes: bytes, min_face_px: int = 0, analyse: bool = True) -> list[DetectedFace]:
+Box = tuple[float, float, float, float]
+
+
+def _iou(a, b) -> float:
+    ax1, ay1, ax2, ay2 = (float(v) for v in a[:4])
+    bx1, by1, bx2, by2 = (float(v) for v in b[:4])
+    width, height = min(ax2, bx2) - max(ax1, bx1), min(ay2, by2) - max(ay1, by1)
+    if width <= 0 or height <= 0:
+        return 0.0
+    inter = width * height
+    union = (ax2 - ax1) * (ay2 - ay1) + (bx2 - bx1) * (by2 - by1) - inter
+    return inter / union if union > 0 else 0.0
+
+
+TRACK_IOU = 0.4
+"""Oldingi kadrda tanilgan yuz bilan shuncha ustma-ust tushgan yuz o'sha odam
+hisoblanadi (kalit kadrlar ~1 s oraliqda — eshikdan o'tayotgan odam shu
+vaqtda o'z yuzi o'lchamidan ko'p siljimaydi)."""
+
+
+def _detect_faces_sync(
+    image_bytes: bytes,
+    min_face_px: int = 0,
+    analyse: bool = True,
+    roi: Box | None = None,
+    skip_boxes: tuple[Box, ...] = (),
+) -> list[DetectedFace]:
     """Every face in the frame (not just the largest) with its bounding box,
     and — for faces worth it — its embedding and 68-point landmarks.
 
@@ -310,19 +376,43 @@ def _detect_faces_sync(image_bytes: bytes, min_face_px: int = 0, analyse: bool =
       * embeddinglar bitta ONNX chaqiruvida (batch) hisoblanadi.
 
     Katta yuzlar uchun natija get() bilan aynan bir xil: o'sha hizalash
-    (face_align.norm_crop), o'sha model va normallash."""
+    (face_align.norm_crop), o'sha model va normallash.
+
+    `roi` — normallashgan (x1, y1, x2, y2): faqat shu hudud to'liq
+    sifatda tahlil qilinadi (kirish eshigi atrofi, Camera.face_roi). 4K
+    kadrda detektor butun kadrni 640 px ga kichraytiradi va 60 px lik yuz
+    ~10 px bo'lib qoladi; qirqilgan hududda o'sha yuz bir necha barobar
+    katta ko'rinadi, hisob esa kamayadi. Natijadagi koordinatalar baribir
+    TO'LIQ kadrga nisbatan.
+
+    `skip_boxes` — oldingi kadrda allaqachon tanilgan yuzlar (to'liq kadr
+    koordinatalarida). Ular bilan ustma-ust tushgan yuz qayta
+    embedding qilinmaydi: bugun uning davomati yozilgan, olomonda esa bir
+    odamni har soniyada qayta hisoblash CPU'ni behuda yeydi."""
     img = _decode_image(image_bytes)
+    offset_x = offset_y = 0
+    if roi is not None:
+        height, width = img.shape[:2]
+        x1, y1 = int(roi[0] * width), int(roi[1] * height)
+        x2, y2 = max(int(roi[2] * width), x1 + 1), max(int(roi[3] * height), y1 + 1)
+        img = np.ascontiguousarray(img[y1:y2, x1:x2])
+        offset_x, offset_y = x1, y1
+    offset = np.array([offset_x, offset_y, offset_x, offset_y], dtype=np.float32)
     app = _get_app()
     bboxes, kpss = app.det_model.detect(img, max_num=0, metric="default")
     faces: list[DetectedFace] = []
     to_analyse: list[tuple[DetectedFace, Face]] = []
     for i in range(bboxes.shape[0]):
-        bbox = bboxes[i, 0:4]
-        face = DetectedFace(embedding=None, landmarks_68=None, bbox=bbox)
+        local_bbox = bboxes[i, 0:4]
+        face = DetectedFace(embedding=None, landmarks_68=None, bbox=local_bbox + offset)
         faces.append(face)
         kps = kpss[i] if kpss is not None else None
-        if analyse and kps is not None and (bbox[3] - bbox[1]) >= min_face_px:
-            to_analyse.append((face, Face(bbox=bbox, kps=kps, det_score=bboxes[i, 4])))
+        if not analyse or kps is None or (local_bbox[3] - local_bbox[1]) < min_face_px:
+            continue
+        if any(_iou(face.bbox, box) >= TRACK_IOU for box in skip_boxes):
+            face.tracked = True
+            continue
+        to_analyse.append((face, Face(bbox=local_bbox, kps=kps, det_score=bboxes[i, 4])))
     if not to_analyse:
         return faces
 
@@ -337,7 +427,12 @@ def _detect_faces_sync(image_bytes: bytes, min_face_px: int = 0, analyse: bool =
     if landmarks is not None:
         for face, raw in to_analyse:
             landmarks.get(img, raw)
-            face.landmarks_68 = raw.landmark_3d_68
+            points = raw.landmark_3d_68
+            if points is not None and (offset_x or offset_y):
+                points = points.copy()
+                points[:, 0] += offset_x
+                points[:, 1] += offset_y
+            face.landmarks_68 = points
     return faces
 
 
@@ -351,14 +446,27 @@ async def detect_faces(
     priority: int = PRIORITY_BACKGROUND,
     min_face_px: int | None = None,
     analyse: bool = True,
+    roi: Box | None = None,
+    skip_boxes: tuple[Box, ...] = (),
 ) -> list[DetectedFace]:
     """Gated by face_inference_gate — pass PRIORITY_LIVE for live-detection.
 
     `min_face_px` — shundan kichik yuz tahlil qilinmaydi (None:
     settings.face_analysis_min_px). Ro'yxatga olish kabi yuzning har
-    burchagi kerak bo'lgan joylar 0 beradi. `analyse=False` — faqat bbox."""
-    async with face_inference_gate.slot(priority=priority):
-        return await asyncio.to_thread(_detect_faces_sync, image_bytes, _min_face_px(min_face_px), analyse)
+    burchagi kerak bo'lgan joylar 0 beradi. `analyse=False` — faqat bbox.
+    `roi`, `skip_boxes` — _detect_faces_sync izohiga qarang.
+
+    Bir xil kadr uchun natija qisqa muddat eslab qolinadi
+    (app/services/inference_cache.py): kadr tarixidan bir xil kadrni olgan
+    bir nechta modul modelni qayta ishga tushirmaydi."""
+    threshold = _min_face_px(min_face_px)
+    key = ("faces", threshold, analyse, roi, tuple(tuple(round(float(v), 1) for v in box[:4]) for box in skip_boxes))
+
+    async def run() -> list[DetectedFace]:
+        async with face_inference_gate.slot(priority=priority):
+            return await asyncio.to_thread(_detect_faces_sync, image_bytes, threshold, analyse, roi, tuple(skip_boxes))
+
+    return await inference_cache.get_or_run(image_bytes, key, run)
 
 
 def _detect_faces_batch_sync(images: list[bytes], min_face_px: int = 0) -> list[list[DetectedFace]]:

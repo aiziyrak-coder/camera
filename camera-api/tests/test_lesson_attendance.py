@@ -235,12 +235,14 @@ class TestDayLevelAttendanceIsCredited:
         """Kirish kamerasidan kelgan aniqroq vaqt ham, adminning qo'lda
         tuzatgani ham bu yerda buzilmasligi kerak."""
         student = await _student(db_session, "Aziz Karimov")
-        db_session.add(
-            AttendanceRecord(student_staff_id=student.id, date=local_now().date(), status="kech_keldi")
-        )
+        started_minutes_ago = settings.lesson_duration_minutes + 5
+        # Ko'rinish sanasi — dars boshlangan kun (yarim tundan keyin test
+        # yurganda bu "kecha" bo'ladi, local_now().date() emas).
+        seen_day = (local_now() - timedelta(minutes=started_minutes_ago)).date()
+        db_session.add(AttendanceRecord(student_staff_id=student.id, date=seen_day, status="kech_keldi"))
         await db_session.commit()
 
-        lesson = await _lesson(db_session, a_camera, started_minutes_ago=settings.lesson_duration_minutes + 5)
+        lesson = await _lesson(db_session, a_camera, started_minutes_ago=started_minutes_ago)
         await _see(db_session, lesson, student, times=settings.lesson_attendance_min_sightings)
         await finalize_lesson(db_session, lesson)
 

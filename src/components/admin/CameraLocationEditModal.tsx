@@ -25,6 +25,7 @@ export interface CameraLocationTarget {
   roomType?: RoomType | null;
   effectiveRoomType?: RoomType | null;
   roomCode?: string | null;
+  faceDirection?: 'kirish' | 'chiqish' | null;
 }
 
 /** Kameraning JOYLASHUVINI to'g'rilash: nomi, binosi, qavati, zonasi, kafedrasi.
@@ -52,6 +53,7 @@ export default function CameraLocationEditModal({
   const [department, setDepartment] = useState('');
   const [roomType, setRoomType] = useState<RoomType | ''>('');
   const [roomCode, setRoomCode] = useState('');
+  const [faceDirection, setFaceDirection] = useState<'kirish' | 'chiqish' | ''>('');
   const [departments, setDepartments] = useState<Department[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +72,7 @@ export default function CameraLocationEditModal({
     setDepartment(camera.department ?? '');
     setRoomType(camera.roomType ?? '');
     setRoomCode(camera.roomCode ?? '');
+    setFaceDirection(camera.faceDirection ?? '');
     setError(null);
   }, [camera]);
 
@@ -127,6 +130,8 @@ export default function CameraLocationEditModal({
                 clearRoomType: roomType === '',
                 roomCode: roomCode.trim() || undefined,
                 clearRoomCode: roomCode.trim() === '',
+                faceDirection: faceDirection || undefined,
+                clearFaceDirection: faceDirection === '',
               }
             : {}),
         },
@@ -236,6 +241,26 @@ export default function CameraLocationEditModal({
               onChange={(event) => setRoomCode(event.target.value)}
               placeholder="Masalan: 211"
             />
+          </div>
+        )}
+
+        {roomKnown && (roomType || camera?.effectiveRoomType) === 'kirish' && (
+          <div>
+            <SelectField
+              label="Kamera kimning yuzini ko'radi"
+              placeholder="Noma'lum (ikkala tomon)"
+              value={faceDirection}
+              onChange={(event) => setFaceDirection(event.target.value as 'kirish' | 'chiqish' | '')}
+              options={[
+                { value: 'kirish', label: 'Binoga kirayotganlarning' },
+                { value: 'chiqish', label: 'Binodan chiqayotganlarning' },
+              ]}
+            />
+            <p className="mt-1 text-[11px] text-slate-400">
+              Aniq belgilansa, kelish va ketish adashtirilmaydi: kirayotganlarni ko&apos;radigan kamera kech
+              kelganni istalgan soatda aniqlaydi, chiqayotganlarni ko&apos;radigani esa hech kimni &quot;kech
+              keldi&quot; deb yozmaydi.
+            </p>
           </div>
         )}
 

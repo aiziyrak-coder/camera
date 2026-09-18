@@ -73,3 +73,28 @@ def test_zero_threshold_analyses_everything(fake_app):
     faces = face_recognition._detect_faces_sync(b"jpeg", min_face_px=0)
     assert len(recognizable_faces(faces)) == 3
     assert recognition.batches == [3]
+
+
+def test_roi_crops_the_frame_and_returns_full_frame_coordinates(fake_app, monkeypatch):
+    """Eshik hududi (Camera.face_roi): detektor faqat qirqilgan qismni ko'radi,
+    natijadagi ramkalar esa to'liq kadrga nisbatan."""
+    shapes: list[tuple] = []
+    app = face_recognition._get_app()
+    original_detect = app.det_model.detect
+
+    def detect(img, max_num, metric):
+        shapes.append(img.shape[:2])
+        return original_detect(img, max_num, metric)
+
+    monkeypatch.setattr(app.det_model, "detect", detect)
+    faces = face_recognition._detect_faces_sync(b"jpeg", min_face_px=0, roi=(0.5, 0.2, 1.0, 1.0))
+    assert shapes == [(80, 50)]  # 100x100 kadrning o'ng pastki qismi
+    assert list(faces[0].bbox) == [50.0, 20.0, 60.0, 30.0]
+
+
+def test_faces_identified_in_the_previous_frame_are_not_recomputed(fake_app):
+    recognition, _ = fake_app
+    faces = face_recognition._detect_faces_sync(b"jpeg", min_face_px=0, skip_boxes=((0.0, 0.0, 60.0, 60.0),))
+    assert [face.tracked for face in faces] == [False, False, True]
+    assert faces[2].embedding is None
+    assert recognition.batches == [2]

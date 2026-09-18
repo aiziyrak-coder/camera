@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -253,6 +255,15 @@ class Settings(BaseSettings):
     # qilmasa — panelda kritik ogohlantirish (app/services/ai_watchdog.py).
     # 0 — o'chiq.
     ai_watchdog_minutes: int = 10
+    # Harakat bo'lmasa tahlil yo'q (app/services/motion_gate.py). Kadr 1/8
+    # o'lchamda oldingisi bilan solishtiriladi: piksel yorqinligi
+    # `pixel_delta` dan ko'p o'zgargan piksellar ulushi `min_changed_fraction`
+    # dan kam bo'lsa — to'liq yuz tahlili o'tkazib yuboriladi. Baribir har
+    # `max_skip_seconds` da bir kadr tahlil qilinadi.
+    motion_gate_enabled: bool = True
+    motion_gate_pixel_delta: int = 18
+    motion_gate_min_changed_fraction: float = 0.003
+    motion_gate_max_skip_seconds: float = 30.0
     # Kuzatuvchi shuncha soniya hech qadam qo'ymasa (kadr kutish ham, tahlil
     # ham tugamasa) — u qotgan hisoblanadi va qayta ishga tushiriladi.
     entrance_watcher_stall_seconds: int = 180
@@ -274,6 +285,10 @@ class Settings(BaseSettings):
     # accuracy for load; 4 frames over ~3s was picked as a reasonable
     # balance, not measured against labeled footage.
     sleep_confirmation_frame_count: int = 4
+    # Uyqu (#20) faqat jadvaldagi dars davom etayotgan auditoriyada tekshiriladi
+    # (app/jobs/unified_face_sweep.py). Bo'sh xonada yoki tanaffusda 4 kadrli
+    # burst — CPU isrofi va yolg'on signal manbai edi.
+    sleep_only_during_lessons: bool = True
     sleep_confirmation_gap_seconds: float = 1.0
     sleep_confirmation_majority_ratio: float = 0.75
 
@@ -442,6 +457,10 @@ class Settings(BaseSettings):
     # haqiqatan o'tirgan talaba o'nlab marta ko'rinadi va bu chegara
     # unga to'sqinlik qilmaydi; tasodifiy moslik esa takrorlanmaydi.
     lesson_attendance_min_sightings: int = 3
+    # Bitta dars kamerasi necha soniyada bir tahlil qilinadi (app/jobs/lesson_quality_ai.py).
+    # 90 daqiqalik darsda 300 s — 18 namuna: diqqat/faollik o'rtachasi va
+    # 3 ta ko'rinishli dars davomati uchun yetarli, CPU esa ~7 barobar kam.
+    lesson_sample_interval_seconds: int = 300
     # Yakunlash ishi tugagan darslarni qidiradi — tez-tez ishlashi shart
     # emas, lekin dars tugagach hisobot uzoq kutmasligi kerak.
     lesson_attendance_finalize_interval_seconds: int = 300
@@ -588,6 +607,10 @@ class Settings(BaseSettings):
     stream_cache_max_age_seconds: float = 15.0
     stream_cache_idle_timeout_seconds: float = 300.0
     stream_cache_capture_fps: float = 2.0
+    # Har o'quvchi saqlaydigan oxirgi HAR XIL kadrlar soni (kadr tarixi).
+    # Kalit kadr ~1 s da bo'lsa, 6 ta kadr ~5-6 s ni qamraydi — uyqu burst'i
+    # (4 kadr, 1 s oraliq) va juftliklar yangi kadr kutmasdan olinadi.
+    stream_cache_history_frames: int = 6
     # A camera's real stream runs at its native fps (e.g. 25) but
     # stream_cache_capture_fps only needs ~1-2 of those per second —
     # ffmpeg was still decoding EVERY incoming frame just to throw away
@@ -708,6 +731,17 @@ class Settings(BaseSettings):
     # Central AI scheduler (app/jobs/ai_scheduler.py) — when true, individual
     # per-module asyncio loops are NOT started; one coordinator dispatches sweeps.
     ai_scheduler_enabled: bool = False
+    # Jarayonning AI'dagi roli (app/main.py lifespan):
+    #   "all"    — eski xatti-harakat: qaysi worker leader qulfini olsa, AI o'shanda;
+    #   "api"    — faqat HTTP; AI sweeplari hech qachon bu yerda ishlamaydi;
+    #   "worker" — AI uchun alohida konteyner (docker-compose ai-worker). Qulf
+    #              band bo'lsa (eski api konteyneri hali ishlayotgan bo'lsa),
+    #              bo'shaguncha kutadi — "api" jarayoni uni hech qachon olmaydi.
+    # Productionda: api=api, ai-worker=worker. Shunda AI yuki (CPU, GIL,
+    # ffmpeg) sayt javoblarini sekinlashtirmaydi va AI qayta ishga tushsa
+    # ham sayt uzilmaydi.
+    ai_role: Literal["all", "api", "worker"] = "all"
+    ai_worker_lock_retry_seconds: float = 10.0
     ai_scheduler_poll_seconds: int = 5
     # Davomatga ustuvorlik (app/jobs/ai_scheduler.py). Productionda bitta
     # AVX'siz CPU'da og'ir evristikalar (poza, optik oqim, rang) bilan kirish
@@ -764,6 +798,14 @@ class Settings(BaseSettings):
     mediamtx_relay_h264_substream: bool = True
     # Browser HLS needs H.264 — when relay is off, on-demand ffmpeg transcodes.
     mediamtx_transcode_h264: bool = False
+    # Kamerama-kamera qaror (app/services/video_gateway.py register_camera_stream):
+    # ro'yxatga olishda substream kodeki ffprobe bilan o'qiladi — H.264 bo'lsa
+    # to'g'ridan-to'g'ri uzatiladi (transkodsiz, CPU ~0, kechikish GOP'ga
+    # teng), aks holda (H.265 yoki o'qib bo'lmadi) transkod qilinadi.
+    # Aralash park uchun: scripts/camera_stream_settings.py --faqat-sub
+    # --qollash bilan substreamlar H.264 ga o'tkazilgandan keyin yoqiladi,
+    # o'tmay qolgan kameralar esa baribir ko'rinadi.
+    mediamtx_relay_probe_codec: bool = False
     mediamtx_transcode_height: int = 0
     # 0 = kameradan kelgan tezlikni o'zgartirmaslik. > 0 bo'lsa ffmpeg
     # chiqishni shu FPS ga cheklaydi.

@@ -59,6 +59,8 @@ from app.services.frame_grabber import (
     stream_label,
 )
 from app.services import recognition_stats
+from app.services.camera_roles import face_roi_box
+from app.services.motion_gate import MotionGate
 from app.services.presence import record_visit
 from app.timezone import local_now, to_local
 from app.ws import manager
@@ -122,10 +124,22 @@ def first_sighting_status(occurred_time: time_type, camera: Camera | None) -> tu
         vaqt noma'lum: kirish kamerasi chiqishni ham ko'radi, kunning
         birinchi ko'rinishi 16:30 da bo'lsa, bu odatda ketayotgan odam.
 
+    Kameraning yo'nalishi (Camera.face_direction) ma'lum bo'lsa, taxmin
+    o'rniga aniq qoida:
+      * "kirish" — kamera kirayotganlarning yuzini ko'radi: bu haqiqatan
+        kelish, 12:00 dan keyin ham kech kelgan hisoblanadi;
+      * "chiqish" — kamera chiqayotganlarning yuzini ko'radi: bu ketish,
+        kelish vaqti noma'lum ("keldi").
+
     `camera` bo'lmasa (qo'lda/test chaqiruvi) — avvalgi xatti-harakat."""
     cutoff = time_type.fromisoformat(settings.attendance_ai_late_cutoff)
     if occurred_time < cutoff:
         return "keldi", occurred_time
+    direction = getattr(camera, "face_direction", None) if camera is not None else None
+    if direction == "chiqish":
+        return "keldi", None
+    if direction == "kirish" and camera.is_entrance:
+        return "kech_keldi", occurred_time
     window_end = settings.attendance_late_window_end.strip()
     if camera is not None and window_end and occurred_time >= time_type.fromisoformat(window_end):
         return "keldi", None
@@ -189,7 +203,10 @@ async def upsert_attendance_from_recognition(
     local_occurred_at = to_local(occurred_at)
     record_date = local_occurred_at.date()
     occurred_time = local_occurred_at.time().replace(microsecond=0)
-    is_exit_sighting = camera is not None and camera.is_exit
+    # Kirayotganlarning yuzini ko'radigan kamera ketishni qayd etmaydi.
+    is_exit_sighting = (
+        camera is not None and camera.is_exit and getattr(camera, "face_direction", None) != "kirish"
+    )
 
     existing = (
         await db.execute(
@@ -281,7 +298,10 @@ async def upsert_attendance_from_recognition(
         off_hours_module_active
         and camera is not None
         and is_first_sighting_today
-        and _is_off_hours(occurred_time, at_entrance=camera.is_entrance)
+        and _is_off_hours(
+            occurred_time,
+            at_entrance=camera.is_entrance and getattr(camera, "face_direction", None) != "chiqish",
+        )
     ):
         await raise_event(
             db,
@@ -338,6 +358,9 @@ async def process_camera_frame(
     student_module_active: bool = True,
     faces: list | None = None,
     inference_priority: int = PRIORITY_BACKGROUND,
+    roi: tuple[float, float, float, float] | None = None,
+    skip_boxes: tuple = (),
+    identified_boxes: list | None = None,
 ) -> list[AttendanceRecord]:
     """Checks EVERY face in the frame — not just the largest — and writes
     an attendance record for each one that matches an enrolled person.
@@ -365,10 +388,20 @@ async def process_camera_frame(
     simple/one-off callers (tests, mainly).
 
     `faces` lets app/jobs/unified_face_sweep.py pass pre-detected faces
-    from a shared detect_faces() call — skips a redundant inference pass."""
+    from a shared detect_faces() call — skips a redundant inference pass.
+
+    `roi` — kirish eshigi hududi (Camera.face_roi), `skip_boxes` — oldingi
+    kadrda tanilgan yuzlar (qayta hisoblanmaydi). `identified_boxes` berilsa,
+    shu kadrda tanilgan (davomatga yozilgan) yuzlarning ramkalari unga
+    qo'shiladi — kuzatuvchi ularni keyingi kadrda `skip_boxes` qilib beradi."""
     if faces is None:
-        faces = await detect_faces(frame_bytes, priority=inference_priority)
+        faces = await detect_faces(frame_bytes, priority=inference_priority, roi=roi, skip_boxes=skip_boxes)
+    camera_key_tracked = sum(1 for face in faces if getattr(face, "tracked", False))
     camera_key = str(camera.id) if camera is not None else None
+    recognition_stats.record_tracked(camera_key, camera_key_tracked)
+    if identified_boxes is not None:
+        # Tanilgan odam keyingi kadrda ham tanilgan bo'lib qoladi (kuzatuv).
+        identified_boxes.extend(face.bbox for face in faces if getattr(face, "tracked", False))
     if not faces:
         # Yuzsiz kadr ham "tekshirilgan" — aks holda tashxis 1000 marta
         # tekshirilgan kamerani "hali tekshirilmadi" deb ko'rsatardi.
@@ -433,6 +466,8 @@ async def process_camera_frame(
             recognition_stats.record_credit(camera_key, "relaxed_confirmed")
 
         matched_ids.add(student_staff_id)
+        if identified_boxes is not None:
+            identified_boxes.append(face.bbox)
         logger.info(
             "attendance AI matched a face",
             extra={
@@ -732,10 +767,19 @@ def _camera_signature(camera: Camera) -> tuple:
         camera.is_perimeter,
         tuple(camera.excluded_module_codes or ()),
         camera.building_id,
+        tuple(tuple(point) for point in (getattr(camera, "face_roi", None) or ())),
+        getattr(camera, "face_direction", None),
     )
 
 
-async def _analyse_entrance_frame(camera: Camera, frame: bytes, context: _EntranceContext) -> int:
+async def _analyse_entrance_frame(
+    camera: Camera,
+    frame: bytes,
+    context: _EntranceContext,
+    *,
+    skip_boxes: tuple = (),
+    identified_boxes: list | None = None,
+) -> int:
     async with entrance_exit_sweep_slot():
         async with context.session_factory() as db:
             records = await process_camera_frame(
@@ -749,17 +793,28 @@ async def _analyse_entrance_frame(camera: Camera, frame: bytes, context: _Entran
                 # Eshik kadri xona kameralaridan oldin tahlil qilinsin
                 # (app/services/inference_gate.py, PRIORITY_ATTENDANCE).
                 inference_priority=PRIORITY_ATTENDANCE,
+                roi=face_roi_box(camera),
+                skip_boxes=skip_boxes,
+                identified_boxes=identified_boxes,
             )
     return len({str(r.student_staff_id) for r in records})
 
 
 async def _watch_entrance_camera(camera: Camera, watcher: _EntranceWatcher) -> None:
     """Bitta kirish/chiqish kamerasini to'xtovsiz kuzatadi (bekor
-    qilinguncha): har yangi kadr — bitta tahlil."""
+    qilinguncha): har yangi kadr — bitta tahlil.
+
+    Uch tejash (hammasi ertalabki tirband soat uchun CPU bo'shatadi):
+      * harakat bo'lmagan kadr tahlil qilinmaydi (app/services/motion_gate.py);
+      * faqat eshik hududi tahlil qilinadi (Camera.face_roi);
+      * oldingi kadrda tanilgan odam qayta hisoblanmaydi (kuzatuv)."""
     key = str(camera.id)
     last_seq: int | None = None
     misses = 0
     previous_analysis = monotonic()
+    gate = MotionGate()
+    roi = face_roi_box(camera)
+    tracked: tuple = ()
     while True:
         watcher.last_progress = monotonic()
         try:
@@ -780,7 +835,15 @@ async def _watch_entrance_camera(camera: Camera, watcher: _EntranceWatcher) -> N
                 continue
             misses = 0
             frame, last_seq = latest
-            watcher.matched += await _analyse_entrance_frame(camera, frame, context)
+            if not await asyncio.to_thread(gate.should_analyse, frame, roi):
+                recognition_stats.record_motion_skip(key)
+                tracked = ()  # eshik bo'sh — kuzatuv uziladi
+                continue
+            identified: list = []
+            watcher.matched += await _analyse_entrance_frame(
+                camera, frame, context, skip_boxes=tracked, identified_boxes=identified
+            )
+            tracked = tuple(identified)
             now = monotonic()
             recognition_stats.record_cycle(
                 key, total_seconds=now - previous_analysis, grab_seconds=grab_seconds, stream=stream_label(camera)

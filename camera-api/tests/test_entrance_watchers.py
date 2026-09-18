@@ -60,14 +60,16 @@ class TestWatcher:
         asked_after: list[int | None] = []
         analysed: list[bytes] = []
         blocked = asyncio.Event()
+        exhausted = asyncio.Event()
 
         async def fake_grab(camera, *, wait_seconds, after_seq):
             asked_after.append(after_seq)
             if frames:
                 return frames.pop(0)
+            exhausted.set()
             await blocked.wait()  # yangi kadr hali kelmagan
 
-        async def fake_analyse(camera, frame, context):
+        async def fake_analyse(camera, frame, context, **_options):
             analysed.append(frame)
             return 1
 
@@ -76,7 +78,7 @@ class TestWatcher:
         monkeypatch.setattr(attendance_ai, "_entrance_context", _context())
         watcher = attendance_ai._EntranceWatcher(signature=())
         task = asyncio.create_task(attendance_ai._watch_entrance_camera(_camera(), watcher))
-        await _settle()
+        await asyncio.wait_for(exhausted.wait(), timeout=2)
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
 
@@ -100,7 +102,7 @@ class TestWatcher:
             done.set()
             await asyncio.Event().wait()
 
-        async def fake_analyse(camera, frame, context):
+        async def fake_analyse(camera, frame, context, **_options):
             return 0
 
         monkeypatch.setattr(attendance_ai, "grab_newer_frame", fake_grab)
@@ -124,7 +126,7 @@ class TestWatcher:
             done.set()
             await asyncio.Event().wait()
 
-        async def fake_analyse(camera, frame, context):
+        async def fake_analyse(camera, frame, context, **_options):
             if frame == b"bad":
                 raise RuntimeError("baza bir lahza javob bermadi")
             analysed.append(frame)
@@ -288,3 +290,60 @@ class TestWhichStreamIsInUse:
 
         assert view.stream == "substream (zaxira)"
         assert "substream" in _diagnose(True, True, view, recognized=3, enrolled=100)
+
+
+class TestWatcherSavesCpu:
+    async def test_frames_without_motion_are_not_analysed(self, monkeypatch):
+        """Bo'sh eshik kadri yuz tahliliga bormaydi (app/services/motion_gate.py)."""
+        frames = [(b"a", 1), (b"b", 2), (b"c", 3)]
+        analysed: list[bytes] = []
+        verdicts = iter([True, False, True])
+        done = asyncio.Event()
+
+        async def fake_grab(camera, *, wait_seconds, after_seq):
+            if frames:
+                return frames.pop(0)
+            done.set()
+            await asyncio.Event().wait()
+
+        async def fake_analyse(camera, frame, context, **_options):
+            analysed.append(frame)
+            return 0
+
+        monkeypatch.setattr(attendance_ai, "grab_newer_frame", fake_grab)
+        monkeypatch.setattr(attendance_ai, "_analyse_entrance_frame", fake_analyse)
+        monkeypatch.setattr(attendance_ai, "_entrance_context", _context())
+        monkeypatch.setattr(attendance_ai.MotionGate, "should_analyse", lambda self, frame, roi=None: next(verdicts))
+        task = asyncio.create_task(attendance_ai._watch_entrance_camera(_camera(), attendance_ai._EntranceWatcher(())))
+        await asyncio.wait_for(done.wait(), timeout=2)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+        assert analysed == [b"a", b"c"]
+        assert recognition_stats.export_snapshot()["cam-1"]["motion_skipped"] == 1
+
+    async def test_identified_faces_are_skipped_in_the_next_frame(self, monkeypatch):
+        frames = [(b"a", 1), (b"b", 2)]
+        seen_skip: list[tuple] = []
+        done = asyncio.Event()
+
+        async def fake_grab(camera, *, wait_seconds, after_seq):
+            if frames:
+                return frames.pop(0)
+            done.set()
+            await asyncio.Event().wait()
+
+        async def fake_analyse(camera, frame, context, *, skip_boxes=(), identified_boxes=None):
+            seen_skip.append(skip_boxes)
+            identified_boxes.append((10.0, 10.0, 50.0, 60.0))
+            return 1
+
+        monkeypatch.setattr(attendance_ai, "grab_newer_frame", fake_grab)
+        monkeypatch.setattr(attendance_ai, "_analyse_entrance_frame", fake_analyse)
+        monkeypatch.setattr(attendance_ai, "_entrance_context", _context())
+        task = asyncio.create_task(attendance_ai._watch_entrance_camera(_camera(), attendance_ai._EntranceWatcher(())))
+        await asyncio.wait_for(done.wait(), timeout=2)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+        assert seen_skip == [(), ((10.0, 10.0, 50.0, 60.0),)]

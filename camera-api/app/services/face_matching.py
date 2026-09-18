@@ -185,6 +185,14 @@ def _build_candidate_matrix(rows: list) -> CandidateMatrix:
     return CandidateMatrix(ids=ids, matrix=matrix, person_types=person_types, _faiss_index=faiss_index)
 
 
+async def matrix_from_rows(rows: list) -> CandidateMatrix:
+    """(id, embedding_json, type) qatorlaridan matritsa — kichik ro'yxatlar
+    uchun ham (masalan bitta darsning guruhi va o'qituvchisi)."""
+    if not rows:
+        return CandidateMatrix(ids=[], matrix=np.empty((0, 0)), person_types={})
+    return await asyncio.to_thread(_build_candidate_matrix, rows)
+
+
 async def load_candidate_matrix(db: AsyncSession) -> CandidateMatrix:
     result = await db.execute(
         select(StudentStaff.id, StudentStaff.biometric_embedding, StudentStaff.type).where(

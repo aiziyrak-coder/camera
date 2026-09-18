@@ -27,6 +27,7 @@ and reads as "no frame" until the next request restarts it.
 
 import asyncio
 import itertools
+from collections import deque
 import logging
 import re
 import time
@@ -138,6 +139,12 @@ class _StreamReader:
         self._latest_frame_at: float = 0.0
         # _latest_frame ning tartib raqami (_frame_seq); 0 — hali kadr yo'q.
         self._latest_seq: int = 0
+        # Oxirgi bir necha HAR XIL kadr (tartib raqami, vaqti, baytlari).
+        # Ikki kadrli tekshiruvlar (jang, zona, yong'in, begona shaxs) va uyqu
+        # burst'i yangi kalit kadrni kutmasdan shu yerdan oladi — va bir vaqtda
+        # ishlagan modullar AYNAN bir xil kadrlarni oladi, ya'ni model natijasini
+        # bo'lishadi (app/services/inference_cache.py).
+        self._history: deque[tuple[int, float, bytes]] = deque(maxlen=max(1, settings.stream_cache_history_frames))
         self._last_requested_at: float = time.monotonic()
         self._lock = asyncio.Lock()
         # Buzilgan kadr tekshiruvi (frame_quality.py) uchun holat.
@@ -173,6 +180,7 @@ class _StreamReader:
             return
         self._latest_frame = frame
         self._latest_seq = next(_frame_seq)
+        self._history.append((self._latest_seq, self._latest_frame_at, frame))
 
     def get_frame(self) -> bytes | None:
         latest = self.get_latest()
@@ -216,6 +224,13 @@ class _StreamReader:
         if self._last_judged_corrupt:
             return None
         return frame, seq
+
+    def get_history(self) -> list[tuple[bytes, int, float]]:
+        """Eskirmagan kadrlar, eng yangisidan boshlab: (kadr, tartib raqami,
+        monotonic vaqti). Buzilganligi chaqiruvchida tekshiriladi."""
+        now = time.monotonic()
+        limit = settings.stream_cache_max_age_seconds
+        return [(frame, seq, at) for seq, at, frame in reversed(self._history) if now - at <= limit]
 
     def is_known_broken(self) -> bool:
         """True once this reader has had stream_broken_grace_seconds to
@@ -363,6 +378,12 @@ class StreamCache:
         await reader.ensure_started()
         return reader.get_latest()
 
+    async def get_history(self, stream_url: str) -> list[tuple[bytes, int, float]]:
+        reader = await self._get_or_create_reader(stream_url)
+        reader.touch()
+        await reader.ensure_started()
+        return reader.get_history()
+
     def peek_frame(self, stream_url: str) -> bytes | None:
         """The reader's latest usable frame, WITHOUT starting one.
 
@@ -410,6 +431,11 @@ async def get_cached_frame_with_seq(stream_url: str) -> tuple[bytes, int] | None
     kerak bo'lsa ishga tushiriladi). Raqam ikki kadr aynan bitta kadr
     emasligini tekshirish uchun — app/services/frame_grabber.py."""
     return await _cache.get_latest(stream_url)
+
+
+async def get_cached_history(stream_url: str) -> list[tuple[bytes, int, float]]:
+    """Oqimning oxirgi kadrlari (eng yangisidan) — app/services/frame_grabber.py."""
+    return await _cache.get_history(stream_url)
 
 
 def peek_cached_frame(stream_url: str) -> bytes | None:

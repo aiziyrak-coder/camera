@@ -135,3 +135,41 @@ class TestSweepSkipsBlindCameras:
         await self._swept_names(monkeypatch, TestSessionLocal)
         third = await self._swept_names(monkeypatch, TestSessionLocal)
         assert hall.name in third
+
+    async def _sleep_flags(self, monkeypatch, session_factory) -> dict[str, bool]:
+        seen: dict[str, bool] = {}
+
+        async def fake_process(camera, flags, candidates, factory):
+            seen[camera.name] = flags["sleep"]
+            return {"unauthorized": 0, "sleep": 0}
+
+        monkeypatch.setattr(unified_face_sweep, "_process_camera", fake_process)
+        await unified_face_sweep.run_unified_face_sweep_once(session_factory=session_factory)
+        return seen
+
+    async def test_sleep_runs_only_while_a_lesson_is_on(self, cameras, monkeypatch, db_session):
+        """Uyqu (#20) bo'sh auditoriyada tekshirilmaydi — faqat jadvaldagi
+        dars davom etayotgan kamerada."""
+        from datetime import timedelta
+
+        from app.models import AIModuleConfig, LessonSession
+        from app.timezone import local_now
+        from tests.conftest import TestSessionLocal
+
+        sleep_module = (await db_session.execute(select(AIModuleConfig).where(AIModuleConfig.code == 20))).scalar_one()
+        sleep_module.active = True
+        await db_session.commit()
+        monkeypatch.setattr(settings, "sleep_only_during_lessons", True)
+        _, hall = cameras
+
+        assert (await self._sleep_flags(monkeypatch, TestSessionLocal)).get(hall.name) is False
+
+        db_session.add(
+            LessonSession(
+                date=local_now().date(), group_name="1-guruh", faculty="Davolash ishi", teacher="O'qituvchi",
+                subject="Anatomiya", attention_score=50, teacher_activity_score=50, teacher_on_time=True,
+                camera_id=hall.id, scheduled_start_time=local_now() - timedelta(minutes=10),
+            )
+        )
+        await db_session.commit()
+        assert (await self._sleep_flags(monkeypatch, TestSessionLocal))[hall.name] is True

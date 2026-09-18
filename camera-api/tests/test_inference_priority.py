@@ -58,7 +58,7 @@ class TestAttendanceUsesItsPriority:
     async def test_process_camera_frame_forwards_priority_to_detection(self, db_session, monkeypatch):
         seen: list[int] = []
 
-        async def fake_detect(frame_bytes, *, priority):
+        async def fake_detect(frame_bytes, *, priority, **_options):
             seen.append(priority)
             return []
 

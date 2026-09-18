@@ -72,3 +72,10 @@ def test_read_back_detects_a_silently_ignored_write(script):
     unchanged = script.read_state(ET.fromstring(SUB_STREAM))
     assert script.not_applied(wanted, unchanged) == ["kodek H.265", "GOP 100", "Smart Codec hali yoqiq"]
     assert script.not_applied(wanted, wanted) == []
+
+
+def test_faqat_sub_touches_only_the_substream(script):
+    import argparse
+
+    assert script.channels_for(argparse.Namespace(faqat_sub=True)) == {"sub": "102"}
+    assert script.channels_for(argparse.Namespace(faqat_sub=False)) == {"asosiy": "101", "sub": "102"}

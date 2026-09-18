@@ -26,6 +26,13 @@ Ishga tushirish (serverda, API konteyneri ichida — baza va kamera tarmog'i shu
     sudo $C exec -T api python scripts/camera_stream_settings.py                 # faqat ko'rish
     sudo $C exec -T api python scripts/camera_stream_settings.py --ip 192.168.0.107   # bitta kamera
     sudo $C exec -T api python scripts/camera_stream_settings.py --qollash       # yozish
+    sudo $C exec -T api python scripts/camera_stream_settings.py --faqat-sub --qollash   # xona kameralari
+
+--faqat-sub — faqat qo'shimcha oqim (102): H.264 va GOP=fps. Asosiy oqimga
+(xona kameralarida hali AI uchun ishlatilmaydi, yozuv esa NVR'da) tegilmaydi.
+Substream H.264 bo'lgach, MEDIAMTX_RELAY_PROBE_CODEC=true brauzerga uni
+transkodsiz uzatadi (app/services/video_gateway.py) — MediaMTX'dagi ffmpeg
+enkoderlari o'z-o'zidan kamayadi.
 """
 
 from __future__ import annotations
@@ -170,6 +177,13 @@ def _response_message(text: str) -> str:
     return " / ".join(x.text.strip() for x in (status, sub) if x is not None and x.text)
 
 
+def channels_for(args: argparse.Namespace) -> dict[str, str]:
+    """--faqat-sub: faqat qo'shimcha oqim (102)."""
+    if getattr(args, "faqat_sub", False):
+        return {"sub": CHANNELS["sub"]}
+    return dict(CHANNELS)
+
+
 async def handle_camera(camera: Camera, args: argparse.Namespace, semaphore: asyncio.Semaphore) -> list[str]:
     lines = [f"{camera.ip:<16} {camera.name}"]
     username = decrypt(camera.rtsp_username) if camera.rtsp_username else None
@@ -180,7 +194,7 @@ async def handle_camera(camera: Camera, args: argparse.Namespace, semaphore: asy
     async with semaphore, httpx.AsyncClient(
         auth=httpx.DigestAuth(username, password), timeout=TIMEOUT_SECONDS
     ) as client:
-        for label, channel in CHANNELS.items():
+        for label, channel in channels_for(args).items():
             url = f"{base}/ISAPI/Streaming/channels/{channel}"
             try:
                 response = await client.get(url)
@@ -232,6 +246,12 @@ async def run(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Kamera oqim sozlamalari (ISAPI): GOP=fps, Smart Codec o'chiq, sub H.264")
     parser.add_argument("--ip", action="append", default=[], help="faqat shu IP (bir necha marta berish mumkin)")
     parser.add_argument("--faqat-kirish", action="store_true", help="faqat kirish/chiqish va perimetr kameralari")
+    parser.add_argument(
+        "--faqat-sub", action="store_true", help="faqat qo'shimcha oqim (102) — asosiy oqimga tegilmaydi"
+    )
+    parser.add_argument(
+        "--xonalar", action="store_true", help="faqat kirish/chiqish/perimetr BO'LMAGAN kameralar (xona, koridor)"
+    )
     parser.add_argument("--port", type=int, default=80, help="kameraning veb (ISAPI) porti, standart 80")
     parser.add_argument("--sub-h265-qolsin", action="store_true", help="qo'shimcha oqim kodekini o'zgartirmaslik")
     parser.add_argument("--qollash", action="store_true", help="o'zgarishlarni kameralarga yozish (standart: faqat ko'rish)")
@@ -243,8 +263,13 @@ async def run(argv: list[str] | None = None) -> int:
     if args.ip:
         wanted = set(args.ip)
         cameras = [camera for camera in cameras if camera.ip in wanted]
+    if args.faqat_kirish and args.xonalar:
+        print("--faqat-kirish va --xonalar birga berilmaydi.")
+        return 2
     if args.faqat_kirish:
         cameras = [c for c in cameras if c.is_entrance or c.is_exit or c.is_perimeter]
+    if args.xonalar:
+        cameras = [c for c in cameras if not (c.is_entrance or c.is_exit or c.is_perimeter)]
     if not cameras:
         print("Mos kamera topilmadi.")
         return 1

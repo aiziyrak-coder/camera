@@ -413,3 +413,76 @@ class TestSweepConcurrency:
         # against a blank frame) -- only that the sweep didn't short-circuit
         # at the module gate the way the "both disabled" test above does.
         await run_lesson_quality_ai_sweep_once(session_factory=TestSessionLocal)
+
+
+async def _reachable(db_session, camera) -> None:
+    from datetime import datetime, timezone
+
+    camera.stream_url = "rtsp://fake/auditoriya"
+    camera.last_seen_at = datetime.now(timezone.utc)
+    await db_session.commit()
+
+
+@pytest.mark.usefixtures("seeded")
+class TestScheduledSampling:
+    """Dars kamerasi har sweep aylanishida emas, lesson_sample_interval_seconds
+    da bir marta tahlil qilinadi; solishtiruv esa faqat shu darsning guruhi va
+    o'qituvchisi bilan."""
+
+    async def test_a_sampled_lesson_waits_for_the_interval(self, db_session, a_teacher, a_camera, monkeypatch):
+        await _reachable(db_session, a_camera)
+        await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=10)
+        calls = {"n": 0}
+
+        async def counting_grab(camera, gap_seconds=1.0):
+            calls["n"] += 1
+            return _blank_frame(), _blank_frame()
+
+        async def no_faces(frame_bytes, **_options):
+            return []
+
+        monkeypatch.setattr(lesson_quality_ai, "grab_frame_pair_for_camera", counting_grab)
+        monkeypatch.setattr(lesson_quality_ai, "detect_faces", no_faces)
+
+        await run_lesson_quality_ai_sweep_once(session_factory=TestSessionLocal)
+        await run_lesson_quality_ai_sweep_once(session_factory=TestSessionLocal)
+        assert calls["n"] == 1
+
+        monkeypatch.setattr(lesson_quality_ai.settings, "lesson_sample_interval_seconds", 0)
+        await run_lesson_quality_ai_sweep_once(session_factory=TestSessionLocal)
+        assert calls["n"] == 2
+
+    async def test_a_failed_grab_is_retried_on_the_next_tick(self, db_session, a_teacher, a_camera, monkeypatch):
+        await _reachable(db_session, a_camera)
+        await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=10)
+        calls = {"n": 0}
+
+        async def offline_grab(camera, gap_seconds=1.0):
+            calls["n"] += 1
+            return None
+
+        monkeypatch.setattr(lesson_quality_ai, "grab_frame_pair_for_camera", offline_grab)
+        await run_lesson_quality_ai_sweep_once(session_factory=TestSessionLocal)
+        await run_lesson_quality_ai_sweep_once(session_factory=TestSessionLocal)
+        assert calls["n"] == 2
+
+    async def test_gallery_holds_only_the_group_and_its_teacher(self, db_session, a_teacher, a_camera):
+        faculty = (await db_session.execute(select(Faculty))).scalars().first()
+        in_group = StudentStaff(
+            full_name="Guruhdagi Talaba", type="talaba", faculty_id=faculty.id,
+            group_or_position="2-kurs, 1-guruh", biometric_embedding=json.dumps([0.0, 1.0]),
+        )
+        other_group = StudentStaff(
+            full_name="Boshqa Talaba", type="talaba", faculty_id=faculty.id,
+            group_or_position="2-guruh", biometric_embedding=json.dumps([0.6, 0.8]),
+        )
+        other_teacher = StudentStaff(
+            full_name="Boshqa O'qituvchi", type="xodim", faculty_id=faculty.id,
+            group_or_position="O'qituvchi", biometric_embedding=json.dumps([0.8, 0.6]),
+        )
+        db_session.add_all([in_group, other_group, other_teacher])
+        await db_session.commit()
+        lesson = await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=10)
+
+        gallery = await lesson_quality_ai._lesson_gallery(db_session, lesson)
+        assert set(gallery.ids) == {str(in_group.id), str(a_teacher.id)}

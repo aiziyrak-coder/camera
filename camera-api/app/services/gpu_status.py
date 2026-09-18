@@ -37,10 +37,21 @@ def get_gpu_status() -> dict[str, object]:
     torch_cuda = _torch_cuda_available()
     cuda_available = cuda_in_onnx or torch_cuda
 
-    face_active = settings.face_recognition_gpu_enabled and cuda_in_onnx
+    # Model yuklangan bo'lsa — sessiyalar AMALDA nima ishlatayotgani
+    # (CUDA "mavjud", lekin cuDNN topilmasa sessiya jimgina CPU'da ishlaydi).
+    from app.services.face_recognition import face_session_providers
+
+    session_providers = face_session_providers()
+    face_fell_back = session_providers is not None and "CUDAExecutionProvider" not in session_providers
+    face_active = settings.face_recognition_gpu_enabled and cuda_in_onnx and not face_fell_back
     object_active = settings.object_detection_gpu_enabled and torch_cuda
 
-    if settings.face_recognition_gpu_enabled and not cuda_in_onnx:
+    if settings.face_recognition_gpu_enabled and cuda_in_onnx and face_fell_back:
+        recommendation = (
+            "CUDA mavjud, lekin yuz modellari CPU'da ishlayapti — onnxruntime CUDA/cuDNN "
+            "kutubxonalarini yuklay olmadi (konteyner logida 'InsightFace sessions ready' qatori)."
+        )
+    elif settings.face_recognition_gpu_enabled and not cuda_in_onnx:
         recommendation = (
             "FACE_RECOGNITION_GPU_ENABLED=true, lekin CUDAExecutionProvider yo'q — "
             "Dockerfile.gpu + nvidia-container-toolkit o'rnatilganini tekshiring."
@@ -68,6 +79,7 @@ def get_gpu_status() -> dict[str, object]:
         "torch_cuda_available": torch_cuda,
         "face_gpu_enabled": settings.face_recognition_gpu_enabled,
         "face_gpu_active": face_active,
+        "face_session_providers": session_providers or [],
         "object_gpu_enabled": settings.object_detection_gpu_enabled,
         "object_gpu_active": object_active,
         "recommendation": recommendation,

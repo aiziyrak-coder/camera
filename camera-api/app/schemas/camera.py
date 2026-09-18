@@ -6,6 +6,7 @@ from app.schemas.base import CamelModel
 
 # app/services/camera_roles.py ROOM_TYPES bilan bir xil (model CheckConstraint ham).
 RoomType = Literal["kirish", "auditoriya", "laboratoriya", "koridor", "ofis", "cheklangan", "tashqi"]
+FaceDirection = Literal["kirish", "chiqish"]
 
 
 class CameraOut(CamelModel):
@@ -67,6 +68,10 @@ class CameraOut(CamelModel):
     effective_room_type: RoomType | None = None
     # Dars jadvalidagi xona raqami (normallashtirilgan).
     room_code: str | None = None
+    # Kirish kamerasining eshik hududi (yuz faqat shu yerda qidiriladi) va
+    # kamera kirayotganlarning yoki chiqayotganlarning yuzini ko'rishi.
+    face_roi: list[list[float]] | None = None
+    face_direction: FaceDirection | None = None
 
 
 class CameraCreateIn(CamelModel):
@@ -137,6 +142,9 @@ class CameraLocationIn(CamelModel):
     room_code: str | None = Field(default=None, max_length=32)
     """Dars jadvalidagi xona raqami. Olib tashlash uchun — `clear_room_code`."""
     clear_room_code: bool = False
+    face_direction: FaceDirection | None = None
+    """Kirish kamerasi kimning yuzini ko'radi. Olib tashlash — `clear_face_direction`."""
+    clear_face_direction: bool = False
 
 
 class CameraBulkLocationIn(CamelModel):
@@ -248,7 +256,7 @@ class ModuleCameraAssignmentsPatchIn(CamelModel):
 class CameraRoleChangeOut(CamelModel):
     camera_id: str
     camera_name: str
-    field: Literal["room_type", "room_code"]
+    field: Literal["room_type", "room_code", "face_direction"]
     old: str | None = None
     new: str | None = None
 

@@ -47,9 +47,30 @@ def _behaviour_hours_off():
     from app.config import settings
 
     original = settings.behaviour_hours_enabled
+    original_sleep = settings.sleep_only_during_lessons
     settings.behaviour_hours_enabled = False
+    # Uyqu testlari dars jadvalini yaratmaydi; darvozaning o'z testi
+    # (test_unified_face_sweep.py) uni ataylab yoqadi.
+    settings.sleep_only_during_lessons = False
     yield
     settings.behaviour_hours_enabled = original
+    settings.sleep_only_during_lessons = original_sleep
+
+
+@pytest.fixture(autouse=True)
+def _fresh_inference_cache():
+    """Kadr natijalari keshi (app/services/inference_cache.py) testlar
+    orasida bo'lishilmasin: ko'p test bir xil soxta kadr baytlarini
+    ishlatadi, lekin modelni har xil soxtalashtiradi."""
+    from app.services.inference_cache import inference_cache
+
+    from app.jobs.lesson_quality_ai import reset_sampling_for_tests
+
+    inference_cache.clear()
+    reset_sampling_for_tests()
+    yield
+    inference_cache.clear()
+    reset_sampling_for_tests()
 
 
 @pytest_asyncio.fixture(autouse=True)

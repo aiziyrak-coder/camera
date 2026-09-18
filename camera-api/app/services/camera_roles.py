@@ -143,3 +143,30 @@ def guess_room_from_name(name: str | None) -> tuple[str | None, str | None]:
     if not match:
         return None, None
     return "auditoriya", normalize_room_code(match.group(1))
+
+
+FACE_ROI_MARGIN = 0.03
+"""Eshik hududi chetidan qo'shimcha joy — chegarada turgan yuz qirqilib qolmasin."""
+
+
+def face_roi_box(camera) -> tuple[float, float, float, float] | None:
+    """Camera.face_roi poligonining normallashgan chegara to'rtburchagi
+    (x1, y1, x2, y2), biroz kengaytirilgan. None — belgilanmagan yoki
+    deyarli butun kadr (qirqishdan foyda yo'q)."""
+    polygon = getattr(camera, "face_roi", None)
+    if not polygon or len(polygon) < 3:
+        return None
+    try:
+        xs = [float(point[0]) for point in polygon]
+        ys = [float(point[1]) for point in polygon]
+    except (TypeError, ValueError, IndexError):
+        return None
+    x1 = max(0.0, min(xs) - FACE_ROI_MARGIN)
+    y1 = max(0.0, min(ys) - FACE_ROI_MARGIN)
+    x2 = min(1.0, max(xs) + FACE_ROI_MARGIN)
+    y2 = min(1.0, max(ys) + FACE_ROI_MARGIN)
+    if x2 - x1 < 0.05 or y2 - y1 < 0.05:
+        return None
+    if (x2 - x1) * (y2 - y1) > 0.95:
+        return None
+    return (x1, y1, x2, y2)

@@ -60,5 +60,5 @@ async def ai_stall_message(db: AsyncSession) -> str | None:
     since = f"{to_local(latest):%H:%M} dan beri" if latest else "bugun hali"
     return (
         f"AI kirish kameralarida {since} birorta kadr tahlil qilmadi — davomat yozilmayapti. "
-        "API konteynerini qayta ishga tushiring va loglarni tekshiring"
+        "ai-worker (yoki api) konteynerini qayta ishga tushiring va loglarini tekshiring"
     )

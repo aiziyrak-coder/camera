@@ -363,6 +363,10 @@ export interface CameraConfig {
   effectiveRoomType?: RoomType | null;
   /** Dars jadvalidagi xona raqami (normallashtirilgan). */
   roomCode?: string | null;
+  /** Kirish kamerasining eshik hududi — AI yuzni faqat shu yerda qidiradi. */
+  faceRoi?: [number, number][] | null;
+  /** Kamera kirayotganlar ("kirish") yoki chiqayotganlar ("chiqish") yuzini ko'radi. */
+  faceDirection?: 'kirish' | 'chiqish' | null;
   /** Qavat raqami; belgilanmagan bo'lsa null. Monitoring markazining
    * bino -> qavat kesimi shu maydon bo'yicha quriladi. */
   floor?: number | null;

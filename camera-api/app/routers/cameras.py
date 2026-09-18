@@ -120,6 +120,8 @@ def _to_out(camera: Camera) -> CameraOut:
         room_type=camera.room_type,
         effective_room_type=effective_room_type(camera),
         room_code=camera.room_code,
+        face_roi=camera.face_roi,
+        face_direction=camera.face_direction,
     )
 
 
@@ -509,6 +511,34 @@ async def set_camera_zone_polygon(
     return _to_out(camera)
 
 
+@router.patch("/{camera_id}/face-roi", response_model=CameraOut)
+async def set_camera_face_roi(
+    camera_id: str,
+    body: CameraZonePolygonIn,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: LocationDep,
+) -> CameraOut:
+    """Kirish kamerasining eshik hududi: AI yuzni faqat shu yerda, to'liq
+    sifatda qidiradi (app/services/face_recognition.py _detect_faces_sync).
+    Bo'sh ko'pburchak — hudud olib tashlanadi, butun kadr tahlil qilinadi."""
+    result = await db.execute(select(Camera).where(Camera.id == _camera_uuid(camera_id)))
+    camera = result.scalar_one_or_none()
+    if camera is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
+    if body.polygon is not None and 0 < len(body.polygon) < 3:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Hudud kamida 3 ta nuqtadan iborat bo'lishi kerak")
+    if body.polygon and any(len(point) != 2 or not all(0.0 <= value <= 1.0 for value in point) for point in body.polygon):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Nuqtalar kadrga nisbatan 0..1 oralig'ida bo'lishi kerak")
+
+    camera.face_roi = body.polygon if body.polygon else None
+    action = "Eshik hududini belgiladi" if camera.face_roi else "Eshik hududini olib tashladi"
+    await log_action(db, request, current_user.id, f"{action}: {camera.name}", "Kameralar")
+    await db.commit()
+    await db.refresh(camera, attribute_names=["building"])
+    return _to_out(camera)
+
+
 @router.patch("/{camera_id}/modules", response_model=CameraOut)
 async def set_camera_excluded_modules(
     camera_id: str,
@@ -716,6 +746,15 @@ async def update_camera_location(
     elif body.room_type is not None and body.room_type != camera.room_type:
         camera.room_type = body.room_type
         changes.append(f"xona turi: {ROOM_TYPE_LABELS[body.room_type]}")
+    if body.clear_face_direction:
+        if camera.face_direction is not None:
+            camera.face_direction = None
+            changes.append("yuz yo'nalishi: noma'lum")
+    elif body.face_direction is not None and body.face_direction != camera.face_direction:
+        camera.face_direction = body.face_direction
+        changes.append(
+            "yuz yo'nalishi: " + ("kirayotganlar" if body.face_direction == "kirish" else "chiqayotganlar")
+        )
     if body.clear_room_code:
         if camera.room_code is not None:
             camera.room_code = None
