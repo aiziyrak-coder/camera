@@ -148,6 +148,21 @@ class TestMainStreamFallback:
         assert "/Streaming/Channels/102" in frame_grabber.rtsp_url_for_camera(cam)
         assert real_wait(cam) == 8.0
 
+    async def test_the_silent_main_reader_is_closed_at_once(self, monkeypatch):
+        """Yopilmasa, u yana 5 daqiqa tarmoqni band qilib, substream bilan
+        birga ikki barobar yuklardi (productionda 172 o'quvchi)."""
+        monkeypatch.setattr(settings, "ai_entrance_use_main_stream", True)
+        cam = _camera(is_entrance=True)
+        _patch_grabber(monkeypatch, _FakeCache(None), wait_seconds=0.05)
+        stopped: list[str] = []
+
+        async def fake_stop(url):
+            stopped.append(url)
+
+        monkeypatch.setattr(frame_grabber, "stop_stream_reader", fake_stop)
+        await frame_grabber.grab_frame_for_camera(cam, wait_seconds=0.05)
+        assert len(stopped) == 1
+
     async def test_main_stream_is_retried_after_the_cooldown(self, monkeypatch):
         monkeypatch.setattr(settings, "ai_entrance_use_main_stream", True)
         monkeypatch.setattr(settings, "ai_entrance_main_stream_retry_seconds", 0.0)

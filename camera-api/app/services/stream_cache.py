@@ -404,6 +404,13 @@ class StreamCache:
                 self._readers[stream_url] = reader
             return reader
 
+    async def stop_reader(self, stream_url: str) -> None:
+        async with self._lock:
+            reader = self._readers.pop(stream_url, None)
+        if reader is not None:
+            await reader.stop()
+            logger.info("stream reader stopped (no frames)", extra={"stream_url": reader.stream_url})
+
     async def reap_idle(self) -> None:
         async with self._lock:
             idle_urls = [
@@ -449,6 +456,11 @@ def is_stream_known_broken(stream_url: str) -> bool:
     reader yet (nothing to judge broken)."""
     reader = _cache._readers.get(stream_url)
     return reader is not None and reader.is_known_broken()
+
+
+async def stop_stream_reader(stream_url: str) -> None:
+    """Bitta o'quvchini darhol yopish (masalan kadr bermagan asosiy oqim)."""
+    await _cache.stop_reader(stream_url)
 
 
 async def reap_idle_readers() -> None:

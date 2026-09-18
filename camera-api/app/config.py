@@ -179,6 +179,12 @@ class Settings(BaseSettings):
     room_watcher_start_delay_seconds: float = 60.0
     room_watcher_start_spread_seconds: float = 90.0
     ai_room_main_stream_retry_seconds: float = 3600.0
+    # Xona kameralari ham asosiy (4K) oqimni o'qiydimi. Productionda
+    # (2026-09-19 04:35) tarmoq ~40 ta asosiy oqimdan ko'pini ko'tarmadi:
+    # xona kameralari qo'shilgach, 8 ta kirish kamerasining hammasi
+    # substream'ga siqib chiqarildi. Standart — yo'q: kirish/perimetr asosiy
+    # oqimda, xonalar substream'da (kameraga yaqin odam baribir taniladi).
+    ai_room_cameras_main_stream: bool = False
     # Faqat DARS bo'yicha davomat va o'qituvchilar kuzatuvida: dars
     # boshlanganidan necha daqiqagacha kirish "o'z vaqtida" hisoblanadi
     # (kirish eshigidan auditoriyagacha yurish uchun).

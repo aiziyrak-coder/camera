@@ -51,9 +51,18 @@ class TestAllCameras:
         monkeypatch.setattr(settings, "attendance_all_cameras", True)
         assert str(role_allows_clause(6)) == "true"
 
-    def test_room_cameras_read_the_main_stream(self, monkeypatch):
+    def test_room_cameras_stay_on_the_substream_by_default(self, monkeypatch):
+        """Tarmoq 107 ta 4K oqimni ko'tarmaydi — asosiy oqim kirish eshigiga."""
         monkeypatch.setattr(settings, "attendance_all_cameras", True)
         monkeypatch.setattr(settings, "ai_entrance_use_main_stream", True)
+        monkeypatch.setattr(settings, "ai_room_cameras_main_stream", False)
+        assert ai_prefers_substream(_camera(room_type="auditoriya")) is True
+        assert ai_prefers_substream(_camera(id="door", is_entrance=True)) is False
+
+    def test_room_cameras_can_be_given_the_main_stream(self, monkeypatch):
+        monkeypatch.setattr(settings, "attendance_all_cameras", True)
+        monkeypatch.setattr(settings, "ai_entrance_use_main_stream", True)
+        monkeypatch.setattr(settings, "ai_room_cameras_main_stream", True)
         assert ai_prefers_substream(_camera(room_type="auditoriya")) is False
 
     def test_off_restores_entrance_only(self, monkeypatch):

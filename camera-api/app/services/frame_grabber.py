@@ -20,7 +20,12 @@ from app.crypto import decrypt
 from app.models import Camera
 from app.rtsp import build_rtsp_url
 from app.services.frame_quality import looks_like_decode_damage, measure_frame
-from app.services.stream_cache import get_cached_frame_with_seq, get_cached_history, is_stream_known_broken
+from app.services.stream_cache import (
+    get_cached_frame_with_seq,
+    get_cached_history,
+    is_stream_known_broken,
+    stop_stream_reader,
+)
 from app.services.thumbnail_cache import remember_frame
 from app.services.video_gateway import public_hls_to_internal
 
@@ -34,7 +39,9 @@ _POLL_SECONDS = 0.25
 def _is_security_camera(camera: Camera) -> bool:
     """Asosiy oqim o'qiladigan kameralar. ATTENDANCE_ALL_CAMERAS da har
     kamera davomat uchun yuz taniydi — substream'da yuz tanib bo'lmas darajada kichik."""
-    return camera.is_entrance or camera.is_perimeter or settings.attendance_all_cameras
+    if camera.is_entrance or camera.is_perimeter:
+        return True
+    return settings.attendance_all_cameras and settings.ai_room_cameras_main_stream
 
 
 # camera_id -> monotonic payt: shu paytgacha asosiy oqim ishlatilmaydi.
@@ -153,6 +160,10 @@ async def _grab_newer(camera: Camera, *, wait_seconds: float, after_seq: int | N
     # kalit kadr oralig'ida ikkinchi kadr kechikishi tabiiy).
     if on_main_stream and after_seq is None:
         _note_main_stream_result(camera, ok=False)
+        # Kadr bermagan asosiy oqim o'quvchisi darhol yopiladi — aks holda u
+        # yana stream_cache_idle_timeout_seconds davomida tarmoqni band qilib,
+        # substream bilan birga ikki barobar yuklardi (productionda 172 o'quvchi).
+        await stop_stream_reader(source)
     return None
 
 
