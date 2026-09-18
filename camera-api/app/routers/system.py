@@ -106,6 +106,11 @@ async def get_system_resources(
     cpu, ram, disk, ffmpeg_count = await asyncio.to_thread(_measure_resources)
     # Barcha API jarayonlari bo'yicha — javob bergan jarayonniki emas.
     stream_readers = await total_stream_readers()
+    # AI alohida ai-worker konteynerida bo'lsa, uning ffmpeg jarayonlari bu
+    # konteynerdan ko'rinmaydi (PID nomlar fazosi) — panelda 0 chiqardi.
+    # Har o'quvchi bitta ffmpeg, o'quvchilar soni esa Redis orqali hamma
+    # jarayonlardan yig'iladi.
+    ffmpeg_count = max(ffmpeg_count, stream_readers)
 
     return SystemResourcesOut(
         cpu=cpu,

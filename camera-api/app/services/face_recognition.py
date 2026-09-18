@@ -10,6 +10,7 @@ match score — the same category of model real biometric systems use.
 
 import asyncio
 import logging
+import threading
 from dataclasses import dataclass
 
 import cv2
@@ -25,6 +26,9 @@ from app.services.inference_gate import PRIORITY_BACKGROUND, PRIORITY_LIVE, face
 logger = logging.getLogger("app.face_recognition")
 
 _app: FaceAnalysis | None = None
+# Birinchi chaqiruvda bir nechta oqim bir vaqtda modelni yuklamasin
+# (productionda ai-worker ishga tushganda buffalo_l 3 marta yuklangan).
+_app_lock = threading.Lock()
 # Tizim o'qiydigan InsightFace modellari — _get_app() izohiga qarang.
 REQUIRED_FACE_MODELS = ["detection", "recognition", "landmark_3d_68"]
 
@@ -142,49 +146,58 @@ def _preload_cuda_libraries() -> None:
 
 
 def _get_app() -> FaceAnalysis:
-    global _app, _session_providers
     if _app is None:
-        # CUDAExecutionProvider first when GPU is enabled: onnxruntime
-        # tries providers in list order and falls back to the next one it
-        # actually has support for, so requesting CUDA first is safe even
-        # if the CPU-only `onnxruntime` package (not `onnxruntime-gpu`) is
-        # what's installed — it just silently falls through to CPU. This
-        # config flag exists so the production GPU server (onnxruntime-gpu
-        # installed) gets real GPU inference without a code change, while
-        # dev machines stay CPU-only by default.
-        providers = ["CPUExecutionProvider"]
-        if settings.face_recognition_gpu_enabled:
-            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-            _preload_cuda_libraries()
-        logger.info(
-            "loading InsightFace buffalo_l model (first use)",
-            extra={"gpu_enabled": settings.face_recognition_gpu_enabled},
-        )
-        # Faqat tizim haqiqatan o'qiydigan modellar. buffalo_l standart
-        # bo'yicha 5 ta modelni HAR BIR YUZ uchun ishga tushiradi; kod esa
-        # faqat normed_embedding (recognition), bbox (detection) va
-        # landmark_3d_68 (uyqu, frontallik, liveness) ni ishlatadi.
-        # genderage va landmark_2d_106 hech qayerda o'qilmaydi — productionda
-        # kirish kamerasida kadrga ~21 yuz tushadi, ya'ni kadr boshiga ~42
-        # ta befoyda model chaqiruvi CPU chegarasida turgan konteynerda.
-        _app = FaceAnalysis(name="buffalo_l", providers=providers, allowed_modules=REQUIRED_FACE_MODELS)
-        _limit_session_threads(_app, providers)
-        # ctx_id=0 selects GPU device 0 when CUDAExecutionProvider is
-        # active, and is harmless/ignored when it isn't (the CPU-only path
-        # this codebase already ran and tested with before GPU support
-        # existed also used ctx_id=0).
-        _app.prepare(ctx_id=0, det_size=(640, 640))
-        actual: set[str] = set()
-        for model in _app.models.values():
-            session = getattr(model, "session", None)
-            if session is not None:
-                actual.update(session.get_providers())
-        _session_providers = sorted(actual)
-        level = logging.INFO
-        if settings.face_recognition_gpu_enabled and "CUDAExecutionProvider" not in actual:
-            level = logging.ERROR
-        logger.log(level, "InsightFace sessions ready", extra={"providers": _session_providers})
+        with _app_lock:
+            if _app is None:
+                _load_app()
     return _app
+
+
+def _load_app() -> None:
+    """_app_lock ichida chaqiriladi."""
+    global _app, _session_providers
+    # CUDAExecutionProvider first when GPU is enabled: onnxruntime
+    # tries providers in list order and falls back to the next one it
+    # actually has support for, so requesting CUDA first is safe even
+    # if the CPU-only `onnxruntime` package (not `onnxruntime-gpu`) is
+    # what's installed — it just silently falls through to CPU. This
+    # config flag exists so the production GPU server (onnxruntime-gpu
+    # installed) gets real GPU inference without a code change, while
+    # dev machines stay CPU-only by default.
+    providers = ["CPUExecutionProvider"]
+    if settings.face_recognition_gpu_enabled:
+        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        _preload_cuda_libraries()
+    logger.info(
+        "loading InsightFace buffalo_l model (first use)",
+        extra={"gpu_enabled": settings.face_recognition_gpu_enabled},
+    )
+    # Faqat tizim haqiqatan o'qiydigan modellar. buffalo_l standart
+    # bo'yicha 5 ta modelni HAR BIR YUZ uchun ishga tushiradi; kod esa
+    # faqat normed_embedding (recognition), bbox (detection) va
+    # landmark_3d_68 (uyqu, frontallik, liveness) ni ishlatadi.
+    # genderage va landmark_2d_106 hech qayerda o'qilmaydi — productionda
+    # kirish kamerasida kadrga ~21 yuz tushadi, ya'ni kadr boshiga ~42
+    # ta befoyda model chaqiruvi CPU chegarasida turgan konteynerda.
+    app = FaceAnalysis(name="buffalo_l", providers=providers, allowed_modules=REQUIRED_FACE_MODELS)
+    _limit_session_threads(app, providers)
+    # ctx_id=0 selects GPU device 0 when CUDAExecutionProvider is
+    # active, and is harmless/ignored when it isn't (the CPU-only path
+    # this codebase already ran and tested with before GPU support
+    # existed also used ctx_id=0).
+    app.prepare(ctx_id=0, det_size=(640, 640))
+    actual: set[str] = set()
+    for model in app.models.values():
+        session = getattr(model, "session", None)
+        if session is not None:
+            actual.update(session.get_providers())
+    _session_providers = sorted(actual)
+    level = logging.INFO
+    if settings.face_recognition_gpu_enabled and "CUDAExecutionProvider" not in actual:
+        level = logging.ERROR
+    logger.log(level, "InsightFace sessions ready", extra={"providers": _session_providers})
+    # Boshqa oqimlar faqat to'liq tayyor modelni ko'rsin.
+    _app = app
 
 
 @dataclass
