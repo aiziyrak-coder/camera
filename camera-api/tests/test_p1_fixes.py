@@ -8,7 +8,7 @@ from sqlalchemy import select
 from app.config import settings
 from app.models import Building, Camera
 from app.services import stream_sync
-from app.services.lesson_import import _load_existing_lesson_keys
+from app.services.lesson_import import _load_lookups
 from app.services.student_import import _load_existing_people_keys, import_students_staff_csv
 
 
@@ -50,8 +50,8 @@ class TestBulkImportLookups:
         assert query_count["n"] == 2  # faculties + existing people, not 20+
 
     async def test_existing_lesson_keys_loaded_in_one_query(self, db_session):
-        keys = await _load_existing_lesson_keys(db_session)
-        assert isinstance(keys, set)
+        lookups = await _load_lookups(db_session)
+        assert isinstance(lookups.existing_keys, set)
 
 
 @pytest.mark.usefixtures("seeded")

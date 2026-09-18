@@ -145,7 +145,7 @@ export default function TeachingPage() {
               className="btn-glass flex items-center gap-1.5"
             >
               <FileUp size={14} />
-              CSV import
+              Jadvalni import (CSV/Excel)
             </button>
             <button
               onClick={() => setAddOpen(true)}

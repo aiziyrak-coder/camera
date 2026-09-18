@@ -73,7 +73,7 @@ from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.jobs.lesson_attendance import STUDENT_ATTENDANCE_MODULE_CODE, group_member_clause, record_sightings
 from app.models import LessonSession, StudentStaff
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
-from app.services.face_recognition import detect_faces
+from app.services.face_recognition import detect_faces, recognizable_faces
 from app.services.frame_grabber import grab_frame_pair_for_camera
 from app.services.image_size import jpeg_dimensions
 from app.services.object_detection import detect_objects
@@ -146,7 +146,7 @@ def _running_average(current_score: int, count: int, sample: float) -> int:
     return round((current_score * count + sample) / (count + 1))
 
 
-async def _match_enrolled(frame_bytes: bytes, candidates) -> list[tuple[object, tuple]]:
+async def _match_enrolled(frame_bytes: bytes, candidates, faces: list | None = None) -> list[tuple[object, tuple]]:
     """Kadrdagi yuzlarni ro'yxat bilan solishtiradi va TANILGANLARNI
     qaytaradi.
 
@@ -154,8 +154,12 @@ async def _match_enrolled(frame_bytes: bytes, candidates) -> list[tuple[object, 
     (#19) va dars davomati (#7). Ilgari bu hisob _sample_attention
     ichida edi va natijasi ballga aylantirilib, tashlab yuborilardi —
     ya'ni "shu darsda kim bor" degan javob har tikda hisoblanib,
-    saqlanmasdi."""
-    faces = await detect_faces(frame_bytes)
+    saqlanmasdi.
+
+    `faces` — shu kadrda allaqachon aniqlangan yuzlar (qayta aniqlanmaydi)."""
+    if faces is None:
+        faces = await detect_faces(frame_bytes)
+    faces = recognizable_faces(faces)
     if not faces:
         return []
     embeddings = np.stack([face.embedding for face in faces])
@@ -223,14 +227,21 @@ def _decoded_frame_size(frame_bytes: bytes) -> tuple[int, int] | None:
     return jpeg_dimensions(frame_bytes)
 
 
-async def _sample_activity(frame_a: bytes, frame_b: bytes, teacher_embedding: list[float]) -> float | None:
+async def _sample_activity(
+    frame_a: bytes, frame_b: bytes, teacher_embedding: list[float], faces_b: list | None = None
+) -> float | None:
     """None if the teacher's face couldn't be matched in frame_b, or no
     pose was found near them in either frame — nothing to sample this
     tick. Associates a detected FACE (InsightFace, pixel bbox) with a
     detected POSE (mediapipe, normalized landmarks) by normalizing the
     face's center using the frame's real dimensions — the two models
-    don't share a coordinate system otherwise."""
-    faces_b = await detect_faces(frame_b)
+    don't share a coordinate system otherwise.
+
+    `faces_b` — frame_b da allaqachon aniqlangan yuzlar. Ilgari shu kadr
+    _match_enrolled da bir marta, bu yerda ikkinchi marta aniqlanardi."""
+    if faces_b is None:
+        faces_b = await detect_faces(frame_b)
+    faces_b = recognizable_faces(faces_b)
     if not faces_b:
         return None
 
@@ -282,10 +293,17 @@ async def process_lesson_session(
     etiladi, xuddi o'sha bitta yuz solishtiruvidan."""
     # Bitta solishtiruv, ikkita iste'molchi. Faqat kerak bo'lsa
     # bajariladi — ikkala modul ham o'chirilgan bo'lsa, kadr umuman
-    # tahlil qilinmaydi.
+    # tahlil qilinmaydi. frame_b dagi yuzlar ham bir marta aniqlanadi va
+    # o'qituvchi faolligi (#21) uchun qayta ishlatiladi.
+    teacher = session_row.teacher_ref
+    wants_activity = teacher_activity_module_active and teacher is not None and bool(teacher.biometric_embedding)
+    faces_b: list | None = None
+    if attention_module_active or lesson_attendance_active or wants_activity:
+        faces_b = await detect_faces(frame_b)
+
     matched: list[tuple[object, tuple]] = []
     if attention_module_active or lesson_attendance_active:
-        matched = await _match_enrolled(frame_b, candidates)
+        matched = await _match_enrolled(frame_b, candidates, faces_b)
 
     if lesson_attendance_active and matched:
         # Faqat SHU GURUH talabalari. Auditoriyaga kirgan o'qituvchi ham,
@@ -303,10 +321,9 @@ async def process_lesson_session(
         )
         session_row.attention_samples += 1
 
-    teacher = session_row.teacher_ref
-    if teacher_activity_module_active and teacher is not None and teacher.biometric_embedding:
+    if wants_activity:
         teacher_embedding = json.loads(teacher.biometric_embedding)
-        activity_sample = await _sample_activity(frame_a, frame_b, teacher_embedding)
+        activity_sample = await _sample_activity(frame_a, frame_b, teacher_embedding, faces_b)
         if activity_sample is not None:
             session_row.teacher_activity_score = _running_average(
                 session_row.teacher_activity_score, session_row.activity_samples, activity_sample
@@ -342,12 +359,14 @@ async def run_lesson_quality_ai_sweep_once(
         camera = session_row.camera
         if camera is None or not camera.stream_url or not is_reachable(camera.last_seen_at):
             return False
-        async with camera_sweep_slot():
-            frames = await grab_frame_pair_for_camera(camera)
+        # Kadr kutish slotdan tashqarida, tahlil esa slot ichida (ilgari
+        # teskari edi: slot kalit kadrni kutib band turardi, model esa
+        # slotsiz ishlardi).
+        frames = await grab_frame_pair_for_camera(camera)
         if frames is None:
             return False
         frame_a, frame_b = frames
-        async with session_factory() as db:
+        async with camera_sweep_slot(), session_factory() as db:
             row = await db.get(LessonSession, session_row.id)
             if row is None:
                 return False

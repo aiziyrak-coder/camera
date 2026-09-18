@@ -58,13 +58,20 @@ class TestFilterFacesBySize:
     def test_face_at_or_above_min_fraction_is_kept(self, monkeypatch):
         monkeypatch.setattr(unauthorized_person_ai, "_frame_height", lambda image_bytes: 1000)
         monkeypatch.setattr(settings, "unauthorized_min_face_height_fraction", 0.1)
-        large_face = SimpleNamespace(bbox=[0, 0, 50, 150])  # 150px height = 15% >= 10%
+        large_face = SimpleNamespace(bbox=[0, 0, 50, 150], embedding=[1.0])  # 150px height = 15% >= 10%
         assert _filter_faces_by_size([large_face], b"fake") == [large_face]
 
     def test_undecodable_frame_fails_open_rather_than_drop_real_faces(self, monkeypatch):
         monkeypatch.setattr(unauthorized_person_ai, "_frame_height", lambda image_bytes: 0)
-        tiny_face = SimpleNamespace(bbox=[0, 0, 1, 1])
+        tiny_face = SimpleNamespace(bbox=[0, 0, 1, 1], embedding=[1.0])
         assert _filter_faces_by_size([tiny_face], b"fake") == [tiny_face]
+
+    def test_an_unanalysed_face_is_never_called_a_stranger(self, monkeypatch):
+        """Juda kichik yuzning embeddingi hisoblanmagan — uni "bazada yo'q"
+        deb bo'lmaydi (app/services/face_recognition.py _detect_faces_sync)."""
+        monkeypatch.setattr(unauthorized_person_ai, "_frame_height", lambda image_bytes: 0)
+        unanalysed = SimpleNamespace(bbox=[0, 0, 50, 150], embedding=None)
+        assert _filter_faces_by_size([unanalysed], b"fake") == []
 
     def test_empty_faces_list_returns_as_is(self):
         assert _filter_faces_by_size([], b"fake") == []

@@ -166,6 +166,24 @@ class TestReconcile:
         assert set(attendance_ai._entrance_watchers) == {"a"}
         assert attendance_ai.entrance_watcher_count() == 1
 
+    async def test_a_stuck_watcher_is_restarted(self, monkeypatch):
+        """17.09 da AI 18 soat jim turgan: vazifa tirik, lekin qadam qo'ymaydi."""
+        from app.config import settings
+
+        runs = {"n": 0}
+
+        async def start(camera, watcher):
+            runs["n"] += 1
+            await asyncio.Event().wait()  # hech qachon qadam qo'ymaydi
+
+        attendance_ai._reconcile_entrance_watchers([_camera("a")], start)
+        await _settle()
+        monkeypatch.setattr(settings, "entrance_watcher_stall_seconds", -1)
+        attendance_ai._reconcile_entrance_watchers([_camera("a")], start)
+        await _settle()
+        assert runs["n"] == 2
+        assert attendance_ai.entrance_watcher_count() == 1
+
     async def test_a_crashed_watcher_is_restarted_and_matches_are_collected(self):
         runs = {"n": 0}
 

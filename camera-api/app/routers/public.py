@@ -300,7 +300,10 @@ async def get_live_detection(
 
         faces_out = []
         for face in faces:
-            match = candidates.best_match(face.embedding, settings.attendance_ai_match_threshold)
+            # Juda kichik yuz tahlil qilinmagan: ramkasi chiziladi, ismi va
+            # uyqu holati yo'q (baribir ishonchli aniqlab bo'lmasdi).
+            analysed = face.embedding is not None
+            match = candidates.best_match(face.embedding, settings.attendance_ai_match_threshold) if analysed else None
             person_name = None
             if match is not None:
                 person = await db.get(StudentStaff, match[0])
@@ -309,7 +312,7 @@ async def get_live_detection(
                 DetectedFaceOut(
                     bbox=[float(x) for x in face.bbox],
                     person_name=person_name,
-                    asleep=is_face_measurable(face.bbox) and is_asleep(face.landmarks_68),
+                    asleep=analysed and is_face_measurable(face.bbox) and is_asleep(face.landmarks_68),
                 )
             )
 

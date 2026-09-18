@@ -198,10 +198,12 @@ class TestAttendanceCameras:
 
         assert cams["Kirish-1"]["role"] == "Kirish/chiqish"
         assert cams["Kirish-1"]["checkIntervalSeconds"] == settings.entrance_exit_attendance_interval_seconds
-        assert cams["205-xona"]["attendanceEnabled"] is True
+        # Kunlik davomat faqat kirish kameralarida (2026-09-18 qarori) — xona
+        # kamerasi tashriflarni yozadi, lekin kunlik davomat bermaydi.
+        assert cams["205-xona"]["attendanceEnabled"] is False
+        assert "faqat kirish" in cams["205-xona"]["disabledReason"]
         assert cams["205-xona"]["recognizedToday"] == 1
         assert cams["310-xona"]["attendanceEnabled"] is False
-        assert cams["310-xona"]["disabledReason"] == "Bu kamerada davomat moduli o'chirilgan"
         assert body["peopleRecognizedToday"] == 1
         assert body["entrance"] == 1
 

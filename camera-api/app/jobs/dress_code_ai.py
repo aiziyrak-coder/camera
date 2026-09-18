@@ -53,7 +53,7 @@ from app.models import Camera, Event, StudentStaff
 from app.services.coat_detection import torso_bbox, white_fraction
 from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
-from app.services.face_recognition import detect_faces
+from app.services.face_recognition import detect_faces, recognizable_faces
 from app.services.frame_grabber import grab_frame_pair_for_camera
 from app.services.pose_detection import NOSE, PoseLandmarks, detect_poses
 
@@ -124,7 +124,7 @@ async def _staff_missing_coat(
     if candidates.is_empty or not staff_ids:
         return False
 
-    faces = await detect_faces(frame_bytes)
+    faces = recognizable_faces(await detect_faces(frame_bytes))
     if not faces:
         return False
 
@@ -237,10 +237,12 @@ async def run_dress_code_ai_sweep_once(
         return 0
 
     async def _process_one(camera: Camera) -> bool:
+        # Kalit kadrni kutish slotdan tashqarida — slot faqat tahlil uchun
+        # (app/jobs/unified_face_sweep.py _process_camera izohiga qarang).
+        frames = await grab_frame_pair_for_camera(camera)
+        if frames is None:
+            return False
         async with camera_sweep_slot():
-            frames = await grab_frame_pair_for_camera(camera)
-            if frames is None:
-                return False
             frame_a, frame_b = frames
             async with session_factory() as camera_db:
                 return await process_camera_frame_pair_for_dress_code(

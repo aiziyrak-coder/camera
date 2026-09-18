@@ -1,12 +1,22 @@
-"""Unified face-based AI sweep — TT kriteriya 1, 6, 7, 20 in one pass.
+"""Unified face-based AI sweep — TT kriteriya 1 (begona shaxs) and 20
+(uyqu) in one pass.
 
-Replaces three independent loops (attendance_ai, unauthorized_person_ai,
-vision_ai) that each grabbed frames and ran detect_faces()
-on the same cameras every ~30s. One tick per camera:
+Replaced three independent loops (attendance_ai, unauthorized_person_ai,
+vision_ai) that each grabbed frames and ran detect_faces() on the same
+cameras every ~30s. One tick per camera:
 
-  1. Grab frame(s) once (burst when entrance attendance or sleep needs it)
+  1. Grab frame(s) once (burst when sleep needs it)
   2. Run detect_faces() once per distinct frame
   3. Feed results into each active module's existing processor
+
+KUNLIK DAVOMAT BU YERDA EMAS (2026-09-18 qarori). Ilgari xona kameralari
+ham kunlik davomat uchun aylanardi: bir kunda ~5 kishini tanib, AI
+vaqtining katta qismini olardi (yuzlar 8-20 px). Endi kunlik davomat faqat
+kirish kameralarining doimiy kuzatuvchilarida (app/jobs/attendance_ai.py),
+xona kameralari esa darsni jadval orqali tekshiradi (lesson_quality_ai.py).
+
+Qaysi kamerada qaysi modul — app/services/camera_roles.py: uyqu faqat
+auditoriyada, begona shaxs kirish/perimetr/cheklangan xonada.
 
 Non-face modules (fire, pose, etc.) stay on their own loops.
 """
@@ -19,12 +29,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
 from app.database import SessionLocal
-from app.jobs.attendance_ai import (
-    OFF_HOURS_MODULE_CODE,
-    STAFF_ATTENDANCE_MODULE_CODE,
-    STUDENT_ATTENDANCE_MODULE_CODE,
-    process_camera_frame,
-)
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import (
     camera_allows_module,
@@ -38,12 +42,12 @@ from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.jobs.unauthorized_person_ai import UNAUTHORIZED_MODULE_CODE, process_camera_frame_pair_for_unauthorized
 from app.jobs.vision_ai import SLEEP_MODULE_CODE, process_camera_frame_for_sleep
 from app.models import Camera
+from app.services.camera_roles import role_allows
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
 from app.services import recognition_stats
 from app.services.face_recognition import detect_faces
 from app.services.frame_grabber import (
     grab_frame_burst_for_camera,
-    grab_frame_for_camera,
     grab_frame_pair_for_camera,
 )
 from app.services.sweep_result_cache import record_camera_sweep
@@ -81,19 +85,13 @@ def _allows(camera: Camera, module_code: int) -> bool:
 
 async def _load_module_flags(db: AsyncSession) -> dict[str, bool]:
     return {
-        "staff_attendance": await is_module_active(db, STAFF_ATTENDANCE_MODULE_CODE),
-        "student_attendance": await is_module_active(db, STUDENT_ATTENDANCE_MODULE_CODE),
-        "off_hours": await is_module_active(db, OFF_HOURS_MODULE_CODE),
         "unauthorized": await is_module_active(db, UNAUTHORIZED_MODULE_CODE),
         "sleep": await is_module_active(db, SLEEP_MODULE_CODE),
     }
 
 
 def _any_face_module(flags: dict[str, bool]) -> bool:
-    return any(
-        flags[k]
-        for k in ("staff_attendance", "student_attendance", "unauthorized", "sleep")
-    )
+    return any(flags[k] for k in ("unauthorized", "sleep"))
 
 
 async def _process_camera(
@@ -102,83 +100,48 @@ async def _process_camera(
     candidates: CandidateMatrix,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> dict[str, int]:
-    counts = {"attendance": 0, "unauthorized": 0, "sleep": 0}
+    counts = {"unauthorized": 0, "sleep": 0}
 
-    # Entrance/exit cameras get attendance checked by their own much
-    # faster-cadence sweep instead (app/jobs/attendance_ai.py's
-    # run_entrance_exit_attendance_sweep_once, registered separately in
-    # ai_scheduler.py) — excluded here so the same camera isn't processed
-    # for attendance twice, once on each cadence.
-    needs_attendance = not (camera.is_entrance or camera.is_exit) and (
-        (flags["staff_attendance"] and _allows(camera, STAFF_ATTENDANCE_MODULE_CODE))
-        or (flags["student_attendance"] and _allows(camera, STUDENT_ATTENDANCE_MODULE_CODE))
-    )
     needs_unauthorized = flags["unauthorized"] and _allows(camera, UNAUTHORIZED_MODULE_CODE)
     needs_sleep = flags["sleep"] and _allows(camera, SLEEP_MODULE_CODE)
 
-    if not any((needs_attendance, needs_unauthorized, needs_sleep)):
+    if not any((needs_unauthorized, needs_sleep)):
+        return counts
+
+    # Kadrlar SLOTDAN TASHQARIDA olinadi. Kalit kadr 4-8 s da bir keladi,
+    # ya'ni 4 kadrlik burst 12-16 s kutadi — ilgari kamera shu vaqt
+    # davomida umumiy slotlardan birini band qilib turardi va boshqa
+    # kameralar shunchaki navbatda turardi. Kutish CPU olmaydi; slot faqat
+    # tahlil (model + baza) uchun kerak.
+    sleep_frames: list[bytes] = []
+    pair: tuple[bytes, bytes] | None = None
+    if needs_sleep:
+        sleep_frames = await grab_frame_burst_for_camera(
+            camera,
+            count=settings.sleep_confirmation_frame_count,
+            gap_seconds=settings.sleep_confirmation_gap_seconds,
+        )
+
+    if needs_unauthorized:
+        # Reuse the sleep burst when there is one instead of grabbing a
+        # SECOND set of frames from the same camera a second later. The
+        # unauthorized check wants two frames far enough apart that one bad
+        # angle can't fail both (see its module docstring) — the burst's
+        # first and last are the most separated frames available.
+        if len(sleep_frames) >= 2:
+            pair = (sleep_frames[0], sleep_frames[-1])
+        else:
+            pair = await grab_frame_pair_for_camera(camera)
+
+    if not sleep_frames and pair is None:
         return counts
 
     async with camera_sweep_slot():
-        primary_frame: bytes | None = None
-        pair: tuple[bytes, bytes] | None = None
-        sleep_frames: list[bytes] = []
-
-        if needs_sleep:
-            sleep_frames = await grab_frame_burst_for_camera(
-                camera,
-                count=settings.sleep_confirmation_frame_count,
-                gap_seconds=settings.sleep_confirmation_gap_seconds,
-            )
-            if sleep_frames:
-                primary_frame = sleep_frames[0]
-
-        if needs_unauthorized:
-            # Reuse the sleep burst when there is one instead of grabbing a
-            # SECOND set of frames from the same camera a second later.
-            # Both modules are active on most cameras, so this used to cost
-            # 6 frames and 6 detect_faces calls per camera (4 + 2) plus ~4s
-            # of gap-sleeping, when 4 frames already satisfy both.
-            #
-            # The unauthorized check wants two frames far enough apart that
-            # one bad angle can't fail both (see its module docstring). The
-            # burst's first and last are sleep_confirmation_gap_seconds x
-            # (count-1) apart — 3s by default, i.e. MORE separation than
-            # grab_frame_pair_for_camera's own 1s, so this is a stronger
-            # signal, not a weaker one.
-            if len(sleep_frames) >= 2:
-                pair = (sleep_frames[0], sleep_frames[-1])
-            else:
-                pair = await grab_frame_pair_for_camera(camera)
-                if pair and primary_frame is None:
-                    primary_frame = pair[1]
-
-        # needs_attendance is never true for an is_entrance/is_exit camera
-        # (see above) — those get burst-grabbed by their own dedicated,
-        # faster sweep instead, so a single frame is always enough here.
-        if needs_attendance and primary_frame is None:
-            primary_frame = await grab_frame_for_camera(camera)
-
-        if primary_frame is None and not sleep_frames and pair is None:
-            return counts
-
-        # Every frame this camera grabbed (primary, the unauthorized pair,
-        # the sleep burst) needs its own detect_faces() call, but they're
-        # independent inference calls on independent frames — nothing here
-        # depends on another frame's result. Running them one `await` at a
-        # time (as this used to) served them strictly sequentially even
-        # though face_inference_gate (app/services/inference_gate.py)
-        # allows many calls to run concurrently: measured on production,
-        # that turned a ~1.4s-per-call cost into ~10s of serialized wall
-        # clock for a single camera needing sleep+unauthorized (up to 6
-        # calls back to back), which was the dominant cost behind a
-        # measured AI-sweep backlog going far past its configured
-        # interval. Deduplicated by object identity (frames reused as
-        # `primary_frame` are detected once, not twice) and gathered
-        # concurrently instead — same results, a fraction of the wall time.
+        # Every frame (the unauthorized pair, the sleep burst) needs its own
+        # detect_faces() call, but they're independent inference calls on
+        # independent frames — gathered concurrently, deduplicated by object
+        # identity (the pair reuses burst frames, detected once).
         frames_needing_faces: list[bytes] = []
-        if primary_frame is not None:
-            frames_needing_faces.append(primary_frame)
         if needs_unauthorized and pair is not None:
             for frame in pair:
                 if not any(frame is f for f in frames_needing_faces):
@@ -187,38 +150,23 @@ async def _process_camera(
             for frame in sleep_frames:
                 if not any(frame is f for f in frames_needing_faces):
                     frames_needing_faces.append(frame)
+        if not frames_needing_faces:
+            return counts
 
         detected = await asyncio.gather(*(detect_faces(frame) for frame in frames_needing_faces))
         faces_by_frame_id = {id(frame): faces for frame, faces in zip(frames_needing_faces, detected, strict=True)}
 
-        primary_faces = faces_by_frame_id.get(id(primary_frame), []) if primary_frame is not None else []
-
         async with session_factory() as db:
-            if needs_attendance and primary_frame is not None:
-                records = await process_camera_frame(
-                    primary_frame,
-                    db,
-                    camera,
-                    candidates=candidates,
-                    off_hours_module_active=flags["off_hours"],
-                    staff_module_active=flags["staff_attendance"],
-                    student_module_active=flags["student_attendance"],
-                    faces=primary_faces,
-                )
-                counts["attendance"] = len({str(r.student_staff_id) for r in records})
-
             if needs_unauthorized and pair is not None:
                 frame_a, frame_b = pair
-                faces_a = faces_by_frame_id[id(frame_a)]
-                faces_b = faces_by_frame_id[id(frame_b)]
                 if await process_camera_frame_pair_for_unauthorized(
                     frame_a,
                     frame_b,
                     db,
                     camera,
                     candidates=candidates,
-                    faces_a=faces_a,
-                    faces_b=faces_b,
+                    faces_a=faces_by_frame_id[id(frame_a)],
+                    faces_b=faces_by_frame_id[id(frame_b)],
                 ):
                     counts["unauthorized"] = 1
 
@@ -233,18 +181,15 @@ async def _process_camera(
                 )
 
         modules_run: list[str] = []
-        if needs_attendance:
-            modules_run.append("attendance")
         if needs_unauthorized:
             modules_run.append("unauthorized")
         if needs_sleep:
             modules_run.append("sleep")
-        events_raised = sum(counts.values())
         await record_camera_sweep(
             str(camera.id),
-            face_count=len(primary_faces),
+            face_count=len(faces_by_frame_id[id(frames_needing_faces[0])]),
             modules=modules_run,
-            events_raised=events_raised,
+            events_raised=sum(counts.values()),
         )
 
     return counts
@@ -262,8 +207,6 @@ async def run_unified_face_sweep_once(
             .where(Camera.status == "faol")
             .where(
                 or_(
-                    camera_allows_module(STAFF_ATTENDANCE_MODULE_CODE),
-                    camera_allows_module(STUDENT_ATTENDANCE_MODULE_CODE),
                     camera_allows_module(UNAUTHORIZED_MODULE_CODE),
                     camera_allows_module(SLEEP_MODULE_CODE),
                 )
@@ -301,25 +244,27 @@ async def run_unified_face_sweep_once(
             extra={"skipped": skipped_blind, "swept": len(cameras)},
         )
 
-    totals = {"attendance": 0, "unauthorized": 0, "sleep": 0}
+    totals = {"unauthorized": 0, "sleep": 0}
     if not cameras:
         return totals
 
     # Begona shaxs (#1) faqat ruxsat etilgan vaqtda va kirish/perimetr
-    # kamerasida tekshiriladi; avtomatik o'chirilgan kamera×modul juftliklari
-    # (app/jobs/module_suppression.py) tashlab ketiladi. Kameraga xos
-    # bayroqlar shu yerda hisoblanadi — _process_camera o'zgarmaydi.
+    # kamerasida tekshiriladi; uyqu (#20) faqat auditoriyada
+    # (app/services/camera_roles.py); avtomatik o'chirilgan kamera×modul
+    # juftliklari (app/jobs/module_suppression.py) tashlab ketiladi.
     alert_time = is_unauthorized_alert_time()
 
     def camera_flags(camera: Camera) -> dict[str, bool]:
         camera_id = str(camera.id)
         return {
-            **flags,
             "unauthorized": flags["unauthorized"]
             and alert_time
             and camera_can_report_unauthorized(camera)
+            and role_allows(camera, UNAUTHORIZED_MODULE_CODE)
             and (camera_id, UNAUTHORIZED_MODULE_CODE) not in suppressed,
-            "sleep": flags["sleep"] and (camera_id, SLEEP_MODULE_CODE) not in suppressed,
+            "sleep": flags["sleep"]
+            and role_allows(camera, SLEEP_MODULE_CODE)
+            and (camera_id, SLEEP_MODULE_CODE) not in suppressed,
         }
 
     results = await asyncio.gather(

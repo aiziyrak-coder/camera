@@ -93,8 +93,14 @@ class TestSweepSkipsBlindCameras:
                 status="faol",
                 stream_url=f"http://mediamtx/{ip}/index.m3u8",
                 last_seen_at=datetime.now(timezone.utc),
+                **roles,
             )
-            for name, ip in (("Kirish", "10.8.0.1"), ("Katta auditoriya", "10.8.0.2"))
+            # Uyqu faqat auditoriyada, begona shaxs kirishda ishlaydi
+            # (app/services/camera_roles.py) — rolsiz kamera sweepga tushmaydi.
+            for name, ip, roles in (
+                ("Kirish", "10.8.0.1", {"is_entrance": True}),
+                ("Katta auditoriya", "10.8.0.2", {"room_type": "auditoriya"}),
+            )
         ]
         db_session.add_all(rows)
         await db_session.commit()
@@ -107,7 +113,7 @@ class TestSweepSkipsBlindCameras:
 
         async def fake_process(camera, flags, candidates, factory):
             swept.append(camera.name)
-            return {"attendance": 0, "unauthorized": 0, "sleep": 0}
+            return {"unauthorized": 0, "sleep": 0}
 
         monkeypatch.setattr(unified_face_sweep, "_process_camera", fake_process)
         await unified_face_sweep.run_unified_face_sweep_once(session_factory=session_factory)

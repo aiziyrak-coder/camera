@@ -33,9 +33,6 @@ async def a_camera(db_session, seeded):
 
 
 _ALL_FLAGS = {
-    "staff_attendance": True,
-    "student_attendance": True,
-    "off_hours": True,
     "unauthorized": True,
     "sleep": True,
 }
@@ -62,9 +59,6 @@ class TestProcessCameraConcurrentFaceDetection:
         async def fake_grab_frame_pair_for_camera(camera):
             return pair
 
-        async def fake_grab_frame_for_camera(camera):
-            raise AssertionError("primary_frame is already set by sleep's burst — should not be called")
-
         in_flight = {"n": 0, "peak": 0}
         calls: list[bytes] = []
         lock = asyncio.Lock()
@@ -81,10 +75,6 @@ class TestProcessCameraConcurrentFaceDetection:
 
         received: dict[str, object] = {}
 
-        async def fake_process_camera_frame(frame, db, camera, **kwargs):
-            received["attendance_faces"] = kwargs["faces"]
-            return []
-
         async def fake_process_camera_frame_pair_for_unauthorized(frame_a, frame_b, db, camera, **kwargs):
             received["unauthorized_faces_a"] = kwargs["faces_a"]
             received["unauthorized_faces_b"] = kwargs["faces_b"]
@@ -96,9 +86,7 @@ class TestProcessCameraConcurrentFaceDetection:
 
         monkeypatch.setattr(unified_face_sweep, "grab_frame_burst_for_camera", fake_grab_frame_burst_for_camera)
         monkeypatch.setattr(unified_face_sweep, "grab_frame_pair_for_camera", fake_grab_frame_pair_for_camera)
-        monkeypatch.setattr(unified_face_sweep, "grab_frame_for_camera", fake_grab_frame_for_camera)
         monkeypatch.setattr(unified_face_sweep, "detect_faces", fake_detect_faces)
-        monkeypatch.setattr(unified_face_sweep, "process_camera_frame", fake_process_camera_frame)
         monkeypatch.setattr(
             unified_face_sweep,
             "process_camera_frame_pair_for_unauthorized",
@@ -112,9 +100,9 @@ class TestProcessCameraConcurrentFaceDetection:
 
         await _process_camera(a_camera, _ALL_FLAGS, candidates=None, session_factory=TestSessionLocal)
 
-        # 4 distinct frames — the sleep burst covers everything: sleep[0]
-        # doubles as primary_frame, and the unauthorized check reuses the
-        # burst's first/last rather than grabbing its own pair (see
+        # 4 distinct frames — the sleep burst covers everything: the
+        # unauthorized check reuses the burst's first/last rather than
+        # grabbing its own pair (see
         # test_sleep_burst_is_reused_for_the_unauthorized_pair). Each is
         # detected exactly once.
         assert len(calls) == 4
@@ -125,7 +113,6 @@ class TestProcessCameraConcurrentFaceDetection:
         assert in_flight["peak"] > 1
 
         # Every consumer got the right faces for the right frame.
-        assert received["attendance_faces"] == [f"face-for-{sleep_frames[0]!r}"]
         assert received["unauthorized_faces_a"] == [f"face-for-{sleep_frames[0]!r}"]
         assert received["unauthorized_faces_b"] == [f"face-for-{sleep_frames[-1]!r}"]
         assert received["sleep_frames_faces"] == [
@@ -170,16 +157,12 @@ class TestProcessCameraConcurrentFaceDetection:
         async def fake_noop(*args, **kwargs):
             return False
 
-        async def fake_process_camera_frame(*args, **kwargs):
-            return []
-
         async def fake_sleep_noop(*args, **kwargs):
             return 0
 
         monkeypatch.setattr(unified_face_sweep, "grab_frame_burst_for_camera", fake_grab_frame_burst_for_camera)
         monkeypatch.setattr(unified_face_sweep, "grab_frame_pair_for_camera", fake_grab_frame_pair_for_camera)
         monkeypatch.setattr(unified_face_sweep, "detect_faces", fake_detect_faces)
-        monkeypatch.setattr(unified_face_sweep, "process_camera_frame", fake_process_camera_frame)
         monkeypatch.setattr(unified_face_sweep, "process_camera_frame_pair_for_unauthorized", fake_unauthorized)
         monkeypatch.setattr(unified_face_sweep, "process_camera_frame_for_sleep", fake_sleep_noop)
 
@@ -216,12 +199,8 @@ class TestProcessCameraConcurrentFaceDetection:
         async def fake_noop(*args, **kwargs):
             return False
 
-        async def fake_process_camera_frame(*args, **kwargs):
-            return []
-
         monkeypatch.setattr(unified_face_sweep, "grab_frame_pair_for_camera", fake_grab_frame_pair_for_camera)
         monkeypatch.setattr(unified_face_sweep, "detect_faces", fake_detect_faces)
-        monkeypatch.setattr(unified_face_sweep, "process_camera_frame", fake_process_camera_frame)
         monkeypatch.setattr(unified_face_sweep, "process_camera_frame_pair_for_unauthorized", fake_noop)
 
         from tests.conftest import TestSessionLocal
@@ -231,12 +210,11 @@ class TestProcessCameraConcurrentFaceDetection:
 
         assert pair_grabs["n"] == 1
 
-    async def test_primary_frame_taken_from_the_pair_is_detected_once(
+    async def test_each_pair_frame_is_detected_once(
         self, db_session, a_camera, monkeypatch
     ):
-        """With sleep off, primary_frame is set FROM the pair's second
-        frame — the same object appears twice in what needs detecting, and
-        must still be detected once. Identity dedup, not value dedup."""
+        """With sleep off, only the unauthorized pair is analysed — each of
+        its two frames exactly once. Identity dedup, not value dedup."""
         pair = (_frame("pair_a"), _frame("pair_b"))
 
         async def fake_grab_frame_pair_for_camera(camera):
@@ -251,12 +229,8 @@ class TestProcessCameraConcurrentFaceDetection:
         async def fake_noop(*args, **kwargs):
             return False
 
-        async def fake_process_camera_frame(*args, **kwargs):
-            return []
-
         monkeypatch.setattr(unified_face_sweep, "grab_frame_pair_for_camera", fake_grab_frame_pair_for_camera)
         monkeypatch.setattr(unified_face_sweep, "detect_faces", fake_detect_faces)
-        monkeypatch.setattr(unified_face_sweep, "process_camera_frame", fake_process_camera_frame)
         monkeypatch.setattr(unified_face_sweep, "process_camera_frame_pair_for_unauthorized", fake_noop)
 
         from tests.conftest import TestSessionLocal
@@ -264,5 +238,5 @@ class TestProcessCameraConcurrentFaceDetection:
         flags = {**_ALL_FLAGS, "sleep": False}
         await _process_camera(a_camera, flags, candidates=None, session_factory=TestSessionLocal)
 
-        # pair_b doubles as primary_frame -> 2 distinct objects, 2 calls.
+        # 2 distinct objects, 2 calls.
         assert call_count["n"] == 2

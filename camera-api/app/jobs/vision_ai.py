@@ -55,7 +55,7 @@ from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.models import Camera, Event, StudentStaff
 from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
-from app.services.face_recognition import detect_faces
+from app.services.face_recognition import detect_faces, recognizable_faces
 from app.services.frame_grabber import grab_frame_burst_for_camera
 from app.services.sleep_detection import is_asleep, is_face_measurable
 
@@ -111,6 +111,9 @@ def _tally_votes(
     asleep_votes: dict[str | None, int] = defaultdict(int)
 
     for faces in frames_faces:
+        # Juda kichik yuzlar tahlil qilinmagan — ularda na embedding, na
+        # ko'z nuqtalari bor, ya'ni uyquni ham o'lchab bo'lmaydi.
+        faces = recognizable_faces(faces or [])
         if not faces:
             continue
         embeddings = np.stack([face.embedding for face in faces])

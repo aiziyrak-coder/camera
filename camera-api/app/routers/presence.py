@@ -35,6 +35,7 @@ from app.schemas.presence import (
 )
 from app.services import runtime_snapshot
 from app.services.camera_module_mapping import camera_allows_module_code
+from app.services.camera_roles import role_allows
 from app.services.staff_export import split_course
 from app.timezone import INSTITUTE_TZ, local_now, to_local
 
@@ -415,11 +416,19 @@ async def attendance_cameras(
     for camera in cameras:
         allows_staff = camera_allows_module_code(camera.excluded_module_codes, STAFF_ATTENDANCE_CODE)
         allows_student = camera_allows_module_code(camera.excluded_module_codes, STUDENT_ATTENDANCE_CODE)
-        enabled = camera.status == "faol" and ((staff_active and allows_staff) or (student_active and allows_student))
+        # Kunlik davomat faqat kirish kameralarida (app/services/camera_roles.py).
+        at_door = role_allows(camera, STAFF_ATTENDANCE_CODE)
+        enabled = (
+            camera.status == "faol"
+            and at_door
+            and ((staff_active and allows_staff) or (student_active and allows_student))
+        )
         if camera.status != "faol":
             reason = "Kamera faol emas"
         elif not staff_active and not student_active:
             reason = "Davomat modullari (#6, #7) o'chirilgan"
+        elif not at_door:
+            reason = "Kunlik davomat faqat kirish kameralarida — bu kamera darslarni jadval orqali tekshiradi"
         elif not (allows_staff or allows_student):
             reason = "Bu kamerada davomat moduli o'chirilgan"
         else:
@@ -440,7 +449,10 @@ async def attendance_cameras(
                 attendance_enabled=enabled,
                 disabled_reason=reason,
                 online=is_reachable(camera.last_seen_at),
-                video=is_video_flowing(camera.last_frame_at),
+                # AI yuzi kichik kamerani kamdan-kam ochadi (face_blind) va
+                # uning ffmpeg o'quvchisi yopiladi — bugun kadr olingan bo'lsa,
+                # tasvir bor; "tasvirsiz" faqat umuman kadr bo'lmagan kamera.
+                video=is_video_flowing(camera.last_frame_at) or bool(live and live.frames),
                 recognized_today=people,
                 last_recognition=_hm(last),
                 frames_checked_today=live.frames if live else 0,

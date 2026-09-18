@@ -37,6 +37,7 @@ from app.ws import manager
 from app.services.cpu_pool import shutdown_cpu_pool
 from app.services.pose_detection import shutdown_pose_detection_pool
 from app.services.stream_cache import shutdown_stream_cache, stream_cache_reaper_loop
+from app.services.thread_limits import apply_thread_limits
 from app.storage import check_bucket
 from app.routers import (
     presence,
@@ -79,6 +80,8 @@ async def _staggered(delay_seconds: float, loop_coro) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Birinchi model chaqiruvidan oldin — app/services/thread_limits.py.
+    apply_thread_limits()
     async with SessionLocal() as session:
         await seed_all(session)
 

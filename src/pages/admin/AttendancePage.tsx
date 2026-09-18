@@ -8,10 +8,12 @@ import ErrorState from '../../components/ui/ErrorState';
 import KpiTile from '../../components/ui/KpiTile';
 import { SkeletonBlock } from '../../components/ui/Skeleton';
 import DayDrawer from '../../components/attendance/DayDrawer';
+import LiveArrivals from '../../components/attendance/LiveArrivals';
 import MonthTrend from '../../components/attendance/MonthTrend';
 import PersonPicker from '../../components/attendance/PersonPicker';
 import { api, isAbortError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
+import { useLiveAttendance, type LiveAttendanceMessage } from '../../lib/realtime';
 import {
   CELL_STATUS_LABEL,
   DEFAULT_WORKING_WEEKDAYS,
@@ -36,6 +38,7 @@ const SUMMARY_MONTHS = 6;
 const MONTH_TTL_MS = 60_000;
 const MONTH_CACHE_LIMIT = 60;
 const MIN_RELIABLE_DAYS = 5;
+const LIVE_FEED_SIZE = 12;
 /** Katakdagi "binoda bo'lish" chizig'i shu davomiylikda to'la bo'ladi. */
 const FULL_DAY_MINUTES = 9 * 60;
 
@@ -160,8 +163,14 @@ function DayCell({
         </span>
       )}
       {fill > 0 && (
-        <span className="absolute inset-x-1.5 bottom-1 h-[3px] overflow-hidden rounded-full bg-black/5" aria-hidden="true">
-          <span className="block h-full rounded-full bg-current opacity-50" style={{ width: `${Math.round(fill * 100)}%` }} />
+        <span
+          className="absolute inset-x-1.5 bottom-1 h-[3px] overflow-hidden rounded-full bg-black/5"
+          aria-hidden="true"
+        >
+          <span
+            className="block h-full rounded-full bg-current opacity-50"
+            style={{ width: `${Math.round(fill * 100)}%` }}
+          />
         </span>
       )}
     </button>
@@ -187,7 +196,24 @@ export default function AttendancePage() {
   const [recordsError, setRecordsError] = useState<string | null>(null);
   const [recordsVersion, setRecordsVersion] = useState(0);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [liveArrivals, setLiveArrivals] = useState<LiveAttendanceMessage[]>([]);
   const gridRef = useRef<HTMLDivElement>(null);
+
+  // Kamera odamni tanishi bilan: jonli ro'yxatga qo'shiladi, ochiq turgan
+  // odamning oyi esa keshsiz qayta so'raladi — sahifani yangilash shart emas.
+  useLiveAttendance((message) => {
+    setLiveArrivals((prev) =>
+      [message, ...prev.filter((item) => item.personId !== message.personId || item.date !== message.date)].slice(
+        0,
+        LIVE_FEED_SIZE,
+      ),
+    );
+    if (message.personId === personId && monthOf(message.date) === month) {
+      monthCache.delete(cacheKey(personId, month));
+      setRecordsVersion((v) => v + 1);
+      setSummaryVersion((v) => v + 1);
+    }
+  });
 
   const activeSummary = summary && summary.person.id === personId ? summary : null;
   const person = activeSummary?.person ?? (picked?.id === personId ? picked : null);
@@ -256,8 +282,7 @@ export default function AttendancePage() {
       ? cells[selectedIndex + 1]
       : null;
 
-  const previous =
-    activeSummary?.months.find((m) => m.month === shiftMonth(month, -1) && m.recordedDays > 0) ?? null;
+  const previous = activeSummary?.months.find((m) => m.month === shiftMonth(month, -1) && m.recordedDays > 0) ?? null;
   const rateDelta =
     stats.rate !== null && previous?.rate != null ? Math.round((stats.rate - previous.rate) * 10) / 10 : null;
   const arrivalDelta =
@@ -371,6 +396,19 @@ export default function AttendancePage() {
           </div>
         )}
       </div>
+
+      {!personId && (
+        <LiveArrivals
+          items={liveArrivals}
+          onOpen={(id) =>
+            setParams((prev) => {
+              const next = new URLSearchParams(prev);
+              next.set('person', id);
+              return next;
+            })
+          }
+        />
+      )}
 
       {!personId ? (
         <EmptyState

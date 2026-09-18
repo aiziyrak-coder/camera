@@ -4,6 +4,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AIModuleConfig, Camera, ModuleCameraSuppression
+from app.services.camera_roles import role_allows
 
 
 def camera_allows_module_code(excluded_module_codes: list | None, module_code: int) -> bool:
@@ -44,7 +45,16 @@ async def camera_counts_by_module(db: AsyncSession) -> dict[int, int]:
     alohida COUNT so'rovi). Avtomatik o'chirilgan juftliklar sanalmaydi."""
     codes = (await db.execute(select(AIModuleConfig.code))).scalars().all()
     cameras = (
-        await db.execute(select(Camera.id, Camera.excluded_module_codes).where(Camera.status == "faol"))
+        await db.execute(
+            select(
+                Camera.id,
+                Camera.excluded_module_codes,
+                Camera.room_type,
+                Camera.is_entrance,
+                Camera.is_exit,
+                Camera.is_perimeter,
+            ).where(Camera.status == "faol")
+        )
     ).all()
     suppressed = set(
         (
@@ -55,11 +65,14 @@ async def camera_counts_by_module(db: AsyncSession) -> dict[int, int]:
             )
         ).all()
     )
+    # Xona turi mos kelmagan kamera ham sanalmaydi (app/services/camera_roles.py).
     return {
         code: sum(
             1
-            for camera_id, excluded in cameras
-            if camera_allows_module_code(excluded, code) and (camera_id, code) not in suppressed
+            for camera in cameras
+            if camera_allows_module_code(camera.excluded_module_codes, code)
+            and (camera.id, code) not in suppressed
+            and role_allows(camera, code)
         )
         for code in codes
     }

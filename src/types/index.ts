@@ -346,6 +346,9 @@ export interface Department {
   cameraCount: number;
 }
 
+/** Kamera xona turi — backend app/services/camera_roles.py bilan bir xil. */
+export type RoomType = 'kirish' | 'auditoriya' | 'laboratoriya' | 'koridor' | 'ofis' | 'cheklangan' | 'tashqi';
+
 export interface CameraConfig {
   id: string;
   name: string;
@@ -354,6 +357,12 @@ export interface CameraConfig {
   rtspPath?: string | null;
   building: string;
   zone: string;
+  /** Admin belgilagan xona turi; null — belgilanmagan. */
+  roomType?: RoomType | null;
+  /** Amaldagi tur: belgilanmagan bo'lsa kirish/perimetr bayrog'idan. */
+  effectiveRoomType?: RoomType | null;
+  /** Dars jadvalidagi xona raqami (normallashtirilgan). */
+  roomCode?: string | null;
   /** Qavat raqami; belgilanmagan bo'lsa null. Monitoring markazining
    * bino -> qavat kesimi shu maydon bo'yicha quriladi. */
   floor?: number | null;

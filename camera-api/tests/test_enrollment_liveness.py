@@ -59,7 +59,7 @@ def detected(monkeypatch):
     """detect_faces ni boshqariladigan natijaga almashtiradi."""
     state: dict = {"sequence": []}
 
-    async def fake(_frame, *, priority=None):
+    async def fake(_frame, *, priority=None, **_options):
         if not state["sequence"]:
             return []
         return state["sequence"].pop(0)

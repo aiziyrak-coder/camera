@@ -405,6 +405,16 @@ class TestArrivalIsOnlyKnownAtTheDoor:
         assert record.status == "kech_keldi"
         assert record.check_in == time(9, 40)
 
+    async def test_first_door_sighting_in_the_afternoon_is_not_late(self, db_session, an_entrance_camera):
+        """Kirish kamerasi chiqishni ham ko'radi: kunning birinchi ko'rinishi
+        16:30 da bo'lsa, bu odatda ketayotgan odam (2026-09-18 da tuzatishdan
+        keyin yana 5 ta shunday "kech keldi" yozilgan edi)."""
+        person = await self._person(db_session, "Ketayotgan Xodim")
+        record = await upsert_attendance_from_recognition(
+            db_session, str(person.id), _local_time(16, 30), an_entrance_camera
+        )
+        assert (record.status, record.check_in) == ("keldi", None)
+
     async def test_early_first_sighting_anywhere_is_on_time(self, db_session, a_camera):
         person = await self._person(db_session, "Erta Xonada")
         record = await upsert_attendance_from_recognition(db_session, str(person.id), _local_time(8, 20), a_camera)

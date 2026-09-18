@@ -39,7 +39,7 @@ async def a_camera(db_session, seeded):
     building = (await db_session.execute(select(Building))).scalars().first()
     camera = Camera(
         name="Laboratoriya kamerasi", ip="10.0.9.40", building_id=building.id,
-        zone="Laboratoriya", resolution="1080p", status="faol",
+        zone="Laboratoriya", resolution="1080p", status="faol", room_type="laboratoriya",
     )
     db_session.add(camera)
     await db_session.commit()
@@ -174,7 +174,7 @@ class TestSweepConcurrency:
         for i in range(2):
             camera = Camera(
                 name=f"Kamera {i}", ip=f"10.0.9.{i + 60}", stream_url=f"rtsp://fake/{i}",
-                building_id=building.id, zone="Z", resolution="1080p", status="faol",
+                building_id=building.id, zone="Z", resolution="1080p", status="faol", room_type="laboratoriya",
                 last_seen_at=datetime.now(timezone.utc),
             )
             db_session.add(camera)
@@ -207,7 +207,7 @@ class TestSweepConcurrency:
         building = (await db_session.execute(select(Building))).scalars().first()
         db_session.add(Camera(
             name="Kamera", ip="10.0.9.70", stream_url="rtsp://fake/x",
-            building_id=building.id, zone="Z", resolution="1080p", status="faol",
+            building_id=building.id, zone="Z", resolution="1080p", status="faol", room_type="laboratoriya",
             last_seen_at=datetime.now(timezone.utc),
         ))
         await db_session.commit()

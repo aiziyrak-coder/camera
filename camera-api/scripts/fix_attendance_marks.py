@@ -13,6 +13,14 @@ kimni tanimagan. Bunday kuni uzilish tugaganidan keyingi birinchi ko'rinish
 kirish kamerasida bo'lsa ham kechikishni isbotlamaydi — odam ertalab kelgan
 bo'lishi mumkin. Buni --kor-emas SANA=HH:MM bilan ko'rsatasiz.
 
+MUAMMO 2b — siyrak kuzatuv. 2026-09-18 12:18 gacha kirish kameralari 25-80 s
+da bir marta tekshirilardi, odam esa eshikdan 2-3 s da o'tadi: ko'pchilik
+ertalab ko'rilmagan, "birinchi ko'rinish" esa ko'pincha ketish payti. Bunday
+kunni --ishonchsiz-kun SANA bilan ko'rsatasiz — o'sha kungi barcha "kech
+keldi" "keldi, vaqt noma'lum" bo'ladi. Shuningdek hozirgi qoida
+(settings.attendance_late_window_end, standart 12:00): shundan keyingi
+birinchi kirish ko'rinishi kechikish emas.
+
 MUAMMO 3 — "kelmadi". 14.09 da 4 kishi tanilgan, 519 kishi "kelmadi" deb
 yozilgan: bu odamlarning emas, kameralarning holati. Hozirgi absence_marker
 tanilganlar ulushi ATTENDANCE_ABSENCE_MIN_COVERAGE dan past kuni "kelmadi"
@@ -95,8 +103,18 @@ def late_cutoff() -> time:
     return time.fromisoformat(settings.attendance_ai_late_cutoff)
 
 
+def late_window_end() -> time | None:
+    value = settings.attendance_late_window_end.strip()
+    return time.fromisoformat(value) if value else None
+
+
 def judge_late(
-    first_seen: time | None, at_entrance: bool | None, cutoff: time, blind_until: time | None
+    first_seen: time | None,
+    at_entrance: bool | None,
+    cutoff: time,
+    blind_until: time | None,
+    window_end: time | None = None,
+    unreliable_day: bool = False,
 ) -> tuple[str, time | None, str] | None:
     """"kech keldi" yozuvini hozirgi qoidalar bilan baholaydi.
 
@@ -106,6 +124,15 @@ def judge_late(
         return None
     if first_seen < cutoff:
         return "keldi", first_seen, f"birinchi ko'rinish {first_seen:%H:%M} — kechikish chegarasidan oldin"
+    if unreliable_day:
+        return "keldi", None, "kirish kameralari o'sha kuni siyrak tekshirilgan — kelish vaqti noma'lum"
+    if window_end is not None and first_seen >= window_end:
+        return (
+            "keldi",
+            None,
+            f"birinchi ko'rinish {first_seen:%H:%M} — {window_end:%H:%M} dan keyin (odatda ketish payti), "
+            "kelish vaqti noma'lum",
+        )
     if blind_until is not None and first_seen >= blind_until:
         return "keldi", None, f"AI shu kuni {blind_until:%H:%M} gacha ishlamagan — kelish vaqti noma'lum"
     if not at_entrance:
@@ -149,11 +176,17 @@ async def _first_sightings(db: AsyncSession, first: date, last: date) -> dict[tu
 
 
 async def build_plan(
-    db: AsyncSession, first: date, last: date, blind: dict[date, time], include_absences: bool
+    db: AsyncSession,
+    first: date,
+    last: date,
+    blind: dict[date, time],
+    include_absences: bool,
+    unreliable_days: frozenset[date] | set[date] = frozenset(),
 ) -> Plan:
     plan = Plan()
     manual = await _manual_entries(db)
     cutoff = late_cutoff()
+    window_end = late_window_end()
 
     late_rows = (
         await db.execute(
@@ -173,7 +206,9 @@ async def build_plan(
         if seen is None:
             plan.skipped.append((name, record.date, "tashrif ma'lumoti yo'q — dalil yo'q"))
             continue
-        verdict = judge_late(seen[0], seen[1], cutoff, blind.get(record.date))
+        verdict = judge_late(
+            seen[0], seen[1], cutoff, blind.get(record.date), window_end, record.date in unreliable_days
+        )
         if verdict is None:
             plan.kept_late.append((name, record.date, f"kirishda {seen[0]:%H:%M} da ko'rilgan"))
             continue
@@ -215,7 +250,9 @@ async def build_plan(
     return plan
 
 
-async def apply_plan(db: AsyncSession, plan: Plan, blind: dict[date, time]) -> None:
+async def apply_plan(
+    db: AsyncSession, plan: Plan, blind: dict[date, time], unreliable_days: frozenset[date] | set[date] = frozenset()
+) -> None:
     for fix in plan.late_fixes:
         await db.execute(
             update(AttendanceRecord)
@@ -232,6 +269,7 @@ async def apply_plan(db: AsyncSession, plan: Plan, blind: dict[date, time]) -> N
         removed += result.rowcount or 0
     days = sorted({fix.day for fix in plan.late_fixes} | {group.day for group in plan.absences})
     outage = ", ".join(f"{day} {until:%H:%M} gacha" for day, until in sorted(blind.items()))
+    sparse = ", ".join(day.isoformat() for day in sorted(unreliable_days))
     db.add(
         AuditLog(
             user_id=None,
@@ -241,6 +279,7 @@ async def apply_plan(db: AsyncSession, plan: Plan, blind: dict[date, time]) -> N
                 f"{len(plan.late_fixes)} ta \"kech keldi\" -> \"keldi\", "
                 f"{removed} ta ishonchsiz \"kelmadi\" o'chirildi"
                 + (f"; AI ishlamagan: {outage}" if outage else "")
+                + (f"; kuzatuv siyrak: {sparse}" if sparse else "")
             ),
             module="Talabalar",
             status="muvaffaqiyatli",
@@ -290,6 +329,8 @@ async def run(argv: list[str] | None = None) -> int:
     parser.add_argument("--gacha", type=date.fromisoformat, help="oxirgi sana (standart: --dan)")
     parser.add_argument("--kor-emas", type=_blind_arg, action="append", default=[], metavar="SANA=HH:MM",
                         help="shu kuni AI shu vaqtgacha ishlamagan (bir necha marta berish mumkin)")
+    parser.add_argument("--ishonchsiz-kun", type=date.fromisoformat, action="append", default=[], metavar="SANA",
+                        help="shu kuni kirish kameralari siyrak tekshirilgan: barcha \"kech keldi\" -> \"keldi\"")
     parser.add_argument("--kelmadi", action="store_true", help="past qamrovli kunlardagi \"kelmadi\" ni ham tozalash")
     parser.add_argument("--qollash", action="store_true", help="o'zgarishlarni yozish (standart: faqat ko'rsatish)")
     args = parser.parse_args(argv)
@@ -297,16 +338,17 @@ async def run(argv: list[str] | None = None) -> int:
     if last < args.dan:
         parser.error("--gacha --dan dan oldin bo'lishi mumkin emas")
     blind = dict(args.kor_emas)
+    unreliable = frozenset(args.ishonchsiz_kun)
 
     async with SessionLocal() as db:
-        plan = await build_plan(db, args.dan, last, blind, args.kelmadi)
+        plan = await build_plan(db, args.dan, last, blind, args.kelmadi, unreliable)
         print_plan(plan)
         if not plan.late_fixes and not plan.absences:
             return 0
         if not args.qollash:
             print("\nHech narsa yozilmadi. Qo'llash uchun xuddi shu buyruqqa --qollash qo'shing.")
             return 0
-        await apply_plan(db, plan, blind)
+        await apply_plan(db, plan, blind, unreliable)
     print("\nYozildi. Audit jurnaliga qayd qilindi.")
     return 0
 

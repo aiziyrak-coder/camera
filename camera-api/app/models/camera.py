@@ -11,7 +11,14 @@ from app.models.org import Building
 
 class Camera(Base):
     __tablename__ = "cameras"
-    __table_args__ = (CheckConstraint("status IN ('faol', 'nofaol', 'tamirda')", name="ck_cameras_status"),)
+    __table_args__ = (
+        CheckConstraint("status IN ('faol', 'nofaol', 'tamirda')", name="ck_cameras_status"),
+        CheckConstraint(
+            "room_type IS NULL OR room_type IN "
+            "('kirish', 'auditoriya', 'laboratoriya', 'koridor', 'ofis', 'cheklangan', 'tashqi')",
+            name="ck_cameras_room_type",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
     name: Mapped[str] = mapped_column(String, nullable=False)
@@ -134,6 +141,16 @@ class Camera(Base):
     # other camera's sighting still confirms the person is present today
     # (keldi/kech_keldi) but never touches check_out.
     is_exit: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Xona turi: qaysi AI modullari shu kamerada ishlashini belgilaydi —
+    # app/services/camera_roles.py (MODULE_ROOM_TYPES). NULL — belgilanmagan:
+    # tur eski bayroqlardan olinadi (kirish/perimetr), aks holda kamera faqat
+    # xavfsizlik mezonlarida (yong'in, jang, tartib, zona) qatnashadi.
+    room_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Dars jadvalidagi xona raqami, normallashtirilgan ko'rinishda
+    # (camera_roles.normalize_room_code: "211-xona" -> "211"). Jadval importi
+    # darsni shu raqam orqali kameraga bog'laydi (app/services/lesson_import.py).
+    room_code: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
 
     building: Mapped[Building | None] = relationship("Building", lazy="joined")
     department: Mapped["Department | None"] = relationship("Department", lazy="joined")

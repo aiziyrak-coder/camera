@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -24,6 +24,9 @@ from app.schemas.camera import (
     CameraModuleOptionOut,
     CameraModulesIn,
     CameraOut,
+    CameraRoleChangeOut,
+    CameraRoleImportErrorOut,
+    CameraRolesImportOut,
     CameraUpdateIn,
     CameraZoneOut,
     CameraZonePolygonIn,
@@ -37,6 +40,8 @@ from app.schemas.camera import (
 from app.schemas.camera_import import CameraImportResultOut
 from app.services.camera_import import import_cameras_csv
 from app.services.camera_module_mapping import camera_allows_module_code, set_camera_module_enabled
+from app.services.camera_roles import ROOM_TYPE_LABELS, effective_room_type, normalize_room_code, role_allows
+from app.services.camera_roles_csv import export_roles_csv, import_roles_csv
 from app.services.connectivity import test_camera_connection
 from app.services.stream_links import signed_stream_url
 from app.services.stream_sync import sync_camera_stream
@@ -112,6 +117,9 @@ def _to_out(camera: Camera) -> CameraOut:
         is_perimeter=camera.is_perimeter,
         is_exit=camera.is_exit,
         mac_address=camera.mac_address,
+        room_type=camera.room_type,
+        effective_room_type=effective_room_type(camera),
+        room_code=camera.room_code,
     )
 
 
@@ -125,8 +133,16 @@ async def list_cameras(
     zone: Annotated[str | None, Query()] = None,
     floor: Annotated[str | None, Query()] = None,
     search: Annotated[str | None, Query()] = None,
+    room_type: Annotated[str | None, Query(alias="roomType")] = None,
 ) -> Page[CameraOut]:
     stmt = select(Camera).options(selectinload(Camera.building)).order_by(Camera.created_at.desc())
+    if room_type == "none":
+        # Turi belgilanmaganlar — ularni topib belgilash uchun.
+        stmt = stmt.where(Camera.room_type.is_(None))
+    elif room_type:
+        if room_type not in ROOM_TYPE_LABELS:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Noto'g'ri xona turi")
+        stmt = stmt.where(Camera.room_type == room_type)
     if status_filter:
         stmt = stmt.where(Camera.status == status_filter)
     if building:
@@ -147,6 +163,59 @@ async def list_cameras(
     records, total = await paginate(db, stmt, page_params)
     items = [_to_out(c) for c in records]
     return build_page(items, total, page_params)
+
+
+@router.get("/roles.csv")
+async def export_camera_roles(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: LocationDep,
+) -> Response:
+    """Kamera rollari shabloni: admin `xona_turi` va `xona_raqami` ni Excel'da
+    to'ldirib, POST /roles/import bilan qaytaradi (app/services/camera_roles_csv.py)."""
+    cameras = (
+        (await db.execute(select(Camera).options(selectinload(Camera.building)).order_by(Camera.name))).scalars().all()
+    )
+    return Response(
+        content=export_roles_csv(list(cameras)),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="kamera-rollari.csv"'},
+    )
+
+
+@router.post("/roles/import", response_model=CameraRolesImportOut)
+async def import_camera_roles(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: LocationDep,
+    file: Annotated[UploadFile, File(description="GET /api/cameras/roles.csv shablonidagi CSV")],
+    apply: Annotated[bool, Query()] = False,
+) -> CameraRolesImportOut:
+    """`apply=false` — faqat oldindan ko'rish; `apply=true` — yozadi va jurnalga qayd etadi."""
+    raw = await file.read()
+    if len(raw) > 2 * 1024 * 1024:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "CSV hajmi 2 MB dan oshmasligi kerak")
+    result = await import_roles_csv(db, raw, apply=apply)
+    if result.applied:
+        cameras = len({change.camera_id for change in result.changes})
+        await log_action(
+            db,
+            request,
+            current_user.id,
+            f"Kamera rollari CSV orqali yangilandi: {cameras} ta kamera, {len(result.changes)} ta o'zgarish",
+            "Kameralar",
+        )
+        await db.commit()
+    return CameraRolesImportOut(
+        rows=result.rows,
+        changes=[
+            CameraRoleChangeOut(
+                camera_id=c.camera_id, camera_name=c.camera_name, field=c.field, old=c.old, new=c.new
+            )
+            for c in result.changes
+        ],
+        errors=[CameraRoleImportErrorOut(row=e.row, message=e.message) for e in result.errors],
+        applied=result.applied,
+    )
 
 
 @router.get("/module-options", response_model=list[CameraModuleOptionOut])
@@ -191,6 +260,8 @@ async def _module_assignments_out(db: AsyncSession, module_code: int) -> ModuleC
                 zone=c.zone,
                 status=c.status,
                 enabled=camera_allows_module_code(c.excluded_module_codes, module_code),
+                role_allowed=role_allows(c, module_code),
+                effective_room_type=effective_room_type(c),
             )
             for c in cameras
         ],
@@ -318,6 +389,8 @@ async def create_camera(
         is_entrance=body.is_entrance,
         is_perimeter=body.is_perimeter,
         is_exit=body.is_exit,
+        room_type=body.room_type,
+        room_code=normalize_room_code(body.room_code),
     )
     db.add(camera)
     await log_action(db, request, current_user.id, f"Yangi kamera qo'shdi: {body.name}", "Kameralar")
@@ -394,6 +467,11 @@ async def update_camera(
     camera.is_entrance = body.is_entrance
     camera.is_perimeter = body.is_perimeter
     camera.is_exit = body.is_exit
+    # Xona turi va raqami ham qavat kabi faqat YUBORILGANDA o'zgaradi.
+    if "room_type" in body.model_fields_set:
+        camera.room_type = body.room_type
+    if "room_code" in body.model_fields_set:
+        camera.room_code = normalize_room_code(body.room_code)
 
     await log_action(db, request, current_user.id, f"Kamerani tahrirladi: {body.name}", "Kameralar")
     await db.commit()
@@ -529,7 +607,7 @@ async def set_cameras_location(
     changed = 0
     fields: set[str] = set()
     for camera in cameras:
-        before = (camera.building_id, camera.floor, camera.zone)
+        before = (camera.building_id, camera.floor, camera.zone, camera.room_type)
         if building is not None and camera.building_id != building.id:
             camera.building_id = building.id
             fields.add("building")
@@ -543,7 +621,14 @@ async def set_cameras_location(
         if body.zone and camera.zone != body.zone:
             camera.zone = body.zone
             fields.add("zone")
-        if (camera.building_id, camera.floor, camera.zone) != before:
+        if body.clear_room_type:
+            if camera.room_type is not None:
+                camera.room_type = None
+                fields.add("room_type")
+        elif body.room_type is not None and camera.room_type != body.room_type:
+            camera.room_type = body.room_type
+            fields.add("room_type")
+        if (camera.building_id, camera.floor, camera.zone, camera.room_type) != before:
             changed += 1
 
     if changed:
@@ -554,6 +639,10 @@ async def set_cameras_location(
             parts.append("qavat: bo'shatildi" if body.clear_floor else f"qavat: {body.floor}")
         if "zone" in fields:
             parts.append(f"zona: {body.zone}")
+        if "room_type" in fields:
+            parts.append(
+                "xona turi: bo'shatildi" if body.clear_room_type else f"xona turi: {ROOM_TYPE_LABELS[body.room_type]}"
+            )
         await log_action(
             db,
             request,
@@ -620,6 +709,22 @@ async def update_camera_location(
         if department is not None and camera.department_id != department.id:
             camera.department_id = department.id
             changes.append(f"kafedra: {department.name}")
+    if body.clear_room_type:
+        if camera.room_type is not None:
+            camera.room_type = None
+            changes.append("xona turi: bo'shatildi")
+    elif body.room_type is not None and body.room_type != camera.room_type:
+        camera.room_type = body.room_type
+        changes.append(f"xona turi: {ROOM_TYPE_LABELS[body.room_type]}")
+    if body.clear_room_code:
+        if camera.room_code is not None:
+            camera.room_code = None
+            changes.append("xona raqami: bo'shatildi")
+    elif body.room_code is not None:
+        code = normalize_room_code(body.room_code)
+        if code is not None and code != camera.room_code:
+            camera.room_code = code
+            changes.append(f"xona raqami: {code}")
 
     if changes:
         await log_action(

@@ -53,7 +53,7 @@ from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.models import Camera, Event
 from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, load_candidate_matrix_for_sweep
-from app.services.face_recognition import detect_faces
+from app.services.face_recognition import detect_faces, recognizable_faces
 from app.services.frame_grabber import grab_frame_pair_for_camera
 from app.services.image_size import jpeg_height
 
@@ -103,6 +103,9 @@ def _filter_faces_by_size(faces: list, image_bytes: bytes) -> list:
     never mutates the caller's `faces` (which may be a list shared with
     attendance matching elsewhere, e.g. unified_face_sweep.py's
     primary_faces)."""
+    # Tahlil qilinmagan (juda kichik) yuzni "bazada yo'q" deb bo'lmaydi —
+    # uning embeddingi umuman hisoblanmagan.
+    faces = recognizable_faces(faces or [])
     if not faces:
         return faces
     frame_height = _frame_height(image_bytes)
@@ -287,10 +290,12 @@ async def run_unauthorized_person_ai_sweep_once(
         return 0
 
     async def _process_one(camera: Camera) -> bool:
+        # Kalit kadrni kutish slotdan tashqarida — slot faqat tahlil uchun
+        # (app/jobs/unified_face_sweep.py _process_camera izohiga qarang).
+        frames = await grab_frame_pair_for_camera(camera)
+        if frames is None:
+            return False
         async with camera_sweep_slot():
-            frames = await grab_frame_pair_for_camera(camera)
-            if frames is None:
-                return False
             frame_a, frame_b = frames
             async with session_factory() as camera_db:
                 return await process_camera_frame_pair_for_unauthorized(

@@ -117,6 +117,14 @@ class Settings(BaseSettings):
     # yumshatilgan chegarani qo'llash boshqa odamga davomat yozish
     # xavfini ochadi, shuning uchun ular eski chegarada qoladi.
     attendance_small_face_match_threshold: float = 0.55
+    # Shundan past (piksel balandligi) yuz umuman tahlil qilinmaydi:
+    # embedding ham, 3D landmark ham hisoblanmaydi, faqat bbox qoladi
+    # (tashxisda "kichik yuz" bo'lib sanaladi). 2026-09-18 da o'lchandi:
+    # o'rtacha yuzi 8-15 px bo'lgan xona kameralarida bir kun davomida eng
+    # yaxshi o'xshashlik ~0.31 dan (moslik chegarasi 0.50) oshmagan, lekin
+    # har bir yuz to'liq R50 chaqiruvini olardi —
+    # app/services/face_recognition.py _detect_faces_sync izohiga qarang.
+    face_analysis_min_px: int = 20
     # Yuzi hech qachon tanib bo'lmaydigan kameralar (keng qamrovli
     # auditoriya/koridor kameralari) yuz sweepidan chiqariladi.
     #
@@ -141,6 +149,13 @@ class Settings(BaseSettings):
     # ko'rinishi shu vaqtdan keyin bo'lsa — "kech_keldi". Darsga
     # bog'liqlik alohida ko'rsatiladi (app/routers/presence.py).
     attendance_ai_late_cutoff: str = "09:00"
+    # "HH:MM" — shundan keyingi birinchi KIRISH ko'rinishi ham "keldi", vaqti
+    # noma'lum. Kirish kameralari bir vaqtda chiqish kamerasi: kunning
+    # birinchi ko'rinishi 16:30 da bo'lsa, bu ko'pincha ketayotgan odam
+    # (ertalab kamera uni o'tkazib yuborgan). 2026-09-18 da tuzatishdan
+    # keyin 16:00 dan so'ng yana 5 ta shunday "kech keldi" yozildi.
+    # Bo'sh qator — cheklov yo'q (eski xatti-harakat).
+    attendance_late_window_end: str = "12:00"
     # Faqat DARS bo'yicha davomat va o'qituvchilar kuzatuvida: dars
     # boshlanganidan necha daqiqagacha kirish "o'z vaqtida" hisoblanadi
     # (kirish eshigidan auditoriyagacha yurish uchun).
@@ -234,6 +249,13 @@ class Settings(BaseSettings):
     # Doimiy kuzatuvda slot faqat kadr TAHLILI paytida olinadi (kutish
     # CPU olmaydi) — ya'ni bu bir vaqtdagi eshik tahlillari chegarasi.
     entrance_exit_sweep_concurrency: int = 6
+    # Ish vaqtida kirish kameralari shuncha daqiqa birorta kadr tahlil
+    # qilmasa — panelda kritik ogohlantirish (app/services/ai_watchdog.py).
+    # 0 — o'chiq.
+    ai_watchdog_minutes: int = 10
+    # Kuzatuvchi shuncha soniya hech qadam qo'ymasa (kadr kutish ham, tahlil
+    # ham tugamasa) — u qotgan hisoblanadi va qayta ishga tushiriladi.
+    entrance_watcher_stall_seconds: int = 180
 
     # TT kriteriya 20 ("Talabaning uxlab qolishi") — app/jobs/vision_ai.py.
     # Same camera pool as attendance_ai (faol + reachable), separate sweep
@@ -538,6 +560,20 @@ class Settings(BaseSettings):
     # ketma-ket bajarilardi; havza ularni parallel qiladi, lekin CPU'ni
     # yuz tanishdan tortib olmasligi uchun kichik qoldiriladi.
     cv_thread_pool_size: int = 4
+    # PyTorch (YOLO obyekt va poza) va OpenCV ichki oqimlari —
+    # app/services/thread_limits.py. Ikkalasi ham standart bo'yicha HOSTdagi
+    # barcha yadrolarni ko'radi (konteynerning `cpus` kvotasini emas):
+    # productionda 8 ta parallel YOLO chaqiruvining har biri 32 oqimli havza
+    # ochardi, ya'ni 20 yadroli kvotada yuzlab oqim — CFS throttling butun
+    # konteynerni, jumladan API javoblarini ham sekinlashtirardi.
+    # 0 — kutubxona standarti (dasturchi kompyuteri uchun), musbat son —
+    # aniq chegara. OMP/OPENBLAS/MKL oqimlari esa env orqali beriladi
+    # (deploy/env.production.scale), chunki ular kutubxona yuklanishidan
+    # OLDIN o'qiladi.
+    ai_torch_threads: int = 0
+    # -1 — OpenCV standarti; 0 — OpenCV ichki parallelligi o'chiriladi;
+    # musbat son — aniq chegara.
+    cv_internal_threads: int = -1
 
     # Persistent per-camera frame cache (app/services/stream_cache.py) —
     # replaces spawning a fresh ffmpeg process on every single frame grab

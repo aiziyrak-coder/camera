@@ -6,7 +6,8 @@ import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { useBuildings } from '../../lib/useBuildings';
 import { useCameraZones } from '../../lib/useCameraZones';
-import type { CameraConfig, Department } from '../../types';
+import { ROOM_TYPE_HINTS, ROOM_TYPE_OPTIONS } from '../../lib/cameraRoles';
+import type { CameraConfig, Department, RoomType } from '../../types';
 
 /** Oynaga kerak bo'ladigan minimal ma'lumot.
  *
@@ -21,6 +22,9 @@ export interface CameraLocationTarget {
   floor?: number | null;
   /** Kafedra nomi; biriktirilmagan bo'lsa bo'sh. */
   department?: string;
+  roomType?: RoomType | null;
+  effectiveRoomType?: RoomType | null;
+  roomCode?: string | null;
 }
 
 /** Kameraning JOYLASHUVINI to'g'rilash: nomi, binosi, qavati, zonasi, kafedrasi.
@@ -46,10 +50,16 @@ export default function CameraLocationEditModal({
   const [floor, setFloor] = useState('');
   const [zone, setZone] = useState('');
   const [department, setDepartment] = useState('');
+  const [roomType, setRoomType] = useState<RoomType | ''>('');
+  const [roomCode, setRoomCode] = useState('');
   const [departments, setDepartments] = useState<Department[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { zones } = useCameraZones(building || undefined);
+  // Monitoring devoridagi kamera obyektida xona turi yo'q — u yerdan
+  // ochilganda bu maydonlar ko'rsatilmaydi va YUBORILMAYDI (aks holda
+  // saqlash admin belgilagan turni jimgina o'chirib yuborardi).
+  const roomKnown = camera?.roomType !== undefined;
 
   useEffect(() => {
     if (!camera) return;
@@ -58,6 +68,8 @@ export default function CameraLocationEditModal({
     setFloor(camera.floor === null || camera.floor === undefined ? '' : String(camera.floor));
     setZone(camera.zone);
     setDepartment(camera.department ?? '');
+    setRoomType(camera.roomType ?? '');
+    setRoomCode(camera.roomCode ?? '');
     setError(null);
   }, [camera]);
 
@@ -109,6 +121,14 @@ export default function CameraLocationEditModal({
           zone: zone.trim(),
           department: department || undefined,
           clearDepartment: department === '',
+          ...(roomKnown
+            ? {
+                roomType: roomType || undefined,
+                clearRoomType: roomType === '',
+                roomCode: roomCode.trim() || undefined,
+                clearRoomCode: roomCode.trim() === '',
+              }
+            : {}),
         },
         token,
       );
@@ -125,9 +145,8 @@ export default function CameraLocationEditModal({
     <Modal open={!!camera} onClose={onClose} title="Kamera ma'lumotini to'g'rilash">
       <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
         <p className="glass-deep p-3 text-xs leading-relaxed text-slate-500">
-          Bu yerda faqat kameraning joylashuvi o&apos;zgaradi. Ulanish sozlamalari (IP,
-          port, RTSP, login/parol) o&apos;z holicha qoladi — ular bu so&apos;rovda umuman
-          yuborilmaydi.
+          Bu yerda faqat kameraning joylashuvi o&apos;zgaradi. Ulanish sozlamalari (IP, port, RTSP, login/parol)
+          o&apos;z holicha qoladi — ular bu so&apos;rovda umuman yuborilmaydi.
         </p>
 
         <TextField
@@ -142,7 +161,10 @@ export default function CameraLocationEditModal({
           placeholder="Tanlang"
           value={building}
           onChange={(event) => setBuilding(event.target.value)}
-          options={buildings.map((item) => ({ value: item.name, label: item.name }))}
+          options={buildings.map((item) => ({
+            value: item.name,
+            label: item.name,
+          }))}
         />
 
         <div className="grid grid-cols-2 gap-3">
@@ -188,9 +210,36 @@ export default function CameraLocationEditModal({
           )}
         </div>
 
-        {error && (
-          <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-600">{error}</p>
+        {roomKnown && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <SelectField
+                label="Xona turi"
+                placeholder={
+                  camera?.effectiveRoomType && !roomType
+                    ? 'Belgilanmagan (bayroqdan: kirish/perimetr)'
+                    : 'Belgilanmagan'
+                }
+                value={roomType}
+                onChange={(event) => setRoomType(event.target.value as RoomType | '')}
+                options={ROOM_TYPE_OPTIONS}
+              />
+              <p className="mt-1 text-[11px] text-slate-400">
+                {roomType
+                  ? ROOM_TYPE_HINTS[roomType]
+                  : 'Turi belgilanmagan kamerada faqat xavfsizlik mezonlari ishlaydi'}
+              </p>
+            </div>
+            <TextField
+              label="Xona raqami (dars jadvali)"
+              value={roomCode}
+              onChange={(event) => setRoomCode(event.target.value)}
+              placeholder="Masalan: 211"
+            />
+          </div>
         )}
+
+        {error && <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-600">{error}</p>}
 
         <div className="flex justify-end gap-2">
           <button type="button" onClick={onClose} className="btn-glass">

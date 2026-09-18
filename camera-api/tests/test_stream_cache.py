@@ -55,6 +55,20 @@ class TestExtractCompleteJpegFrames:
         assert remainder == b""
 
 
+class TestJpegSplitter:
+    def test_frames_survive_any_chunk_boundary(self):
+        """Oqim istalgan joyda bo'linadi — markerning o'rtasida ham."""
+        frames = [_fake_jpeg(bytes(range(i % 200, i % 200 + 37))) for i in range(40)]
+        stream = b"junk" + b"".join(frames)
+        for size in (1, 2, 3, 7, 64, 4096):
+            splitter = stream_cache.JpegSplitter()
+            out: list[bytes] = []
+            for i in range(0, len(stream), size):
+                out += splitter.feed(stream[i : i + size])
+            assert out == frames, size
+            assert splitter.pending == b""
+
+
 def _real_jpeg(flat: bool = False, seed: int = 7) -> bytes:
     """A decodable frame. The freshness tests below used a placeholder
     byte string, which stopped working the moment get_frame() started

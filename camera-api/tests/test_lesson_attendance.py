@@ -213,7 +213,23 @@ class TestDayLevelAttendanceIsCredited:
         await finalize_lesson(db_session, lesson)
         record = (await db_session.execute(select(AttendanceRecord))).scalar_one()
         assert record.status == "keldi"
-        assert record.check_in is not None
+        # Xona kamerasi binoga qachon kirganini bilmaydi.
+        assert record.check_in is None
+
+    async def test_late_to_a_lesson_is_not_late_for_the_day(self, db_session, a_camera):
+        """Darsga kechikish dars darajasida qoladi — kunlik "kech keldi"
+        faqat kirish eshigidagi ko'rinishdan (attendance_ai)."""
+        student = await _student(db_session, "Aziz Karimov")
+        lesson = await _lesson(db_session, a_camera, started_minutes_ago=settings.lesson_duration_minutes + 5)
+        late_moment = lesson.scheduled_start_time + timedelta(
+            minutes=settings.attendance_late_to_lesson_grace_minutes + 10
+        )
+        await _see(db_session, lesson, student, times=settings.lesson_attendance_min_sightings, seen_at=late_moment)
+
+        await finalize_lesson(db_session, lesson)
+        assert (await db_session.execute(select(LessonAttendance))).scalar_one().status == "kech_keldi"
+        record = (await db_session.execute(select(AttendanceRecord))).scalar_one()
+        assert (record.status, record.check_in) == ("keldi", None)
 
     async def test_an_existing_day_record_is_never_overwritten(self, db_session, a_camera):
         """Kirish kamerasidan kelgan aniqroq vaqt ham, adminning qo'lda

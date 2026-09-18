@@ -27,7 +27,7 @@ from app.schemas.lesson_session import (
     LessonSessionOut,
     LessonSessionScheduleIn,
 )
-from app.services.lesson_import import import_lesson_sessions_csv, parse_scheduled_start_time
+from app.services.lesson_import import import_lesson_sessions as import_lessons_file, parse_scheduled_start_time
 
 router = APIRouter(prefix="/api/lesson-sessions", tags=["lesson-sessions"])
 
@@ -174,14 +174,18 @@ async def import_lesson_sessions(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: EditDep,
-    file: Annotated[UploadFile, File(description="UTF-8 CSV: date,group,faculty,subject,...")],
+    file: Annotated[UploadFile, File(description="CSV yoki Excel: sana, guruh, fan, xona, o'qituvchi, boshlanish")],
+    apply: Annotated[bool, Query()] = True,
 ) -> LessonSessionImportResultOut:
-    """Bulk-import dars jadvali — teacher_id, camera_id, scheduled_start_time ixtiyoriy."""
+    """Dars jadvalini import qilish — app/services/lesson_import.py.
+
+    `apply=false` — faqat oldindan ko'rish (qaysi xona/o'qituvchi
+    topilmadi), hech narsa yozilmaydi."""
     raw = await file.read()
     if len(raw) > 5 * 1024 * 1024:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "CSV hajmi 5 MB dan oshmasligi kerak")
-    result = await import_lesson_sessions_csv(db, raw)
-    if result.imported:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Fayl hajmi 5 MB dan oshmasligi kerak")
+    result = await import_lessons_file(db, raw, filename=file.filename or "", apply=apply)
+    if apply and result.imported:
         await log_action(
             db,
             request,

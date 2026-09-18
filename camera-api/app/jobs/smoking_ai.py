@@ -105,10 +105,12 @@ async def run_smoking_ai_sweep_once(
         cameras = [c for c in result.scalars().all() if c.stream_url and is_reachable(c.last_seen_at)]
 
     async def _process_one(camera: Camera) -> bool:
+        # Kalit kadrni kutish slotdan tashqarida — slot faqat tahlil uchun
+        # (app/jobs/unified_face_sweep.py _process_camera izohiga qarang).
+        frames = await grab_frame_pair_for_camera(camera)
+        if frames is None:
+            return False
         async with camera_sweep_slot():
-            frames = await grab_frame_pair_for_camera(camera)
-            if frames is None:
-                return False
             async with session_factory() as camera_db:
                 return await process_camera_frame_pair_for_smoking(frames[0], frames[1], camera_db, camera)
 

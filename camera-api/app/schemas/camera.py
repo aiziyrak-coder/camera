@@ -4,6 +4,9 @@ from pydantic import Field
 
 from app.schemas.base import CamelModel
 
+# app/services/camera_roles.py ROOM_TYPES bilan bir xil (model CheckConstraint ham).
+RoomType = Literal["kirish", "auditoriya", "laboratoriya", "koridor", "ofis", "cheklangan", "tashqi"]
+
 
 class CameraOut(CamelModel):
     """Matches src/types/index.ts `CameraConfig` (plus streamUrl already
@@ -58,6 +61,12 @@ class CameraOut(CamelModel):
     is_exit: bool = False
     # Set only by app/services/camera_import.py — null for hand-added cameras.
     mac_address: str | None = None
+    # Xona turi (admin belgilagan) va AMALDAGI turi (belgilanmagan bo'lsa
+    # kirish/perimetr bayrog'idan) — app/services/camera_roles.py.
+    room_type: RoomType | None = None
+    effective_room_type: RoomType | None = None
+    # Dars jadvalidagi xona raqami (normallashtirilgan).
+    room_code: str | None = None
 
 
 class CameraCreateIn(CamelModel):
@@ -82,6 +91,8 @@ class CameraCreateIn(CamelModel):
     is_entrance: bool = False
     is_perimeter: bool = False
     is_exit: bool = False
+    room_type: RoomType | None = None
+    room_code: str | None = Field(default=None, max_length=32)
 
 
 class CameraUpdateIn(CameraCreateIn):
@@ -120,6 +131,12 @@ class CameraLocationIn(CamelModel):
     department: str | None = None
     """Kafedra NOMI. Olib tashlash uchun — `clear_department`."""
     clear_department: bool = False
+    room_type: RoomType | None = None
+    """Xona turi. Olib tashlash uchun — `clear_room_type`."""
+    clear_room_type: bool = False
+    room_code: str | None = Field(default=None, max_length=32)
+    """Dars jadvalidagi xona raqami. Olib tashlash uchun — `clear_room_code`."""
+    clear_room_code: bool = False
 
 
 class CameraBulkLocationIn(CamelModel):
@@ -136,6 +153,9 @@ class CameraBulkLocationIn(CamelModel):
     clear_floor: bool = False
     """True — qavat belgisi olib tashlanadi (floor=None 'tegmaslik' degani)."""
     zone: str | None = None
+    room_type: RoomType | None = None
+    """Bir xil turdagi kameralarni (masalan barcha auditoriyalar) birdan belgilash."""
+    clear_room_type: bool = False
 
 
 class CameraBulkLocationOut(CamelModel):
@@ -203,6 +223,11 @@ class ModuleCameraAssignmentOut(CamelModel):
     zone: str
     status: Literal["faol", "nofaol", "tamirda"]
     enabled: bool
+    # Kameraning xona turi bu modulga mos keladimi (app/services/camera_roles.py).
+    # enabled=True, role_allowed=False — admin ruxsat bergan, lekin modul
+    # baribir ishlamaydi: avval xona turini to'g'rilash kerak.
+    role_allowed: bool = True
+    effective_room_type: RoomType | None = None
 
 
 class ModuleCameraAssignmentsOut(CamelModel):
@@ -218,3 +243,26 @@ class ModuleCameraAssignmentUpdateIn(CamelModel):
 
 class ModuleCameraAssignmentsPatchIn(CamelModel):
     assignments: list[ModuleCameraAssignmentUpdateIn]
+
+
+class CameraRoleChangeOut(CamelModel):
+    camera_id: str
+    camera_name: str
+    field: Literal["room_type", "room_code"]
+    old: str | None = None
+    new: str | None = None
+
+
+class CameraRoleImportErrorOut(CamelModel):
+    row: int
+    message: str
+
+
+class CameraRolesImportOut(CamelModel):
+    """POST /api/cameras/roles/import — `applied=False` bo'lsa bu faqat
+    oldindan ko'rish: hech narsa yozilmagan."""
+
+    rows: int
+    changes: list[CameraRoleChangeOut]
+    errors: list[CameraRoleImportErrorOut]
+    applied: bool

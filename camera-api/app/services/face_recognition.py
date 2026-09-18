@@ -15,6 +15,8 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 from insightface.app import FaceAnalysis
+from insightface.app.common import Face
+from insightface.utils import face_align
 
 from app.config import settings
 from app.services.inference_gate import PRIORITY_BACKGROUND, PRIORITY_LIVE, face_inference_gate
@@ -278,52 +280,104 @@ async def extract_enrollment_embedding(frames: list[bytes]) -> list[float]:
 
 @dataclass
 class DetectedFace:
-    embedding: np.ndarray
-    landmarks_68: np.ndarray  # (68, 3) — the standard iBUG scheme; see app/services/sleep_detection.py
+    # Ikkalasi ham None — yuz tahlil qilinmagan: juda kichik (min_face_px dan
+    # past) yoki chaqiruvchi faqat aniqlashni so'ragan (analyse=False).
+    # Tanish uchun recognizable_faces() dan o'tkaziladi.
+    embedding: np.ndarray | None
+    landmarks_68: np.ndarray | None  # (68, 3) — the standard iBUG scheme; see app/services/sleep_detection.py
     bbox: np.ndarray  # (4,) — [x1, y1, x2, y2] in the source image's pixel coordinates
 
 
-def _detect_faces_sync(image_bytes: bytes) -> list[DetectedFace]:
-    """Every face in the frame (not just the largest) with its embedding,
-    68-point landmarks, and bounding box — reuses the same loaded
-    buffalo_l model as everything else in this module (it already computes
-    all three as part of every detection; nothing extra to load). Used by
-    app/services/sleep_detection.py, which needs to check every face a
-    classroom camera sees, not just the most prominent one, and by
-    app/routers/cameras.py's live-detection endpoint, which needs the
-    bbox to draw an overlay on the video."""
+def recognizable_faces(faces: list) -> list:
+    """Embedding'i bor yuzlar — faqat ularni ro'yxat bilan solishtirish mumkin."""
+    return [face for face in faces if getattr(face, "embedding", None) is not None]
+
+
+def _detect_faces_sync(image_bytes: bytes, min_face_px: int = 0, analyse: bool = True) -> list[DetectedFace]:
+    """Every face in the frame (not just the largest) with its bounding box,
+    and — for faces worth it — its embedding and 68-point landmarks.
+
+    NEGA FaceAnalysis.get() EMAS. U HAR bir topilgan yuz uchun ArcFace R50
+    embedding va 3D landmark hisoblaydi — 8 pikselli yuz uchun ham.
+    Productionda (2026-09-18) 96 ta xona kamerasining 60 tasida yuzlar
+    o'rtacha 8-20 px edi: tanib bo'lmaydi (chegara 40 px), lekin har biri
+    to'liq R50 chaqiruvini olardi — AVX'siz CPU'da AI vaqtining asosiy
+    qismi shunga ketardi. Endi get() ning o'zi takrorlanadi, faqat:
+
+      * `min_face_px` dan kichik yuz — faqat bbox (tashxis uchun sanaladi);
+      * `analyse=False` — hech bir yuz tahlil qilinmaydi (masalan niqob
+        tekshiruvi faqat yuz o'rnini so'raydi);
+      * embeddinglar bitta ONNX chaqiruvida (batch) hisoblanadi.
+
+    Katta yuzlar uchun natija get() bilan aynan bir xil: o'sha hizalash
+    (face_align.norm_crop), o'sha model va normallash."""
     img = _decode_image(image_bytes)
-    faces = _get_app().get(img)
-    return [
-        DetectedFace(embedding=f.normed_embedding, landmarks_68=f.landmark_3d_68, bbox=f.bbox)
-        for f in faces
-    ]
+    app = _get_app()
+    bboxes, kpss = app.det_model.detect(img, max_num=0, metric="default")
+    faces: list[DetectedFace] = []
+    to_analyse: list[tuple[DetectedFace, Face]] = []
+    for i in range(bboxes.shape[0]):
+        bbox = bboxes[i, 0:4]
+        face = DetectedFace(embedding=None, landmarks_68=None, bbox=bbox)
+        faces.append(face)
+        kps = kpss[i] if kpss is not None else None
+        if analyse and kps is not None and (bbox[3] - bbox[1]) >= min_face_px:
+            to_analyse.append((face, Face(bbox=bbox, kps=kps, det_score=bboxes[i, 4])))
+    if not to_analyse:
+        return faces
+
+    recognition = app.models.get("recognition")
+    if recognition is not None:
+        size = recognition.input_size[0]
+        crops = [face_align.norm_crop(img, landmark=raw.kps, image_size=size) for _, raw in to_analyse]
+        for (face, _), feat in zip(to_analyse, recognition.get_feat(crops), strict=True):
+            norm = np.linalg.norm(feat)
+            face.embedding = feat / norm if norm > 0 else feat
+    landmarks = app.models.get("landmark_3d_68")
+    if landmarks is not None:
+        for face, raw in to_analyse:
+            landmarks.get(img, raw)
+            face.landmarks_68 = raw.landmark_3d_68
+    return faces
+
+
+def _min_face_px(min_face_px: int | None) -> int:
+    return settings.face_analysis_min_px if min_face_px is None else max(0, min_face_px)
 
 
 async def detect_faces(
-    image_bytes: bytes, *, priority: int = PRIORITY_BACKGROUND
+    image_bytes: bytes,
+    *,
+    priority: int = PRIORITY_BACKGROUND,
+    min_face_px: int | None = None,
+    analyse: bool = True,
 ) -> list[DetectedFace]:
-    """Gated by face_inference_gate — pass PRIORITY_LIVE for live-detection."""
+    """Gated by face_inference_gate — pass PRIORITY_LIVE for live-detection.
+
+    `min_face_px` — shundan kichik yuz tahlil qilinmaydi (None:
+    settings.face_analysis_min_px). Ro'yxatga olish kabi yuzning har
+    burchagi kerak bo'lgan joylar 0 beradi. `analyse=False` — faqat bbox."""
     async with face_inference_gate.slot(priority=priority):
-        return await asyncio.to_thread(_detect_faces_sync, image_bytes)
+        return await asyncio.to_thread(_detect_faces_sync, image_bytes, _min_face_px(min_face_px), analyse)
 
 
-def _detect_faces_batch_sync(images: list[bytes]) -> list[list[DetectedFace]]:
+def _detect_faces_batch_sync(images: list[bytes], min_face_px: int = 0) -> list[list[DetectedFace]]:
     """Process multiple frames under one inference gate acquisition."""
-    return [_detect_faces_sync(img) for img in images]
+    return [_detect_faces_sync(img, min_face_px) for img in images]
 
 
 async def detect_faces_batch(
-    image_bytes_list: list[bytes], *, priority: int = PRIORITY_BACKGROUND
+    image_bytes_list: list[bytes], *, priority: int = PRIORITY_BACKGROUND, min_face_px: int | None = None
 ) -> list[list[DetectedFace]]:
     """Batch face detection — chunks by face_recognition_batch_size."""
     if not image_bytes_list:
         return []
     batch_size = max(1, settings.face_recognition_batch_size)
+    threshold = _min_face_px(min_face_px)
     all_results: list[list[DetectedFace]] = []
     async with face_inference_gate.slot(priority=priority):
         for i in range(0, len(image_bytes_list), batch_size):
             chunk = image_bytes_list[i : i + batch_size]
-            chunk_results = await asyncio.to_thread(_detect_faces_batch_sync, chunk)
+            chunk_results = await asyncio.to_thread(_detect_faces_batch_sync, chunk, threshold)
             all_results.extend(chunk_results)
     return all_results

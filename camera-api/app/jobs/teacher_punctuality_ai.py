@@ -75,7 +75,6 @@ from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import is_module_active
 from app.jobs.sweep_guard import SweepGuard
-from app.jobs.sweep_concurrency import camera_sweep_slot
 from app.models import LessonSession, StudentStaff
 from app.services.event_bus import raise_event
 from app.services.face_matching import (
@@ -83,7 +82,7 @@ from app.services.face_matching import (
     find_best_match,
     load_candidate_matrix_for_sweep,
 )
-from app.services.face_recognition import detect_faces
+from app.services.face_recognition import detect_faces, recognizable_faces
 from app.services.frame_grabber import grab_frame_pair_for_camera
 from app.timezone import local_now, to_local
 
@@ -248,8 +247,9 @@ async def check_lesson_session(
     evidence_frame: bytes | None = None
 
     if camera and camera.stream_url and is_reachable(camera.last_seen_at) and teacher and teacher.biometric_embedding:
-        async with camera_sweep_slot():
-            frames = await grab_frame_pair_for_camera(camera)
+        # Slot kalit kadrni kutish uchun olinmaydi: tekshiruv darsga bir marta,
+        # model chaqiruvlarini esa face_inference_gate cheklaydi.
+        frames = await grab_frame_pair_for_camera(camera)
         if frames is not None:
             frame_a, frame_b = frames
             evidence_frame = frame_b
@@ -257,12 +257,16 @@ async def check_lesson_session(
 
             # Yangiroq kadrdan boshlaymiz. O'qituvchi shu yerda topilsa —
             # tekshiruv tugadi va ikkinchi kadr umuman tahlil qilinmaydi.
+            # Solishtirish faqat tahlil qilingan (yetarlicha katta) yuzlar
+            # bilan; "kadrda odam bor" degan xulosa esa barcha yuzlardan.
             faces_b = await detect_faces(frame_b)
-            seen = bool(faces_b) and _matches_teacher(faces_b, teacher)
+            usable_b = recognizable_faces(faces_b)
+            seen = bool(usable_b) and _matches_teacher(usable_b, teacher)
 
             if not seen:
                 faces_a = await detect_faces(frame_a)
-                seen = bool(faces_a) and _matches_teacher(faces_a, teacher)
+                usable_a = recognizable_faces(faces_a)
+                seen = bool(usable_a) and _matches_teacher(usable_a, teacher)
 
                 if not seen:
                     faces_in_both = bool(faces_a) and bool(faces_b)
@@ -271,10 +275,10 @@ async def check_lesson_session(
                     # bo'lsagina almashinuv deb hisoblanadi (#26 o'chirilgan
                     # bo'lsa umuman qidirilmaydi).
                     found_b = (
-                        await _find_known_staff(db, faces_b, exclude_id=teacher.id) if substitution_active else None
+                        await _find_known_staff(db, usable_b, exclude_id=teacher.id) if substitution_active else None
                     )
                     if found_b is not None:
-                        found_a = await _find_known_staff(db, faces_a, exclude_id=teacher.id)
+                        found_a = await _find_known_staff(db, usable_a, exclude_id=teacher.id)
                         if found_a is not None and found_a[0].id == found_b[0].id:
                             substitute = found_b[0]
                             substitute_similarity = min(found_a[1], found_b[1])

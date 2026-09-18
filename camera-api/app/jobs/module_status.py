@@ -25,6 +25,7 @@ from sqlalchemy.sql import ColumnElement
 
 from app.config import settings
 from app.models import AIModuleConfig, Camera, Event, ModuleCameraSuppression
+from app.services.camera_roles import effective_room_type, role_allows_clause
 from app.timezone import local_now
 
 logger = logging.getLogger("app.module_status")
@@ -156,6 +157,9 @@ def camera_allows_module(module_code: int) -> ColumnElement[bool]:
         # Operatorlar ko'p rad etgani uchun avtomatik o'chirilgan juftlik
         # (app/jobs/module_suppression.py) — admin qaytarguncha ishlamaydi.
         ~suppressed,
+        # Xona turi: uyqu faqat auditoriyada, xalat faqat laboratoriyada va
+        # h.k. — app/services/camera_roles.py.
+        role_allows_clause(module_code),
     )
 
 
@@ -211,7 +215,8 @@ def is_unauthorized_alert_time(now: datetime | None = None) -> bool:
 
 def camera_can_report_unauthorized(camera: Camera) -> bool:
     """Kunduzi ichkaridagi notanish yuz — odatda ro'yxatdan o'tmagan talaba.
-    Signal faqat kirish va perimetr kameralaridan (settings.unauthorized_perimeter_only)."""
+    Signal faqat kirish, perimetr va cheklangan xona kameralaridan
+    (settings.unauthorized_perimeter_only; tur — app/services/camera_roles.py)."""
     if not settings.unauthorized_perimeter_only:
         return True
-    return bool(camera.is_entrance or camera.is_perimeter)
+    return effective_room_type(camera) in {"kirish", "tashqi", "cheklangan"}

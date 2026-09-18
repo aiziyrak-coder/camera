@@ -176,10 +176,12 @@ async def run_fight_ai_sweep_once(
         return 0
 
     async def _process_one(camera: Camera) -> bool:
+        # Kalit kadrni kutish slotdan tashqarida — slot faqat tahlil uchun
+        # (app/jobs/unified_face_sweep.py _process_camera izohiga qarang).
+        frames = await grab_frame_pair_for_camera(camera)
+        if frames is None:
+            return False
         async with camera_sweep_slot():
-            frames = await grab_frame_pair_for_camera(camera)
-            if frames is None:
-                return False
             frame_a, frame_b = frames
             async with session_factory() as camera_db:
                 return await process_camera_frame_pair_for_fight(frame_a, frame_b, camera_db, camera)

@@ -40,6 +40,12 @@ class TestJudgement:
         assert fix.judge_late(time(10, 5), True, cutoff, time(10, 16)) is None  # AI ishlagan paytda kech
         assert fix.judge_late(time(8, 40), True, cutoff, None)[:2] == ("keldi", time(8, 40))
         assert fix.judge_late(None, None, cutoff, None) is None
+        # Kunduzgi birinchi kirish ko'rinishi — odatda ketish payti.
+        assert fix.judge_late(time(16, 30), True, cutoff, None, time(12, 0))[:2] == ("keldi", None)
+        assert fix.judge_late(time(9, 20), True, cutoff, None, time(12, 0)) is None
+        # Siyrak kuzatilgan kun: ertalabki kechikish ham ishonchsiz.
+        assert fix.judge_late(time(9, 20), True, cutoff, None, time(12, 0), True)[:2] == ("keldi", None)
+        assert fix.judge_late(time(8, 40), True, cutoff, None, time(12, 0), True)[:2] == ("keldi", time(8, 40))
 
 
 @pytest.mark.usefixtures("seeded")
@@ -120,6 +126,11 @@ class TestPlanAndApply:
 
         again = await fix.build_plan(db_session, DAY, OUTAGE_DAY, blind, include_absences=True)
         assert again.late_fixes == [] and again.absences == []
+
+    async def test_an_unreliable_day_clears_even_genuine_looking_late_marks(self, fix, db_session, world):
+        plan = await fix.build_plan(db_session, DAY, DAY, {}, include_absences=False, unreliable_days={DAY})
+        assert "Rostdan Kechikkan" in {f.person for f in plan.late_fixes}
+        assert plan.kept_late == []
 
     async def test_absences_are_left_alone_without_the_flag(self, fix, db_session, world):
         plan = await fix.build_plan(db_session, DAY, DAY, {}, include_absences=False)

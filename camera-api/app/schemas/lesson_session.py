@@ -62,10 +62,35 @@ class LessonSessionImportErrorOut(CamelModel):
     message: str
 
 
+class LessonImportPreviewRowOut(CamelModel):
+    """Import qilinadigan (yoki qilingan) bitta dars — nima nimaga bog'langani."""
+
+    row: int
+    date: str
+    start: str | None = None
+    group: str
+    subject: str
+    teacher: str | None = None
+    teacher_matched: bool = False
+    room: str | None = None
+    camera: str | None = None
+
+
 class LessonSessionImportResultOut(CamelModel):
     imported: int
     skipped: int
     errors: list[LessonSessionImportErrorOut]
+    # True — faqat oldindan ko'rish, hech narsa yozilmagan (`imported` —
+    # qo'shiladigan darslar soni).
+    preview: bool = False
+    with_camera: int = 0
+    with_teacher: int = 0
+    rows: list[LessonImportPreviewRowOut] = []
+    # Kameraga bog'lanmagan xona raqamlari va xodimga bog'lanmagan
+    # o'qituvchi ismlari (eng ko'p uchraganidan) — kamera xona raqamini
+    # yoki ism yozilishini to'g'rilash uchun.
+    unmatched_rooms: list[str] = []
+    unmatched_teachers: list[str] = []
 
 
 class LessonAttendanceRowOut(CamelModel):

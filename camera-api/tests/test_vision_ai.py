@@ -19,7 +19,7 @@ async def a_camera(db_session, seeded):
     building = (await db_session.execute(select(Building))).scalars().first()
     camera = Camera(
         name="Sinfxona kamerasi", ip="10.0.9.2", building_id=building.id,
-        zone="1-xona", resolution="1080p", status="faol",
+        zone="1-xona", resolution="1080p", status="faol", room_type="auditoriya",
     )
     db_session.add(camera)
     await db_session.commit()

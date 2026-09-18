@@ -2,6 +2,7 @@
 widget — CPU/RAM/disk usage of the machine running this API process, via
 psutil. Replaces the frontend's old hardcoded mock/admin.ts systemResources."""
 
+import asyncio
 from typing import Annotated
 
 import psutil
@@ -9,6 +10,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.services.ai_watchdog import ai_stall_message
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.schemas.system import (
@@ -50,6 +52,15 @@ def _ffmpeg_process_count() -> int:
     return count
 
 
+def _measure_resources() -> tuple[int, int, int, int]:
+    return (
+        round(psutil.cpu_percent(interval=0.1)),
+        round(psutil.virtual_memory().percent),
+        round(psutil.disk_usage("/").percent),
+        _ffmpeg_process_count(),
+    )
+
+
 def _build_alerts(cpu: int, ram: int, disk: int, ffmpeg_count: int) -> list[ResourceAlertOut]:
     alerts: list[ResourceAlertOut] = []
 
@@ -89,10 +100,10 @@ async def get_system_resources(
     _: StatusDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> SystemResourcesOut:
-    cpu = round(psutil.cpu_percent(interval=0.1))
-    ram = round(psutil.virtual_memory().percent)
-    disk = round(psutil.disk_usage("/").percent)
-    ffmpeg_count = _ffmpeg_process_count()
+    # psutil sinxron: cpu_percent 0.1 s kutadi, process_iter esa yuzlab
+    # jarayonni aylanadi — event loop'da bu har so'rovda butun API'ni
+    # to'xtatardi (productionda so'rov 727 ms edi).
+    cpu, ram, disk, ffmpeg_count = await asyncio.to_thread(_measure_resources)
     # Barcha API jarayonlari bo'yicha — javob bergan jarayonniki emas.
     stream_readers = await total_stream_readers()
 
@@ -102,8 +113,15 @@ async def get_system_resources(
         disk=disk,
         ffmpeg_process_count=ffmpeg_count,
         stream_reader_count=stream_readers,
-        alerts=_security_alerts(await default_password_logins(db)) + _build_alerts(cpu, ram, disk, ffmpeg_count),
+        alerts=_security_alerts(await default_password_logins(db))
+        + await _ai_alerts(db)
+        + _build_alerts(cpu, ram, disk, ffmpeg_count),
     )
+
+
+async def _ai_alerts(db: AsyncSession) -> list[ResourceAlertOut]:
+    message = await ai_stall_message(db)
+    return [ResourceAlertOut(metric="ai", level="critical", message=message)] if message else []
 
 
 def _security_alerts(default_logins: list[str]) -> list[ResourceAlertOut]:

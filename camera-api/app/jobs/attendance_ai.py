@@ -31,7 +31,7 @@ originally structured to allow either.
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, time as time_type
 from time import monotonic
 
@@ -49,7 +49,7 @@ from app.jobs.sweep_concurrency import camera_sweep_slot, entrance_exit_sweep_sl
 from app.models import AttendanceRecord, AuditLog, Camera, StudentStaff
 from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, find_best_match as _vectorized_find_best_match, load_candidate_matrix_for_sweep
-from app.services.face_recognition import detect_faces
+from app.services.face_recognition import detect_faces, recognizable_faces
 from app.services.inference_gate import PRIORITY_ATTENDANCE, PRIORITY_BACKGROUND
 from app.services.frame_grabber import (
     frame_wait_seconds_for_camera,
@@ -61,6 +61,7 @@ from app.services.frame_grabber import (
 from app.services import recognition_stats
 from app.services.presence import record_visit
 from app.timezone import local_now, to_local
+from app.ws import manager
 
 logger = logging.getLogger("app.attendance_ai")
 
@@ -116,12 +117,18 @@ def first_sighting_status(occurred_time: time_type, camera: Camera | None) -> tu
         shu paytda allaqachon binoda — kechikmagani aniq);
       * chegaradan keyin, kirish kamerasi  -> kech_keldi, vaqt yoziladi;
       * chegaradan keyin, boshqa kamera    -> keldi, kelish vaqti NOMA'LUM
-        (check_in yozilmaydi — kechikish ham, erta ketish ham hisoblanmaydi).
+        (check_in yozilmaydi — kechikish ham, erta ketish ham hisoblanmaydi);
+      * attendance_late_window_end dan keyin, kirish kamerasi -> ham keldi,
+        vaqt noma'lum: kirish kamerasi chiqishni ham ko'radi, kunning
+        birinchi ko'rinishi 16:30 da bo'lsa, bu odatda ketayotgan odam.
 
     `camera` bo'lmasa (qo'lda/test chaqiruvi) — avvalgi xatti-harakat."""
     cutoff = time_type.fromisoformat(settings.attendance_ai_late_cutoff)
     if occurred_time < cutoff:
         return "keldi", occurred_time
+    window_end = settings.attendance_late_window_end.strip()
+    if camera is not None and window_end and occurred_time >= time_type.fromisoformat(window_end):
+        return "keldi", None
     if camera is None or camera.is_entrance:
         return "kech_keldi", occurred_time
     return "keldi", None
@@ -290,7 +297,34 @@ async def upsert_attendance_from_recognition(
         )
     else:
         await db.commit()
+    if created:
+        await _announce_attendance(record, person, camera)
     return record
+
+
+async def _announce_attendance(record: AttendanceRecord, person: StudentStaff | None, camera: Camera | None) -> None:
+    """Kunning birinchi qaydi — ochiq sahifalarga darhol (WebSocket orqali).
+
+    Ilgari davomat sahifasi faqat qayta yuklanganda yangilanardi: odam
+    eshikdan o'tgan, yozuv bazada bor, lekin operator uni ko'rmaydi —
+    "davomat kechikyapti" degan taassurot shundan. Xabar yuborilmasa ham
+    davomat yozilgan bo'ladi, shuning uchun xato bu yerda yutiladi."""
+    try:
+        await manager.broadcast(
+            {
+                "kind": "attendance_recorded",
+                "personId": str(record.student_staff_id),
+                "fullName": person.full_name if person else None,
+                "personType": person.type if person else None,
+                "group": person.group_or_position if person else None,
+                "status": record.status,
+                "checkIn": record.check_in.strftime("%H:%M") if record.check_in else None,
+                "date": record.date.isoformat(),
+                "camera": camera.name if camera else None,
+            }
+        )
+    except Exception:
+        logger.warning("attendance announcement failed", exc_info=True)
 
 
 async def process_camera_frame(
@@ -334,7 +368,11 @@ async def process_camera_frame(
     from a shared detect_faces() call — skips a redundant inference pass."""
     if faces is None:
         faces = await detect_faces(frame_bytes, priority=inference_priority)
+    camera_key = str(camera.id) if camera is not None else None
     if not faces:
+        # Yuzsiz kadr ham "tekshirilgan" — aks holda tashxis 1000 marta
+        # tekshirilgan kamerani "hali tekshirilmadi" deb ko'rsatardi.
+        recognition_stats.record_frame(camera_key, [], [])
         return []
 
     if candidates is None:
@@ -343,20 +381,27 @@ async def process_camera_frame(
         return []
 
     moment = occurred_at or local_now()
-    embeddings = np.stack([face.embedding for face in faces])
-    graded = candidates.graded_matches(
-        embeddings,
-        strict_threshold=settings.attendance_ai_match_threshold,
-        relaxed_threshold=_relaxed_threshold(),
-        margin=settings.attendance_ai_relaxed_margin,
-        strict_margin=settings.attendance_ai_strict_margin,
-    )
-    camera_key = str(camera.id) if camera is not None else None
+    # Juda kichik yuzlar tahlil qilinmagan (embedding yo'q) — ular faqat
+    # tashxisdagi o'lcham statistikasiga kiradi.
+    usable = recognizable_faces(faces)
+    graded = []
+    if usable:
+        embeddings = np.stack([face.embedding for face in usable])
+        # Matritsa ko'paytmasi event loop'dan tashqarida: 8800 kishilik
+        # ro'yxatda u har kadrda o'nlab millisoniya oladi.
+        graded = await asyncio.to_thread(
+            candidates.graded_matches,
+            embeddings,
+            strict_threshold=settings.attendance_ai_match_threshold,
+            relaxed_threshold=_relaxed_threshold(),
+            margin=settings.attendance_ai_relaxed_margin,
+            strict_margin=settings.attendance_ai_strict_margin,
+        )
     recognition_stats.record_frame(camera_key, faces, graded)
 
     matched_ids: set[str] = set()
     records: list[AttendanceRecord] = []
-    for face, match in zip(faces, graded, strict=True):
+    for face, match in zip(usable, graded, strict=True):
         if match.person_id is None:
             continue
         student_staff_id, similarity = match.person_id, match.similarity
@@ -661,6 +706,10 @@ class _EntranceWatcher:
     task: asyncio.Task | None = None
     # Oxirgi dispetcherdan beri davomatga yozilgan odamlar soni.
     matched: int = 0
+    # Kuzatuvchi oxirgi marta qadam qo'ygan payt (kadr kutish yoki tahlil
+    # tugadi). Uzoq vaqt o'zgarmasa — vazifa qotgan (masalan inference
+    # sloti hech qachon berilmayapti) va qayta ishga tushiriladi.
+    last_progress: float = field(default_factory=monotonic)
 
 
 _entrance_context: _EntranceContext | None = None
@@ -712,6 +761,7 @@ async def _watch_entrance_camera(camera: Camera, watcher: _EntranceWatcher) -> N
     misses = 0
     previous_analysis = monotonic()
     while True:
+        watcher.last_progress = monotonic()
         try:
             context = _entrance_context
             if context is None:
@@ -765,7 +815,13 @@ def _reconcile_entrance_watchers(cameras: list[Camera], start=_watch_entrance_ca
                 "entrance/exit watcher stopped", extra={"camera_id": key},
                 exc_info=(type(error), error, error.__traceback__),
             )
-        if camera is not None and not finished and watcher.signature == _camera_signature(camera):
+        stalled = not finished and monotonic() - watcher.last_progress > settings.entrance_watcher_stall_seconds
+        if stalled:
+            logger.error(
+                "entrance/exit watcher stalled; restarting it",
+                extra={"camera_id": key, "idle_seconds": round(monotonic() - watcher.last_progress)},
+            )
+        if camera is not None and not finished and not stalled and watcher.signature == _camera_signature(camera):
             continue
         if task is not None and not task.done():
             task.cancel()

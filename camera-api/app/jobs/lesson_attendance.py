@@ -243,13 +243,18 @@ async def _credit_day_attendance(db: AsyncSession, student: StudentStaff, row: L
     if row.first_seen_at is None:
         return
     local_seen = to_local(row.first_seen_at)
+    # Kunlik holat har doim "keldi", kelish vaqti noma'lum: xona kamerasi
+    # binoga QACHON kirganini bilmaydi (attendance_ai.first_sighting_status
+    # bilan bir qoida). Ilgari darsga kechikish kunlik "kech keldi" ga ham
+    # aylanardi — 13:00 dagi darsga 5 daqiqa kech qolgan talaba kun
+    # bo'yicha 13:05 da "kech kelgan" bo'lib qolardi.
     await db.execute(
         insert(AttendanceRecord)
         .values(
             student_staff_id=student.id,
             date=local_seen.date(),
-            status=row.status,
-            check_in=local_seen.time(),
+            status="keldi",
+            check_in=None,
         )
         .on_conflict_do_nothing(constraint="uq_attendance_person_date")
     )

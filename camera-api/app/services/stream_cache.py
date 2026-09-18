@@ -58,24 +58,66 @@ def _redact(text: str) -> str:
     return _CREDENTIALS_IN_URL.sub(r"\1***:***@", text)
 
 
+class JpegSplitter:
+    """ffmpeg'ning MJPEG chiqishini to'liq JPEG kadrlarga (SOI...EOI) ajratadi.
+
+    NEGA KLASS. Ilgari bufer `bytes` edi va har 64 KB bo'lakda
+    `buffer += chunk` butun buferni qayta nusxalardi, EOI qidiruvi esa har
+    safar boshidan boshlanardi. 4K kirish kamerasining ~1.5 MB kadri 23
+    bo'lakda keladi: bitta kadrga ~17 MB nusxa va shuncha qidiruv — va bu
+    event loop'da, ya'ni API javoblari bilan bir oqimda. Endi bufer
+    bytearray (qo'shish amortizatsiyalangan O(bo'lak)) va EOI qidiruvi
+    oldingi to'xtagan joydan davom etadi."""
+
+    def __init__(self) -> None:
+        self._buffer = bytearray()
+        self._scan_from = 0
+
+    def __len__(self) -> int:
+        return len(self._buffer)
+
+    @property
+    def pending(self) -> bytes:
+        """Hali tugamagan kadrning boshi (SOI dan) — yoki bo'sh."""
+        return bytes(self._buffer)
+
+    def reset(self) -> None:
+        self._buffer = bytearray()
+        self._scan_from = 0
+
+    def feed(self, chunk: bytes) -> list[bytes]:
+        self._buffer += chunk
+        frames: list[bytes] = []
+        while True:
+            start = self._buffer.find(_JPEG_SOI)
+            if start == -1:
+                # Bo'lak chegarasida bo'lingan SOI ning birinchi bayti saqlanadi.
+                keep = self._buffer[-1:] == _JPEG_SOI[:1]
+                self._buffer = bytearray(_JPEG_SOI[:1]) if keep else bytearray()
+                self._scan_from = 0
+                return frames
+            if start:
+                del self._buffer[:start]
+                self._scan_from = max(0, self._scan_from - start)
+            end = self._buffer.find(_JPEG_EOI, max(2, self._scan_from))
+            if end == -1:
+                # EOI ikki bayt — bo'lak chegarasida bo'linishi mumkin.
+                self._scan_from = max(2, len(self._buffer) - 1)
+                return frames
+            frames.append(bytes(self._buffer[: end + 2]))
+            del self._buffer[: end + 2]
+            self._scan_from = 0
+
+
 def extract_complete_jpeg_frames(buffer: bytes) -> tuple[list[bytes], bytes]:
     """Pulls every complete JPEG frame (SOI...EOI) out of a raw MJPEG byte
     buffer, in order. Returns (frames_found, remaining_buffer) — the
     remainder is either empty (buffer ended cleanly) or an incomplete
     frame's leading bytes still waiting for more data on the next read.
-    A pure function (no I/O, no object state) specifically so this
-    byte-level parsing can be unit tested without a real ffmpeg process —
-    see _StreamReader._read_loop, its only caller."""
-    frames: list[bytes] = []
-    while True:
-        start = buffer.find(_JPEG_SOI)
-        if start == -1:
-            return frames, b""
-        end = buffer.find(_JPEG_EOI, start + 2)
-        if end == -1:
-            return frames, buffer[start:]  # incomplete frame tail — keep from SOI, wait for more bytes
-        frames.append(buffer[start : end + 2])
-        buffer = buffer[end + 2 :]
+    Bir martalik ko'rinish — oqimda JpegSplitter ishlatiladi."""
+    splitter = JpegSplitter()
+    frames = splitter.feed(buffer)
+    return frames, splitter.pending
 
 
 class _StreamReader:
@@ -262,20 +304,19 @@ class _StreamReader:
 
     async def _read_loop(self) -> None:
         assert self._proc is not None and self._proc.stdout is not None
-        buffer = b""
+        splitter = JpegSplitter()
         try:
             while True:
                 chunk = await self._proc.stdout.read(65536)
                 if not chunk:
                     break
-                buffer += chunk
-                frames, buffer = extract_complete_jpeg_frames(buffer)
+                frames = splitter.feed(chunk)
                 if frames:
                     self.publish(frames[-1])  # only the most recent decoded frame is kept
                     self._frames_decoded += len(frames)
-                if len(buffer) > _MAX_BUFFER_BYTES:
+                if len(splitter) > _MAX_BUFFER_BYTES:
                     logger.warning("stream reader buffer overflow, resetting", extra={"stream_url": self._log_url})
-                    buffer = b""
+                    splitter.reset()
         except asyncio.CancelledError:
             raise
         except Exception:

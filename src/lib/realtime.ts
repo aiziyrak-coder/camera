@@ -17,6 +17,29 @@ export interface LiveReviewMessage {
 
 export type LiveReviewHandler = (message: LiveReviewMessage) => void;
 
+/** Kunning birinchi davomat qaydi (app/jobs/attendance_ai.py
+ *  _announce_attendance). Hodisa emas — "yangi hodisa" hisoblagichiga
+ *  tushmasligi kerak, shuning uchun alohida ishlovchiga boradi. */
+export interface LiveAttendanceMessage {
+  kind: 'attendance_recorded';
+  personId: string;
+  fullName: string | null;
+  personType: 'talaba' | 'xodim' | null;
+  group: string | null;
+  status: 'keldi' | 'kech_keldi';
+  checkIn: string | null;
+  date: string;
+  camera: string | null;
+}
+
+export type LiveAttendanceHandler = (message: LiveAttendanceMessage) => void;
+
+interface SocketHandlers {
+  onEvent?: LiveEventHandler;
+  onReviewed?: LiveReviewHandler;
+  onAttendance?: LiveAttendanceHandler;
+}
+
 const RECONNECT_DELAY_MS = 3_000;
 
 /** Server ulanishni rad etgan kodlar (app/routers/events.py): token
@@ -32,7 +55,7 @@ export const WS_REJECTED_CODES: ReadonlySet<number> = new Set([4401, 4403]);
  * brauzer WebSocket API'si maxsus header o'rnatishga imkon bermaydi.
  * Ulanish uzilsa avtomatik qayta urinadi (masalan server qayta ishga tushsa).
  */
-function subscribeWebSocket(token: string, onEvent: LiveEventHandler, onReviewed: LiveReviewHandler): () => void {
+function subscribeWebSocket(token: string, handlers: SocketHandlers): () => void {
   let socket: WebSocket | null = null;
   let reconnectTimer: number | null = null;
   let cancelled = false;
@@ -46,10 +69,14 @@ function subscribeWebSocket(token: string, onEvent: LiveEventHandler, onReviewed
       try {
         const data = JSON.parse(e.data);
         if (data && data.kind === 'events_reviewed') {
-          onReviewed(data as LiveReviewMessage);
+          handlers.onReviewed?.(data as LiveReviewMessage);
           return;
         }
-        onEvent(data as AIEvent);
+        if (data && data.kind === 'attendance_recorded') {
+          handlers.onAttendance?.(data as LiveAttendanceMessage);
+          return;
+        }
+        handlers.onEvent?.(data as AIEvent);
       } catch {
         /* JSON bo'lmagan xabar — e'tiborsiz qoldiriladi */
       }
@@ -90,10 +117,24 @@ export function useLiveEvents(onEvent: LiveEventHandler, enabled = true, onRevie
   useEffect(() => {
     if (!enabled) return;
     if (!isBackendConfigured || !config.realtimeUrl || !token) return;
-    return subscribeWebSocket(
-      token,
-      (event) => handlerRef.current(event),
-      (message) => reviewRef.current?.(message),
-    );
+    return subscribeWebSocket(token, {
+      onEvent: (event) => handlerRef.current(event),
+      onReviewed: (message) => reviewRef.current?.(message),
+    });
+  }, [enabled, token]);
+}
+
+/** Yangi davomat qaydlari — davomat sahifasi o'zi yangilanishi uchun. */
+export function useLiveAttendance(onAttendance: LiveAttendanceHandler, enabled = true) {
+  const { token } = useAuth();
+  const handlerRef = useRef(onAttendance);
+  handlerRef.current = onAttendance;
+
+  useEffect(() => {
+    if (!enabled) return;
+    if (!isBackendConfigured || !config.realtimeUrl || !token) return;
+    return subscribeWebSocket(token, {
+      onAttendance: (message) => handlerRef.current(message),
+    });
   }, [enabled, token]);
 }

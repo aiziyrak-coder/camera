@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Cpu, Eye, FileUp, Layers, MapPin, MapPinned, Plus, Settings2, Video, VideoOff, Wrench } from 'lucide-react';
+import { Cpu, DoorOpen, Eye, FileUp, Layers, MapPin, MapPinned, Plus, Settings2, Video, VideoOff, Wrench } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import StatCard from '../../components/StatCard';
 import Badge from '../../components/Badge';
@@ -11,6 +11,7 @@ import CameraModulesModal from '../../components/admin/CameraModulesModal';
 import CameraZoneModal from '../../components/admin/CameraZoneModal';
 import CameraLocationModal from '../../components/admin/CameraLocationModal';
 import CameraLocationEditModal from '../../components/admin/CameraLocationEditModal';
+import CameraRolesImportModal from '../../components/admin/CameraRolesImportModal';
 import EmptyState from '../../components/ui/EmptyState';
 import ErrorState from '../../components/ui/ErrorState';
 import FilterBar from '../../components/ui/FilterBar';
@@ -21,6 +22,7 @@ import { SkeletonTable } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
 import { api } from '../../lib/apiClient';
 import { formatModuleSummary } from '../../lib/cameraModules';
+import { ROOM_TYPE_LABELS, ROOM_TYPE_OPTIONS } from '../../lib/cameraRoles';
 import { useAuth } from '../../lib/auth';
 import { usePermissions } from '../../lib/permissions';
 import { useCameraModuleOptions } from '../../lib/useCameraModuleOptions';
@@ -68,11 +70,16 @@ export default function CamerasZonesPage() {
   const [buildingFilter, setBuildingFilter] = useState('');
   const [floorFilter, setFloorFilter] = useState('');
   const [zoneFilter, setZoneFilter] = useState('');
+  const [roomTypeFilter, setRoomTypeFilter] = useState('');
   const [search, setSearch] = useState('');
 
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [rolesOpen, setRolesOpen] = useState(false);
   const [editing, setEditing] = useState<CameraConfig | null>(null);
+  // Xona turi/raqami — har kim uchun joylashuv oynasi (to'liq sozlama
+  // oynasida bu maydonlar yo'q, u ulanishni tahrirlaydi).
+  const [locating, setLocating] = useState<CameraConfig | null>(null);
   const [viewing, setViewing] = useState<CameraConfig | null>(null);
   const [drawingZone, setDrawingZone] = useState<CameraConfig | null>(null);
   const [editingModules, setEditingModules] = useState<CameraConfig | null>(null);
@@ -99,6 +106,7 @@ export default function CamerasZonesPage() {
       building: buildingFilter || undefined,
       zone: zoneFilter || undefined,
       floor: floorFilter || undefined,
+      roomType: roomTypeFilter || undefined,
       search: search.trim() || undefined,
     },
     PAGE_SIZE,
@@ -129,7 +137,7 @@ export default function CamerasZonesPage() {
   // ommaviy amal qo'llash kutilmagan natija beradi.
   useEffect(() => {
     setSelected(new Set());
-  }, [statusFilter, buildingFilter, floorFilter, zoneFilter, search, page]);
+  }, [statusFilter, buildingFilter, floorFilter, zoneFilter, roomTypeFilter, search, page]);
 
   const floorOptions = useMemo(() => {
     const selectedBuilding = buildings.find((b) => b.name === buildingFilter);
@@ -150,6 +158,7 @@ export default function CamerasZonesPage() {
     (buildingFilter ? 1 : 0) +
     (floorFilter ? 1 : 0) +
     (zoneFilter ? 1 : 0) +
+    (roomTypeFilter ? 1 : 0) +
     (search.trim() ? 1 : 0);
 
   function resetFilters() {
@@ -157,6 +166,7 @@ export default function CamerasZonesPage() {
     setBuildingFilter('');
     setFloorFilter('');
     setZoneFilter('');
+    setRoomTypeFilter('');
     setSearch('');
   }
 
@@ -192,21 +202,27 @@ export default function CamerasZonesPage() {
         title="Kameralar va Zonalar"
         subtitle="RTSP kamera konfiguratsiyasi, qavat, zona va AI modul bog‘lanishi"
         action={
-          canManage ? (
-            <div className="flex items-center gap-2">
-              <button onClick={() => setImportOpen(true)} className="btn-glass flex items-center gap-1.5">
-                <FileUp size={14} />
-                SADP&apos;dan import
-              </button>
-              <button
-                onClick={() => setAddOpen(true)}
-                className="btn-glass flex items-center gap-1.5 !bg-indigo-600 !text-white hover:!bg-indigo-700"
-              >
-                <Plus size={14} />
-                Yangi kamera qo&apos;shish
-              </button>
-            </div>
-          ) : undefined
+          <div className="flex items-center gap-2">
+            <button onClick={() => setRolesOpen(true)} className="btn-glass flex items-center gap-1.5">
+              <DoorOpen size={14} />
+              Xona turlari (CSV)
+            </button>
+            {canManage && (
+              <>
+                <button onClick={() => setImportOpen(true)} className="btn-glass flex items-center gap-1.5">
+                  <FileUp size={14} />
+                  SADP&apos;dan import
+                </button>
+                <button
+                  onClick={() => setAddOpen(true)}
+                  className="btn-glass flex items-center gap-1.5 !bg-indigo-600 !text-white hover:!bg-indigo-700"
+                >
+                  <Plus size={14} />
+                  Yangi kamera qo&apos;shish
+                </button>
+              </>
+            )}
+          </div>
         }
       />
 
@@ -253,6 +269,12 @@ export default function CamerasZonesPage() {
           options={buildings.map((b) => ({ value: b.name, label: b.name }))}
         />
         <SelectFilter label="Qavat" value={floorFilter} onChange={setFloorFilter} options={floorOptions} />
+        <SelectFilter
+          label="Xona turi"
+          value={roomTypeFilter}
+          onChange={setRoomTypeFilter}
+          options={[...ROOM_TYPE_OPTIONS, { value: 'none', label: 'Belgilanmagan' }]}
+        />
       </FilterBar>
 
       {zones.length > 0 && (
@@ -331,6 +353,7 @@ export default function CamerasZonesPage() {
                 <th className="px-4 py-3">Bino</th>
                 <th className="px-4 py-3">Qavat</th>
                 <th className="px-4 py-3">Zona</th>
+                <th className="px-4 py-3">Xona turi</th>
                 <th className="px-4 py-3">AI modullar</th>
                 <th className="px-4 py-3">Ruxsat / FPS</th>
                 <th className="px-4 py-3">Holat</th>
@@ -371,6 +394,26 @@ export default function CamerasZonesPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-slate-600">{c.zone}</td>
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => setLocating(c)}
+                        title="Xona turini belgilash"
+                        className={`text-left text-xs hover:underline ${
+                          c.effectiveRoomType ? 'text-slate-600' : 'font-semibold text-amber-600'
+                        }`}
+                      >
+                        {c.effectiveRoomType ? (
+                          <>
+                            {ROOM_TYPE_LABELS[c.effectiveRoomType]}
+                            {c.roomCode ? ` · ${c.roomCode}` : ''}
+                            {!c.roomType && <span className="text-slate-400"> (bayroqdan)</span>}
+                          </>
+                        ) : (
+                          'belgilanmagan'
+                        )}
+                      </button>
+                    </td>
                     <td className="px-4 py-3">
                       {canManage ? (
                         <button
@@ -498,7 +541,16 @@ export default function CamerasZonesPage() {
           }}
         />
       )}
+      <CameraLocationEditModal
+        camera={locating}
+        onClose={() => setLocating(null)}
+        onSave={() => {
+          reload();
+          loadSummary();
+        }}
+      />
       <CameraImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={() => reload()} />
+      <CameraRolesImportModal open={rolesOpen} onClose={() => setRolesOpen(false)} onDone={() => reload()} />
       <CameraConfigDetailModal
         camera={viewing}
         onClose={() => setViewing(null)}
