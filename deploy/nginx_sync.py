@@ -123,8 +123,44 @@ def _collapse_blank_lines(text: str) -> str:
     return re.sub(r"\n[ \t]*\n([ \t]*\})", r"\n\1", text)
 
 
-def migrate_frontend(text: str) -> str:
-    """cam.fermi.uz: nusxalangan HLS bloklari -> include, xavfsizlik sarlavhalari."""
+_LISTEN = re.compile(r"^[ \t]*listen[ \t]+([^;]+);", re.MULTILINE)
+
+
+def _listen_addresses(text: str, server: Block) -> dict[str, str]:
+    """server blokining `listen` qatorlari: manzil -> to'liq qiymat."""
+    listens = {}
+    for match in _LISTEN.finditer(text, server.open, server.close):
+        value = " ".join(match.group(1).split())
+        listens.setdefault(value.split()[0], value)
+    return listens
+
+
+def _add_missing_listens(text: str, desired: str) -> str:
+    """Repodagi 443-server tinglaydigan manzillar serverdagi faylda ham bo'lsin.
+
+    2026-09-18: serverdagi cam.fermi.uz.conf da `listen 192.168.0.101:443`
+    yo'q edi — bu manzilda cam.fermi.uz ni takroriy cam-fermi-frontend.conf
+    ushlab turardi. Takroriy fayl o'chirilgach, LAN'dan kirganlarga boshqa
+    saytning sertifikati chiqdi. Faqat manzil taqqoslanadi: `443 ssl http2`
+    bor joyga `443 ssl` qo'shilmaydi (nginx takroriy listen'ni rad etadi)."""
+    server = _https_server(text)
+    have = _listen_addresses(text, server)
+    missing = [value for address, value in _listen_addresses(desired, _https_server(desired)).items() if address not in have]
+    if not missing:
+        return text
+    last = list(_LISTEN.finditer(text, server.open, server.close))[-1]
+    insert_at = _line_end(text, last.end())
+    return text[:insert_at] + "".join(f"    listen {value};\n" for value in missing) + text[insert_at:]
+
+
+def migrate_frontend(text: str, desired: str | None = None) -> str:
+    """cam.fermi.uz: nusxalangan HLS bloklari -> include, xavfsizlik sarlavhalari.
+
+    `desired` — repodagi fayl: undan faqat `listen` manzillari olinadi."""
+    # 0) Tinglash manzillari.
+    if desired is not None:
+        text = _add_missing_listens(text, desired)
+
     # 1) Eski HLS bloklarini olib tashlash (oxiridan boshlab — indekslar siljimasin).
     server = _https_server(text)
     stale = [
@@ -211,7 +247,7 @@ def planned_changes() -> dict[str, tuple[Path, str]]:
         if not target.exists():
             text = desired
         elif site == "cam.fermi.uz.conf":
-            text = migrate_frontend(target.read_text())
+            text = migrate_frontend(target.read_text(), desired)
         else:
             text = keep_certificates(target.read_text(), desired)
         changes[site] = (target, text)
@@ -254,7 +290,10 @@ def main() -> int:
 
     # Eski takroriy nomlar (cam-fermi-*.conf) — bir server_name ikki marta bo'lmasin.
     for duplicate in ("cam-fermi-frontend", "cam-fermi-api", "cam-fermi-storage", "cam-fermi-stream"):
-        (ENABLED / f"{duplicate}.conf").unlink(missing_ok=True)
+        link = ENABLED / f"{duplicate}.conf"
+        if link.exists() or link.is_symlink():
+            print(f"[nginx-sync] takroriy sayt o'chirildi: {link} (nishoni: {link.resolve()})")
+            link.unlink()
     for site, (target, _) in changes.items():
         link = ENABLED / site
         if not link.exists() and not link.is_symlink():
