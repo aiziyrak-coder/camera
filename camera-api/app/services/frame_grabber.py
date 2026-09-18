@@ -12,6 +12,7 @@ for face AI — substream is too low-res for corridor-wide shots.
 
 import asyncio
 import logging
+import random
 import time
 
 from app.config import settings
@@ -66,7 +67,14 @@ def _note_main_stream_result(camera: Camera, ok: bool) -> None:
                 "retry_after_seconds": settings.ai_entrance_main_stream_retry_seconds,
             },
         )
-    _main_stream_failed_until[key] = time.monotonic() + settings.ai_entrance_main_stream_retry_seconds
+    # Kirish eshigi tez qayta urinadi, xona kamerasi uzoq kutadi (config izohi);
+    # tasodifiy siljish — hammasi bir lahzada qayta urinib tarmoqni to'ldirmasin.
+    base = (
+        settings.ai_entrance_main_stream_retry_seconds
+        if camera.is_entrance or getattr(camera, "is_exit", False) or camera.is_perimeter
+        else settings.ai_room_main_stream_retry_seconds
+    )
+    _main_stream_failed_until[key] = time.monotonic() + base * random.uniform(0.8, 1.2)
 
 
 def reset_main_stream_fallbacks_for_tests() -> None:

@@ -123,3 +123,47 @@ class TestArrivalOnlyRecords:
         evening = await upsert_attendance_from_recognition(db_session, str(person.id), late + timedelta(hours=7), door)
         assert evening.check_out is None  # ketish yozilmaydi
         assert evening.check_in.strftime("%H:%M") == "10:37"
+
+
+class TestBandwidthPriority:
+    """107 ta 4K oqim tarmoqqa sig'maydi: kirish eshigi birinchi va tez qayta urinadi."""
+
+    def test_room_camera_waits_longer_before_retrying_the_main_stream(self, monkeypatch):
+        import time as time_module
+
+        from app.services import frame_grabber
+
+        frame_grabber.reset_main_stream_fallbacks_for_tests()
+        monkeypatch.setattr(settings, "ai_entrance_main_stream_retry_seconds", 100.0)
+        monkeypatch.setattr(settings, "ai_room_main_stream_retry_seconds", 10_000.0)
+        door = _camera(id="door", is_entrance=True)
+        room = _camera(id="room", room_type="auditoriya")
+        frame_grabber._note_main_stream_result(door, ok=False)
+        frame_grabber._note_main_stream_result(room, ok=False)
+        now = time_module.monotonic()
+        assert frame_grabber._main_stream_failed_until["door"] - now <= 121
+        assert frame_grabber._main_stream_failed_until["room"] - now >= 7_900
+        frame_grabber.reset_main_stream_fallbacks_for_tests()
+
+    async def test_room_watcher_starts_after_the_doors(self, monkeypatch):
+        import asyncio
+
+        from app.jobs import attendance_ai
+
+        monkeypatch.setattr(settings, "room_watcher_start_delay_seconds", 0.3)
+        monkeypatch.setattr(settings, "room_watcher_start_spread_seconds", 0.0)
+        monkeypatch.setattr(attendance_ai, "_entrance_context", None)
+        started = asyncio.get_running_loop().time()
+        grabbed: list[float] = []
+
+        async def fake_grab(camera, **_):
+            grabbed.append(asyncio.get_running_loop().time() - started)
+            raise asyncio.CancelledError
+
+        monkeypatch.setattr(attendance_ai, "_entrance_context", object())
+        monkeypatch.setattr(attendance_ai, "grab_newer_frame", fake_grab)
+        watcher = attendance_ai._EntranceWatcher(signature=())
+        room = _camera(room_type="auditoriya")
+        with pytest.raises(asyncio.CancelledError):
+            await attendance_ai._watch_entrance_camera(room, watcher)
+        assert grabbed and grabbed[0] >= 0.29

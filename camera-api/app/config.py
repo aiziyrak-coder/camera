@@ -167,6 +167,18 @@ class Settings(BaseSettings):
     # o'qiladi — xona kamerasida yuz substream'da juda kichik.
     # app/services/camera_roles.py, app/jobs/attendance_ai.py, frame_grabber.py.
     attendance_all_cameras: bool = False
+    # Tarmoq o'tkazuvchanligi cheklangan: 107 ta 4K asosiy oqim bir vaqtda
+    # ochilganda (2026-09-19 03:45) 69 kamera, jumladan kirish eshiklari ham,
+    # asosiy oqimni ololmay substream'ga tushdi. Shuning uchun:
+    #   * kirish/chiqish/perimetr kuzatuvchilari darhol, xona kameralari esa
+    #     room_watcher_start_delay_seconds + tasodifiy 0..room_watcher_start_spread_seconds
+    #     keyin boshlanadi — kirish eshigi o'tkazuvchanlikni birinchi oladi;
+    #   * asosiy oqimi ishlamagan xona kamerasi uzoqroq (ai_room_main_stream_retry_seconds)
+    #     substream'da qoladi, kirish kamerasi esa tez (ai_entrance_main_stream_retry_seconds)
+    #     qayta urinadi.
+    room_watcher_start_delay_seconds: float = 60.0
+    room_watcher_start_spread_seconds: float = 90.0
+    ai_room_main_stream_retry_seconds: float = 3600.0
     # Faqat DARS bo'yicha davomat va o'qituvchilar kuzatuvida: dars
     # boshlanganidan necha daqiqagacha kirish "o'z vaqtida" hisoblanadi
     # (kirish eshigidan auditoriyagacha yurish uchun).

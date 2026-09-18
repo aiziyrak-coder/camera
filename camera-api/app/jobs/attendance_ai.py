@@ -31,6 +31,7 @@ originally structured to allow either.
 
 import asyncio
 import logging
+import random
 from dataclasses import dataclass, field
 from datetime import datetime, time as time_type
 from time import monotonic
@@ -824,6 +825,17 @@ async def _watch_entrance_camera(camera: Camera, watcher: _EntranceWatcher) -> N
     gate = MotionGate()
     roi = face_roi_box(camera)
     tracked: tuple = ()
+    if not (camera.is_entrance or camera.is_exit or camera.is_perimeter):
+        # Xona kameralari kirish eshiklaridan keyin (config izohi:
+        # room_watcher_start_delay_seconds). Kutish paytida ham "tirik" —
+        # qotib qolgan kuzatuvchi sifatida qayta ishga tushirilmaydi.
+        delay = settings.room_watcher_start_delay_seconds + random.uniform(
+            0, max(0.0, settings.room_watcher_start_spread_seconds)
+        )
+        deadline = monotonic() + delay
+        while monotonic() < deadline:
+            watcher.last_progress = monotonic()
+            await asyncio.sleep(min(5.0, max(0.0, deadline - monotonic())))
     while True:
         watcher.last_progress = monotonic()
         try:
