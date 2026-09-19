@@ -32,7 +32,7 @@ describe('navConfig', () => {
   it('filters the menu by permission and drops empty sections', () => {
     const sections = visibleSections((key) => key === 'viewLive', 'admin');
     expect(sections.map((s) => s.id)).toEqual(['monitoring', 'malumotlar']);
-    expect(sections[0].items.map((i) => i.to)).toEqual(['/', '/videodevor', '/xarita']);
+    expect(sections[0].items.map((i) => i.to)).toEqual(['/', '/videodevor']);
   });
 
   it('shows the date picker only on attendance pages', () => {
