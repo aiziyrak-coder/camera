@@ -79,3 +79,22 @@ def test_faqat_sub_touches_only_the_substream(script):
 
     assert script.channels_for(argparse.Namespace(faqat_sub=True)) == {"sub": "102"}
     assert script.channels_for(argparse.Namespace(faqat_sub=False)) == {"asosiy": "101", "sub": "102"}
+
+
+CAPS_720 = '<Video><videoResolutionWidth opt="640,640,1280"/><videoResolutionHeight opt="360,480,720"/></Video>'
+CAPS_768 = '<Video><videoResolutionWidth opt="640,768"/><videoResolutionHeight opt="360,432"/></Video>'
+
+
+def test_substream_is_raised_to_720p_when_the_camera_supports_it(script):
+    root = ET.fromstring(SUB_STREAM.replace("</Video>", "<vbrUpperCap>512</vbrUpperCap></Video>"))
+    changes = script.plan_resolution(root, CAPS_720, 1280, 720, 1536)
+    state = script.read_state(root)
+    assert (state.width, state.height) == ("1280", "720")
+    assert any("vbrUpperCap 512 -> 1536" in c for c in changes)
+
+
+def test_unsupported_resolution_is_left_alone(script):
+    root = ET.fromstring(SUB_STREAM)
+    changes = script.plan_resolution(root, CAPS_768, 1280, 720, 1536)
+    assert changes[0].startswith("!")
+    assert script.read_state(root).width == "640"

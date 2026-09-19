@@ -115,6 +115,39 @@ class Plan:
     changes: list[str] = field(default_factory=list)
 
 
+def _set(video: ET.Element, name: str, value: str) -> bool:
+    node = _find(video, name)
+    if node is None or (node.text or "").strip() == value:
+        return False
+    node.text = value
+    return True
+
+
+def plan_resolution(root: ET.Element, caps_text: str, width: int, height: int, min_kbps: int) -> list[str]:
+    """Qo'shimcha oqimni katta o'lchamga (masalan 1280x720) ko'tarish — kamera
+    imkoniyatlari (capabilities) ruxsat bersa. Yuz tanish uchun: 640x360 da
+    auditoriyadagi yuzlar 8–20 px, tanish uchun 40 px kerak (2026-09-19 o'lchovi)."""
+    import re
+
+    video = _find(root, "Video")
+    if video is None:
+        return []
+    widths = re.search(r'videoResolutionWidth[^>]*opt="([^"]+)"', caps_text)
+    heights = re.search(r'videoResolutionHeight[^>]*opt="([^"]+)"', caps_text)
+    if not widths or not heights or str(width) not in widths.group(1).split(",") or str(height) not in heights.group(1).split(","):
+        return [f"! {width}x{height} qo'llab-quvvatlanmaydi — tegilmaydi"]
+    changes: list[str] = []
+    state = read_state(root)
+    if _set(video, "videoResolutionWidth", str(width)) | _set(video, "videoResolutionHeight", str(height)):
+        changes.append(f"o'lcham {state.width}x{state.height} -> {width}x{height}")
+    for name in ("vbrUpperCap", "constantBitRate"):
+        node = _find(video, name)
+        if node is not None and (node.text or "").strip().isdigit() and int(node.text) < min_kbps:
+            changes.append(f"{name} {node.text} -> {min_kbps} kbps")
+            node.text = str(min_kbps)
+    return changes
+
+
 def plan_changes(root: ET.Element, *, want_h264: bool) -> Plan:
     """XML ni JOYIDA maqsadli qiymatlarga keltiradi va nima o'zgarganini qaytaradi."""
     plan = Plan()
@@ -162,6 +195,8 @@ def not_applied(wanted: StreamState, actual: StreamState) -> list[str]:
         missing.append(f"kodek {actual.codec}")
     if wanted.gov is not None and actual.gov != wanted.gov:
         missing.append(f"GOP {actual.gov}")
+    if wanted.width and actual.width != wanted.width:
+        missing.append(f"o'lcham {actual.width}x{actual.height}")
     if wanted.smart == "false" and actual.smart == "true":
         missing.append("Smart Codec hali yoqiq")
     return missing
@@ -211,6 +246,16 @@ async def handle_camera(camera: Camera, args: argparse.Namespace, semaphore: asy
                 continue
             before = read_state(root).describe()
             plan = plan_changes(root, want_h264=(label == "sub" and not args.sub_h265_qolsin))
+            if label == "sub" and args.sub_olcham:
+                width, height = (int(x) for x in args.sub_olcham.lower().split("x"))
+                try:
+                    caps = await client.get(f"{url}/capabilities")
+                    plan.changes.extend(plan_resolution(root, caps.text, width, height, args.sub_bitrate))
+                except httpx.HTTPError as exc:
+                    plan.changes.append(f"! imkoniyatlarni o'qib bo'lmadi: {type(exc).__name__}")
+                if all(c.startswith("!") for c in plan.changes):
+                    lines.append(f"    {label:<7} {before}  " + "; ".join(plan.changes or ["— to'g'ri"]))
+                    continue
             if not plan.changes:
                 lines.append(f"    {label:<7} {before}  — to'g'ri")
                 continue
@@ -254,6 +299,8 @@ async def run(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--port", type=int, default=80, help="kameraning veb (ISAPI) porti, standart 80")
     parser.add_argument("--sub-h265-qolsin", action="store_true", help="qo'shimcha oqim kodekini o'zgartirmaslik")
+    parser.add_argument("--sub-olcham", help="qo'shimcha oqim o'lchami, masalan 1280x720 (kamera qo'llasa)")
+    parser.add_argument("--sub-bitrate", type=int, default=1536, help="--sub-olcham bilan: bitreyt kamida shuncha kbps")
     parser.add_argument("--qollash", action="store_true", help="o'zgarishlarni kameralarga yozish (standart: faqat ko'rish)")
     args = parser.parse_args(argv)
 

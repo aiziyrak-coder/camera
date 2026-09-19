@@ -138,7 +138,7 @@ class Settings(BaseSettings):
     # kadrdagi 40 px yuz detektorda ~20 px (SCRFD ~10 px dan topadi),
     # embedding esa baribir TO'LIQ o'lchamli kadrdan olinadi.
     face_det_native_resolution: bool = True
-    face_det_max_side: int = 960
+    face_det_max_side: int = 1280  # 720p qo'shimcha oqim to'liq o'lchamda tahlil qilinadi
     face_det_min_side: int = 640
     # Yuz sifati darvozasi (face_recognition.face_quality_ok): faqat YUMSHOQ
     # moslik va avtomatik galereya uchun. Qat'iy moslik bunga bog'liq emas.
