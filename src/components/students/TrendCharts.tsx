@@ -118,12 +118,27 @@ function minutesToClock(value: number): string {
 }
 
 /** Kunlik kelish vaqti (bitta seriya). Kelmagan kunlar bo'sh qoladi. */
-export function ArrivalTimeChart({ points, height = 200 }: { points: ReadonlyArray<{ date: string; minutes: number | null }>; height?: number }) {
+export function ArrivalTimeChart({
+  points,
+  height = 200,
+  threshold,
+  average,
+}: {
+  points: ReadonlyArray<{ date: string; minutes: number | null; status?: string }>;
+  height?: number;
+  /** Kechikish chegarasi (kun boshidan daqiqa, masalan 540 = 09:00) — punktir chiziq. */
+  threshold?: number;
+  /** O'rtacha kelish (daqiqa) — nozik chiziq. */
+  average?: number | null;
+}) {
   const theme = useChartTheme();
   const data = useMemo(() => points.map((p) => ({ ...p, label: dayTick(p.date) })), [points]);
   const values = points.map((p) => p.minutes).filter((m): m is number => m !== null);
-  const min = values.length ? Math.floor((Math.min(...values) - 15) / 30) * 30 : 420;
-  const max = values.length ? Math.ceil((Math.max(...values) + 15) / 30) * 30 : 600;
+  const bounds = threshold !== undefined ? [...values, threshold] : values;
+  const min = bounds.length ? Math.floor((Math.min(...bounds) - 15) / 30) * 30 : 420;
+  const max = bounds.length ? Math.ceil((Math.max(...bounds) + 15) / 30) * 30 : 600;
+  const dotColor = (p: { status?: string; minutes: number | null }) =>
+    p.status === 'kech_keldi' || (threshold !== undefined && p.minutes !== null && p.minutes > threshold) ? theme.warning : theme.primary;
   return (
     <div style={{ height }} className="-ml-2 w-[calc(100%+0.5rem)]" role="img" aria-label="Kunlik kelish vaqti grafigi">
       <ResponsiveContainer width="100%" height="100%">
@@ -140,13 +155,36 @@ export function ArrivalTimeChart({ points, height = 200 }: { points: ReadonlyArr
             }}
             formatter={(value) => [value === null || value === undefined ? '—' : minutesToClock(Number(value)), 'Kelgan vaqti']}
           />
+          {threshold !== undefined && (
+            <ReferenceLine
+              y={threshold}
+              stroke={theme.warning}
+              strokeDasharray="4 4"
+              label={{ value: `${minutesToClock(threshold)} chegara`, position: 'insideTopRight', fill: theme.warning, fontSize: 11 }}
+            />
+          )}
+          {average !== null && average !== undefined && (
+            <ReferenceLine
+              y={average}
+              stroke={theme.muted}
+              strokeDasharray="2 3"
+              label={{ value: `o'rtacha ${minutesToClock(average)}`, position: 'insideBottomLeft', fill: theme.muted, fontSize: 11 }}
+            />
+          )}
           <Area
             type="monotone"
             dataKey="minutes"
             stroke={theme.primary}
             strokeWidth={2}
             fill="none"
-            dot={{ r: 3, fill: theme.primary, stroke: theme.surface, strokeWidth: 2 }}
+            connectNulls
+            dot={(props: { cx?: number; cy?: number; index?: number; payload?: { status?: string; minutes: number | null } }) =>
+              props.cx === undefined || props.cy === undefined || !props.payload || props.payload.minutes === null ? (
+                <g key={`d${props.index}`} />
+              ) : (
+                <circle key={`d${props.index}`} cx={props.cx} cy={props.cy} r={3.5} fill={dotColor(props.payload)} stroke={theme.surface} strokeWidth={2} />
+              )
+            }
             activeDot={{ r: 5 }}
             isAnimationActive={false}
           />

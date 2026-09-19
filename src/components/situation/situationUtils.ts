@@ -160,3 +160,90 @@ export function clockLabel(value: string | null | undefined): string {
   const plain = value.match(/^(\d{1,2}:\d{2})/);
   return plain ? plain[1].padStart(5, '0') : value;
 }
+
+// ───────────────────────────────────────────── Xodimlar taqqoslashi, bo'linmalar reytingi
+
+const WEEKDAY_SHORT = ['Ya', 'Du', 'Se', 'Cho', 'Pa', 'Ju', 'Sha'];
+const WEEKDAY_DATIVE = ['yakshanbaga', 'dushanbaga', 'seshanbaga', 'chorshanbaga', 'payshanbaga', 'jumaga', 'shanbaga'];
+
+/** "2026-09-18" → "jumaga" (taqqoslash yorlig'i uchun). */
+export function weekdayDative(date: string): string {
+  return WEEKDAY_DATIVE[new Date(`${date}T00:00:00Z`).getUTCDay()] ?? '';
+}
+
+/** "YYYY-MM-DD" ± kun (UTC — vaqt mintaqasidan qat'i nazar barqaror). */
+export function shiftIso(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** "2026-09-18" → "Ju". */
+export function weekdayShort(date: string): string {
+  return WEEKDAY_SHORT[new Date(`${date}T00:00:00Z`).getUTCDay()] ?? '';
+}
+
+export interface DailyLike {
+  date: string;
+  present: number;
+  late: number;
+  absent: number;
+  expected: number;
+  rate: number | null;
+}
+
+export interface StaffComparison<T extends DailyLike> {
+  /** `date`dan oldingi eng yaqin ish kuni (kutilgani > 0). */
+  previous: T | null;
+  /** "kecha" yoki "Pa" (oldingi ish kuni kecha bo'lmasa). */
+  previousLabel: string;
+  /** O'tgan hafta shu kuni (ish kuni bo'lsa). */
+  lastWeek: T | null;
+  lastWeekLabel: string;
+}
+
+export function staffComparison<T extends DailyLike>(daily: readonly T[], date: string): StaffComparison<T> {
+  const before = daily.filter((d) => d.date < date && d.expected > 0).sort((a, b) => b.date.localeCompare(a.date));
+  const previous = before[0] ?? null;
+  const weekAgo = shiftIso(date, -7);
+  const lastWeek = daily.find((d) => d.date === weekAgo && d.expected > 0) ?? null;
+  return {
+    previous,
+    previousLabel: previous ? (previous.date === shiftIso(date, -1) ? 'kechaga nisbatan' : `${weekdayDative(previous.date)} nisbatan`) : '',
+    lastWeek,
+    lastWeekLabel: `o'tgan ${weekdayDative(date)} nisbatan`,
+  };
+}
+
+/** Trend qatori: faqat ish kunlari (kutilgani > 0), `date`gacha, eskisi birinchi. */
+export function dailySeries<T extends DailyLike>(daily: readonly T[], date: string, pick: (d: T) => number | null, limit = 14): Array<number | null> {
+  return daily
+    .filter((d) => d.date <= date && d.expected > 0)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-limit)
+    .map(pick);
+}
+
+export interface RankableUnit {
+  id: string;
+  name: string;
+  unassigned: boolean;
+  staffTotal: number;
+  present: number;
+  late: number;
+  absent: number;
+  notYet: number;
+  rate: number | null;
+}
+
+/** Bo'linmalar reytingi: foizi bor va kamida `minPeople` kishi kutilgan
+ *  bo'linmalar; eng yaxshi `n` va eng past `n` (bir-birini takrorlamaydi). */
+export function rankUnits<T extends RankableUnit>(units: readonly T[], n = 5, minPeople = 3): { top: T[]; bottom: T[]; ranked: number } {
+  const eligible = units
+    .filter((u) => !u.unassigned && u.rate !== null && u.present + u.absent >= minPeople)
+    .sort((a, b) => (b.rate ?? 0) - (a.rate ?? 0) || b.present - a.present || a.name.localeCompare(b.name));
+  const top = eligible.slice(0, n);
+  const rest = eligible.slice(top.length);
+  const bottom = rest.slice(-n).reverse();
+  return { top, bottom, ranked: eligible.length };
+}

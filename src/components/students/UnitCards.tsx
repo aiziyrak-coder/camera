@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
-import { ChevronRight, GraduationCap, Users } from 'lucide-react';
-import { ProgressRing, cn, focusRing, formatNumber } from '../../ui';
+import { ChevronRight, GraduationCap, ScanFace, Users } from 'lucide-react';
+import { ProgressBar, ProgressRing, cn, focusRing, formatNumber, formatPercent } from '../../ui';
+import { enrollTone, enrolledPct, hasAttendanceData } from '../../lib/studentAttendance';
 import type { Counts, FacultyCounts, GroupStat } from '../../lib/situationApi';
 import { CountsBar, CountsLegend } from './CountsBreakdown';
 
@@ -13,8 +14,46 @@ function rateHint(counts: Counts): string {
   return `${formatNumber(counts.present)} / ${formatNumber(counts.present + counts.absent + counts.notYet)} keldi`;
 }
 
-/** Fakultet kartasi (/talabalar): nom, foiz halqasi, holatlar va chiziq. */
-export function FacultyCard({ faculty, to }: { faculty: FacultyCounts; to: string }) {
+/** Yuzlar yetarli bo'lmagan birlik uchun: davomat o'rniga yuz topshirish progressi. */
+function EnrollStrip({ counts, compact }: { counts: Pick<Counts, 'total' | 'enrolled'>; compact?: boolean }) {
+  const pct = enrolledPct(counts);
+  return (
+    <div className={cn('rounded-control border border-dashed border-border bg-surface-2/60', compact ? 'mt-3 p-2.5' : 'mt-4 p-3')}>
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="inline-flex items-center gap-1.5 font-medium text-fg">
+          <ScanFace size={14} className="text-primary" aria-hidden="true" />
+          Yuz topshirish
+        </span>
+        <span className="font-semibold tabular-nums text-fg">{formatPercent(pct)}</span>
+      </div>
+      <ProgressBar value={pct ?? 0} tone={enrollTone(pct)} size="xs" className="mt-2" />
+      {!compact && (
+        <p className="mt-2 text-xs text-muted">
+          {formatNumber(counts.total - counts.enrolled)} talabaning yuzi yo&apos;q — davomat hali ishonchli emas
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Fakultet kartasi (/talabalar): nom, foiz halqasi, holatlar va chiziq.
+ *  Yuzlar yetarli bo'lmasa — yuz topshirish progressi (`enrollTo` ga havola). */
+export function FacultyCard({ faculty, to, enrollTo }: { faculty: FacultyCounts; to: string; enrollTo?: string }) {
+  if (faculty.total > 0 && !hasAttendanceData(faculty)) {
+    return (
+      <Link to={enrollTo ?? to} className={cn(CARD, focusRing)} aria-label={`${faculty.name} — yuz topshirish ${enrolledPct(faculty) ?? 0}%`}>
+        <h3 className="flex items-center gap-1 text-base font-semibold leading-6 text-fg">
+          <span className="truncate">{faculty.name}</span>
+          <ChevronRight size={16} className="shrink-0 text-subtle transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+        </h3>
+        <p className="mt-0.5 flex items-center gap-1.5 text-[13px] text-muted">
+          <Users size={14} aria-hidden="true" />
+          {formatNumber(faculty.total)} talaba · {formatNumber(faculty.enrolled)} yuzi bor
+        </p>
+        <EnrollStrip counts={faculty} />
+      </Link>
+    );
+  }
   return (
     <Link to={to} className={cn(CARD, focusRing)} aria-label={`${faculty.name} — davomat ${faculty.rate ?? '—'}%`}>
       <div className="flex items-start gap-4">
@@ -42,6 +81,7 @@ export function FacultyCard({ faculty, to }: { faculty: FacultyCounts; to: strin
 /** Guruh kartasi (fakultet sahifasi): nom, kurs, talabalar soni, halqa. */
 export function GroupCard({ group, to, showCourse = false }: { group: GroupStat; to: string; showCourse?: boolean }) {
   const empty = group.total === 0;
+  const ready = empty || hasAttendanceData(group);
   return (
     <Link to={to} className={cn(CARD, 'p-4 sm:p-4', focusRing)} aria-label={`${group.name} — davomat ${group.rate ?? '—'}%`}>
       <div className="flex items-start gap-3">
@@ -57,10 +97,16 @@ export function GroupCard({ group, to, showCourse = false }: { group: GroupStat;
             <span>{empty ? "Talaba yo'q" : `${formatNumber(group.total)} talaba`}</span>
           </p>
         </div>
-        <ProgressRing value={group.rate} size={48} ariaLabel={`Davomat ${group.rate ?? '—'}%`} />
+        {ready && <ProgressRing value={group.rate} size={48} ariaLabel={`Davomat ${group.rate ?? '—'}%`} />}
       </div>
-      <CountsBar counts={group} size="xs" className="mt-3" />
-      <CountsLegend counts={group} compact className="mt-2.5 gap-x-2.5" />
+      {ready ? (
+        <>
+          <CountsBar counts={group} size="xs" className="mt-3" />
+          <CountsLegend counts={group} compact className="mt-2.5 gap-x-2.5" />
+        </>
+      ) : (
+        <EnrollStrip counts={group} compact />
+      )}
       <p className="sr-only">{rateHint(group)}</p>
     </Link>
   );

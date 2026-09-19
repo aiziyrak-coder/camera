@@ -42,6 +42,7 @@ const NotificationsPage = lazyPage(() => import('./pages/admin/NotificationsPage
 const IntegrationsPage = lazyPage(() => import('./pages/admin/IntegrationsPage'));
 const UsersRolesPage = lazyPage(() => import('./pages/admin/UsersRolesPage'));
 const PrivacyPage = lazyPage(() => import('./pages/admin/PrivacyPage'));
+const WallScreenPage = lazyPage(() => import('./pages/wall/WallScreenPage'));
 
 /** Eski /admin/* havolalari (xatcho'p, e-mail, Telegram) — yangi manzilga. */
 function LegacyRedirect() {
@@ -92,6 +93,10 @@ export default function App() {
             {/* Videodevor — ikkinchi monitor uchun menyusiz, to'liq ekran. */}
             <Route element={<RequirePermission permission="viewLive" />}>
               <Route path="/videodevor/ekran" element={<VideoWallPage standalone />} />
+            </Route>
+            {/* Situatsion markaz devor ekrani — menyusiz. */}
+            <Route element={<RequirePermission anyOf={['viewReports', 'manageAttendance']} />}>
+              <Route path="/markaz-ekran" element={<WallScreenPage />} />
             </Route>
 
             <Route element={<AppShell />}>

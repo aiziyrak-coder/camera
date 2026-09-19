@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, CalendarDays, Clock, Footprints, GraduationCap, LogIn, MapPin, RefreshCw, ScanFace, UserX, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, CalendarDays, Clock, Footprints, GraduationCap, LogIn, MapPin, RefreshCw, ScanFace, UserX, CheckCircle2 } from 'lucide-react';
 import {
   Badge,
   Button,
@@ -39,7 +39,20 @@ import { usePermissions } from '../../lib/permissions';
 import { useLiveAttendance, type LiveAttendanceMessage } from '../../lib/realtime';
 import { getPerson, situationPaths, type Lesson, type PersonLesson, type PersonProfile } from '../../lib/situationApi';
 import { DEFAULT_WORKING_WEEKDAYS, buildMonthGrid, monthOf, type CalendarCell } from '../../lib/attendanceCalendar';
-import { LESSON_ATTENDANCE_META, arrivalSeries, biometricsMeta, lessonTime, monthsInRange, statusMeta, visitsByDate } from '../../lib/studentAttendance';
+import {
+  LATE_CUTOFF_MINUTES,
+  LESSON_ATTENDANCE_META,
+  arrivalSeries,
+  biometricsMeta,
+  daysBetween,
+  lessonTime,
+  monthsInRange,
+  personKpis,
+  previousRange,
+  statusMeta,
+  visitsByDate,
+  weekdayPattern,
+} from '../../lib/studentAttendance';
 import { formatMinutes } from '../../lib/uzDate';
 import { useViewDate } from '../../lib/viewDate';
 import type { AttendanceDay, AttendanceSummary } from '../../types';
@@ -50,6 +63,8 @@ import { LessonDrawer, TeacherPunctuality } from '../../components/students/Less
 import { PersonPhoto } from '../../components/students/PersonPhoto';
 import { ArrivalTimeChart } from '../../components/students/TrendCharts';
 import { useAsyncData } from '../../components/students/useAsyncData';
+import { GroupEnrollDrawer, type EnrollDrawerTarget } from '../../components/students/GroupEnrollDrawer';
+import { EnrollCta, StaffKpis, WeekdayPatternCard } from '../../components/attendance/PersonInsights';
 
 type TabId = 'davomat' | 'darslar' | 'harakatlar';
 const PRESETS = ['week', 'month', 'last30', 'lastMonth'] as const;
@@ -139,6 +154,7 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
+const lateLabel = `${String(Math.floor(LATE_CUTOFF_MINUTES / 60)).padStart(2, '0')}:${String(LATE_CUTOFF_MINUTES % 60).padStart(2, '0')}`;
 const linkClass = cn('rounded text-primary hover:underline', focusRing);
 
 /** Shaxs profili (talaba yoki o'qituvchi/xodim): surat, bugungi holat,
@@ -182,6 +198,23 @@ export default function PersonPage() {
   );
   const data = profile.data;
   const person = data?.person;
+  const isStaff = person?.type === 'xodim';
+  // Xodim: oldingi, xuddi shu uzunlikdagi davr — KPI o'zgarishlari uchun.
+  const prevRange = previousRange(range.from, range.to);
+  const previous = useAsyncData<PersonProfile>(
+    isStaff ? `prev|${personId}|${prevRange.from}|${prevRange.to}` : null,
+    (signal) => getPerson(personId, prevRange, { signal }),
+    { identity: personId },
+  );
+  const kpis = useMemo(() => (data ? personKpis(data.calendar) : null), [data]);
+  const prevKpis = useMemo(() => {
+    if (!previous.data) return null;
+    const k = personKpis(previous.data.calendar);
+    // Oldingi davrda yozuv yo'q — taqqoslash ma'nosiz ("+14" chalg'itadi).
+    return k.presentDays + k.absentDays > 0 ? k : null;
+  }, [previous.data]);
+  const weekdays = useMemo(() => (data ? weekdayPattern(data.calendar) : []), [data]);
+  const [enrollTarget, setEnrollTarget] = useState<EnrollDrawerTarget | null>(null);
   const workingWeekdays = summary.data?.workingWeekdays ?? DEFAULT_WORKING_WEEKDAYS;
 
   const currentMonth = monthOf(today);
@@ -277,7 +310,7 @@ export default function PersonPage() {
       title={person?.fullName ?? 'Shaxs profili'}
       subtitle={person ? (isStudent ? 'Talaba' : person.unit || 'Xodim') : 'Davomat, darslar va harakatlar'}
       breadcrumbs={crumbs}
-      actions={<IconButton icon={RefreshCw} label="Yangilash" variant="secondary" onClick={() => { profile.reload(); summary.reload(); months.invalidate(); }} loading={profile.refreshing} />}
+      actions={<IconButton icon={RefreshCw} label="Yangilash" variant="secondary" onClick={() => { profile.reload(); summary.reload(); previous.reload(); months.invalidate(); }} loading={profile.refreshing} />}
     >
       {profile.loading ? (
         <>
@@ -352,13 +385,13 @@ export default function PersonPage() {
           </Card>
 
           {person.biometricsStatus !== 'tasdiqlangan' && (
-            <div className="flex gap-2 rounded-card border border-warning/30 bg-warning-soft px-4 py-3 text-[13px] text-fg">
-              <AlertTriangle size={16} className="mt-0.5 shrink-0 text-warning" aria-hidden="true" />
-              <p>
-                <span className="font-semibold">{person.biometricsStatus === 'kutilmoqda' ? 'Yuzi hali tasdiqlanmagan.' : "Yuzi ro'yxatga olinmagan."}</span>{' '}
-                Kameralar bu odamni taniy olmaydi — davomat avtomatik yozilmaydi va bo'sh kunlar «kelmagan» degani emas. Yuzni «Reestr» bo'limida qo'shing.
-              </p>
-            </div>
+            <EnrollCta
+              student={isStudent}
+              group={person.group}
+              pending={person.biometricsStatus === 'kutilmoqda'}
+              onOpenGroup={person.group ? () => setEnrollTarget({ name: person.group!, faculty: person.faculty }) : undefined}
+              registryLink={`/reestr?search=${encodeURIComponent(person.fullName)}`}
+            />
           )}
 
           <Tabs tabs={tabs} value={tab} onChange={setTab} />
@@ -369,6 +402,26 @@ export default function PersonPage() {
 
           {tab === 'davomat' && (
             <>
+              {isStaff && kpis ? (
+                <>
+                  <StaffKpis current={kpis} previous={prevKpis} days={daysBetween(range.from, range.to) + 1} />
+                  <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]">
+                    <Card>
+                      <CardHeader
+                        title="Kelish vaqti"
+                        subtitle={`Har kuni · to'q sariq nuqta — ${lateLabel} dan keyin kelgan kun`}
+                        icon={LogIn}
+                      />
+                      {data.calendar.some((d) => d.checkIn) ? (
+                        <ArrivalTimeChart points={arrivalSeries(data.calendar)} threshold={LATE_CUTOFF_MINUTES} average={kpis.avgArrivalMinutes} height={240} />
+                      ) : (
+                        <EmptyState compact bordered={false} title="Kelish vaqti qayd etilmagan" />
+                      )}
+                    </Card>
+                    <WeekdayPatternCard rows={weekdays} />
+                  </div>
+                </>
+              ) : (
               <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
                 <StatTile label="Davomat" value={formatPercent(data.totals.rate, 1)} progress={data.totals.rate} hint={`${data.totals.days} kundan`} />
                 <StatTile label="Keldi" value={`${data.totals.present - data.totals.late} kun`} icon={CheckCircle2} tone="success" hint="o'z vaqtida" />
@@ -376,6 +429,7 @@ export default function PersonPage() {
                 <StatTile label="Kelmadi" value={`${data.totals.absent} kun`} icon={UserX} tone="danger" />
                 <StatTile label="O'rtacha kelish" value={data.totals.avgArrival ?? '—'} icon={LogIn} tone="info" hint={data.totals.noData ? `${data.totals.noData} kun ma'lumot yo'q` : undefined} />
               </div>
+              )}
               <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
                 <Card>
                   <CardHeader title="Davomat kalendari" subtitle="Kunni bosing — kameralardagi harakat, darslar va qo'lda tuzatish" icon={CalendarDays} />
@@ -411,14 +465,16 @@ export default function PersonPage() {
                   ) : (
                     <Skeleton className="h-72 rounded-card" />
                   )}
-                  <Card>
-                    <CardHeader title="Kelish vaqti" subtitle="Tanlangan davrda har kuni" icon={LogIn} />
-                    {data.calendar.some((d) => d.checkIn) ? (
-                      <ArrivalTimeChart points={arrivalSeries(data.calendar)} />
-                    ) : (
-                      <EmptyState compact bordered={false} title="Kelish vaqti qayd etilmagan" />
-                    )}
-                  </Card>
+                  {!isStaff && (
+                    <Card>
+                      <CardHeader title="Kelish vaqti" subtitle="Tanlangan davrda har kuni" icon={LogIn} />
+                      {data.calendar.some((d) => d.checkIn) ? (
+                        <ArrivalTimeChart points={arrivalSeries(data.calendar)} threshold={LATE_CUTOFF_MINUTES} />
+                      ) : (
+                        <EmptyState compact bordered={false} title="Kelish vaqti qayd etilmagan" />
+                      )}
+                    </Card>
+                  )}
                 </div>
               </div>
             </>
@@ -482,6 +538,7 @@ export default function PersonPage() {
         onDeleted={(date) => afterEdit(date, (days) => days.filter((d) => d.date !== date))}
       />
       <LessonDrawer lesson={lesson} withDate={withDate} showGroupLink onClose={() => setLesson(null)} />
+      <GroupEnrollDrawer target={enrollTarget} onClose={() => setEnrollTarget(null)} withDate={withDate} />
     </Page>
   );
 }

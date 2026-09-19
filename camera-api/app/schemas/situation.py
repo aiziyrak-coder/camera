@@ -110,6 +110,10 @@ class OverviewOut(CamelModel):
     cameras: CamerasSummaryOut
     events: EventsSummaryOut
     by_faculty: list[FacultyStatOut]
+    # Talabalarning yuzi tasdiqlangan ulushi >= 5% bo'lsagina ularning
+    # davomat foizi ma'noli — aks holda UI xodimlar + ro'yxatga olish rejimiga o'tadi.
+    students_data_available: bool = False
+    students_enrolled_pct: float | None = None
     arrivals_by_hour: list[HourBucketOut]
     last_arrivals: list[ArrivalOut]
 
@@ -215,9 +219,13 @@ class GroupDetailOut(CamelModel):
 
 # ─────────────────────────────────────────── 5-6. Kafedralar
 
+UnitKind = Literal["kafedra", "dekanat", "bolim", "lavozim"]
+
+
 class KafedraStatOut(CamelModel):
-    id: str  # Department.id yoki "unassigned"
+    id: str  # Department.id, "u-<sha1[:10]>" (matndan olingan) yoki "unassigned"
     name: str
+    kind: UnitKind = "kafedra"
     building: str | None = None
     unassigned: bool = False
     staff_total: int = 0
@@ -279,6 +287,7 @@ class PeriodTotalsOut(CamelModel):
 class KafedraDetailOut(CamelModel):
     id: str
     name: str
+    kind: UnitKind = "kafedra"
     building: str | None = None
     unassigned: bool = False
     date: str
@@ -370,3 +379,206 @@ class PersonProfileOut(CamelModel):
     totals: PersonTotalsOut
     lessons: list[PersonLessonOut]
     recent_visits: list[PersonVisitOut]
+
+
+# ─────────────────────────────────────────── 9. Tahlil (app/routers/situation_analytics.py)
+
+PersonType = Literal["xodim", "talaba"]
+
+
+class PeriodKpisOut(CamelModel):
+    rate: float | None = None  # present / (present + absent [+ bugun notYet]) * 100
+    avg_arrival: str | None = None  # "08:41"
+    avg_arrival_minutes: int | None = None  # kun boshidan daqiqa (solishtirish uchun)
+    present: int = 0  # odam-kun (kech kelganlar ham)
+    late: int = 0
+    absent: int = 0
+    punctual_pct: float | None = None  # (present - late) / present * 100
+    days_covered: int = 0  # kamida bitta yozuvi bor kunlar
+
+
+class PeriodDeltaOut(CamelModel):
+    """Joriy − oldingi davr. avgArrivalMinutes > 0 — kechroq kelishgan."""
+
+    rate: float | None = None
+    avg_arrival_minutes: int | None = None
+    late: int = 0
+    absent: int = 0
+    punctual_pct: float | None = None
+
+
+class DailyPointOut(CamelModel):
+    date: str
+    present: int = 0
+    late: int = 0
+    absent: int = 0
+    expected: int = 0
+    rate: float | None = None
+    avg_arrival: str | None = None
+
+
+class AnalyticsSummaryOut(CamelModel):
+    type: PersonType
+    date_from: str
+    date_to: str
+    previous_from: str
+    previous_to: str
+    current: PeriodKpisOut
+    previous: PeriodKpisOut
+    delta: PeriodDeltaOut
+    daily: list[DailyPointOut]
+
+
+class HeatmapWeekdayOut(CamelModel):
+    weekday: int  # ISO: 1 = dushanba .. 6 = shanba
+    label: str
+    counts: list[int]  # `hours` bilan bir xil tartibda
+    total: int = 0
+    present: int = 0
+    late: int = 0
+    late_rate: float | None = None
+
+
+class HeatmapOut(CamelModel):
+    type: PersonType
+    date_from: str
+    date_to: str
+    hours: list[int]  # 6..20
+    weekdays: list[HeatmapWeekdayOut]
+    max: int = 0
+    outside: int = 0  # yakshanba yoki 6..20 dan tashqaridagi kelishlar
+
+
+class UnitAnalyticsOut(CamelModel):
+    id: str  # xodim — bo'linma id si; talaba — guruh nomi
+    name: str
+    kind: Literal["kafedra", "dekanat", "bolim", "lavozim", "guruh"]
+    headcount: int = 0
+    enrolled: int = 0
+    present_days: int = 0
+    late_days: int = 0
+    absent_days: int = 0
+    rate: float | None = None
+    avg_arrival: str | None = None
+    avg_arrival_minutes: int | None = None
+    punctual_pct: float | None = None
+    previous_rate: float | None = None
+    trend: float | None = None  # rate − previousRate
+
+
+class PersonRankOut(CamelModel):
+    id: str
+    full_name: str
+    photo_url: str | None = None
+    initials: str
+    unit_id: str
+    unit: str
+    present_days: int = 0
+    late_days: int = 0
+    absent_days: int = 0
+    rate: float | None = None
+    avg_arrival: str | None = None
+    avg_arrival_minutes: int | None = None
+    last_seen: str | None = None  # oxirgi kelgan kun (`to` gacha)
+    streak: int = 0  # hozirgi uzluksiz kelmadi/kech_keldi kunlari
+    streak_kind: Literal["kelmadi", "kech_keldi", "aralash"] | None = None
+
+
+class ChronicOut(CamelModel):
+    id: str
+    full_name: str
+    photo_url: str | None = None
+    initials: str
+    unit_id: str
+    unit: str
+    absent_days: int = 0
+    late_days: int = 0
+    absent_dates: list[str]
+    late_dates: list[str]
+    reasons: list[Literal["kelmadi", "kech_keldi"]]
+
+
+class EnrollCountsOut(CamelModel):
+    total: int = 0
+    confirmed: int = 0  # biometricsStatus == "tasdiqlangan"
+    pending: int = 0  # "kutilmoqda"
+    none: int = 0  # "yoq"
+    pct: float | None = None  # confirmed / total * 100
+
+
+class EnrollFacultyOut(EnrollCountsOut):
+    id: str | None = None
+    name: str
+
+
+class EnrollmentOut(CamelModel):
+    students: EnrollCountsOut
+    staff: EnrollCountsOut
+    by_faculty: list[EnrollFacultyOut]  # faqat talabalar
+    students_data_available: bool = False
+
+
+class EnrollGroupOut(CamelModel):
+    name: str
+    faculty_id: str | None = None
+    faculty: str | None = None
+    course: int | None = None
+    total: int = 0
+    confirmed: int = 0
+    pending: int = 0
+    pct: float | None = None
+
+
+class EnrollMissingPersonOut(CamelModel):
+    id: str
+    full_name: str
+    initials: str
+    biometrics_status: str
+
+
+class EnrollMissingOut(CamelModel):
+    group: str
+    total: int = 0
+    missing: list[EnrollMissingPersonOut]
+    enroll_url: str
+
+
+class WallUnitOut(CamelModel):
+    id: str
+    name: str
+    kind: str
+    total: int = 0
+    present: int = 0
+    rate: float | None = None
+
+
+class WallEventOut(CamelModel):
+    id: str
+    module_name: str
+    camera_name: str
+    building: str
+    time: str
+    status: str
+
+
+class SpotlightOut(CamelModel):
+    kind: Literal["unit", "group"]
+    id: str
+    name: str
+    rate: float | None = None
+
+
+class WallOut(CamelModel):
+    date: str
+    generated_at: str
+    students: CountsOut
+    staff: CountsOut
+    students_data_available: bool = False
+    top_units: list[WallUnitOut]
+    bottom_units: list[WallUnitOut]
+    last_arrivals: list[ArrivalOut]
+    high_events: list[WallEventOut]
+    cameras_online: int = 0
+    cameras_total: int = 0
+    enrollment: EnrollmentOut
+    spotlight: list[SpotlightOut]

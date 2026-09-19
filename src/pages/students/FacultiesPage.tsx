@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Clock, GraduationCap, Hourglass, RefreshCw, UserX, Users } from 'lucide-react';
-import { Card, EmptyState, ErrorState, IconButton, Page, SkeletonTiles, StatTile, Toolbar, formatNumber, formatPercent, formatUzDate, useShell } from '../../ui';
+import { AlertTriangle, CalendarCheck, CheckCircle2, Clock, GraduationCap, Hourglass, RefreshCw, ScanFace, UserX, Users } from 'lucide-react';
+import { Button, Card, EmptyState, ErrorState, IconButton, Page, SkeletonTiles, StatTile, Toolbar, formatNumber, formatPercent, formatUzDate, useShell, useUrlTab, type TabItem } from '../../ui';
 import { Skeleton } from '../../ui';
 import { getOverview, situationPaths, type Overview } from '../../lib/situationApi';
 import { useLiveAttendance, type LiveAttendanceMessage } from '../../lib/realtime';
@@ -9,13 +9,18 @@ import { LiveArrivals, type ArrivalItem } from '../../components/attendance/Live
 import { QuickSearch } from '../../components/students/QuickSearch';
 import { FacultyCard } from '../../components/students/UnitCards';
 import { useAsyncData } from '../../components/students/useAsyncData';
+import { EnrollmentCampaign } from '../../components/students/EnrollmentCampaign';
+
+type ViewId = 'davomat' | 'yuz';
+const VIEW_PARAM = 'korinish';
 
 const REFRESH_MS = 60_000;
 const FEED_SIZE = 10;
 
-/** /talabalar — fakultetlar kesimida talabalar davomati. */
+/** /talabalar — fakultetlar kesimida talabalar davomati. Yuzlar hali kam bo'lsa
+ *  (studentsDataAvailable=false) asosiy ko'rinish — "Yuz topshirish" kampaniyasi. */
 export default function FacultiesPage() {
-  const { date, isToday, withDate } = useViewDate();
+  const { date, today, isToday, withDate } = useViewDate();
   const { presentation } = useShell();
   const overview = useAsyncData<Overview>(`ov|${date}`, (signal) => getOverview(date, { signal }), {
     refreshMs: isToday ? REFRESH_MS : undefined,
@@ -54,15 +59,29 @@ export default function FacultiesPage() {
 
   const s = data?.students;
   const faculties = data?.byFaculty.filter((f) => f.total > 0 || f.id !== null) ?? [];
+  const available = data ? data.studentsDataAvailable : true;
+  const views: TabItem<ViewId>[] = [
+    { id: 'davomat', label: 'Davomat', icon: CalendarCheck },
+    { id: 'yuz', label: 'Yuz topshirish', icon: ScanFace },
+  ];
+  const defaultView: ViewId = available ? 'davomat' : 'yuz';
+  const [view, setView] = useUrlTab(views, { param: VIEW_PARAM, defaultTab: defaultView });
 
   return (
     <Page
       title="Talabalar"
-      subtitle={`Fakultetlar kesimida davomat · ${formatUzDate(date, { weekday: true })}`}
+      subtitle={
+        view === 'yuz'
+          ? "Kameralar talabani tanishi uchun yuzlarni yig'ish"
+          : `Fakultetlar kesimida davomat · ${formatUzDate(date, { weekday: true })}`
+      }
       breadcrumbs={[{ label: 'Talabalar' }]}
       actions={<IconButton icon={RefreshCw} label="Yangilash" variant="secondary" onClick={overview.reload} loading={overview.refreshing} />}
+      tabs={data ? views : undefined}
+      defaultTab={defaultView}
+      tabParam={VIEW_PARAM}
       toolbar={
-        !presentation ? (
+        !presentation && view === 'davomat' ? (
           <Toolbar>
             <QuickSearch date={date} withDate={withDate} />
           </Toolbar>
@@ -82,8 +101,22 @@ export default function FacultiesPage() {
         <Card padding="none">
           <ErrorState variant="block" message={overview.error} onRetry={overview.reload} />
         </Card>
+      ) : data && s && view === 'yuz' ? (
+        <EnrollmentCampaign today={today} withDate={withDate} />
       ) : data && s ? (
         <>
+          {!available && (
+            <div className="flex flex-col gap-3 rounded-card border border-warning/30 bg-warning-soft px-4 py-3 text-[13px] text-fg sm:flex-row sm:items-center">
+              <AlertTriangle size={16} className="shrink-0 text-warning" aria-hidden="true" />
+              <p className="flex-1">
+                <span className="font-semibold">Talabalarning atigi {formatPercent(data.studentsEnrolledPct, 1)} yuzi tizimda.</span> Quyidagi foizlar{' '}
+                {formatNumber(s.enrolled)} kishidan chiqadi — hozircha ishonchli emas.
+              </p>
+              <Button size="sm" icon={ScanFace} onClick={() => setView('yuz')}>
+                Yuz topshirishga o&apos;tish
+              </Button>
+            </div>
+          )}
           {overview.error && <ErrorState title="Yangilab bo'lmadi" message={overview.error} onRetry={overview.reload} />}
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
             <StatTile
@@ -112,7 +145,12 @@ export default function FacultiesPage() {
             ) : (
               <div className="grid content-start gap-4 md:grid-cols-2">
                 {faculties.map((f) => (
-                  <FacultyCard key={f.id ?? 'none'} faculty={f} to={withDate(situationPaths.faculty(f.id))} />
+                  <FacultyCard
+                    key={f.id ?? 'none'}
+                    faculty={f}
+                    to={withDate(situationPaths.faculty(f.id))}
+                    enrollTo={withDate(`${situationPaths.faculty(f.id)}?${VIEW_PARAM}=yuz`)}
+                  />
                 ))}
               </div>
             )}

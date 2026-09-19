@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, LayoutGrid, RefreshCw, Rows3, SearchX, Users } from 'lucide-react';
+import { ArrowLeft, CalendarCheck, LayoutGrid, RefreshCw, Rows3, ScanFace, SearchX, Users } from 'lucide-react';
 import {
   Button,
   ButtonLink,
@@ -25,12 +25,20 @@ import {
   type TabItem,
 } from '../../ui';
 import { NO_FACULTY_ID, getFaculty, getGroups, situationPaths, type CourseBlock, type Counts, type GroupStat } from '../../lib/situationApi';
-import { groupsToCourses, normalizeText, sortGroups, sumCounts, type GroupSortKey } from '../../lib/studentAttendance';
+import { enrolledPct, groupsToCourses, hasAttendanceData, normalizeText, sortGroups, sumCounts, type GroupSortKey } from '../../lib/studentAttendance';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { useViewDate } from '../../lib/viewDate';
 import { CountsBar, CountsLegend } from '../../components/students/CountsBreakdown';
 import { GroupCard } from '../../components/students/UnitCards';
 import { useAsyncData } from '../../components/students/useAsyncData';
+import { EnrollmentCampaign } from '../../components/students/EnrollmentCampaign';
+
+type ViewId = 'davomat' | 'yuz';
+const VIEW_PARAM = 'korinish';
+const VIEWS: TabItem<ViewId>[] = [
+  { id: 'davomat', label: 'Davomat', icon: CalendarCheck },
+  { id: 'yuz', label: 'Yuz topshirish', icon: ScanFace },
+];
 
 interface FacultyView {
   name: string;
@@ -58,7 +66,7 @@ async function loadFaculty(id: string, date: string, signal: AbortSignal): Promi
 export default function FacultyPage() {
   const { facultyId = '' } = useParams();
   const navigate = useNavigate();
-  const { date, isToday, withDate } = useViewDate();
+  const { date, today, isToday, withDate } = useViewDate();
   const faculty = useAsyncData(`${facultyId}|${date}`, (signal) => loadFaculty(facultyId, date, signal), {
     identity: facultyId,
     refreshMs: isToday ? 60_000 : undefined,
@@ -67,6 +75,8 @@ export default function FacultyPage() {
   const [query, setQuery] = useState('');
   const [sort, setSort] = usePersistedState<GroupSortKey>('talabalar.fakultet.saralash', 'name');
   const [view, setView] = usePersistedState<'cards' | 'table'>('talabalar.fakultet.korinish', 'cards');
+  const defaultMode: ViewId = data && !hasAttendanceData(data.totals) ? 'yuz' : 'davomat';
+  const [mode] = useUrlTab(VIEWS, { param: VIEW_PARAM, defaultTab: defaultMode });
 
   const courseTabs: TabItem[] = useMemo(
     () => [
@@ -91,6 +101,14 @@ export default function FacultyPage() {
     { key: 'name', header: 'Guruh', cell: (g) => <span className="font-medium text-fg">{g.name}</span>, sortValue: (g) => g.name },
     { key: 'course', header: 'Kurs', cell: (g) => (g.course ? `${g.course}-kurs` : '—'), sortValue: (g) => g.course, hideOnMobile: true },
     { key: 'total', header: 'Talabalar', align: 'right', cell: (g) => formatNumber(g.total), sortValue: (g) => g.total },
+    {
+      key: 'faces',
+      header: 'Yuzi bor',
+      align: 'right',
+      hideOnMobile: true,
+      sortValue: (g) => enrolledPct(g),
+      cell: (g) => <span className={hasAttendanceData(g) ? 'tabular-nums' : 'tabular-nums font-medium text-warning'}>{formatPercent(enrolledPct(g))}</span>,
+    },
     { key: 'on', header: 'Keldi', align: 'right', cell: (g) => formatNumber(g.present - g.late), sortValue: (g) => g.present - g.late },
     { key: 'late', header: 'Kech', align: 'right', cell: (g) => formatNumber(g.late), sortValue: (g) => g.late },
     { key: 'absent', header: 'Kelmadi', align: 'right', cell: (g) => formatNumber(g.absent), sortValue: (g) => g.absent },
@@ -101,7 +119,9 @@ export default function FacultyPage() {
       width: '11rem',
       sortValue: (g) => g.rate,
       sortFirst: 'asc',
-      cell: (g) => (
+      cell: (g) => !hasAttendanceData(g) ? (
+        <span className="text-xs text-muted">yuzlar yetarli emas</span>
+      ) : (
         <div className="flex items-center gap-2">
           <ProgressBar value={g.rate} size="xs" className="flex-1" />
           <span className="w-12 text-right font-semibold tabular-nums">{formatPercent(g.rate)}</span>
@@ -118,8 +138,13 @@ export default function FacultyPage() {
       subtitle={`${data ? `${formatNumber(data.totals.total)} talaba · ${groupCount} guruh · ` : ''}${formatUzDate(date, { weekday: true })}`}
       breadcrumbs={[{ label: 'Talabalar', to: withDate(situationPaths.faculties) }, { label: name }]}
       actions={<IconButton icon={RefreshCw} label="Yangilash" variant="secondary" onClick={faculty.reload} loading={faculty.refreshing} />}
+      tabs={data ? VIEWS : undefined}
+      defaultTab={defaultMode}
+      tabParam={VIEW_PARAM}
     >
-      {faculty.loading ? (
+      {data && mode === 'yuz' ? (
+        <EnrollmentCampaign facultyId={facultyId} today={today} withDate={withDate} />
+      ) : faculty.loading ? (
         <>
           <Skeleton className="h-32 rounded-card" />
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -187,7 +212,7 @@ export default function FacultyPage() {
               rows={flat}
               rowKey={(g) => g.name}
               onRowClick={(g) => navigate(withDate(situationPaths.group(g.name)))}
-              rowTone={(g) => (g.rate === null ? null : g.rate >= 85 ? 'success' : g.rate >= 70 ? 'warning' : 'danger')}
+              rowTone={(g) => (g.rate === null || !hasAttendanceData(g) ? null : g.rate >= 85 ? 'success' : g.rate >= 70 ? 'warning' : 'danger')}
               manualSort
             />
           ) : (

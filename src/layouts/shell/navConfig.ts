@@ -52,7 +52,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: 'Davomat',
     items: [
       { to: '/talabalar', label: 'Talabalar', icon: GraduationCap, permission: 'manageAttendance' },
-      { to: '/oqituvchilar', label: "O'qituvchilar", icon: BookUser, permission: 'manageAttendance' },
+      { to: '/oqituvchilar', label: 'Xodimlar', icon: BookUser, permission: 'manageAttendance' },
       { to: '/darslar', label: 'Darslar', icon: CalendarClock, permission: 'manageLessons' },
     ],
   },
@@ -153,4 +153,12 @@ const DATE_ROUTES = ['/', '/talabalar', '/oqituvchilar', '/darslar', '/shaxs'];
 
 export function usesViewDate(pathname: string): boolean {
   return DATE_ROUTES.some((to) => matchesPath(pathname, to));
+}
+
+/** Devor ekrani — o'z sahifasi (taqdimot rejimidan farqli). */
+export const WALL_SCREEN_PATH = '/markaz-ekran';
+
+/** Devor ekranini alohida oynada ochadi. */
+export function openWallScreen() {
+  window.open(WALL_SCREEN_PATH, 'markaz-ekran', 'noopener');
 }

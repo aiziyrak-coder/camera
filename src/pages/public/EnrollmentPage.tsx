@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Check, CheckCircle2, Clock, IdCard, RotateCcw, ScanFace, UserCheck } from 'lucide-react';
 import EnrollmentConsent from '../../components/public/EnrollmentConsent';
 import EnrollmentFaceCapture from '../../components/public/EnrollmentFaceCapture';
@@ -73,6 +74,9 @@ function StepProgress({ current }: { current: number }) {
 }
 
 export default function EnrollmentPage() {
+  const [searchParams] = useSearchParams();
+  // QR kartadan kelganda (?guruh=DI-2301) — guruh nomi eslatma sifatida ko'rsatiladi.
+  const groupHint = (searchParams.get('guruh') ?? '').trim().slice(0, 60);
   const [step, setStep] = useState<Step>('identify');
   const [method, setMethod] = useState<Method>('pinfl');
   const [pinfl, setPinfl] = useState('');
@@ -182,6 +186,13 @@ export default function EnrollmentPage() {
 
       <Card padding="lg" className="flex flex-col gap-4">
         {error && <Notice tone="danger">{error}</Notice>}
+        {groupHint && step !== 'success' && (
+          <Notice tone="info" title={`Guruh: ${groupHint}`}>
+            {step === 'register'
+              ? `«Guruh» maydoniga «${groupHint}» deb yozing.`
+              : "Bu havola guruhingiz uchun berilgan. JSHSHIR bilan o'zingizni toping va yuzingizni skanerlang."}
+          </Notice>
+        )}
 
         {step === 'identify' && (
           <form onSubmit={handleLookup} className="flex flex-col gap-4">
@@ -301,6 +312,7 @@ export default function EnrollmentPage() {
             pinfl={method === 'pinfl' ? pinfl : undefined}
             passportSeries={method === 'passport' ? series : undefined}
             passportNumber={method === 'passport' ? number : undefined}
+            initialGroup={groupHint}
             onSubmit={handleRegister}
             onCancel={() => {
               setStep('identify');

@@ -94,6 +94,9 @@ export interface Overview {
   cameras: { total: number; active: number; online: number; videoFlowing: number };
   events: { open: number; today: number; highOpen: number; overdue: number };
   byFaculty: FacultyCounts[];
+  /** students.enrolled / students.total >= 5% */
+  studentsDataAvailable: boolean;
+  studentsEnrolledPct: number | null;
   arrivalsByHour: Array<{ hour: number; students: number; staff: number }>;
   lastArrivals: LastArrival[];
 }
@@ -154,9 +157,13 @@ export interface GroupDetail {
 
 // ───────────────────────────────────────────── 5–6. Kafedralar
 
+/** Bo'linma turi (matndan aniqlanadi). */
+export type UnitKind = 'kafedra' | 'dekanat' | 'bolim' | 'lavozim';
+
 export interface KafedraStat {
   id: string;
   name: string;
+  kind: UnitKind;
   building: string | null;
   unassigned: boolean;
   staffTotal: number;
@@ -201,6 +208,7 @@ export interface KafedraTeacher {
 export interface KafedraDetail {
   id: string;
   name: string;
+  kind: UnitKind;
   building: string | null;
   unassigned: boolean;
   date: string;
@@ -334,6 +342,211 @@ export interface LessonAttendance {
   rows: LessonAttendanceRow[];
 }
 
+// ───────────────────────────────────────────── 9–13. Tahlil
+
+export type PersonType = 'xodim' | 'talaba';
+
+/** Umumiy tahlil parametrlari (standart: bugungacha 30 kun, type=xodim). */
+export interface AnalyticsRange {
+  from?: string;
+  to?: string;
+  type?: PersonType;
+}
+
+export interface PeriodKpis {
+  rate: number | null;
+  avgArrival: string | null;
+  /** kun boshidan daqiqa */
+  avgArrivalMinutes: number | null;
+  present: number;
+  late: number;
+  absent: number;
+  punctualPct: number | null;
+  daysCovered: number;
+}
+
+export interface AnalyticsDaily {
+  date: string;
+  present: number;
+  late: number;
+  absent: number;
+  expected: number;
+  rate: number | null;
+  avgArrival: string | null;
+}
+
+export interface AnalyticsSummary {
+  type: PersonType;
+  dateFrom: string;
+  dateTo: string;
+  previousFrom: string;
+  previousTo: string;
+  current: PeriodKpis;
+  previous: PeriodKpis;
+  /** current − previous; avgArrivalMinutes > 0 — kechroq kelishgan */
+  delta: {
+    rate: number | null;
+    avgArrivalMinutes: number | null;
+    late: number;
+    absent: number;
+    punctualPct: number | null;
+  };
+  daily: AnalyticsDaily[];
+}
+
+export type WeekdayLabel = 'Du' | 'Se' | 'Cho' | 'Pa' | 'Ju' | 'Sha';
+
+export interface HeatmapWeekday {
+  /** ISO 1=Du .. 6=Sha */
+  weekday: number;
+  label: WeekdayLabel;
+  /** `hours` bilan bir xil tartib */
+  counts: number[];
+  total: number;
+  present: number;
+  late: number;
+  lateRate: number | null;
+}
+
+export interface Heatmap {
+  type: PersonType;
+  dateFrom: string;
+  dateTo: string;
+  hours: number[];
+  weekdays: HeatmapWeekday[];
+  max: number;
+  outside: number;
+}
+
+export type UnitSort = 'rate' | 'late' | 'absent' | 'arrival' | 'punctual' | 'trend' | 'headcount' | 'name';
+
+export interface UnitAnalytics {
+  id: string;
+  name: string;
+  kind: UnitKind | 'guruh';
+  headcount: number;
+  enrolled: number;
+  presentDays: number;
+  lateDays: number;
+  absentDays: number;
+  rate: number | null;
+  avgArrival: string | null;
+  avgArrivalMinutes: number | null;
+  punctualPct: number | null;
+  previousRate: number | null;
+  /** rate − previousRate */
+  trend: number | null;
+}
+
+export type PeopleSort = 'late' | 'absent' | 'arrival' | 'rate';
+
+export interface PersonRank {
+  id: string;
+  fullName: string;
+  photoUrl: string | null;
+  initials: string;
+  unitId: string;
+  unit: string;
+  presentDays: number;
+  lateDays: number;
+  absentDays: number;
+  rate: number | null;
+  avgArrival: string | null;
+  avgArrivalMinutes: number | null;
+  /** oxirgi kelgan kun (YYYY-MM-DD) */
+  lastSeen: string | null;
+  /** hozirgi uzluksiz kelmadi/kech_keldi kunlari */
+  streak: number;
+  streakKind: 'kelmadi' | 'kech_keldi' | 'aralash' | null;
+}
+
+export interface ChronicPerson {
+  id: string;
+  fullName: string;
+  photoUrl: string | null;
+  initials: string;
+  unitId: string;
+  unit: string;
+  absentDays: number;
+  lateDays: number;
+  absentDates: string[];
+  lateDates: string[];
+  reasons: Array<'kelmadi' | 'kech_keldi'>;
+}
+
+// ───────────────────────────────────────────── 14–16. Ro'yxatga olish (enrollment)
+
+export interface EnrollCounts {
+  total: number;
+  confirmed: number;
+  pending: number;
+  none: number;
+  /** confirmed / total * 100 */
+  pct: number | null;
+}
+
+export interface Enrollment {
+  students: EnrollCounts;
+  staff: EnrollCounts;
+  byFaculty: Array<EnrollCounts & { id: string | null; name: string }>;
+  studentsDataAvailable: boolean;
+}
+
+export interface EnrollGroup {
+  name: string;
+  facultyId: string | null;
+  faculty: string | null;
+  course: number | null;
+  total: number;
+  confirmed: number;
+  pending: number;
+  pct: number | null;
+}
+
+export interface EnrollMissing {
+  group: string;
+  total: number;
+  missing: Array<{ id: string; fullName: string; initials: string; biometricsStatus: 'kutilmoqda' | 'yoq' }>;
+  /** QR uchun */
+  enrollUrl: string;
+}
+
+// ───────────────────────────────────────────── 17. Devor ekrani
+
+export interface WallUnit {
+  id: string;
+  name: string;
+  kind: string;
+  total: number;
+  present: number;
+  rate: number | null;
+}
+
+export interface WallEvent {
+  id: string;
+  moduleName: string;
+  cameraName: string;
+  building: string;
+  time: string;
+  status: string;
+}
+
+export interface Wall {
+  date: string;
+  generatedAt: string;
+  students: Counts;
+  staff: Counts;
+  studentsDataAvailable: boolean;
+  topUnits: WallUnit[];
+  bottomUnits: WallUnit[];
+  lastArrivals: LastArrival[];
+  highEvents: WallEvent[];
+  camerasOnline: number;
+  camerasTotal: number;
+  enrollment: Enrollment;
+  spotlight: Array<{ kind: 'unit' | 'group'; id: string; name: string; rate: number | null }>;
+}
+
 // ───────────────────────────────────────────── Funksiyalar
 
 const BASE = '/api/situation';
@@ -357,8 +570,10 @@ export function getGroup(groupName: string, date?: string, opts?: CallOptions): 
   return api.get<GroupDetail>(`${BASE}/groups/${encodeURIComponent(groupName)}${buildQuery({ date })}`, undefined, opts);
 }
 
-export function getKafedras(date?: string, opts?: CallOptions): Promise<KafedraStat[]> {
-  return api.get<KafedraStat[]>(`${BASE}/kafedras${buildQuery({ date })}`, undefined, opts);
+export type UnitKindFilter = 'kafedra' | 'dekanat' | 'bolim' | 'all';
+
+export function getKafedras(date?: string, opts?: CallOptions, kind?: UnitKindFilter): Promise<KafedraStat[]> {
+  return api.get<KafedraStat[]>(`${BASE}/kafedras${buildQuery({ date, kind })}`, undefined, opts);
 }
 
 export function getKafedra(
@@ -385,7 +600,63 @@ export function getLessonAttendance(lessonId: string, opts?: CallOptions): Promi
   return api.get<LessonAttendance>(`/api/lesson-sessions/${encodeURIComponent(lessonId)}/attendance`, undefined, opts);
 }
 
+export function getAnalyticsSummary(params: AnalyticsRange = {}, opts?: CallOptions): Promise<AnalyticsSummary> {
+  return api.get<AnalyticsSummary>(`${BASE}/analytics/summary${buildQuery({ ...params })}`, undefined, opts);
+}
+
+export function getAnalyticsHeatmap(params: AnalyticsRange = {}, opts?: CallOptions): Promise<Heatmap> {
+  return api.get<Heatmap>(`${BASE}/analytics/heatmap${buildQuery({ ...params })}`, undefined, opts);
+}
+
+export function getAnalyticsUnits(
+  params: AnalyticsRange & { kind?: UnitKind | 'guruh' | 'all'; sort?: UnitSort; order?: 'asc' | 'desc' } = {},
+  opts?: CallOptions,
+): Promise<UnitAnalytics[]> {
+  return api.get<UnitAnalytics[]>(`${BASE}/analytics/units${buildQuery({ ...params })}`, undefined, opts);
+}
+
+export function getAnalyticsPeople(
+  params: AnalyticsRange & { sort?: PeopleSort; unitId?: string; limit?: number } = {},
+  opts?: CallOptions,
+): Promise<PersonRank[]> {
+  return api.get<PersonRank[]>(`${BASE}/analytics/people${buildQuery({ ...params })}`, undefined, opts);
+}
+
+export function getAnalyticsChronic(
+  params: AnalyticsRange & { minAbsent?: number; minLate?: number } = {},
+  opts?: CallOptions,
+): Promise<ChronicPerson[]> {
+  return api.get<ChronicPerson[]>(`${BASE}/analytics/chronic${buildQuery({ ...params })}`, undefined, opts);
+}
+
+export function getEnrollment(opts?: CallOptions): Promise<Enrollment> {
+  return api.get<Enrollment>(`${BASE}/enrollment`, undefined, opts);
+}
+
+export function getEnrollmentGroups(
+  params: { facultyId?: string; course?: number } = {},
+  opts?: CallOptions,
+): Promise<EnrollGroup[]> {
+  return api.get<EnrollGroup[]>(`${BASE}/enrollment/groups${buildQuery(params)}`, undefined, opts);
+}
+
+export function getEnrollmentMissing(groupName: string, opts?: CallOptions): Promise<EnrollMissing> {
+  return api.get<EnrollMissing>(`${BASE}/enrollment/groups/${encodeURIComponent(groupName)}/missing`, undefined, opts);
+}
+
+export function getWall(opts?: CallOptions): Promise<Wall> {
+  return api.get<Wall>(`${BASE}/wall`, undefined, opts);
+}
+
 // ───────────────────────────────────────────── Yorliqlar
+
+export const UNIT_KIND_LABELS: Record<UnitKind | 'guruh', string> = {
+  kafedra: 'Kafedra',
+  dekanat: 'Dekanat',
+  bolim: "Bo'lim",
+  lavozim: 'Lavozim',
+  guruh: 'Guruh',
+};
 
 export const ATTENDANCE_STATUS_LABELS: Record<AttendanceStatus, string> = {
   keldi: 'Keldi',

@@ -9,6 +9,8 @@ interface EnrollmentRegisterFormProps {
   pinfl?: string;
   passportSeries?: string;
   passportNumber?: string;
+  /** Guruh QR kartasidan kelganda (?guruh=) — maydon oldindan to'ldiriladi. */
+  initialGroup?: string;
   onSubmit: (input: EnrollmentRegisterInput) => void;
   onCancel: () => void;
   submitting?: boolean;
@@ -34,13 +36,14 @@ export default function EnrollmentRegisterForm({
   pinfl,
   passportSeries,
   passportNumber,
+  initialGroup = '',
   onSubmit,
   onCancel,
   submitting = false,
 }: EnrollmentRegisterFormProps) {
   const [fullName, setFullName] = useState('');
   const [type, setType] = useState<'talaba' | 'xodim'>('talaba');
-  const [groupOrPosition, setGroupOrPosition] = useState('');
+  const [groupOrPosition, setGroupOrPosition] = useState(initialGroup);
   const [facultyId, setFacultyId] = useState('');
   const [faculties, setFaculties] = useState<EnrollmentFaculty[]>([]);
 

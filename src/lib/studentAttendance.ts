@@ -381,3 +381,162 @@ export function visitsByDate(visits: readonly PersonVisit[]): Array<{ date: stri
 export function recentRange(date: string, days: number): { from: string; to: string } {
   return { from: addDays(date, -(days - 1)), to: date };
 }
+
+// ───────────────────────────────────────────── Yuz topshirish (enrollment)
+
+/** Guruh/fakultetda davomat ko'rsatish uchun yetarli yuz ulushi (%). Undan past — "Yuz topshirish" ko'rinishi. */
+export const ATTENDANCE_READY_PCT = 50;
+
+/** Yuzi tasdiqlanganlar ulushi (%), talaba yo'q → null. */
+export function enrolledPct(counts: Pick<Counts, 'total' | 'enrolled'>): number | null {
+  return counts.total > 0 ? Math.round((counts.enrolled / counts.total) * 1000) / 10 : null;
+}
+
+/** Davomat foizi ma'noli bo'lishi uchun yuzlar yetarlimi. */
+export function hasAttendanceData(counts: Pick<Counts, 'total' | 'enrolled'>): boolean {
+  const pct = enrolledPct(counts);
+  return pct !== null && pct >= ATTENDANCE_READY_PCT;
+}
+
+/** Yuz topshirish progressi rangi: tugagan — yashil, yarmidan oshgan — asosiy, boshlanmagan — xavf. */
+export function enrollTone(pct: number | null | undefined): Tone {
+  if (pct === null || pct === undefined) return 'neutral';
+  if (pct >= 90) return 'success';
+  if (pct >= ATTENDANCE_READY_PCT) return 'primary';
+  if (pct > 0) return 'warning';
+  return 'danger';
+}
+
+export interface EnrollSnapshot {
+  date: string;
+  confirmed: number;
+}
+
+/** Kunlik kuzatuv (brauzerda saqlanadi): shu kun qiymatini yangilaydi, oxirgi 60 kun qoladi. */
+export function recordSnapshot(list: readonly EnrollSnapshot[], date: string, confirmed: number): EnrollSnapshot[] {
+  const next = list.filter((s) => s.date !== date && /^\d{4}-\d{2}-\d{2}$/.test(s.date) && Number.isFinite(s.confirmed));
+  next.push({ date, confirmed });
+  next.sort((a, b) => a.date.localeCompare(b.date));
+  return next.slice(-60);
+}
+
+/** Ikki ISO sana orasidagi kunlar (b − a). */
+export function daysBetween(a: string, b: string): number {
+  return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
+}
+
+/**
+ * So'nggi `windowDays` kundagi sur'at: kuniga nechta yangi yuz tasdiqlanmoqda.
+ * Kamida 1 kunlik farq kerak, aks holda null.
+ */
+export function enrollPace(list: readonly EnrollSnapshot[], today: string, windowDays = 14): { perDay: number; days: number } | null {
+  const current = list.find((s) => s.date === today) ?? list[list.length - 1];
+  if (!current) return null;
+  const base = list.find((s) => daysBetween(s.date, current.date) >= 1 && daysBetween(s.date, current.date) <= windowDays);
+  if (!base) return null;
+  const days = daysBetween(base.date, current.date);
+  return { perDay: Math.max(0, (current.confirmed - base.confirmed) / days), days };
+}
+
+/** Qolganlar shu sur'atda qachon tugaydi (ISO sana) — sur'at 0 bo'lsa null. */
+export function projectCompletion(remaining: number, perDay: number, today: string): string | null {
+  if (remaining <= 0) return today;
+  if (!(perDay > 0)) return null;
+  return addDays(today, Math.ceil(remaining / perDay));
+}
+
+/** Maqsad sanasigacha har kuni nechta yuz kerak (sana o'tgan/bugun → qolganlarning hammasi). */
+export function neededPerDay(remaining: number, today: string, target: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(target)) return null;
+  if (remaining <= 0) return 0;
+  const days = daysBetween(today, target);
+  return days <= 0 ? remaining : Math.ceil(remaining / days);
+}
+
+// ───────────────────────────────────────────── Shaxs KPI (xodim)
+
+/** Kechikish chegarasi (server sozlamasi `attendance_ai_late_cutoff` standarti). */
+export const LATE_CUTOFF_MINUTES = 9 * 60;
+
+export interface PersonKpis {
+  rate: number | null;
+  avgArrivalMinutes: number | null;
+  presentDays: number;
+  lateDays: number;
+  absentDays: number;
+  /** O'z vaqtida kelgan (kechikmagan) uzluksiz kunlar — oxiridan hisoblanadi; dam olish/ma'lumotsiz kunlar uzmaydi. */
+  onTimeStreak: number;
+  punctualPct: number | null;
+}
+
+export function personKpis(calendar: readonly CalendarDay[]): PersonKpis {
+  let present = 0;
+  let late = 0;
+  let absent = 0;
+  const arrivals: number[] = [];
+  for (const d of calendar) {
+    if (d.status === 'keldi' || d.status === 'kech_keldi') {
+      present++;
+      if (d.status === 'kech_keldi') late++;
+      const m = clockMinutes(d.checkIn);
+      if (m !== null) arrivals.push(m);
+    } else if (d.status === 'kelmadi') absent++;
+  }
+  let streak = 0;
+  for (let i = calendar.length - 1; i >= 0; i--) {
+    const s = calendar[i].status;
+    if (s === 'keldi') streak++;
+    else if (s === 'kech_keldi' || s === 'kelmadi') break;
+  }
+  return {
+    rate: present + absent > 0 ? Math.round((present / (present + absent)) * 1000) / 10 : null,
+    avgArrivalMinutes: arrivals.length ? Math.round(arrivals.reduce((a, b) => a + b, 0) / arrivals.length) : null,
+    presentDays: present,
+    lateDays: late,
+    absentDays: absent,
+    onTimeStreak: streak,
+    punctualPct: present > 0 ? Math.round(((present - late) / present) * 1000) / 10 : null,
+  };
+}
+
+export interface WeekdayStat {
+  weekday: number; // 1=Du … 6=Sha
+  label: string;
+  days: number;
+  present: number;
+  late: number;
+  absent: number;
+  avgArrivalMinutes: number | null;
+}
+
+const WEEKDAY_LABELS = ['Du', 'Se', 'Cho', 'Pa', 'Ju', 'Sha'];
+
+/** Hafta kunlari bo'yicha naqsh (yakshanbasiz). */
+export function weekdayPattern(calendar: readonly CalendarDay[]): WeekdayStat[] {
+  const rows = WEEKDAY_LABELS.map((label, i) => ({ weekday: i + 1, label, days: 0, present: 0, late: 0, absent: 0, sum: 0, n: 0 }));
+  for (const d of calendar) {
+    const wd = new Date(`${d.date}T00:00:00Z`).getUTCDay(); // 0=Ya
+    if (wd === 0) continue;
+    const r = rows[wd - 1];
+    if (d.status === 'keldi' || d.status === 'kech_keldi') {
+      r.days++;
+      r.present++;
+      if (d.status === 'kech_keldi') r.late++;
+      const m = clockMinutes(d.checkIn);
+      if (m !== null) {
+        r.sum += m;
+        r.n++;
+      }
+    } else if (d.status === 'kelmadi') {
+      r.days++;
+      r.absent++;
+    }
+  }
+  return rows.map(({ sum, n, ...r }) => ({ ...r, avgArrivalMinutes: n ? Math.round(sum / n) : null }));
+}
+
+/** Oldingi, xuddi shu uzunlikdagi davr. */
+export function previousRange(from: string, to: string): { from: string; to: string } {
+  const len = daysBetween(from, to) + 1;
+  return { from: addDays(from, -len), to: addDays(from, -1) };
+}

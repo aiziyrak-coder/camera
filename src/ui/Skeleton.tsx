@@ -2,7 +2,7 @@ import { cn } from './cn';
 
 /** Yuklanish joy egallovchisi — spinner o'rniga shakl: sahifa sakramaydi. */
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={cn('animate-pulse rounded-control bg-surface-3 motion-reduce:animate-none', className)} aria-hidden="true" />;
+  return <div className={cn('skeleton-shimmer rounded-control bg-surface-3/80', className)} aria-hidden="true" />;
 }
 
 export function SkeletonText({ lines = 3, className }: { lines?: number; className?: string }) {
@@ -20,7 +20,7 @@ export function SkeletonTiles({ count = 4, className }: { count?: number; classN
   return (
     <div className={cn('grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4', className)} aria-busy="true" aria-label="Yuklanmoqda">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="rounded-card border border-border bg-surface p-4">
+        <div key={i} className="rounded-card border border-border bg-surface p-4 shadow-card">
           <Skeleton className="h-3 w-1/2" />
           <Skeleton className="mt-3 h-7 w-1/3" />
           <Skeleton className="mt-3 h-2 w-full" />

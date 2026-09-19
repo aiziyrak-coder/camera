@@ -23,7 +23,7 @@ Xodimlar (faol, 4 ta):
   "Anatomiya kafedrasi"          Yusupova (tasdiq., keldi 07:55-17:00)
   "  anatomiya   KAFEDRASI "     Karimov (tasdiq., kech_keldi 09:20)
   "Fiziologiya kafedrasi"        Rahimov (tasdiq., yozuv yo'q)
-  "Bosh hisobchi"                Qodirova (tasdiqlanmagan) -> kafedra biriktirilmagan
+  "Bosh hisobchi"                Qodirova (tasdiqlanmagan) -> sof lavozim: "Lavozim bo'yicha"
   + nofaol Nofaol-xodim ("Anatomiya kafedrasi")
 
 Bugungi darslar (davomiylik 80 daq., kechikish chegarasi 5 daq.):

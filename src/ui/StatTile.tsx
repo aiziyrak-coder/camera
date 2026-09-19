@@ -2,6 +2,8 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowDownRight, ArrowUpRight, Minus, type LucideIcon } from 'lucide-react';
 import { cn, focusRing } from './cn';
+import { CountUp } from './CountUp';
+import { Sparkline } from './Sparkline';
 import { ProgressBar } from './Progress';
 import { Skeleton } from './Skeleton';
 import { TONE_SOFT, type Tone } from './tones';
@@ -33,6 +35,10 @@ export interface StatTileProps {
   to?: string;
   onClick?: () => void;
   size?: 'md' | 'lg';
+  /** Kichik trend chizig'i (masalan oxirgi 14 kun), eskisi birinchi. */
+  trend?: ReadonlyArray<number | null> | null;
+  /** Raqamni silliq sanab ko'rsatish (standart: yoqilgan). */
+  animate?: boolean;
   className?: string;
 }
 
@@ -43,7 +49,7 @@ function deltaTone(delta: StatDelta): Tone {
 }
 
 /** KPI plitkasi: nom, katta raqam, o'zgarish, izoh, ixtiyoriy progress. */
-export function StatTile({ label, value, unit, hint, icon: Icon, tone = 'neutral', delta, progress, loading, to, onClick, size = 'md', className }: StatTileProps) {
+export function StatTile({ label, value, unit, hint, icon: Icon, tone = 'neutral', delta, progress, loading, to, onClick, size = 'md', trend, animate = true, className }: StatTileProps) {
   const DeltaIcon = delta ? (delta.value === 0 ? Minus : delta.value > 0 ? ArrowUpRight : ArrowDownRight) : null;
   const dTone = delta ? deltaTone(delta) : 'neutral';
 
@@ -60,9 +66,9 @@ export function StatTile({ label, value, unit, hint, icon: Icon, tone = 'neutral
       {loading ? (
         <Skeleton className={cn('mt-2', size === 'lg' ? 'h-9 w-28' : 'h-7 w-20')} />
       ) : (
-        <div className="mt-1 flex flex-wrap items-baseline gap-x-1.5">
-          <span className={cn('font-semibold tabular-nums tracking-tight text-fg', size === 'lg' ? 'text-3xl sm:text-4xl' : 'text-2xl')}>
-            {value}
+        <div className="mt-1.5 flex flex-wrap items-baseline gap-x-1.5">
+          <span className={cn('text-display font-semibold text-fg', size === 'lg' ? 'text-[2rem] sm:text-[2.25rem]' : 'text-[1.75rem]')}>
+            {animate ? <CountUp value={value} /> : value}
           </span>
           {unit && <span className="text-sm font-medium text-muted">{unit}</span>}
         </div>
@@ -78,6 +84,7 @@ export function StatTile({ label, value, unit, hint, icon: Icon, tone = 'neutral
           {hint && <span className="min-w-0">{hint}</span>}
         </div>
       )}
+      {trend && !loading && <Sparkline values={trend} tone={tone === 'neutral' ? 'primary' : tone} height={28} className="mt-3" />}
       {progress !== undefined && progress !== null && !loading && (
         <ProgressBar value={progress} tone={tone === 'neutral' ? 'auto' : tone} size="xs" className="mt-3" />
       )}
@@ -86,7 +93,7 @@ export function StatTile({ label, value, unit, hint, icon: Icon, tone = 'neutral
 
   const classes = cn(
     'flex min-w-0 flex-col rounded-card border border-border bg-surface p-4 text-left shadow-card',
-    (to || onClick) && cn('transition-[border-color,box-shadow] hover:border-border-strong hover:shadow-pop', focusRing),
+    (to || onClick) && cn('lift hover:border-border-strong', focusRing),
     className,
   );
 

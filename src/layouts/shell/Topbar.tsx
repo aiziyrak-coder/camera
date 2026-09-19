@@ -1,9 +1,9 @@
-import { LogOut, Menu as MenuIcon, Minimize2, Moon, PanelLeftClose, PanelLeftOpen, Presentation, Sun } from 'lucide-react';
+import { LogOut, Menu as MenuIcon, Minimize2, MonitorUp, Moon, PanelLeftClose, PanelLeftOpen, Presentation, Search, Sun } from 'lucide-react';
 import { branding } from '../../lib/branding';
 import type { Role } from '../../lib/auth';
 import { useViewDate } from '../../lib/viewDate';
 import { Avatar, Button, DatePicker, IconButton, Menu, cn, focusRing, formatUzDate, useTheme, type Crumb } from '../../ui';
-import { ROLE_LABEL } from './navConfig';
+import { ROLE_LABEL, openWallScreen } from './navConfig';
 import { BrandMark } from './Sidebar';
 import { Breadcrumbs, EventsBell, LiveClock, SystemStatus } from './TopbarWidgets';
 
@@ -19,6 +19,35 @@ interface TopbarProps {
   userName: string | null;
   role: Role | null;
   onLogout: () => void;
+  /** Global qidiruvni (Ctrl/⌘+K) ochish. */
+  onOpenSearch?: () => void;
+  /** Devor ekrani (/markaz-ekran) ko'rsatilsinmi (huquq bo'yicha). */
+  wallScreen?: boolean;
+}
+
+
+const IS_MAC = typeof navigator !== 'undefined' && /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent);
+
+function SearchTrigger({ onOpen }: { onOpen: () => void }) {
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label="Qidirish (Ctrl+K)"
+        aria-keyshortcuts="Control+K Meta+K"
+        className={cn(
+          'hidden h-8 w-52 items-center gap-2 rounded-control border border-border bg-surface-2/70 px-2.5 text-[13px] text-subtle transition-colors hover:border-border-strong hover:bg-surface hover:text-muted lg:inline-flex xl:w-64',
+          focusRing,
+        )}
+      >
+        <Search size={15} aria-hidden="true" />
+        <span className="flex-1 text-left">Qidirish…</span>
+        <kbd className="rounded border border-border bg-surface px-1.5 py-px font-sans text-[10.5px] font-medium text-muted">{IS_MAC ? '⌘K' : 'Ctrl K'}</kbd>
+      </button>
+      <IconButton icon={Search} label="Qidirish" onClick={onOpen} className="lg:hidden" />
+    </>
+  );
 }
 
 function ViewDateControl({ compact }: { compact?: boolean }) {
@@ -26,7 +55,7 @@ function ViewDateControl({ compact }: { compact?: boolean }) {
   return <DatePicker value={date} onChange={setDate} quick={!compact} stepper size="sm" compact={compact} ariaLabel="Ko'rilayotgan sana" className="min-w-0" />;
 }
 
-export function Topbar({ crumbs, showDate, onOpenMobileNav, mobileNavOpen, sidebarCollapsed, onToggleSidebar, presentation, bell, userName, role, onLogout }: TopbarProps) {
+export function Topbar({ crumbs, showDate, onOpenMobileNav, mobileNavOpen, sidebarCollapsed, onToggleSidebar, presentation, bell, userName, role, onLogout, onOpenSearch, wallScreen }: TopbarProps) {
   const { preference, toggleTheme } = useTheme();
   const dark = preference === 'dark';
 
@@ -56,6 +85,8 @@ export function Topbar({ crumbs, showDate, onOpenMobileNav, mobileNavOpen, sideb
         <Breadcrumbs crumbs={crumbs} />
       </div>
 
+      {onOpenSearch && <SearchTrigger onOpen={onOpenSearch} />}
+
       {showDate && (
         <>
           <div className="hidden sm:block">
@@ -77,7 +108,8 @@ export function Topbar({ crumbs, showDate, onOpenMobileNav, mobileNavOpen, sideb
       <div className="flex items-center gap-0.5">
         {bell.enabled && <EventsBell count={bell.count} onOpen={bell.onOpen} />}
         <IconButton icon={dark ? Sun : Moon} label={dark ? "Yorug' mavzu" : "Qorong'i mavzu"} onClick={toggleTheme} className="hidden sm:inline-flex" />
-        <IconButton icon={Presentation} label="Taqdimot rejimi (devor ekrani)" onClick={presentation.toggle} className="hidden md:inline-flex" />
+        {wallScreen && <IconButton icon={MonitorUp} label="Katta ekran (devor) — yangi oynada" onClick={openWallScreen} className="hidden md:inline-flex" />}
+        <IconButton icon={Presentation} label="Taqdimot rejimi (joriy sahifa to'liq ekranda)" onClick={presentation.toggle} className="hidden md:inline-flex" />
       </div>
 
       {userName && role && (
@@ -92,6 +124,7 @@ export function Topbar({ crumbs, showDate, onOpenMobileNav, mobileNavOpen, sideb
           items={[
             { label: dark ? "Yorug' mavzu" : "Qorong'i mavzu", icon: dark ? Sun : Moon, onSelect: toggleTheme },
             { label: 'Taqdimot rejimi', icon: Presentation, onSelect: presentation.toggle },
+            ...(wallScreen ? [{ label: 'Katta ekran (devor)', icon: MonitorUp, onSelect: openWallScreen }] : []),
             'separator',
             { label: 'Tizimdan chiqish', icon: LogOut, danger: true, onSelect: onLogout },
           ]}

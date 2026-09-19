@@ -51,6 +51,8 @@ export interface DataTableProps<T> {
   /** Jadval ichida aylantirish balandligi — sarlavha yopishib turadi. 'none' — cheklovsiz. */
   maxHeight?: string;
   dense?: boolean;
+  /** Juft/toq qatorlar fonini almashtirish (uzun jadvallarni o'qish osonroq). */
+  zebra?: boolean;
   /** Telefonda: 'cards' (standart) — har qator karta; 'scroll' — gorizontal aylantirish. */
   mobile?: 'cards' | 'scroll';
   /** Kartadagi sarlavha ustuni (standart: birinchi ustun). */
@@ -92,6 +94,7 @@ export function DataTable<T>({
   manualSort = false,
   maxHeight = 'min(70vh, 48rem)',
   dense = false,
+  zebra = false,
   mobile = 'cards',
   mobileTitleKey,
   ariaLabel,
@@ -99,6 +102,8 @@ export function DataTable<T>({
   className,
 }: DataTableProps<T>) {
   const [internalSort, setInternalSort] = useState<SortState | null>(defaultSort);
+  // Aylantirilganda yopishqoq sarlavha ostida soya — mazmun ostidan o'tayotgani ko'rinadi.
+  const [scrolled, setScrolled] = useState(false);
   const sort = controlledSort !== undefined ? controlledSort : internalSort;
 
   function toggleSort(column: DataTableColumn<T>) {
@@ -132,6 +137,10 @@ export function DataTable<T>({
     <div
       className={cn('overflow-auto', mobile === 'cards' && 'hidden md:block')}
       style={maxHeight !== 'none' ? { maxHeight } : undefined}
+      onScroll={(event) => {
+        const next = event.currentTarget.scrollTop > 0;
+        if (next !== scrolled) setScrolled(next);
+      }}
     >
       <table className="w-full border-separate border-spacing-0 text-sm" aria-label={ariaLabel} aria-busy={loading || undefined}>
         <thead>
@@ -147,7 +156,8 @@ export function DataTable<T>({
                   style={column.width ? { width: column.width } : undefined}
                   aria-sort={active ? (sort?.dir === 'asc' ? 'ascending' : 'descending') : sortable ? 'none' : undefined}
                   className={cn(
-                    'sticky top-0 z-10 whitespace-nowrap border-b border-border bg-surface-2 text-xs font-semibold text-muted',
+                    'sticky top-0 z-10 whitespace-nowrap border-b border-border bg-surface-2 text-xs font-semibold text-muted transition-shadow',
+                    scrolled && 'shadow-[0_8px_12px_-10px_rgb(16_24_40/0.25)]',
                     dense ? 'px-3 py-2' : 'px-4 py-2.5',
                     ALIGN[column.align ?? 'left'],
                   )}
@@ -167,7 +177,9 @@ export function DataTable<T>({
                 </th>
               );
             })}
-            {onRowClick && <th aria-hidden="true" className="sticky top-0 z-10 w-8 border-b border-border bg-surface-2" />}
+            {onRowClick && (
+              <th aria-hidden="true" className={cn('sticky top-0 z-10 w-8 border-b border-border bg-surface-2 transition-shadow', scrolled && 'shadow-[0_8px_12px_-10px_rgb(16_24_40/0.25)]')} />
+            )}
           </tr>
         </thead>
         <tbody>
@@ -196,6 +208,7 @@ export function DataTable<T>({
                   aria-selected={onRowClick ? selected : undefined}
                   className={cn(
                     'group transition-colors',
+                    zebra && 'even:bg-surface-2/50',
                     onRowClick && 'cursor-pointer hover:bg-surface-2 focus-visible:bg-primary-soft/60 focus-visible:outline-none',
                     selected && 'bg-primary-soft/70 hover:bg-primary-soft',
                   )}
@@ -217,7 +230,7 @@ export function DataTable<T>({
                   ))}
                   {onRowClick && (
                     <td className="border-b border-border pr-3 text-subtle group-last:border-b-0">
-                      <ChevronRight size={16} aria-hidden="true" className="opacity-0 transition-opacity group-hover:opacity-100" />
+                      <ChevronRight size={16} aria-hidden="true" className="-translate-x-1 opacity-0 transition-[opacity,transform] group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:opacity-100" />
                     </td>
                   )}
                 </tr>

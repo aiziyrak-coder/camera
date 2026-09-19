@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, CalendarClock, LayoutGrid, RefreshCw, SearchX, TrendingUp, Users, ZoomIn } from 'lucide-react';
+import { ArrowLeft, CalendarCheck, CalendarClock, LayoutGrid, QrCode, RefreshCw, ScanFace, SearchX, TrendingUp, Users, ZoomIn } from 'lucide-react';
 import {
   Badge,
   ButtonLink,
@@ -37,6 +37,9 @@ import {
   averageRate,
   countsByStatus,
   countsFromStudents,
+  enrolledPct,
+  enrollTone,
+  hasAttendanceData,
   filterStudents,
   isAwaiting,
   sortStudents,
@@ -52,6 +55,16 @@ import { StatusFilterTiles, type FilterTile } from '../../components/students/St
 import { StudentDrawer } from '../../components/students/StudentDrawer';
 import { RateTrendChart, StatusTrendChart } from '../../components/students/TrendCharts';
 import { useAsyncData } from '../../components/students/useAsyncData';
+import { GroupEnrollDrawer, type EnrollDrawerTarget } from '../../components/students/GroupEnrollDrawer';
+
+type ModeId = 'davomat' | 'yuz';
+type FaceFilter = 'all' | 'bor' | 'yoq';
+const MODE_PARAM = 'korinish';
+const FACE_PARAM = 'yuz';
+const MODES: TabItem<ModeId>[] = [
+  { id: 'davomat', label: 'Davomat', icon: CalendarCheck },
+  { id: 'yuz', label: 'Yuz topshirish', icon: ScanFace },
+];
 
 type TabId = 'talabalar' | 'darslar' | 'dinamika';
 type Density = 'normal' | 'large';
@@ -113,6 +126,7 @@ export default function GroupPage() {
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [flash, setFlash] = useState<Record<string, number>>({});
   const [liveFeed, setLiveFeed] = useState<LiveAttendanceMessage[]>([]);
+  const [enrollTarget, setEnrollTarget] = useState<EnrollDrawerTarget | null>(null);
 
   const group = useAsyncData<GroupDetail>(
     groupName ? `${groupName}|${date}` : null,
@@ -172,10 +186,41 @@ export default function GroupPage() {
   const [tab, setTab] = useUrlTab(tabs, { defaultTab: 'talabalar' });
 
   const students = useMemo(() => data?.students ?? [], [data]);
-  const visible = useMemo(() => sortStudents(filterStudents(students, filter, query), sort), [students, filter, query, sort]);
+  const ready = data ? hasAttendanceData(data.group.totals) : true;
+  const [mode, setMode] = useUrlTab(MODES, { param: MODE_PARAM, defaultTab: ready ? 'davomat' : 'yuz' });
+  const rawFace = params.get(FACE_PARAM);
+  const faceFilter: FaceFilter = mode === 'yuz' && (rawFace === 'bor' || rawFace === 'yoq') ? rawFace : 'all';
+  const visible = useMemo(() => {
+    const base = filterStudents(students, mode === 'yuz' ? 'all' : filter, query);
+    const byFace = faceFilter === 'all' ? base : base.filter((s) => (s.biometricsStatus === 'tasdiqlangan') === (faceFilter === 'bor'));
+    return sortStudents(byFace, sort);
+  }, [students, filter, query, sort, mode, faceFilter]);
   const photos = useMemo(() => new Map(students.map((s) => [s.id, s])), [students]);
   const selectedIndex = selectedId ? visible.findIndex((s) => s.id === selectedId) : -1;
   const selected = selectedIndex >= 0 ? visible[selectedIndex] : selectedId ? (photos.get(selectedId) ?? null) : null;
+
+  function setFaceFilter(next: FaceFilter) {
+    setParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        if (next === 'all') p.delete(FACE_PARAM);
+        else p.set(FACE_PARAM, next);
+        return p;
+      },
+      { replace: true },
+    );
+    if (tab !== 'talabalar') setTab('talabalar');
+  }
+
+  /** Yuz topshirish ko'rinishida yuzi yo'q talaba → QR/ko'rsatma paneli. */
+  function openStudent(id: string) {
+    const st = photos.get(id);
+    if (mode === 'yuz' && st && st.biometricsStatus !== 'tasdiqlangan') {
+      setEnrollTarget({ name: groupName, faculty: data?.group.faculty });
+      return;
+    }
+    setSelectedId(id);
+  }
 
   function setFilter(next: StudentFilter) {
     setParams(
@@ -205,6 +250,14 @@ export default function GroupPage() {
       ]
     : [];
 
+  const faced = students.filter((s) => s.biometricsStatus === 'tasdiqlangan').length;
+  const facePct = totals ? enrolledPct(totals) : null;
+  const faceTiles: FilterTile<FaceFilter>[] = [
+    { id: 'all', label: 'Jami', value: students.length, tone: 'neutral' },
+    { id: 'bor', label: 'Yuzi bor', value: faced, tone: 'success' },
+    { id: 'yoq', label: "Yuzi yo'q", value: students.length - faced, tone: 'warning' },
+  ];
+
   const facultyCrumb = data
     ? { label: data.group.faculty ?? 'Fakultetsiz', to: withDate(situationPaths.faculty(data.group.facultyId)) }
     : { label: 'Fakultet' };
@@ -231,6 +284,11 @@ export default function GroupPage() {
       }
       actions={
         <>
+          {data && !presentation && (
+            <div className="hidden sm:block">
+              <Tabs variant="segmented" ariaLabel="Ko'rinish" value={mode} onChange={setMode} tabs={MODES} />
+            </div>
+          )}
           {group.updatedAt && (
             <span className="hidden text-xs tabular-nums text-subtle sm:inline">
               Yangilandi {group.updatedAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
@@ -260,6 +318,44 @@ export default function GroupPage() {
         <>
           {group.error && <ErrorState title="Yangilab bo'lmadi — oxirgi ma'lumot ko'rsatilmoqda" message={group.error} onRetry={group.reload} />}
 
+          {!presentation && (
+            <div className="sm:hidden">
+              <Tabs variant="segmented" ariaLabel="Ko'rinish" value={mode} onChange={setMode} tabs={MODES} />
+            </div>
+          )}
+          {mode === 'yuz' ? (
+            <Card padding="none" className="overflow-hidden">
+              <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:gap-6 sm:p-5">
+                <div className="flex items-center gap-4 sm:flex-col sm:gap-1.5">
+                  <ProgressRing value={facePct} tone={enrollTone(facePct)} size={presentation ? 120 : 96} sublabel="yuzi bor" ariaLabel={`Yuz topshirgan ${formatPercent(facePct)}`} />
+                  <p className="text-xs text-muted sm:text-center">
+                    <span className="font-semibold tabular-nums text-fg">{faced}</span> / {students.length} talaba
+                  </p>
+                </div>
+                <div className="flex min-w-0 flex-1 flex-col gap-3">
+                  <StatusFilterTiles
+                    tiles={faceTiles}
+                    total={students.length}
+                    value={faceFilter}
+                    onChange={setFaceFilter}
+                    big={presentation}
+                  />
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                    {students.length - faced > 0 && (
+                      <Button variant="primary" size="sm" icon={QrCode} onClick={() => setEnrollTarget({ name: groupName, faculty: data.group.faculty })}>
+                        Topshirmaganlar va QR karta
+                      </Button>
+                    )}
+                    <p className="text-xs text-muted">
+                      {ready
+                        ? "Yuzlar yetarli — «Davomat» ko'rinishida bugungi holat."
+                        : "Yuzi borlar 50% dan oshgach, guruh davomati ishonchli bo'ladi."}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          ) : (
           <Card padding="none" className="overflow-hidden">
             <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:gap-6 sm:p-5">
               <div className="flex items-center gap-4 sm:flex-col sm:gap-1.5">
@@ -274,6 +370,7 @@ export default function GroupPage() {
             </div>
             <CountsBar counts={totals} size="xs" className="[&>div]:rounded-none" />
           </Card>
+          )}
 
           <Tabs tabs={tabs} value={tab} onChange={setTab} />
 
@@ -281,7 +378,7 @@ export default function GroupPage() {
             <StudentsTab
               visible={visible}
               total={students.length}
-              filter={filter}
+              filter={mode === 'yuz' ? 'all' : filter}
               query={query}
               onQuery={setQuery}
               sort={sort}
@@ -291,9 +388,11 @@ export default function GroupPage() {
               onResetFilter={() => {
                 setQuery('');
                 setFilter('all');
+                setFaceFilter('all');
               }}
-              onOpen={setSelectedId}
+              onOpen={openStudent}
               selectedId={selectedId}
+              enrollMode={mode === 'yuz'}
               flash={flash}
               liveFeed={liveFeed}
               minItemWidth={minItemWidth}
@@ -326,6 +425,7 @@ export default function GroupPage() {
         onNext={selectedIndex >= 0 && selectedIndex < visible.length - 1 ? () => setSelectedId(visible[selectedIndex + 1].id) : undefined}
       />
       <LessonDrawer lesson={lesson} photos={photos} withDate={withDate} onClose={() => setLesson(null)} />
+      <GroupEnrollDrawer target={enrollTarget} onClose={() => setEnrollTarget(null)} withDate={withDate} />
     </Page>
   );
 }
@@ -347,6 +447,7 @@ function StudentsTab({
   liveFeed,
   minItemWidth,
   presentation,
+  enrollMode = false,
 }: {
   visible: GroupStudent[];
   total: number;
@@ -364,6 +465,7 @@ function StudentsTab({
   liveFeed: LiveAttendanceMessage[];
   minItemWidth: number;
   presentation: boolean;
+  enrollMode?: boolean;
 }) {
   const activeCount = (filter !== 'all' ? 1 : 0) + (query ? 1 : 0);
   return (
@@ -434,6 +536,26 @@ function StudentsTab({
         <PersonGrid minItemWidth={minItemWidth} className={presentation ? 'gap-4' : undefined}>
           {visible.map((student) => {
             const fresh = Boolean(flash[student.id]);
+            if (student.biometricsStatus !== 'tasdiqlangan') {
+              return (
+                <PersonCard
+                  key={student.id}
+                  name={student.fullName}
+                  photoUrl={student.photoUrl}
+                  status={enrollMode ? null : student.status === 'malumot_yoq' ? 'nomalum' : student.status}
+                  subtitle={
+                    <span className="inline-flex items-center gap-1 font-medium text-warning">
+                      <ScanFace size={12} aria-hidden="true" />
+                      {student.biometricsStatus === 'kutilmoqda' ? 'Tasdiq kutilmoqda' : "Yuz yo'q"}
+                    </span>
+                  }
+                  meta={enrollMode ? <span className="text-primary">QR bilan topshirish →</span> : undefined}
+                  onClick={() => onOpen(student.id)}
+                  selected={student.id === selectedId}
+                  className={cn('border-dashed bg-surface-2/60 shadow-none [&_img]:opacity-60 [&_img]:grayscale', presentation && '[&_p]:text-sm')}
+                />
+              );
+            }
             return (
               <PersonCard
                 key={student.id}

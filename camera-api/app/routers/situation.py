@@ -99,11 +99,14 @@ async def _build_overview(db: AsyncSession, day) -> OverviewOut:
     rows = await svc.unit_rows(db, day)
     lessons = await svc.day_lessons(db, day)
     names = await svc.faculty_names(db)
+    students = svc.type_counts(rows, "talaba", pending)
     return OverviewOut(
         date=day.isoformat(),
         is_today=day == svc.today(),
         generated_at=local_now().isoformat(timespec="seconds"),
-        students=svc.type_counts(rows, "talaba", pending).out(),
+        students=students.out(),
+        students_data_available=svc.students_data_available(students),
+        students_enrolled_pct=svc.pct(students.enrolled, students.total),
         staff=svc.type_counts(rows, "xodim", pending).out(),
         teachers=TeachersTodayOut(**svc.teachers_today(lessons, now)),
         lessons=LessonsSummaryOut(**svc.lessons_summary(lessons, now)),
@@ -298,58 +301,62 @@ async def group_detail(group_name: str, db: DbDep, _: ReadDep, date: DateQuery =
 # ─────────────────────────────────────────── 5-6. Kafedralar
 
 @router.get("/kafedras", response_model=list[KafedraStatOut])
-async def kafedras(db: DbDep, _: ReadDep, date: DateQuery = None) -> list[KafedraStatOut]:
-    """Kafedralar: xodimlar davomati va shu kungi darslardagi o'qituvchi
-    kechikishlari. Xodim kafedraga group_or_position == kafedra nomi
-    (katta-kichik harf va bo'shliqlarsiz) orqali bog'lanadi; hech biriga
-    mos kelmaganlar "Kafedra biriktirilmagan" qatorida."""
+async def kafedras(
+    db: DbDep,
+    _: ReadDep,
+    date: DateQuery = None,
+    kind: Annotated[Literal["kafedra", "dekanat", "bolim", "all"], Query()] = "all",
+) -> list[KafedraStatOut]:
+    """Bo'linmalar (kafedra, dekanat, bo'lim): xodimlar davomati va shu
+    kungi darslardagi o'qituvchi kechikishlari. Bo'linmalar xodimlarning
+    group_or_position matnidan yig'iladi (svc.build_catalog), Department
+    yozuvi bo'lsa u bilan nom bo'yicha birlashadi. Sof lavozim yozilganlar
+    ("Farrosh", "Assistent") — oxirida "Lavozim bo'yicha" qatorida."""
     day = svc.resolve_day(date)
-    return await svc.cached(("kafedras", day), lambda: _build_kafedras(db, day))
+    rows = await svc.cached(("kafedras", day), lambda: _build_kafedras(db, day))
+    if kind == "all":
+        return rows
+    return [r for r in rows if r.kind == kind]
 
 
 async def _build_kafedras(db: AsyncSession, day) -> list[KafedraStatOut]:
     pending = day >= svc.today()
     now = datetime.now(timezone.utc)
-    deps = await svc.departments(db)
-    index = svc.department_index(deps)
+    catalog = await svc.unit_catalog(db)
     unassigned = svc.UNASSIGNED_KAFEDRA_ID
-
-    def keys_for(unit: str | None) -> list[str]:
-        matched = index.get(svc.norm_name(unit))
-        return [str(d.id) for d in matched] if matched else [unassigned]
 
     counts: dict[str, svc.Counts] = defaultdict(svc.Counts)
     for row in await svc.unit_rows(db, day):
         if row.type == "xodim":
-            for key in keys_for(row.unit):
-                counts[key].add(row.enrolled, row.status, row.n, pending)
+            counts[catalog.unit_id(row.unit)].add(row.enrolled, row.status, row.n, pending)
 
-    staff_keys = {pid: keys_for(unit) for pid, unit in await svc.staff_units(db)}
+    staff_keys = {pid: catalog.unit_id(unit) for pid, unit in catalog.staff}
     lessons: Counter = Counter()
     late: Counter = Counter()
     missed: Counter = Counter()
     for lesson in await svc.day_lessons(db, day):
-        for key in staff_keys.get(lesson.teacher_id, []):
-            lessons[key] += 1
-            verdict = svc.teacher_status(lesson, now)
-            if verdict == "kechikdi":
-                late[key] += 1
-            elif verdict == "kelmadi":
-                missed[key] += 1
+        key = staff_keys.get(lesson.teacher_id)
+        if key is None:
+            continue
+        lessons[key] += 1
+        verdict = svc.teacher_status(lesson, now)
+        if verdict == "kechikdi":
+            late[key] += 1
+        elif verdict == "kelmadi":
+            missed[key] += 1
 
-    def row_out(key: str, name: str, building: str | None, is_unassigned: bool = False) -> KafedraStatOut:
-        c = counts.get(key, svc.Counts())
+    out = []
+    for unit in catalog.units.values():
+        c = counts.get(unit.id, svc.Counts())
+        if unit.unassigned and not (c.total or lessons[unit.id]):
+            continue
         fields = c.fields()
         fields.pop("total")
-        return KafedraStatOut(
-            id=key, name=name, building=building, unassigned=is_unassigned, staff_total=c.total, **fields,
-            lessons_today=lessons[key], teacher_late_lessons=late[key], teacher_missed_lessons=missed[key],
-        )
-
-    out = [row_out(str(d.id), d.name, d.building) for d in deps]
-    out.sort(key=lambda r: svc.norm_name(r.name))
-    if counts.get(unassigned) or lessons[unassigned]:
-        out.append(row_out(unassigned, svc.UNASSIGNED_KAFEDRA_NAME, None, True))
+        out.append(KafedraStatOut(
+            id=unit.id, name=unit.name, kind=unit.kind, building=unit.building, unassigned=unit.unassigned,
+            staff_total=c.total, **fields, lessons_today=lessons[unit.id], teacher_late_lessons=late[unit.id],
+            teacher_missed_lessons=missed[unit.id],
+        ))
     return out
 
 
@@ -433,10 +440,11 @@ async def kafedra_detail(
         )
 
     return KafedraDetailOut(
-        id=str(info.id) if info.id else svc.UNASSIGNED_KAFEDRA_ID,
+        id=info.id,
         name=info.name,
+        kind=info.kind,
         building=info.building,
-        unassigned=info.id is None,
+        unassigned=info.unassigned,
         date=day.isoformat(),
         is_today=day == svc.today(),
         today=today.out(),
@@ -542,8 +550,10 @@ async def person_profile(
     course, group = svc.student_group(person.group_or_position) if person.type == "talaba" else (None, None)
     department = None
     if person.type == "xodim":
-        matched = svc.department_index(await svc.departments(db)).get(svc.norm_name(person.group_or_position))
-        department = matched[0] if matched else None
+        catalog = await svc.unit_catalog(db)
+        department = catalog.units.get(catalog.unit_id(person.group_or_position))
+        if department is not None and department.unassigned:
+            department = None
 
     info = PersonInfoOut(
         id=str(person.id), full_name=person.full_name, type=person.type,
@@ -551,7 +561,7 @@ async def person_profile(
         faculty_id=str(person.faculty_id) if person.faculty_id else None,
         faculty=person.faculty.name if person.faculty else (NO_FACULTY_LABEL if person.type == "talaba" else None),
         unit=person.group_or_position, group=group or None, course=course,
-        department_id=str(department.id) if department else None,
+        department_id=department.id if department else None,
         department=department.name if department else None,
         biometrics_status=person.biometrics_status, parent_notify=person.parent_notify_enabled,
         active=person.active,

@@ -17,7 +17,10 @@ async def admin(client: AsyncClient, world):
 class TestKafedras:
     async def test_staff_matched_by_name_case_and_space_insensitive(self, client, world, admin):
         rows = (await client.get("/api/situation/kafedras", headers=admin)).json()
-        assert [r["name"] for r in rows] == ["Anatomiya kafedrasi", "Fiziologiya kafedrasi", "Kafedra biriktirilmagan"]
+        assert [r["name"] for r in rows] == [
+            "Anatomiya kafedrasi", "Fiziologiya kafedrasi", "Lavozim bo'yicha (bo'linmasi ko'rsatilmagan)",
+        ]
+        assert [r["kind"] for r in rows] == ["kafedra", "kafedra", "lavozim"]
         anatomy, physiology, unassigned = rows
 
         # Karimov "  anatomiya   KAFEDRASI " deb yozilgan — baribir Anatomiyada.
@@ -94,7 +97,7 @@ class TestKafedraDetail:
     async def test_unassigned_pseudo_kafedra(self, client, world, admin):
         body = (await client.get("/api/situation/kafedras/unassigned", headers=admin)).json()
         assert body["id"] == "unassigned" and body["unassigned"] is True
-        assert body["name"] == "Kafedra biriktirilmagan"
+        assert body["name"] == "Lavozim bo'yicha (bo'linmasi ko'rsatilmagan)" and body["kind"] == "lavozim"
         assert [(t["fullName"], t["status"]) for t in body["teachers"]] == [("Qodirova Malika", "malumot_yoq")]
 
     async def test_errors(self, client, world, admin):

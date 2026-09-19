@@ -16,6 +16,7 @@ function kafedra(partial: Partial<KafedraStat>): KafedraStat {
   return {
     id: 'k',
     name: 'K',
+    kind: 'kafedra',
     building: null,
     unassigned: false,
     staffTotal: 0,

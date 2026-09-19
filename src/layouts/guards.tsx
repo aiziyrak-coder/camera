@@ -33,10 +33,15 @@ function NoAccess({ description }: { description?: ReactNode }) {
 
 /** Menyu bu bo'limlarni allaqachon yashiradi; bu himoya to'g'ridan-to'g'ri
  *  havola bilan kirilganda kerak. Haqiqiy chegara baribir backendda. */
-export function RequirePermission({ permission }: { permission: PermissionKey }) {
+export function RequirePermission({ permission, anyOf }: { permission?: PermissionKey; anyOf?: PermissionKey[] }) {
   const { role } = useAuth();
   const { can } = usePermissions();
-  if (!can(permission, role)) return <NoAccess />;
+  // `anyOf` — ro'yxatdagi kamida bittasi yetarli (masalan devor ekrani:
+  // viewReports yoki manageAttendance). Ikkalasi berilsa — ikkalasi ham shart.
+  const keys = anyOf ?? [];
+  const okSingle = permission ? can(permission, role) : true;
+  const okAny = keys.length === 0 || keys.some((key) => can(key, role));
+  if (!okSingle || !okAny || (!permission && keys.length === 0)) return <NoAccess />;
   return <Outlet />;
 }
 

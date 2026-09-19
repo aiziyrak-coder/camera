@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import {
   Bell,
+  CalendarClock,
   Clock,
   Download,
   GraduationCap,
@@ -44,6 +45,7 @@ import {
   Skeleton,
   SkeletonTable,
   StatTile,
+  Sparkline,
   StatusBadge,
   StatusDot,
   Tabs,
@@ -230,7 +232,15 @@ function Tiles() {
     <Section title="Ko'rsatkichlar" description="StatTile, ProgressRing, ProgressBar — foizlar toneForRate bo'yicha rangda.">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <StatTile label="Bugun keldi" value="1 184" unit="ta" icon={UserCheck} tone="success" hint="1 320 talabadan" progress={89.7} delta={{ value: 2.4, better: 'up', display: '+2,4%' }} />
-        <StatTile label="Kech qolganlar" value="63" icon={Clock} tone="warning" delta={{ value: 8, better: 'down' }} hint="kechagiga nisbatan" />
+        <StatTile
+          label="Kech qolganlar"
+          value="63"
+          icon={Clock}
+          tone="warning"
+          delta={{ value: 8, better: 'down' }}
+          hint="kechagiga nisbatan"
+          trend={[48, 52, 61, 55, null, 58, 70, 66, 59, 63]}
+        />
         <StatTile label="Kelmadi" value="73" icon={UserX} tone="danger" to="#" hint="Ro'yxatni ochish" />
         <StatTile label="Yuklanmoqda" value="" loading icon={Users} />
       </div>
@@ -242,6 +252,10 @@ function Tiles() {
           <ProgressRing value={null} size={72} sublabel="ma'lumot yo'q" />
           <div className="min-w-[12rem] flex-1 space-y-3">
             <ProgressBar value={88} showValue label="Davolash ishi" />
+            <div>
+              <p className="mb-1 text-xs text-muted">Sparkline — oxirgi 14 kun (uzilish = dam olish kuni)</p>
+              <Sparkline values={[82, 85, 88, 84, null, 86, 90, 91, 87, 89, 92, null, 90, 93]} tone="success" height={36} />
+            </div>
             <ProgressBar
               label="Bugungi holat"
               size="md"
@@ -387,6 +401,8 @@ function Tables() {
         defaultSort={{ key: 'rate', dir: 'desc' }}
         ariaLabel="Guruhlar davomati"
       />
+      <p className="mb-2 mt-4 text-xs text-muted">zebra + maxHeight: aylantirganda sarlavha ostida soya paydo bo'ladi.</p>
+      <DataTable columns={COLUMNS} rows={[...GROUPS, ...GROUPS.map((g) => ({ ...g, name: `${g.name}-B` }))]} rowKey={(r) => r.name} zebra dense maxHeight="14rem" ariaLabel="Zebra jadval" />
       <div className="mt-3">
         <DataTable columns={COLUMNS} rows={[]} rowKey={(r) => r.name} emptyTitle="Guruh topilmadi" emptyDescription="Filtrlarni o'zgartirib ko'ring." />
       </div>
@@ -458,6 +474,13 @@ function States() {
     <Section title="Holatlar: bo'sh, xato, yuklanish">
       <div className="grid gap-3">
         <EmptyState title="Bugun dars yo'q" description="Tanlangan sanada bu guruh uchun jadvalda dars topilmadi." action={<Button size="sm">Boshqa sana</Button>} compact />
+        <EmptyState
+          icon={CalendarClock}
+          tone="info"
+          title="Dars jadvali hali yuklanmagan"
+          description="To'liq EmptyState — tokenlar bilan bo'yalgan illyustratsiya (tone: neutral / primary / success / warning / info)."
+          action={<Button size="sm">Jadvalni import</Button>}
+        />
         <ErrorState message="Server 503 qaytardi — birozdan keyin qayta urinib ko'ring." onRetry={() => {}} />
         <Card>
           <Skeleton className="h-4 w-40" />
@@ -465,6 +488,10 @@ function States() {
           <Skeleton className="mt-2 h-3 w-2/3" />
         </Card>
         <SkeletonTable rows={2} columns={4} />
+        <p className="text-xs text-muted">
+          Skeleton — yaltiroq (shimmer) animatsiya; StatTile raqamlari silliq sanaladi (CountUp). Ikkalasi ham prefers-reduced-motion'da o'chadi.
+          Global qidiruv: <kbd className="rounded border border-border bg-surface-2 px-1 text-[11px]">Ctrl K</kbd>.
+        </p>
       </div>
     </Section>
   );

@@ -119,3 +119,91 @@ describe('studentAttendance', () => {
     expect(out[0].minutes).toBe(10);
   });
 });
+
+import {
+  daysBetween,
+  enrollPace,
+  enrolledPct,
+  hasAttendanceData,
+  neededPerDay,
+  personKpis,
+  previousRange,
+  projectCompletion,
+  recordSnapshot,
+  weekdayPattern,
+} from './studentAttendance';
+import type { CalendarDay } from './situationApi';
+
+describe('yuz topshirish yordamchilari', () => {
+  it('enrolledPct / hasAttendanceData', () => {
+    expect(enrolledPct({ total: 0, enrolled: 0 })).toBeNull();
+    expect(enrolledPct({ total: 3, enrolled: 1 })).toBe(33.3);
+    expect(hasAttendanceData({ total: 20, enrolled: 9 })).toBe(false);
+    expect(hasAttendanceData({ total: 20, enrolled: 10 })).toBe(true);
+  });
+
+  it('recordSnapshot: shu kunni almashtiradi, tartiblaydi, 60 tadan oshmaydi', () => {
+    let list = recordSnapshot([], '2026-09-10', 5);
+    list = recordSnapshot(list, '2026-09-08', 1);
+    list = recordSnapshot(list, '2026-09-10', 7);
+    expect(list).toEqual([
+      { date: '2026-09-08', confirmed: 1 },
+      { date: '2026-09-10', confirmed: 7 },
+    ]);
+    const many = Array.from({ length: 70 }, (_, i) => ({ date: `2026-0${i < 30 ? 6 : 7}-${String((i % 30) + 1).padStart(2, '0')}`, confirmed: i }));
+    expect(recordSnapshot(many, '2026-09-19', 100)).toHaveLength(60);
+  });
+
+  it('enrollPace va prognoz', () => {
+    expect(enrollPace([{ date: '2026-09-19', confirmed: 2 }], '2026-09-19')).toBeNull();
+    const pace = enrollPace(
+      [
+        { date: '2026-09-01', confirmed: 0 },
+        { date: '2026-09-15', confirmed: 10 },
+        { date: '2026-09-19', confirmed: 50 },
+      ],
+      '2026-09-19',
+    );
+    expect(pace).toEqual({ perDay: 10, days: 4 });
+    expect(projectCompletion(95, 10, '2026-09-19')).toBe('2026-09-29');
+    expect(projectCompletion(10, 0, '2026-09-19')).toBeNull();
+    expect(projectCompletion(0, 0, '2026-09-19')).toBe('2026-09-19');
+  });
+
+  it('neededPerDay / daysBetween / previousRange', () => {
+    expect(daysBetween('2026-09-19', '2026-10-01')).toBe(12);
+    expect(neededPerDay(120, '2026-09-19', '2026-10-01')).toBe(10);
+    expect(neededPerDay(120, '2026-09-19', '2026-09-01')).toBe(120);
+    expect(neededPerDay(120, '2026-09-19', '')).toBeNull();
+    expect(previousRange('2026-09-10', '2026-09-19')).toEqual({ from: '2026-08-31', to: '2026-09-09' });
+  });
+});
+
+describe('shaxs KPI', () => {
+  const day = (date: string, status: CalendarDay['status'], checkIn: string | null = null): CalendarDay => ({ date, status, checkIn, checkOut: null });
+  const cal = [
+    day('2026-09-14', 'kech_keldi', '09:20'), // Du
+    day('2026-09-15', 'keldi', '08:40'),
+    day('2026-09-16', 'kelmadi'),
+    day('2026-09-17', 'keldi', '08:50'),
+    day('2026-09-18', 'malumot_yoq'),
+    day('2026-09-19', 'keldi', '08:30'), // Sha
+  ];
+  it('personKpis', () => {
+    const k = personKpis(cal);
+    expect(k.presentDays).toBe(4);
+    expect(k.lateDays).toBe(1);
+    expect(k.absentDays).toBe(1);
+    expect(k.rate).toBe(80);
+    expect(k.avgArrivalMinutes).toBe(Math.round((560 + 520 + 530 + 510) / 4));
+    expect(k.onTimeStreak).toBe(2);
+    expect(k.punctualPct).toBe(75);
+  });
+  it('weekdayPattern', () => {
+    const w = weekdayPattern(cal);
+    expect(w).toHaveLength(6);
+    expect(w[0]).toMatchObject({ label: 'Du', late: 1, avgArrivalMinutes: 560 });
+    expect(w[2]).toMatchObject({ label: 'Cho', absent: 1, avgArrivalMinutes: null });
+    expect(w[5]).toMatchObject({ label: 'Sha', present: 1 });
+  });
+});

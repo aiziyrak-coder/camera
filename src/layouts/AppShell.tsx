@@ -8,6 +8,8 @@ import { VIEW_DATE_PARAM } from '../lib/viewDate';
 import { PageSkeleton, cn } from '../ui';
 import { ShellContext, type Crumb, type PageMeta } from '../ui/pageContext';
 import { findActive, homeForRole, isPathAllowedForRole, usesViewDate, visibleSections } from './shell/navConfig';
+import { CommandPalette } from './shell/CommandPalette';
+import { useCommandPaletteHotkey } from './shell/useCommandPaletteHotkey';
 import { Sidebar } from './shell/Sidebar';
 import { Topbar } from './shell/Topbar';
 import { usePresentation } from './shell/usePresentation';
@@ -26,6 +28,9 @@ export default function AppShell() {
   const [collapsed, setCollapsed] = usePersistedState<boolean>('shell-sidebar-collapsed', false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const presentation = usePresentation();
+  const [searchOpen, setSearchOpen] = useState(false);
+  const toggleSearch = useCallback(() => setSearchOpen((v) => !v), []);
+  useCommandPaletteHotkey(toggleSearch, !presentation.active);
 
   // Hodisalarni ko'rish huquqi bo'lmasa, server WebSocket'ni baribir yopadi
   // (4403) — ulanishga umuman urinmaymiz. event_updated — mavjud hodisaning
@@ -36,7 +41,10 @@ export default function AppShell() {
     if (event.kind !== 'event_updated') setUnreadEvents((n) => n + 1);
   }, canReviewEvents);
 
-  useEffect(() => setMobileNavOpen(false), [location.pathname]);
+  useEffect(() => {
+    setMobileNavOpen(false);
+    setSearchOpen(false);
+  }, [location.pathname]);
   useEffect(() => {
     if (!mobileNavOpen) return;
     const onKey = (event: KeyboardEvent) => event.key === 'Escape' && setMobileNavOpen(false);
@@ -44,7 +52,8 @@ export default function AppShell() {
     return () => document.removeEventListener('keydown', onKey);
   }, [mobileNavOpen]);
 
-  const sections = visibleSections((key) => can(key, role), role);
+  const canKey = useCallback((key: Parameters<typeof can>[0]) => can(key, role), [can, role]);
+  const sections = useMemo(() => visibleSections(canKey, role), [canKey, role]);
 
   const exitPresentation = presentation.exit;
   const handleLogout = useCallback(() => {
@@ -112,7 +121,10 @@ export default function AppShell() {
             userName={userName}
             role={role}
             onLogout={handleLogout}
+            onOpenSearch={() => setSearchOpen(true)}
+            wallScreen={can('viewReports', role) || can('manageAttendance', role)}
           />
+          <CommandPalette open={searchOpen} onClose={() => setSearchOpen(false)} sections={sections} can={canKey} />
           <main id="asosiy" tabIndex={-1} className={cn('flex min-w-0 flex-1 flex-col outline-none', presentation.active ? 'p-6' : 'px-4 py-5 sm:px-6 lg:px-8 lg:py-7')}>
             <div className={cn('mx-auto flex w-full min-w-0 flex-1 flex-col', !presentation.active && 'max-w-[1600px]')}>
               {/* Sahifa bo'lagi yuklanayotganda menyu va panel joyida qoladi. */}

@@ -1,8 +1,8 @@
 import { cn, focusRing, formatNumber, TONE_SOLID, type Tone } from '../../ui';
 import type { StudentFilter } from '../../lib/studentAttendance';
 
-export interface FilterTile {
-  id: StudentFilter;
+export interface FilterTile<T extends string = StudentFilter> {
+  id: T;
   label: string;
   value: number;
   tone: Tone;
@@ -10,21 +10,21 @@ export interface FilterTile {
 
 /** Holatlar bo'yicha sonlar — bir vaqtda ham ko'rsatkich, ham filtr:
  *  bosilganda setka shu holatdagilarga toraytiriladi. */
-export function StatusFilterTiles({
+export function StatusFilterTiles<T extends string = StudentFilter>({
   tiles,
   total,
   value,
   onChange,
   big = false,
 }: {
-  tiles: FilterTile[];
+  tiles: FilterTile<T>[];
   total: number;
-  value: StudentFilter;
-  onChange: (value: StudentFilter) => void;
+  value: T;
+  onChange: (value: T) => void;
   big?: boolean;
 }) {
   return (
-    <div role="radiogroup" aria-label="Holat bo'yicha filtr" className="grid grid-cols-2 gap-2 min-[520px]:grid-cols-3 lg:grid-cols-6">
+    <div role="radiogroup" aria-label="Holat bo'yicha filtr" className={cn('grid gap-2', tiles.length <= 3 ? 'grid-cols-3' : 'grid-cols-2 min-[520px]:grid-cols-3 lg:grid-cols-6')}>
       {tiles.map((tile) => {
         const active = tile.id === value;
         const share = total > 0 && tile.id !== 'all' ? Math.round((tile.value / total) * 100) : null;
@@ -34,7 +34,7 @@ export function StatusFilterTiles({
             type="button"
             role="radio"
             aria-checked={active}
-            onClick={() => onChange(active && tile.id !== 'all' ? 'all' : tile.id)}
+            onClick={() => onChange(active && tile.id !== 'all' ? ('all' as T) : tile.id)}
             className={cn(
               'flex min-w-0 flex-col rounded-control border px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow]',
               active ? 'border-primary bg-primary-soft/60 ring-1 ring-primary/30' : 'border-border bg-surface hover:border-border-strong hover:bg-surface-2/60',

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { BookOpen, CalendarCheck, Clock, LayoutGrid, Rows3, Timer, UserCheck, Users } from 'lucide-react';
+import { Link, useParams } from 'react-router-dom';
+import { BarChart3, BookOpen, CalendarCheck, Clock, LayoutGrid, Rows3, Timer, UserCheck, UserRound, Users } from 'lucide-react';
 import {
   Avatar,
   Badge,
+  ButtonLink,
   DataTable,
   DateRangePicker,
   EmptyState,
@@ -35,13 +36,14 @@ import { LessonsTable } from '../../components/lessons/LessonsTable';
 import { TeacherCardMeta, TodayLessons } from '../../components/teachers/TeacherBits';
 import { TeacherDayDrawer } from '../../components/teachers/TeacherDayDrawer';
 import { useLoader } from '../../components/teachers/useLoader';
-import { getKafedra, getLessons, type KafedraDetail, type KafedraTeacher, type Lesson } from '../../lib/situationApi';
+import { UnitAnalyticsSection } from '../../components/teachers/UnitAnalyticsSection';
+import { getKafedra, getLessons, situationPaths, UNIT_KIND_LABELS, type KafedraDetail, type KafedraTeacher, type Lesson } from '../../lib/situationApi';
 import { matchesName, sortTeachers, type TeacherSort } from '../../lib/teachersApi';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { useViewDate } from '../../lib/viewDate';
 import type { FixedPreset } from '../../lib/reportPeriods';
 
-type TabId = 'oqituvchilar' | 'darslar';
+type TabId = 'oqituvchilar' | 'tahlil' | 'darslar';
 type View = 'grid' | 'table';
 
 const PERIOD_PRESETS: readonly FixedPreset[] = ['last7', 'last30', 'month'];
@@ -83,16 +85,18 @@ export default function KafedraPage() {
   const data = detail.data;
   const tabs: TabItem<TabId>[] = [
     { id: 'oqituvchilar', label: "O'qituvchilar", icon: Users, count: data?.teachers.length ?? null },
+    { id: 'tahlil', label: 'Tahlil', icon: BarChart3 },
     { id: 'darslar', label: 'Darslar', icon: BookOpen, count: lessons.data?.total ?? null },
   ];
   const [tab] = useUrlTab(tabs, { defaultTab: 'oqituvchilar' });
 
   const notFound = detail.error && !data && /topilmadi|404/i.test(detail.error);
-  const title = data?.name ?? (notFound ? 'Kafedra topilmadi' : 'Kafedra');
+  const title = data?.name ?? (notFound ? "Bo'linma topilmadi" : "Bo'linma");
+  const crumbs = [{ label: "Xodimlar va o'qituvchilar", to: '/oqituvchilar' }];
 
   if (detail.loading && !data && !detail.error) {
     return (
-      <Page title="Kafedra" breadcrumbs={[{ label: "O'qituvchilar", to: '/oqituvchilar' }, { label: 'Kafedra' }]}>
+      <Page title="Bo'linma" breadcrumbs={[...crumbs, { label: "Bo'linma" }]}>
         <PageSkeleton />
       </Page>
     );
@@ -101,9 +105,19 @@ export default function KafedraPage() {
   return (
     <Page
       title={title}
-      subtitle={data ? [data.building, `${data.today.total} xodim`, data.unassigned ? "lavozimi hech bir kafedra nomiga mos kelmagan xodimlar" : null].filter(Boolean).join(' · ') : undefined}
-      titleAddon={data?.unassigned ? <Badge tone="warning">Biriktirilmagan</Badge> : undefined}
-      breadcrumbs={[{ label: "O'qituvchilar", to: '/oqituvchilar' }, { label: title }]}
+      subtitle={
+        data
+          ? [data.building, `${data.today.total} xodim`, data.unassigned ? "reestrda faqat lavozimi yozilgan, bo'linmasi ko'rsatilmagan xodimlar" : null].filter(Boolean).join(' · ')
+          : undefined
+      }
+      titleAddon={
+        data ? (
+          <Badge tone={data.unassigned ? 'warning' : data.kind === 'kafedra' ? 'primary' : data.kind === 'dekanat' ? 'info' : 'neutral'}>
+            {data.unassigned ? 'Biriktirilmagan' : (UNIT_KIND_LABELS[data.kind] ?? data.kind)}
+          </Badge>
+        ) : undefined
+      }
+      breadcrumbs={[...crumbs, { label: title }]}
       tabs={data ? tabs : undefined}
       defaultTab="oqituvchilar"
       toolbar={
@@ -129,20 +143,35 @@ export default function KafedraPage() {
             <Select value={sort} onChange={(v) => setSort(v as TeacherSort)} options={SORT_OPTIONS} label="Tartib:" ariaLabel="Tartiblash" />
             {!presentation && <DateRangePicker value={period} onChange={setPeriod} presets={PERIOD_PRESETS} size="sm" showSummary={false} />}
           </Toolbar>
+        ) : data && tab === 'tahlil' && !presentation ? (
+          <Toolbar>
+            <DateRangePicker value={period} onChange={setPeriod} presets={PERIOD_PRESETS} size="sm" />
+          </Toolbar>
         ) : undefined
       }
     >
       {detail.error && !data ? (
         notFound ? (
-          <EmptyState icon={Users} title="Kafedra topilmadi" description="Kafedra o'chirilgan yoki havola noto'g'ri. O'qituvchilar ro'yxatiga qayting." />
+          <EmptyState
+            icon={Users}
+            title="Bo'linma topilmadi"
+            description="Bo'linma nomi reestrda o'zgargan yoki havola eskirgan. Ro'yxatga qayting."
+            action={
+              <ButtonLink to="/oqituvchilar" variant="secondary">
+                Bo'linmalar ro'yxati
+              </ButtonLink>
+            }
+          />
         ) : (
           <ErrorState variant="block" message={detail.error} onRetry={detail.reload} />
         )
       ) : data ? (
         <>
-          <KafedraTiles data={data} />
+          {tab !== 'tahlil' && <KafedraTiles data={data} />}
           {tab === 'oqituvchilar' ? (
             <TeachersSection data={data} date={date} view={presentation ? 'grid' : view} sort={sort} search={search} />
+          ) : tab === 'tahlil' ? (
+            <UnitAnalyticsSection unitId={data.id} unitName={data.name} kind={data.kind} from={period.from} to={period.to} />
           ) : (
             <LessonsSection
               rows={lessons.data?.items ?? []}
@@ -209,7 +238,9 @@ function TeachersSection({ data, date, view, sort, search }: { data: KafedraDeta
         <div className="flex min-w-0 items-center gap-3">
           <Avatar name={t.fullName} src={t.photoUrl} size="md" />
           <div className="min-w-0">
-            <p className="truncate font-medium text-fg">{t.fullName}</p>
+            <Link to={situationPaths.person(t.id)} onClick={(e) => e.stopPropagation()} className="block truncate font-medium text-fg hover:text-primary hover:underline">
+              {t.fullName}
+            </Link>
             <p className="truncate text-xs text-muted">{t.position}</p>
           </div>
         </div>
@@ -260,8 +291,8 @@ function TeachersSection({ data, date, view, sort, search }: { data: KafedraDeta
       {data.teachers.length === 0 ? (
         <EmptyState
           icon={Users}
-          title="Bu kafedrada xodim yo'q"
-          description="Xodim kafedraga reestrdagi lavozimi (bo'limi) kafedra nomi bilan bir xil bo'lganda bog'lanadi."
+          title="Bu bo'linmada xodim yo'q"
+          description="Xodim bo'linmaga reestrdagi lavozim/bo'lim matni orqali bog'lanadi."
         />
       ) : rows.length === 0 ? (
         <EmptyState icon={Users} compact title="Hech kim topilmadi" description="Qidiruv so'zini o'zgartiring." />
@@ -299,6 +330,11 @@ function TeachersSection({ data, date, view, sort, search }: { data: KafedraDeta
         date={date}
         onClose={() => setSelected(null)}
       >
+        {selected && (
+          <ButtonLink to={situationPaths.person(selected.id)} variant="secondary" icon={UserRound} className="w-full">
+            To'liq profil
+          </ButtonLink>
+        )}
         {selected && (
           <div className="rounded-card border border-border bg-surface-2 p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
@@ -341,8 +377,16 @@ function LessonsSection({ rows, loading, error, onRetry }: { rows: Lesson[]; loa
         onRowClick={setSelected}
         selectedId={selected?.id ?? null}
         showState
-        emptyTitle="Bu kunda kafedra o'qituvchilarining darsi yo'q"
-        emptyDescription="Darslar o'qituvchi (teacherId) bo'yicha kafedraga bog'lanadi."
+        emptyTitle="Bu kunda darslar yo'q"
+        emptyDescription={
+          <>
+            Dars jadvali hali yuklanmagan bo'lishi mumkin —{' '}
+            <Link to="/darslar" className="font-medium text-primary hover:underline">
+              Darslar → Import
+            </Link>
+            . Darslar bo'linmaga o'qituvchi orqali bog'lanadi.
+          </>
+        }
       />
       <LessonDrawer lesson={selected} onClose={() => setSelected(null)} />
     </>

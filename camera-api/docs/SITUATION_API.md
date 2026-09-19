@@ -11,6 +11,8 @@ Tizimga kirmagan → `401`, huquq yo'q → `403`.
 
 **Kesh:** `overview`, `kafedras` va ichki agregatlar (birliklar, kun darslari, guruh ro'yxati hajmi)
 jarayon ichida **15 soniya** sana bo'yicha keshlanadi — tez-tez so'rash (devor ekrani) arzon.
+Tahlil (`/analytics/*`), `/enrollment*` va `/wall` — **30 soniya** (kod: `app/routers/situation_analytics.py`,
+`app/services/situation_analytics.py`).
 
 ## Umumiy tushunchalar
 
@@ -93,6 +95,10 @@ interface Overview {
   // sinov (is_trial) signallarisiz; open = yangi+jarayonda; today = tanlangan kunda; overdue = ochiq va SLA o'tgan
   byFaculty: Array<Counts & { id: string | null; name: string }>;
   // faqat talabalar; talabasi yo'q fakultetlar ham (total 0, rate null); "Fakultetsiz" (id null) oxirida
+  studentsDataAvailable: boolean;     // students.enrolled / students.total >= 5%
+  studentsEnrolledPct: number | null; // students.enrolled / students.total * 100
+  // false bo'lsa talabalar foizi (va byFaculty.rate) bir necha odamdan chiqadi — UI "xodimlar birinchi"
+  // + ro'yxatga olish (/enrollment) rejimiga o'tsin.
   arrivalsByHour: Array<{ hour: number; students: number; staff: number }>;
   // kamida 7..19 soat to'liq (bo'shlari 0), tashqaridagilar ma'lumot bo'lsa qo'shiladi
   lastArrivals: Array<{
@@ -143,26 +149,40 @@ interface GroupDetail {
 ```
 Guruh topilmasa (talabasi, reestr yozuvi va shu kungi darsi yo'q) → 404.
 
-## 5. `GET /api/situation/kafedras?date=`
+## 5. `GET /api/situation/kafedras?date=&kind=`
+Bo'linmalar (kafedra, dekanat, bo'lim). `departments` jadvali bo'sh bo'lsa ham ishlaydi: bo'linmalar faol xodimlarning
+`group_or_position` matnidan yig'iladi (trim, bo'shliqlar bitta, katta-kichik harf va apostrof turlari farqsiz),
+`Department` yozuvi bo'lsa u bilan nom bo'yicha birlashadi (id — `Department.id`, `building` — uning binosi).
+`kind` = `kafedra | dekanat | bolim | all` (standart `all`).
 ```ts
+type UnitKind = "kafedra" | "dekanat" | "bolim" | "lavozim";
 type KafedraStat = {
-  id: string;            // Department.id yoki "unassigned"
-  name: string; building: string | null; unassigned: boolean;
+  id: string;            // Department.id | "u-<sha1(norm)[:10]>" (matndan, barqaror) | "unassigned"
+  name: string;          // matndan olinganda — eng ko'p uchragan yozilishi
+  kind: UnitKind;
+  building: string | null;
+  unassigned: boolean;   // true faqat "lavozim" qatorida
   staffTotal: number; enrolled: number; present: number; late: number; absent: number;
   dayOff: number; notYet: number; noData: number; rate: number | null;
-  lessonsToday: number;           // kafedra o'qituvchilarining shu kungi darslari (teacherId bo'yicha)
+  lessonsToday: number;           // bo'linma o'qituvchilarining shu kungi darslari (teacherId bo'yicha)
   teacherLateLessons: number;     // teacherStatus == "kechikdi"
   teacherMissedLessons: number;   // teacherStatus == "kelmadi"
 }[];
 ```
-Xodim kafedraga `group_or_position == Department.name` (katta-kichik harf, bo'shliq, apostrof turlari farqsiz) orqali bog'lanadi.
-Nom bo'yicha tartib; mos kelmaganlar — oxirida `"Kafedra biriktirilmagan"` (`id: "unassigned"`), faqat bunday xodim/dars bo'lsa.
+Tur aniqlash (`svc.classify_unit`; kalit so'zlar `DEKANAT_KEYWORDS`, `BOLIM_KEYWORDS`, `POSITION_WORDS` konstantalarida):
+1. matn faqat lavozim so'zlaridan iborat ("Farrosh", "Assistent", "Katta o'qituvchi", "Bosh hisobchi") yoki bo'sh →
+   `lavozim`: hammasi bitta **"Lavozim bo'yicha (bo'linmasi ko'rsatilmagan)"** qatorida (`id: "unassigned"`);
+2. "kafedra" so'zi bor → `kafedra`; 3. "fakultet" / "dekanat" → `dekanat`;
+4. "bo'lim", "Rektorat", "hisobxona/xisobxona", "turar joy", "kutubxona", "markaz", "office", "xo'jalik"... → `bolim`;
+5. qolgani (fan nomlari: "Normal anatomiya", "Fiziologiya") → `kafedra`.
+
+Tartib: kafedra → dekanat → bo'lim (har biri nom bo'yicha) → lavozim qatori oxirida (faqat shunday xodim yoki dars bo'lsa).
 
 ## 6. `GET /api/situation/kafedras/{departmentId}?date=&from=&to=`
-`departmentId` — uuid yoki `unassigned`. Davr standarti: `to = date`, `from = to − 29 kun` (maks. 366 kun).
+`departmentId` — `/kafedras` dagi istalgan `id` (uuid, `u-...` yoki `unassigned`); noma'lum → 404. Davr standarti: `to = date`, `from = to − 29 kun` (maks. 366 kun).
 ```ts
 interface KafedraDetail {
-  id: string; name: string; building: string | null; unassigned: boolean;
+  id: string; name: string; kind: UnitKind; building: string | null; unassigned: boolean;
   date: string; isToday: boolean;
   today: Counts;                    // kafedra xodimlarining `date` kungi davomati
   teachers: Array<{
@@ -187,7 +207,7 @@ interface KafedraDetail {
 ```
 
 ## 7. `GET /api/situation/lessons?date=&facultyId=&group=&teacherId=&departmentId=&status=&page=&pageSize=`
-`status` = `upcoming | ongoing | finished`. `departmentId` — uuid yoki `unassigned`.
+`status` = `upcoming | ongoing | finished`. `departmentId` — bo'linma id si (uuid, `u-...` yoki `unassigned`).
 `facultyId` — dars jadvalidagi fakultet NOMI bilan solishtiriladi. Tartib: boshlanish vaqti, keyin guruh.
 ```ts
 interface LessonPage {
@@ -207,7 +227,7 @@ interface PersonProfile {
     facultyId: string | null; faculty: string | null;  // talabada fakultet bo'lmasa "Fakultetsiz"
     unit: string;                       // group_or_position xom holda
     group: string | null; course: number | null;           // talaba
-    departmentId: string | null; department: string | null; // xodim (nom bo'yicha topilgan kafedra)
+    departmentId: string | null; department: string | null; // xodim bo'linmasi (/kafedras id si; sof lavozim → null)
     biometricsStatus: string; parentNotify: boolean; active: boolean;
   };
   dateFrom: string; dateTo: string;
@@ -227,4 +247,154 @@ interface PersonProfile {
     firstSeen: string; lastSeen: string; durationMinutes: number; sightings: number;
   }>; // `to` kunining oxirigacha bo'lgan oxirgi 20 tashrif, yangisi birinchi
 }
+```
+
+---
+
+# Tahlil, ro'yxatga olish va devor ekrani
+
+Umumiy parametrlar (`/analytics/*`): `from`, `to` (`YYYY-MM-DD`, standart — bugungacha 30 kun, maks. 366, `from > to` → 422),
+`type` = `xodim | talaba` (standart **`xodim`** — talabalar yuzi hali deyarli tasdiqlanmagan).
+Ruxsat: `manageAttendance` yoki `viewReports`. Kelajak kunlari hisobga kirmaydi.
+
+Hisob qoidasi (odam-kun): `present` — keldi + kech_keldi, `late` — kech_keldi, `absent` — kelmadi;
+`rate = present / (present + absent [+ bugun notYet]) * 100`; `dam_olish` va yozuvsiz kunlar asosga kirmaydi.
+`punctualPct = (present − late) / present * 100`. O'rtacha kelish — `check_in` bor kelishlar bo'yicha.
+Oldingi davr — xuddi shu uzunlikda, `from` dan oldingi kunlar.
+
+## 9. `GET /api/situation/analytics/summary?from=&to=&type=`
+```ts
+interface PeriodKpis {
+  rate: number | null; avgArrival: string | null; avgArrivalMinutes: number | null; // kun boshidan daqiqa
+  present: number; late: number; absent: number; punctualPct: number | null;
+  daysCovered: number;  // kamida bitta yozuvi bor kunlar
+}
+interface AnalyticsSummary {
+  type: "xodim" | "talaba"; dateFrom: string; dateTo: string; previousFrom: string; previousTo: string;
+  current: PeriodKpis; previous: PeriodKpis;
+  delta: {   // current − previous; biror tomoni null bo'lsa null
+    rate: number | null; avgArrivalMinutes: number | null; // > 0 — kechroq kelishgan
+    late: number; absent: number; punctualPct: number | null;
+  };
+  daily: Array<{ date: string; present: number; late: number; absent: number;
+                 expected: number;          // present + absent (+ bugun notYet)
+                 rate: number | null; avgArrival: string | null }>; // from..min(to, bugun), har kun
+}
+```
+
+## 10. `GET /api/situation/analytics/heatmap?from=&to=&type=`
+```ts
+interface Heatmap {
+  type: "xodim" | "talaba"; dateFrom: string; dateTo: string;
+  hours: number[];      // [6, 7, ..., 20]
+  weekdays: Array<{
+    weekday: number;    // ISO 1=Du .. 6=Sha (yakshanba yo'q)
+    label: "Du" | "Se" | "Cho" | "Pa" | "Ju" | "Sha";
+    counts: number[];   // hours bilan bir xil tartib: shu kun/soatdagi kelishlar (check_in)
+    total: number; present: number; late: number;
+    lateRate: number | null;  // late / present * 100
+  }>;
+  max: number;       // eng katta katak (rang shkalasi uchun)
+  outside: number;   // yakshanba yoki 6..20 dan tashqaridagi kelishlar
+}
+```
+
+## 11. `GET /api/situation/analytics/units?from=&to=&type=&kind=&sort=&order=`
+`kind` = `kafedra | dekanat | bolim | lavozim | guruh | all`; `sort` = `rate | late | absent | arrival | punctual | trend |
+headcount | name` (standart `rate`); `order` = `asc | desc` (standart `desc`). `null` qiymatlilar har doim oxirida.
+`type=xodim` — bo'linmalar (`/kafedras` bilan bir xil id), `type=talaba` — guruhlar (`id` = guruh nomi, `kind: "guruh"`).
+```ts
+type UnitAnalytics = {
+  id: string; name: string; kind: UnitKind | "guruh";
+  headcount: number; enrolled: number;
+  presentDays: number; lateDays: number; absentDays: number;  // odam-kun
+  rate: number | null; avgArrival: string | null; avgArrivalMinutes: number | null;
+  punctualPct: number | null;
+  previousRate: number | null; trend: number | null;          // rate − previousRate
+}[];
+```
+
+## 12. `GET /api/situation/analytics/people?from=&to=&type=&sort=&unitId=&limit=`
+`sort` = `late` (standart) | `absent` | `arrival` (eng kech kelgan birinchi) | `rate` (eng pasti birinchi);
+`unitId` — `/analytics/units` id si (xodim bo'linmasi yoki talaba guruhi); `limit` 1..500 (standart 50).
+Davrda kamida bitta kelgan/kelmagan yozuvi borlar kiradi.
+```ts
+type PersonRank = {
+  id: string; fullName: string; photoUrl: string | null; initials: string;
+  unitId: string; unit: string;
+  presentDays: number; lateDays: number; absentDays: number;
+  rate: number | null; avgArrival: string | null; avgArrivalMinutes: number | null;
+  lastSeen: string | null;   // oxirgi kelgan kun (<= to), "YYYY-MM-DD"
+  streak: number;            // hozirgi uzluksiz kelmadi/kech_keldi kunlari (dam_olish uzmaydi, keldi uzadi)
+  streakKind: "kelmadi" | "kech_keldi" | "aralash" | null;
+}[];
+```
+
+## 13. `GET /api/situation/analytics/chronic?from=&to=&type=&minAbsent=3&minLate=3`
+Davrda `absentDays >= minAbsent` **yoki** `lateDays >= minLate` bo'lganlar ("surunkali" ro'yxat), jami ko'pi birinchi, maks. 500.
+```ts
+type Chronic = {
+  id: string; fullName: string; photoUrl: string | null; initials: string;
+  unitId: string; unit: string;
+  absentDays: number; lateDays: number;
+  absentDates: string[]; lateDates: string[];   // o'sib boruvchi
+  reasons: Array<"kelmadi" | "kech_keldi">;     // qaysi chegaradan oshgan
+}[];
+```
+
+## 14. `GET /api/situation/enrollment`
+Biometrik ro'yxatga olish tayyorligi (faol odamlar).
+```ts
+interface EnrollCounts {
+  total: number; confirmed: number;  // biometricsStatus "tasdiqlangan"
+  pending: number;                   // "kutilmoqda"
+  none: number;                      // "yoq"
+  pct: number | null;                // confirmed / total * 100
+}
+interface Enrollment {
+  students: EnrollCounts; staff: EnrollCounts;
+  byFaculty: Array<EnrollCounts & { id: string | null; name: string }>; // talabalar; "Fakultetsiz" oxirida
+  studentsDataAvailable: boolean;    // students.pct >= 5
+}
+```
+
+## 15. `GET /api/situation/enrollment/groups?facultyId=&course=`
+`pct` bo'yicha o'sib boruvchi (eng orqadagi guruh birinchi), teng bo'lsa nom; talabasi yo'q (`student_groups` dagi) guruhlar oxirida.
+```ts
+type EnrollGroup = {
+  name: string; facultyId: string | null; faculty: string | null; course: number | null;
+  total: number; confirmed: number; pending: number; pct: number | null;
+}[];
+```
+
+## 16. `GET /api/situation/enrollment/groups/{groupName}/missing`
+Guruhning yuzi tasdiqlanmagan faol talabalari (F.I.Sh. bo'yicha). Guruhning talabasi ham, reestr yozuvi ham yo'q → 404.
+```ts
+interface EnrollMissing {
+  group: string;
+  total: number;   // guruhdagi faol talabalar
+  missing: Array<{ id: string; fullName: string; initials: string; biometricsStatus: "kutilmoqda" | "yoq" }>;
+  enrollUrl: string; // FRONTEND_BASE_URL + "/royxatdan-otish?guruh=" + encodeURIComponent(groupName) — QR uchun
+}
+```
+
+## 17. `GET /api/situation/wall`
+Devor ekrani uchun bitta ixcham javob (bugun) — 15–30 soniyada **bitta** so'rov.
+```ts
+interface Wall {
+  date: string; generatedAt: string;
+  students: Counts; staff: Counts;
+  studentsDataAvailable: boolean;
+  topUnits: WallUnit[];     // bugungi rate bo'yicha eng yuqori 5 bo'linma (rate null va "lavozim" qatori kirmaydi)
+  bottomUnits: WallUnit[];  // eng past 5
+  lastArrivals: Overview["lastArrivals"];  // oxirgi 12 ta
+  highEvents: Array<{ id: string; moduleName: string; cameraName: string; building: string;
+                      time: string; status: string }>;  // ochiq, "yuqori", sinovsiz; yangisi birinchi, 5 ta
+  camerasOnline: number; camerasTotal: number;
+  enrollment: Enrollment;
+  spotlight: Array<{ kind: "unit" | "group"; id: string; name: string; rate: number | null }>;
+  // bugun ma'lumoti (present + absent > 0) bor bo'linmalar, keyin guruhlar — nom bo'yicha. Ekran navbat bilan
+  // ko'rsatadi: unit → GET /kafedras/{id}, group → GET /groups/{id}
+}
+interface WallUnit { id: string; name: string; kind: string; total: number; present: number; rate: number | null }
 ```

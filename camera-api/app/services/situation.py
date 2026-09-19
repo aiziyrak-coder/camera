@@ -21,6 +21,7 @@ bo'lmasa bu "kelmadi" emas, "ma'lumot yo'q". Foiz (rate) faqat holati
 ma'lum bo'lganlar ustidan hisoblanadi.
 """
 
+import hashlib
 import time as monotonic_time
 import uuid
 from collections import Counter, defaultdict
@@ -58,7 +59,7 @@ from app.timezone import INSTITUTE_TZ, local_now, to_local
 SITUATION_CACHE_SECONDS = 15
 MAX_RANGE_DAYS = 366
 UNASSIGNED_KAFEDRA_ID = "unassigned"
-UNASSIGNED_KAFEDRA_NAME = "Kafedra biriktirilmagan"
+UNASSIGNED_KAFEDRA_NAME = "Lavozim bo'yicha (bo'linmasi ko'rsatilmagan)"
 PRESENT_STATUSES = ("keldi", "kech_keldi")
 _APOSTROPHES = "‘’`ʻʼ´"
 
@@ -92,6 +93,8 @@ class _TtlCache:
 
 
 _cache = _TtlCache(SITUATION_CACHE_SECONDS)
+# clear_cache() hammasini tozalaydi (tahlil moduli o'z keshini shu yerga qo'shadi).
+_all_caches: list[_TtlCache] = [_cache]
 
 
 async def cached(key: Any, loader: Callable[[], Awaitable[Any]]) -> Any:
@@ -105,7 +108,8 @@ async def cached(key: Any, loader: Callable[[], Awaitable[Any]]) -> Any:
 
 def clear_cache() -> None:
     """Testlar va ma'lumot qo'lda o'zgartirilgandan keyin."""
-    _cache.clear()
+    for item in _all_caches:
+        item.clear()
 
 
 # ─────────────────────────────────────────── sana va vaqt
@@ -258,6 +262,15 @@ def pct(part: int, whole: int) -> float | None:
     return round(part * 100 / whole, 1) if whole else None
 
 
+# Talabalarning shu ulushidan kami yuzini tasdiqlatgan bo'lsa, ularning
+# "davomat foizi" bir-ikki odamdan chiqadi va institutni ifodalamaydi.
+STUDENTS_DATA_MIN_SHARE = 0.05
+
+
+def students_data_available(students: Counts) -> bool:
+    return students.total > 0 and students.enrolled / students.total >= STUDENTS_DATA_MIN_SHARE
+
+
 # ─────────────────────────────────────────── birliklar (asosiy agregat)
 
 class UnitRow(NamedTuple):
@@ -364,13 +377,98 @@ async def student_group_rows(db: AsyncSession) -> list[tuple[str, uuid.UUID, int
     return [tuple(r) for r in (await db.execute(select(StudentGroup.name, StudentGroup.faculty_id, StudentGroup.course))).all()]
 
 
-# ─────────────────────────────────────────── kafedralar
+# ─────────────────────────────────────────── bo'linmalar (kafedra, dekanat, bo'lim)
+
+# Ishlab chiqarishda `departments` jadvali bo'sh, xodimning bo'linmasi esa
+# faqat group_or_position matnida ("Normal anatomiya", "Rektorat",
+# "Farrosh"...). Shuning uchun bo'linmalar shu matnlardan (norm_name bilan)
+# yig'iladi va Department yozuvlari bilan nom bo'yicha birlashtiriladi —
+# mos kelsa Department.id ishlatiladi, aks holda barqaror "u-<sha1[:10]>".
+
+KIND_ORDER = {"kafedra": 0, "dekanat": 1, "bolim": 2, "lavozim": 3}
+
+# Dekanat: fakultet boshqaruvi ("Davolash ishi fakulteti", "... dekanati").
+DEKANAT_KEYWORDS = ("fakultet", "dekanat")
+# Ma'muriy-xo'jalik bo'linmalari. norm_name dan keyin (kichik harf, apostrof
+# "'") qism-matn sifatida solishtiriladi. Yangi turdagi bo'lim chiqsa SHU
+# ro'yxatga qo'shing; hech biriga tushmagan nom kafedra hisoblanadi (fan
+# nomlari: "Normal anatomiya", "Fiziologiya").
+BOLIM_KEYWORDS = (
+    "bo'lim", "bolim", "rektorat", "prorektor", "hisobxona", "xisobxona", "buxgalteriya", "turar joy",
+    "yotoqxona", "kutubxona", "markaz", "office", "ofis", "xo'jalik", "xojalik", "devonxona", "arxiv",
+    "kadrlar", "sektor", "xizmati", "boshqarma", "muzey", "oshxona", "garaj", "qo'riqlash", "kengash",
+    "kotibiyat", "moliya",
+)
+# Bo'linma emas, LAVOZIM so'zlari: group_or_position FAQAT shu so'zlardan
+# (va "bosh", "katta" kabi sifatlardan) iborat bo'lsa, odamning bo'linmasi
+# noma'lum — u bitta "Lavozim bo'yicha" soxta bo'linmasiga tushadi.
+POSITION_WORDS = frozenset({
+    "farrosh", "assistent", "qorovul", "haydovchi", "oshpaz", "o'qituvchi", "oqituvchi", "dotsent",
+    "professor", "mudir", "mudiri", "hisobchi", "xisobchi", "buxgalter", "kassir", "elektrik", "santexnik",
+    "duradgor", "bog'bon", "bogbon", "kotiba", "kotib", "laborant", "operator", "dispetcher", "hamshira",
+    "inspektor", "metodist", "muhandis", "dasturchi", "tozalovchi", "ishchi", "yordamchi", "qo'riqchi",
+    "soqchi", "vahtyor", "vaxtyor", "vaxtyorlik", "kutubxonachi", "omborchi", "mexanik", "stajyor",
+    "tarbiyachi", "psixolog", "yurist", "maslahatchi", "mutaxassis", "rahbar", "direktor", "rektor",
+    "dekan", "o'rinbosari", "texnik", "xodim", "stajyor-tadqiqotchi", "tadqiqotchi", "tarjimon",
+})
+POSITION_MODIFIERS = frozenset({"bosh", "katta", "kichik", "yetakchi", "oliy", "toifali", "1-toifali",
+                                "2-toifali", "v.b.", "v.v.b.", "vaqtincha", "va", "-", "ilmiy"})
+LAVOZIM_KIND = "lavozim"
+
+
+def classify_unit(name: str | None) -> str:
+    """Bo'linma turi: kafedra | dekanat | bolim | lavozim.
+
+    Tartib muhim: avval "sof lavozim" (masalan "Katta o'qituvchi"), keyin
+    "kafedra" so'zi, keyin dekanat va bo'lim kalit so'zlari; qolgani —
+    kafedra."""
+    key = norm_name(name)
+    tokens = key.replace(",", " ").split()
+    if not tokens:
+        return LAVOZIM_KIND
+    if any(t in POSITION_WORDS for t in tokens) and all(t in POSITION_WORDS or t in POSITION_MODIFIERS for t in tokens):
+        return LAVOZIM_KIND
+    if "kafedra" in key:
+        return "kafedra"
+    if any(word in key for word in DEKANAT_KEYWORDS):
+        return "dekanat"
+    if any(word in key for word in BOLIM_KEYWORDS):
+        return "bolim"
+    return "kafedra"
+
+
+def derived_unit_id(key: str) -> str:
+    """Matndan olingan bo'linmaning barqaror id si (norm_name kalitidan)."""
+    return "u-" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:10]
+
 
 @dataclass
 class DepartmentInfo:
     id: uuid.UUID
     name: str
     building: str | None
+
+
+@dataclass
+class UnitInfo:
+    id: str  # str(Department.id), "u-..." yoki UNASSIGNED_KAFEDRA_ID
+    name: str
+    kind: str
+    building: str | None = None
+    unassigned: bool = False  # "Lavozim bo'yicha" soxta bo'linmasi
+
+
+@dataclass
+class UnitCatalog:
+    units: dict[str, UnitInfo]  # id -> bo'linma, tartiblangan (kafedra birinchi)
+    by_key: dict[str, str]  # norm_name(group_or_position) -> id
+    staff: list[tuple[uuid.UUID, str | None]]  # faol xodimlar (id, group_or_position)
+
+    def unit_id(self, raw: str | None) -> str:
+        return self.by_key.get(norm_name(raw), UNASSIGNED_KAFEDRA_ID)
+
+    def staff_ids(self, unit_id: str) -> list[uuid.UUID]:
+        return [pid for pid, unit in self.staff if self.unit_id(unit) == unit_id]
 
 
 async def departments(db: AsyncSession) -> list[DepartmentInfo]:
@@ -382,15 +480,8 @@ async def departments(db: AsyncSession) -> list[DepartmentInfo]:
     return [DepartmentInfo(*row) for row in rows.all()]
 
 
-def department_index(items: list[DepartmentInfo]) -> dict[str, list[DepartmentInfo]]:
-    index: dict[str, list[DepartmentInfo]] = defaultdict(list)
-    for dep in items:
-        index[norm_name(dep.name)].append(dep)
-    return index
-
-
-async def staff_units(db: AsyncSession) -> list[tuple[uuid.UUID, str]]:
-    """Faol xodimlar (id, group_or_position) — ~700 qator."""
+async def staff_units(db: AsyncSession) -> list[tuple[uuid.UUID, str | None]]:
+    """Faol xodimlar (id, group_or_position) — ~800 qator."""
     rows = await db.execute(
         select(StudentStaff.id, StudentStaff.group_or_position)
         .where(StudentStaff.type == "xodim")
@@ -399,24 +490,59 @@ async def staff_units(db: AsyncSession) -> list[tuple[uuid.UUID, str]]:
     return [tuple(r) for r in rows.all()]
 
 
-async def department_staff_ids(db: AsyncSession, department_id: str) -> tuple[DepartmentInfo, list[uuid.UUID]]:
-    """Kafedra va uning xodimlari. "unassigned" — hech bir kafedraga mos
-    kelmaganlar."""
-    deps = await departments(db)
-    index = department_index(deps)
-    staff = await staff_units(db)
-    if department_id == UNASSIGNED_KAFEDRA_ID:
-        info = DepartmentInfo(id=None, name=UNASSIGNED_KAFEDRA_NAME, building=None)  # type: ignore[arg-type]
-        return info, [pid for pid, unit in staff if norm_name(unit) not in index]
-    try:
-        dep_uuid = uuid.UUID(department_id)
-    except ValueError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kafedra topilmadi") from None
-    info = next((d for d in deps if d.id == dep_uuid), None)
+def build_catalog(deps: list[DepartmentInfo], staff: list[tuple[uuid.UUID, str | None]]) -> UnitCatalog:
+    """Department yozuvlari + xodimlar matni -> bo'linmalar (sof funksiya).
+
+    Department bilan nomi mos matn Department.id ni oladi; qolgan har xil
+    matn (norm_name bo'yicha) — alohida bo'linma, nomi eng ko'p uchragan
+    yozilishi. Sof lavozim matnlari bo'linma bo'lmaydi."""
+    units: dict[str, UnitInfo] = {}
+    by_key: dict[str, str] = {}
+    for dep in deps:
+        key = norm_name(dep.name)
+        if key in by_key:  # bir xil nomli ikkinchi Department — birinchisi yutadi
+            continue
+        kind = classify_unit(dep.name)
+        units[str(dep.id)] = UnitInfo(str(dep.id), dep.name, "kafedra" if kind == LAVOZIM_KIND else kind,
+                                      dep.building)
+        by_key[key] = str(dep.id)
+
+    variants: dict[str, Counter] = defaultdict(Counter)
+    for _pid, raw in staff:
+        key = norm_name(raw)
+        if key and key not in by_key:
+            variants[key][" ".join((raw or "").split())] += 1
+    for key, names in variants.items():
+        name = sorted(names.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+        kind = classify_unit(name)
+        if kind == LAVOZIM_KIND:
+            continue  # unit_id() -> UNASSIGNED_KAFEDRA_ID
+        unit_id = derived_unit_id(key)
+        units[unit_id] = UnitInfo(unit_id, name, kind)
+        by_key[key] = unit_id
+
+    ordered = sorted(units.values(), key=lambda u: (KIND_ORDER[u.kind], norm_name(u.name)))
+    catalog = {u.id: u for u in ordered}
+    catalog[UNASSIGNED_KAFEDRA_ID] = UnitInfo(UNASSIGNED_KAFEDRA_ID, UNASSIGNED_KAFEDRA_NAME, LAVOZIM_KIND,
+                                              unassigned=True)
+    return UnitCatalog(catalog, by_key, staff)
+
+
+async def unit_catalog(db: AsyncSession) -> UnitCatalog:
+    async def load() -> UnitCatalog:
+        return build_catalog(await departments(db), await staff_units(db))
+
+    return await cached(("unit_catalog",), load)
+
+
+async def department_staff_ids(db: AsyncSession, department_id: str) -> tuple[UnitInfo, list[uuid.UUID]]:
+    """Bo'linma va uning faol xodimlari. id — Department uuid, "u-..."
+    (matndan olingan) yoki "unassigned" (sof lavozim / bo'sh matn)."""
+    catalog = await unit_catalog(db)
+    info = catalog.units.get(department_id)
     if info is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kafedra topilmadi")
-    key = norm_name(info.name)
-    return info, [pid for pid, unit in staff if norm_name(unit) == key]
+    return info, catalog.staff_ids(department_id)
 
 
 # ─────────────────────────────────────────── darslar

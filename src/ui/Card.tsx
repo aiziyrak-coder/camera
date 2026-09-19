@@ -26,7 +26,7 @@ export function Card({ padding = 'md', interactive = false, as: Tag = 'div', cla
         'rounded-card border border-border bg-surface shadow-card',
         PADDING[padding],
         interactive &&
-          'cursor-pointer transition-[border-color,box-shadow] hover:border-border-strong hover:shadow-pop focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/40',
+          'lift cursor-pointer hover:border-border-strong focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/40',
         className,
       )}
       {...rest}
@@ -59,7 +59,7 @@ export function CardHeader({ title, subtitle, icon: Icon, actions, className, le
           </span>
         )}
         <div className="min-w-0">
-          <Heading className="text-[15px] font-semibold leading-6 text-fg">{title}</Heading>
+          <Heading className="text-[15px] font-semibold leading-6 tracking-[-0.01em] text-fg">{title}</Heading>
           {subtitle && <p className="text-[13px] leading-5 text-muted">{subtitle}</p>}
         </div>
       </div>

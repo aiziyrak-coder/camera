@@ -81,3 +81,8 @@ export { ToastProvider, useToast } from './Toast';
 
 export { useChartTheme, readChartTheme, readToken } from './chartTheme';
 export type { ChartTheme } from './chartTheme';
+
+export { CountUp } from './CountUp';
+export { parseDisplayNumber, formatLike } from './numberTween';
+export { Sparkline } from './Sparkline';
+export type { SparklineProps } from './Sparkline';

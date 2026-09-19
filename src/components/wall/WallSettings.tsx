@@ -1,0 +1,88 @@
+import { Check, Copy, X } from 'lucide-react';
+import { useState } from 'react';
+import { buildWallQuery, PANEL_TITLES, WALL_PANELS, type WallConfig, type WallPanelId } from '../../lib/wallApi';
+import { Button, cn, IconButton, Input } from '../../ui';
+
+/** "S" tugmasi bilan ochiladigan yashirin sozlamalar. */
+export function WallSettings({
+  config,
+  onApply,
+  onClose,
+}: {
+  config: WallConfig;
+  onApply: (cfg: WallConfig) => void;
+  onClose: () => void;
+}) {
+  const [panels, setPanels] = useState<WallPanelId[]>(config.panels);
+  const [rotate, setRotate] = useState(String(config.rotate));
+  const [cameras, setCameras] = useState(config.cameras.join(','));
+  const [copied, setCopied] = useState(false);
+
+  const draft: WallConfig = {
+    panels: panels.length ? panels : config.panels,
+    rotate: Math.min(300, Math.max(5, Number(rotate) || 15)),
+    cameras: cameras
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, 4),
+  };
+  const url = `${window.location.origin}/markaz-ekran${buildWallQuery(draft)}`;
+
+  const toggle = (p: WallPanelId) =>
+    setPanels((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : WALL_PANELS.filter((x) => x === p || prev.includes(x))));
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard yopiq — foydalanuvchi matnni o'zi ko'chiradi */
+    }
+  };
+
+  return (
+    <div className="fixed right-4 top-4 z-50 w-[360px] rounded-card border border-border bg-surface p-4 text-sm shadow-pop animate-ui-pop-in">
+      <div className="mb-3 flex items-center">
+        <div className="font-semibold text-fg">Ekran sozlamalari</div>
+        <IconButton label="Yopish" icon={X} variant="ghost" size="sm" className="ml-auto" onClick={onClose} />
+      </div>
+      <div className="mb-1 text-xs font-medium text-muted">Panellar</div>
+      <div className="mb-3 grid grid-cols-2 gap-1.5">
+        {WALL_PANELS.map((p) => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => toggle(p)}
+            className={cn(
+              'flex items-center gap-2 rounded-control border px-2.5 py-1.5 text-left',
+              panels.includes(p) ? 'border-primary bg-primary-soft text-primary' : 'border-border text-muted hover:bg-surface-2',
+            )}
+          >
+            <span className="font-mono text-xs">{p}</span>
+            {PANEL_TITLES[p]}
+          </button>
+        ))}
+      </div>
+      <label className="mb-1 block text-xs font-medium text-muted" htmlFor="wall-rotate">
+        Aylanish, soniya
+      </label>
+      <Input id="wall-rotate" type="number" min={5} max={300} value={rotate} onChange={(e) => setRotate(e.target.value)} className="mb-3" />
+      <label className="mb-1 block text-xs font-medium text-muted" htmlFor="wall-cams">
+        Kamera ID lari (vergul bilan, 4 tagacha)
+      </label>
+      <Input id="wall-cams" value={cameras} onChange={(e) => setCameras(e.target.value)} placeholder="bo'sh — birinchi onlayn 2 ta" className="mb-3" />
+      <div className="mb-3 break-all rounded-control bg-surface-2 p-2 font-mono text-xs text-muted">{url}</div>
+      <div className="flex gap-2">
+        <Button variant="secondary" icon={copied ? Check : Copy} onClick={copy}>
+          {copied ? 'Nusxalandi' : 'URL nusxa'}
+        </Button>
+        <Button className="ml-auto" onClick={() => onApply(draft)}>
+          Qo'llash
+        </Button>
+      </div>
+      <div className="mt-3 text-xs text-muted">S — yopish/ochish · F — to'liq ekran</div>
+    </div>
+  );
+}

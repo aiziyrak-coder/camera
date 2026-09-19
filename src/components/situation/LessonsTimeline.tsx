@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { CalendarClock, ChevronRight } from 'lucide-react';
+import { CalendarClock, ChevronRight, FileUp } from 'lucide-react';
 import type { Lesson } from '../../lib/situationApi';
-import { Badge, Card, CardHeader, EmptyState, ErrorState, ProgressBar, Skeleton, cn, focusRing, formatNumber, type Tone } from '../../ui';
+import { Badge, buttonClasses, Card, CardHeader, EmptyState, ErrorState, ProgressBar, Skeleton, cn, focusRing, formatNumber, type Tone } from '../../ui';
 import { lessonSlots, type LessonSlot } from './situationUtils';
 
 interface Props {
@@ -66,7 +66,27 @@ export function LessonsTimeline({ lessons, loading, error, onRetry, link, isToda
       ) : error ? (
         <ErrorState title="Darslarni yuklab bo'lmadi" message={error} onRetry={onRetry} />
       ) : slots.length === 0 ? (
-        <EmptyState compact bordered={false} icon={CalendarClock} title={isToday ? "Bugun dars yo'q" : "Bu kunda dars bo'lmagan"} description="Dars jadvali HEMIS yoki qo'lda kiritilgach shu yerda ko'rinadi." />
+        <EmptyState
+          bordered={false}
+          tone="info"
+          icon={CalendarClock}
+          className="py-8 sm:py-10"
+          title={isToday ? "Bugunga dars jadvali yo'q" : "Bu kun uchun dars jadvali yo'q"}
+          description={
+            <>
+              Dars jadvali hali yuklanmagan bo'lishi mumkin. Jadval kiritilgach, bu yerda juftliklar, o'qituvchilarning o'z vaqtida kelishi va
+              guruhlar davomati ko'rinadi.
+            </>
+          }
+          action={
+            link ? (
+              <Link to={link} className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
+                <FileUp size={15} aria-hidden="true" />
+                Darslar → Jadvalni import
+              </Link>
+            ) : undefined
+          }
+        />
       ) : (
         <ol ref={scroller} className={cn('-mx-1 grid snap-x grid-flow-col gap-3 overflow-x-auto px-1 pb-1', big ? 'auto-cols-[minmax(15rem,1fr)]' : 'auto-cols-[minmax(12.5rem,1fr)]')} aria-label="Juftliklar">
           {slots.map((slot, index) => {

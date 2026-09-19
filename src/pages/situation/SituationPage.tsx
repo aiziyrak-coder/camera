@@ -9,7 +9,10 @@ import {
   History,
   Hourglass,
   Lock,
+  MonitorUp,
   Presentation,
+  Repeat,
+  ScanFace,
   RefreshCw,
   UserX,
   Users,
@@ -18,7 +21,17 @@ import { api, buildQuery, type Page as ApiPage } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { usePermissions, type PermissionKey } from '../../lib/permissions';
 import { useLiveAttendance, useLiveEvents, type LiveAttendanceMessage } from '../../lib/realtime';
-import { getGroups, getLessons, getOverview, situationPaths, type LastArrival } from '../../lib/situationApi';
+import {
+  getAnalyticsChronic,
+  getAnalyticsSummary,
+  getEnrollment,
+  getGroups,
+  getKafedras,
+  getLessons,
+  getOverview,
+  situationPaths,
+  type LastArrival,
+} from '../../lib/situationApi';
 import { useViewDate } from '../../lib/viewDate';
 import type { AIEvent } from '../../types';
 import {
@@ -30,6 +43,7 @@ import {
   IconButton,
   Page,
   StatusDot,
+  buttonClasses,
   formatNumber,
   formatPercent,
   formatUzDate,
@@ -41,16 +55,21 @@ import {
 import { ArrivalsChart } from '../../components/situation/ArrivalsChart';
 import { AttentionPanel } from '../../components/situation/AttentionPanel';
 import { FacultyAttendance } from '../../components/situation/FacultyAttendance';
-import { KpiTile } from '../../components/situation/KpiTile';
+import { EnrollmentCampaign } from '../../components/situation/EnrollmentCampaign';
+import { KpiTile, type KpiDelta } from '../../components/situation/KpiTile';
 import { LessonsTimeline } from '../../components/situation/LessonsTimeline';
 import { LiveArrivals } from '../../components/situation/LiveArrivals';
+import { UnitsRanking } from '../../components/situation/UnitsRanking';
 import {
   arrivalFromMessage,
   attendanceSegments,
+  dailySeries,
   hourOf,
   lowestGroups,
   mergeArrivals,
   share,
+  shiftIso,
+  staffComparison,
   teacherIssues,
   teacherOnTimeRate,
 } from '../../components/situation/situationUtils';
@@ -86,6 +105,13 @@ export default function SituationPage() {
   const overview = useLiveResource(canData ? `overview:${date}` : null, (signal) => getOverview(date, { signal }), tick);
   const groups = useLiveResource(canData ? `groups:${date}` : null, (signal) => getGroups({ date }, { signal }), tick);
   const lessons = useLiveResource(canLessons ? `lessons:${date}` : null, (signal) => getLessons({ date, pageSize: 500 }, { signal }), tick);
+  // Xodimlar: oxirgi 14 kun (trend + kecha / o'tgan hafta shu kuni bilan taqqoslash).
+  const staffTrend = useLiveResource(canData ? `staff-trend:${date}` : null, (signal) => getAnalyticsSummary({ from: shiftIso(date, -14), to: date, type: 'xodim' }, { signal }), tick);
+  const units = useLiveResource(canData ? `units:${date}` : null, (signal) => getKafedras(date, { signal }), tick);
+  const chronic = useLiveResource(canData ? `chronic:${date}` : null, (signal) => getAnalyticsChronic({ from: shiftIso(date, -29), to: date, type: 'xodim' }, { signal }), tick);
+  // Talabalar yuzi yetarli bo'lmaguncha — ro'yxatga olish kampaniyasi.
+  const needEnrollment = overview.data ? !overview.data.studentsDataAvailable : false;
+  const enrollment = useLiveResource(canData && needEnrollment ? 'enrollment' : null, (signal) => getEnrollment({ signal }), tick);
   const topEvents = useLiveResource(
     canEvents && isToday ? 'events:high-open' : null,
     (signal) =>
@@ -169,6 +195,18 @@ export default function SituationPage() {
         </Button>
       )}
       {canData && (
+        <a
+          href="/markaz-ekran"
+          target="_blank"
+          rel="noopener"
+          className={buttonClasses({ variant: 'secondary', size: 'sm', className: 'hidden sm:inline-flex' })}
+          title="Devor ekrani uchun alohida oynada ochish"
+        >
+          <MonitorUp size={15} aria-hidden="true" />
+          Katta ekran
+        </a>
+      )}
+      {canData && (
         <IconButton icon={RefreshCw} label="Yangilash" variant="secondary" size="sm" loading={overview.fetching && Boolean(data)} onClick={refreshNow} />
       )}
     </>
@@ -190,6 +228,29 @@ export default function SituationPage() {
   const eventsTone: Tone = data ? (data.events.highOpen > 0 ? 'danger' : data.events.open > 0 ? 'warning' : 'success') : 'neutral';
   const camerasOffline = data ? Math.max(0, data.cameras.active - data.cameras.online) : 0;
   const loadingTiles = overview.loading && !data;
+  // Talabalar yuzi hali yetarli emas — markaz xodimlardan boshlanadi.
+  const staffFirst = Boolean(data && !data.studentsDataAvailable);
+
+  const daily = staffTrend.data?.daily ?? [];
+  const cmp = staffComparison(daily, date);
+  type DayCounts = { present: number; late: number; absent: number };
+  const mkDeltas = (pick: (d: DayCounts) => number, current: number | undefined, better: 'up' | 'down'): KpiDelta[] => {
+    if (current === undefined) return [];
+    const out: KpiDelta[] = [];
+    if (cmp.previous) out.push({ label: cmp.previousLabel, value: current - pick(cmp.previous), better, title: `${cmp.previous.date}: ${formatNumber(pick(cmp.previous))}` });
+    if (cmp.lastWeek) out.push({ label: cmp.lastWeekLabel, value: current - pick(cmp.lastWeek), better, title: `${cmp.lastWeek.date}: ${formatNumber(pick(cmp.lastWeek))}` });
+    return out;
+  };
+  const presentDeltas = mkDeltas((d) => d.present, staff?.present, 'up');
+  const lateDeltas = mkDeltas((d) => d.late, staff?.late, 'down');
+  const absentDeltas = mkDeltas((d) => d.absent, staff?.absent, 'down');
+  const rateTrend = daily.length ? dailySeries(daily, date, (d) => d.rate) : null;
+  const lateTrend = daily.length ? dailySeries(daily, date, (d) => d.late) : null;
+  const absentTrend = daily.length ? dailySeries(daily, date, (d) => d.absent) : null;
+  const chronicList = chronic.data ?? [];
+  const chronicCount = chronicList.length;
+  const chronicAbsent = chronicList.filter((c) => c.reasons.includes('kelmadi')).length;
+  const chronicLate = chronicList.filter((c) => c.reasons.includes('kech_keldi')).length;
 
   const studentsLink = canStudentsPages ? withDate('/talabalar') : undefined;
   const teachersLink = canStudentsPages ? withDate('/oqituvchilar') : undefined;
@@ -206,6 +267,170 @@ export default function SituationPage() {
           )}
 
           <section aria-label="Asosiy ko'rsatkichlar" className={big ? 'grid grid-cols-4 gap-4' : 'grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4'}>
+            {staffFirst ? (
+              <>
+            <KpiTile
+              className="col-span-2 sm:col-span-1"
+              label="Xodimlar keldi"
+              icon={Users}
+              tone="primary"
+              value={formatNumber(staff?.present)}
+              suffix={staff ? `/ ${formatNumber(staffExpected)}` : undefined}
+              ring={staff?.rate ?? null}
+              segments={staff ? attendanceSegments(staff) : undefined}
+              deltas={presentDeltas}
+              trend={rateTrend}
+              hint={staff ? `Ro'yxatda ${formatNumber(staff.total)} ta · yuzi bor ${formatNumber(staff.enrolled)}` : undefined}
+              to={teachersLink}
+              loading={loadingTiles}
+              big={big}
+            />
+            <KpiTile
+              label="Kech qolgan xodimlar"
+              icon={Clock}
+              tone="warning"
+              value={formatNumber(staff?.late)}
+              deltas={lateDeltas}
+              trend={lateTrend}
+              hint={staff ? `Kelganlarning ${formatPercent(share(staff.late, staff.present))}` : undefined}
+              to={teachersLink}
+              loading={loadingTiles}
+              big={big}
+            />
+            <KpiTile
+              label="Kelmagan xodimlar"
+              icon={UserX}
+              tone="danger"
+              value={formatNumber(staff?.absent)}
+              deltas={absentDeltas}
+              trend={absentTrend}
+              hint={staff ? (isToday && staff.notYet > 0 ? `Yana ${formatNumber(staff.notYet)} kishi hali kelmagan` : `Kutilganlarning ${formatPercent(share(staff.absent, staffExpected))}`) : undefined}
+              to={teachersLink}
+              loading={loadingTiles}
+              big={big}
+            />
+            <KpiTile
+              label="Surunkali (30 kun)"
+              icon={Repeat}
+              tone={chronicCount > 0 ? 'warning' : 'success'}
+              value={chronic.data ? formatNumber(chronicCount) : '—'}
+              hint={
+                chronic.data
+                  ? chronicCount > 0
+                    ? `${formatNumber(chronicAbsent)} tasi 3+ kun kelmagan · ${formatNumber(chronicLate)} tasi 3+ kun kech`
+                    : "30 kunda takroriy kechikish yoki kelmaslik yo'q"
+                  : chronic.error ?? undefined
+              }
+              to={canStudentsPages ? withDate('/oqituvchilar?tab=surunkali') : undefined}
+              loading={chronic.loading && !chronic.data}
+              big={big}
+            />
+            <KpiTile
+              label="O'qituvchilar darsga o'z vaqtida"
+              icon={Users}
+              tone={toneForRate(teacherRate)}
+              value={formatPercent(teacherRate)}
+              segments={
+                data && data.teachers.onTime + data.teachers.late + data.teachers.absent > 0
+                  ? [
+                      { value: data.teachers.onTime, tone: 'success', label: "O'z vaqtida" },
+                      { value: data.teachers.late, tone: 'warning', label: 'Kechikdi' },
+                      { value: data.teachers.absent, tone: 'danger', label: 'Kelmadi' },
+                    ]
+                  : undefined
+              }
+              hint={
+                data
+                  ? data.teachers.scheduled > 0
+                    ? `${formatNumber(data.teachers.scheduled)} o'qituvchi · ${formatNumber(data.teachers.late)} kech · ${formatNumber(data.teachers.absent)} kelmadi`
+                    : "Darsi bor o'qituvchi yo'q"
+                  : undefined
+              }
+              to={teachersLink}
+              loading={loadingTiles}
+              big={big}
+            />
+            <KpiTile
+              label="Darslar"
+              icon={BookOpen}
+              tone="info"
+              value={formatNumber(isToday ? data?.lessons.finished : data?.lessons.total)}
+              suffix={data && isToday ? `/ ${formatNumber(data.lessons.total)}` : undefined}
+              segments={
+                data && isToday && data.lessons.total > 0
+                  ? [
+                      { value: data.lessons.finished, tone: 'neutral', label: "O'tgan" },
+                      { value: data.lessons.ongoing, tone: 'primary', label: 'Davom etmoqda' },
+                      { value: data.lessons.upcoming, tone: 'info', label: 'Kutilmoqda' },
+                    ]
+                  : undefined
+              }
+              hint={
+                data
+                  ? isToday
+                    ? `o'tgan · ${formatNumber(data.lessons.ongoing)} davom etmoqda · ${formatNumber(data.lessons.upcoming)} kutilmoqda`
+                    : "ta dars o'tgan"
+                  : undefined
+              }
+              to={lessonsLink ?? undefined}
+              loading={loadingTiles}
+              big={big}
+            />
+            {isToday ? (
+              <KpiTile
+                label="Kameralar onlayn"
+                icon={Camera}
+                tone={camerasOffline > 0 ? 'warning' : 'success'}
+                value={formatNumber(data?.cameras.online)}
+                suffix={data ? `/ ${formatNumber(data.cameras.active)}` : undefined}
+                segments={
+                  data && data.cameras.active > 0
+                    ? [
+                        { value: data.cameras.online, tone: 'success', label: 'Onlayn' },
+                        { value: camerasOffline, tone: 'danger', label: 'Aloqada emas' },
+                      ]
+                    : undefined
+                }
+                hint={data ? (camerasOffline > 0 ? `${formatNumber(camerasOffline)} ta aloqada emas` : `${formatNumber(data.cameras.videoFlowing)} ta tasvir uzatmoqda`) : undefined}
+                to={cameraLink ?? undefined}
+                loading={loadingTiles}
+                big={big}
+              />
+            ) : (
+              <KpiTile
+                label="Yuz topshirgan talabalar"
+                icon={ScanFace}
+                tone="primary"
+                value={formatNumber(data?.students.enrolled)}
+                suffix={data ? `/ ${formatNumber(data.students.total)}` : undefined}
+                ring={data?.studentsEnrolledPct ?? null}
+                ringTone="primary"
+                hint="Talabalar davomati 5% dan yoqiladi"
+                to={studentsLink}
+                loading={loadingTiles}
+                big={big}
+              />
+            )}
+            <KpiTile
+              className="col-span-2 sm:col-span-1"
+              label={isToday ? 'Ochiq hodisalar' : 'Shu kungi hodisalar'}
+              icon={isToday ? AlertOctagon : Bell}
+              tone={isToday ? eventsTone : 'neutral'}
+              value={formatNumber(isToday ? data?.events.open : data?.events.today)}
+              hint={
+                data
+                  ? isToday
+                    ? `${formatNumber(data.events.highOpen)} yuqori muhimlik · ${formatNumber(data.events.overdue)} muddati o'tgan · bugun ${formatNumber(data.events.today)}`
+                    : 'AI aniqlagan signallar'
+                  : undefined
+              }
+              to={canEvents ? (isToday ? '/hodisalar' : `/hodisalar?from=${date}&to=${date}&korinish=jurnal`) : undefined}
+              loading={loadingTiles}
+              big={big}
+            />
+                        </>
+            ) : (
+              <>
             <KpiTile
               className="col-span-2 sm:col-span-1"
               label="Talabalar keldi"
@@ -342,7 +567,10 @@ export default function SituationPage() {
                 value={formatNumber(staff?.present)}
                 suffix={staff ? `/ ${formatNumber(staffExpected)}` : undefined}
                 ring={staff?.rate ?? null}
+                deltas={presentDeltas}
+                trend={rateTrend}
                 hint={staff ? `${formatNumber(staff.late)} kech · ${formatNumber(staff.absent)} kelmadi` : undefined}
+                to={teachersLink}
                 loading={loadingTiles}
                 big={big}
               />
@@ -364,15 +592,49 @@ export default function SituationPage() {
               loading={loadingTiles}
               big={big}
             />
+                        </>
+            )}
           </section>
+
+          {staffFirst && !loadingTiles && (
+            <p className="-mt-1 flex items-start gap-2 text-[13px] text-muted">
+              <ScanFace size={15} className="mt-0.5 shrink-0 text-primary" aria-hidden="true" />
+              <span>
+                Talabalarning atigi {formatPercent(data?.studentsEnrolledPct ?? 0, (data?.studentsEnrolledPct ?? 0) < 1 ? 2 : 1)} yuzi tasdiqlangan — shuning uchun markaz hozircha xodimlar davomatini ko'rsatadi.
+                Talabalar davomati yuzlar yetarli bo'lgach avtomatik yoqiladi.
+              </span>
+            </p>
+          )}
 
           <div className="grid gap-5 xl:grid-cols-3">
             <div className="flex min-w-0 flex-col gap-5 xl:col-span-2">
-              <FacultyAttendance
-                faculties={data?.byFaculty ?? null}
-                loading={loadingTiles}
-                linkFor={canStudentsPages ? (f) => withDate(situationPaths.faculty(f.id)) : null}
-                allLink={studentsLink}
+              {staffFirst ? (
+                <EnrollmentCampaign
+                  data={enrollment.data}
+                  loading={enrollment.loading && !enrollment.data}
+                  error={enrollment.error}
+                  onRetry={enrollment.reload}
+                  link={studentsLink}
+                  facultyLink={canStudentsPages ? (id) => withDate(situationPaths.faculty(id)) : null}
+                  big={big}
+                />
+              ) : (
+                <FacultyAttendance
+                  faculties={data?.byFaculty ?? null}
+                  loading={loadingTiles}
+                  linkFor={canStudentsPages ? (f) => withDate(situationPaths.faculty(f.id)) : null}
+                  allLink={studentsLink}
+                  big={big}
+                />
+              )}
+              <UnitsRanking
+                units={units.data}
+                loading={units.loading && !units.data}
+                error={units.error}
+                onRetry={units.reload}
+                linkFor={canStudentsPages ? (u) => withDate(situationPaths.kafedra(u.id)) : null}
+                allLink={teachersLink}
+                isToday={isToday}
                 big={big}
               />
               <ArrivalsChart rows={data?.arrivalsByHour ?? null} loading={loadingTiles} currentHour={isToday && data ? hourOf(data.generatedAt) : null} big={big} />

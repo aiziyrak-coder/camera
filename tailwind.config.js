@@ -50,6 +50,7 @@ export default {
       boxShadow: {
         card: 'var(--shadow-card)',
         pop: 'var(--shadow-pop)',
+        hover: 'var(--shadow-hover)',
         // Eski sinflar (glass) — migratsiyagacha ishlashi uchun.
         glass: 'var(--shadow-card)',
         'glass-green': 'var(--shadow-card)',
