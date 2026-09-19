@@ -320,6 +320,43 @@ async def delete_floor_plan(plan_id: str, request: Request, db: DbDep, current_u
     await delete_files_quietly([key])
 
 
+@router.get("/buildings/{building_id}/cameras", response_model=list[FloorPlanCameraOut])
+async def list_building_cameras(building_id: str, db: DbDep, current_user: ViewDep) -> list[FloorPlanCameraOut]:
+    """Binoning barcha kameralari holati bilan — chizma yuklanmagan bo'lsa ham
+    qavat sxemasi (qavat -> kameralar) shu ro'yxatdan quriladi."""
+    bid = _parse_uuid(building_id, "Bino topilmadi")
+    if await db.get(Building, bid) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Bino topilmadi")
+    cameras = (
+        await db.execute(select(Camera).where(Camera.building_id == bid).order_by(Camera.floor, Camera.name))
+    ).scalars().all()
+    can_view_live = await has_any_permission(db, current_user.role, ("viewLive",))
+    events = await open_event_counts(db, [c.id for c in cameras])
+    out: list[FloorPlanCameraOut] = []
+    for camera in cameras:
+        online, video = camera_health(camera)
+        out.append(
+            FloorPlanCameraOut(
+                id=str(camera.id),
+                name=camera.name,
+                zone=camera.zone,
+                status=camera.status,
+                online=online,
+                video_flowing=video,
+                plan_x=camera.plan_x,
+                plan_y=camera.plan_y,
+                plan_rotation=camera.plan_rotation,
+                ptz_enabled=camera.ptz_enabled,
+                open_events=events.get(camera.id, 0),
+                stream_url=signed_stream_url(camera.stream_url) if can_view_live else None,
+                assigned=True,
+                building_id=str(camera.building_id),
+                floor=camera.floor,
+            )
+        )
+    return out
+
+
 @router.get("/{plan_id}/cameras", response_model=list[FloorPlanCameraOut])
 async def list_plan_cameras(
     plan_id: str,

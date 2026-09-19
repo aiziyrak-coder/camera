@@ -129,3 +129,8 @@ export function validatePlanFile(file: File): string | null {
   if (file.size === 0) return "Fayl bo'sh";
   return null;
 }
+
+/** Binoning barcha kameralari — chizmasiz qavat sxemasi uchun. */
+export function listBuildingCameras(token: string | null, buildingId: string, opts: CallOptions = {}) {
+  return api.get<FloorPlanCamera[]>(`/api/floor-plans/buildings/${encodeURIComponent(buildingId)}/cameras`, token, opts);
+}

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Building2, ImageUp, Loader2, Map as MapIcon, Pencil, Trash2 } from 'lucide-react';
-import { Button, ConfirmDialog, EmptyState, ErrorState, Page, Select, Skeleton, Tabs, Toolbar, useToast } from '../../ui';
+import { ArrowLeft, Building2, ImageUp, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { Button, ConfirmDialog, EmptyState, ErrorState, Page, Skeleton, Tabs, Toolbar, useToast } from '../../ui';
 import FloorPlanCanvas, { type CanvasMarker, type FloorPlanCanvasHandle } from '../../components/floorplan/FloorPlanCanvas';
 import FloorPlanCameraList from '../../components/floorplan/FloorPlanCameraList';
 import FloorPlanEditPanel from '../../components/floorplan/FloorPlanEditPanel';
 import FloorPlanUploadModal from '../../components/floorplan/FloorPlanUploadModal';
 import CameraDetailDrawer from '../../components/floorplan/CameraDetailDrawer';
+import FloorSchematic from '../../components/floorplan/FloorSchematic';
 import { useFloorPlanCameras } from '../../components/floorplan/useFloorPlanCameras';
 import { useUnsavedChangesGuard } from '../../components/floorplan/useUnsavedChangesGuard';
 import { ApiError, isAbortError } from '../../lib/apiClient';
@@ -59,7 +60,7 @@ export default function FloorPlansPage() {
   const { buildings, loading: buildingsLoading } = useBuildings();
   const [params, setParams] = useSearchParams();
   const buildingId = params.get('bino') ?? '';
-  const floorParam = params.get('qavat');
+  const floorParam = params.get('chizma');
 
   // --- Rejalar ro'yxati -------------------------------------------------
   const [plans, setPlans] = useState<FloorPlan[]>([]);
@@ -92,14 +93,13 @@ export default function FloorPlansPage() {
     () => plans.filter((p) => p.buildingId === buildingId).sort((a, b) => a.floor - b.floor),
     [plans, buildingId],
   );
-  const floorOptions = useMemo(() => {
-    const floors = new Set<number>(buildingPlans.map((p) => p.floor));
-    for (let n = 1; n <= (building?.floors ?? 0); n += 1) floors.add(n);
-    return [...floors].sort((a, b) => a - b);
-  }, [buildingPlans, building]);
+  const floorOptions = useMemo(() => buildingPlans.map((p) => p.floor), [buildingPlans]);
   const parsedFloor = floorParam !== null && /^-?\d+$/.test(floorParam) ? Number(floorParam) : null;
-  const floor = parsedFloor ?? buildingPlans[0]?.floor ?? floorOptions[0] ?? 1;
-  const plan = buildingPlans.find((p) => p.floor === floor) ?? null;
+  // chizma=N bo'lsa — N-qavat chizmasi, aks holda sxema (chizmasiz) ko'rinishi.
+  const plan = parsedFloor === null ? null : (buildingPlans.find((p) => p.floor === parsedFloor) ?? null);
+  const [uploadFloor, setUploadFloor] = useState<number | null>(null);
+  const floor = uploadFloor ?? parsedFloor ?? 1;
+  const [schematicCamera, setSchematicCamera] = useState<FloorPlanCamera | null>(null);
 
   // Bino tanlanmagan bo'lsa — rejasi bor birinchi bino (yoki shunchaki birinchisi).
   useEffect(() => {
@@ -155,8 +155,9 @@ export default function FloorPlansPage() {
       (prev) => {
         const next = new URLSearchParams(prev);
         next.set('bino', nextBuilding);
-        if (nextFloor === null) next.delete('qavat');
-        else next.set('qavat', String(nextFloor));
+        next.delete('qavat');
+        if (nextFloor === null) next.delete('chizma');
+        else next.set('chizma', String(nextFloor));
         return next;
       },
       { replace: true },
@@ -323,43 +324,44 @@ export default function FloorPlansPage() {
 
   // --- Ko'rinish ----------------------------------------------------------
   const actions =
-    canEdit && building && !editing ? (
+    canEdit && building && plan && !editing ? (
       <>
         {plan && (
           <Button icon={Pencil} onClick={startEditing} disabled={camerasLoading && cameras.length === 0}>
             Kameralarni joylashtirish
           </Button>
         )}
-        <Button variant="primary" icon={ImageUp} onClick={() => setUploadOpen(true)}>
-          {plan ? 'Rejani tahrirlash' : 'Reja yuklash'}
+        <Button icon={ImageUp} onClick={() => setUploadOpen(true)}>
+          Chizmani almashtirish
         </Button>
         {plan && <Button variant="ghost" icon={Trash2} className="text-danger hover:text-danger" onClick={() => setConfirmDelete(true)}>O&apos;chirish</Button>}
       </>
     ) : null;
 
   const floorTabs = floorOptions.map((n) => ({ id: String(n), label: `${n}-qavat` }));
+  const buildingTabs = buildings.map((b) => ({ id: b.id, label: b.name.replace(/\s*\(.*\)\s*$/, '') }));
 
   const selectors = buildings.length > 0 && (
     <Toolbar
       end={
         plan ? (
           <span className="flex items-center gap-1.5 text-[13px] tabular-nums text-muted">
-            {plan.placedCount}/{plan.cameraCount} kamera rejada
+            {plan.placedCount}/{plan.cameraCount} kamera chizmada
             {camerasLoading && <Loader2 size={13} aria-hidden="true" className="animate-spin" />}
           </span>
         ) : undefined
       }
     >
-      <Select
-        label="Bino"
-        value={buildingId}
-        onChange={(value) => selectLocation(value, null)}
-        options={buildings.map((b) => ({ value: b.id, label: `${b.name}${plans.some((p) => p.buildingId === b.id) ? '' : " (reja yo'q)"}` }))}
-      />
-      {floorTabs.length > 0 ? (
-        <Tabs variant="segmented" ariaLabel="Qavat" tabs={floorTabs} value={String(floor)} onChange={(id) => selectLocation(buildingId, Number(id))} />
-      ) : (
-        <span className="text-[13px] text-muted">Qavatlar soni kiritilmagan</span>
+      <Tabs variant="segmented" ariaLabel="Bino" tabs={buildingTabs} value={buildingId} onChange={(id) => selectLocation(id, null)} />
+      {plan && (
+        <>
+          <Button size="sm" variant="ghost" icon={ArrowLeft} onClick={() => selectLocation(buildingId, null)}>
+            Barcha qavatlar
+          </Button>
+          {floorTabs.length > 1 && (
+            <Tabs variant="segmented" ariaLabel="Qavat" tabs={floorTabs} value={String(plan.floor)} onChange={(id) => selectLocation(buildingId, Number(id))} />
+          )}
+        </>
       )}
     </Toolbar>
   );
@@ -379,21 +381,16 @@ export default function FloorPlansPage() {
     );
   } else if (!plan) {
     body = (
-      <EmptyState
-        icon={MapIcon}
-        title={`${building?.name ?? 'Bino'}, ${floor}-qavat uchun reja yuklanmagan`}
-        description={
-          canEdit
-            ? "Qavat chizmasini (PNG, JPEG yoki WebP) yuklang, so'ng kameralarni uning ustiga joylashtiring."
-            : "Rejani kamera joylashuvini tahrirlash huquqi bor xodim yuklaydi."
-        }
-        action={
-          canEdit ? (
-            <Button variant="primary" icon={ImageUp} onClick={() => setUploadOpen(true)}>
-              Reja yuklash
-            </Button>
-          ) : undefined
-        }
+      <FloorSchematic
+        buildingId={buildingId}
+        plans={buildingPlans}
+        canEdit={canEdit}
+        onOpenCamera={setSchematicCamera}
+        onOpenPlan={(n) => selectLocation(buildingId, n)}
+        onUpload={(n) => {
+          setUploadFloor(n);
+          setUploadOpen(true);
+        }}
       />
     );
   } else {
@@ -461,7 +458,7 @@ export default function FloorPlansPage() {
   return (
     <Page
       title="Qavat xaritasi"
-      subtitle="Bino qavatlari chizmasida kameralar joylashuvi va jonli holati"
+      subtitle="Har qavatdagi kameralar va ularning holati. Chizma yuklash ixtiyoriy"
       actions={actions}
       toolbar={selectors || undefined}
     >
@@ -470,12 +467,16 @@ export default function FloorPlansPage() {
       {building && uploadOpen && (
         <FloorPlanUploadModal
           open
-          onClose={() => setUploadOpen(false)}
+          onClose={() => {
+            setUploadOpen(false);
+            setUploadFloor(null);
+          }}
           building={building}
           floor={floor}
           plan={plan}
           onSaved={(saved) => {
             setUploadOpen(false);
+            setUploadFloor(null);
             toast.success('Qavat rejasi saqlandi');
             setPlans((prev) => [...prev.filter((p) => p.id !== saved.id), saved]);
             selectLocation(saved.buildingId, saved.floor);
@@ -496,6 +497,18 @@ export default function FloorPlansPage() {
         onCancel={() => setConfirmDelete(false)}
         onConfirm={handleDelete}
       />
+
+      {!plan && schematicCamera && building && (
+        <CameraDetailDrawer
+          camera={schematicCamera}
+          buildingName={building.name}
+          floor={schematicCamera.floor}
+          canViewLive={canViewLive}
+          canReviewEvents={canReviewEvents}
+          eventsNonce={eventsNonce}
+          onClose={() => setSchematicCamera(null)}
+        />
+      )}
 
       {!editing && drawerCamera && plan && (
         <CameraDetailDrawer

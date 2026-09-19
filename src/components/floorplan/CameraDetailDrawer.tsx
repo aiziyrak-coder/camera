@@ -26,7 +26,7 @@ export default function CameraDetailDrawer({
 }: {
   camera: FloorPlanCamera | null;
   buildingName: string;
-  floor: number;
+  floor: number | null;
   canViewLive: boolean;
   canReviewEvents: boolean;
   /** Realtime signal kelganda oshadi — ro'yxat qayta yuklanadi. */
@@ -76,7 +76,7 @@ export default function CameraDetailDrawer({
   else if (!camera.streamUrl) videoPlaceholder = { icon: VideoOff, text: 'Jonli oqim sozlanmagan' };
 
   return (
-    <Drawer open onClose={onClose} title={camera.name} subtitle={`${buildingName} · ${floor}-qavat · ${camera.zone}`} size="lg">
+    <Drawer open onClose={onClose} title={camera.name} subtitle={`${buildingName} · ${floor === null ? "qavati belgilanmagan" : `${floor}-qavat`} · ${camera.zone}`} size="lg">
       <div className="space-y-4">
         <div className="relative aspect-video overflow-hidden rounded-card bg-black">
           {videoPlaceholder ? (
