@@ -129,6 +129,8 @@ async def _lesson_gallery(db: AsyncSession, session_row: LessonSession) -> Candi
         await db.execute(
             select(StudentStaff.id, StudentStaff.biometric_embedding, StudentStaff.type)
             .where(StudentStaff.biometric_embedding.is_not(None))
+            # Faolsizlantirilgan odam tanilmaydi (face_matching.load_candidate_matrix).
+            .where(StudentStaff.active.is_(True))
             # Umumiy ro'yxatdagi qoida (face_matching.load_candidate_matrix):
             # o'zini o'zi ro'yxatdan o'tkazgan odam tasdiqlangunicha tanilmaydi.
             .where(or_(StudentStaff.self_registered.is_(False), StudentStaff.biometrics_status == "tasdiqlangan"))
@@ -340,7 +342,12 @@ async def process_lesson_session(
     # tahlil qilinmaydi. frame_b dagi yuzlar ham bir marta aniqlanadi va
     # o'qituvchi faolligi (#21) uchun qayta ishlatiladi.
     teacher = session_row.teacher_ref
-    wants_activity = teacher_activity_module_active and teacher is not None and bool(teacher.biometric_embedding)
+    wants_activity = (
+        teacher_activity_module_active
+        and teacher is not None
+        and teacher.active  # faolsizlantirilgan odamning yuzi solishtirilmaydi
+        and bool(teacher.biometric_embedding)
+    )
     faces_b: list | None = None
     if attention_module_active or lesson_attendance_active or wants_activity:
         faces_b = await detect_faces(frame_b)

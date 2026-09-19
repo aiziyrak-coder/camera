@@ -107,7 +107,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // buzmaydi.
   setAuthTokenGetter(() => tokenRef.current);
 
-  useEffect(() => () => setAuthTokenGetter(null), []);
+  // Effekt ichida ham qayta o'rnatiladi: StrictMode (dev) effektlarni
+  // "o'chirib-yoqib" sinaydi — faqat tozalash bo'lsa, getter null bo'lib
+  // qolardi va keyingi render'gacha so'rovlar tokensiz ketardi (401).
+  useEffect(() => {
+    setAuthTokenGetter(() => tokenRef.current);
+    return () => setAuthTokenGetter(null);
+  }, []);
 
   // Token muddati tugagach (server 401 qaytarganda) sessiyani darhol
   // tozalaymiz — apiClient.ts'dagi setUnauthorizedHandler izohiga qarang.

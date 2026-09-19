@@ -5,7 +5,7 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/camera}"
-REPO_URL="${REPO_URL:-https://github.com/riskgroup77/camera.git}"
+REPO_URL="${REPO_URL:-https://github.com/aiziyrak-coder/camera.git}"
 FRONTEND_DOMAIN="${FRONTEND_DOMAIN:-cam.devflix.uz}"
 API_DOMAIN="${API_DOMAIN:-camapi.devflix.uz}"
 STORAGE_DOMAIN="${STORAGE_DOMAIN:-storage.camapi.devflix.uz}"

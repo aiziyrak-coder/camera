@@ -77,7 +77,7 @@ class TestConfirmationIsRecorded:
         before = datetime.now(timezone.utc)
         resp = await client.post(
             f"/api/public/enrollment/{person.id}/submit",
-            data={"pinfl": PINFL},
+            data={"pinfl": PINFL, "consent": "true"},
             files=[("photos", (f"{n}.jpg", b"frame", "image/jpeg")) for n in ("front", "left", "right")],
         )
         assert resp.status_code == 200, resp.text

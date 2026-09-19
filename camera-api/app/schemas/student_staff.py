@@ -39,6 +39,10 @@ class StudentStaffCreateIn(CamelModel):
     # Bazada o'xshash ismli odam bo'lsa ham yaratish — admin "bu boshqa odam"
     # deb aniq tasdiqlaganda. Aks holda 409 (students_staff.create).
     allow_duplicate: bool = False
+    # Ota-ona xabarnomasi (faqat talaba) va turniket kartasi — ixtiyoriy.
+    parent_phone: str | None = Field(default=None, max_length=32)
+    parent_notify_enabled: bool = False
+    card_number: str | None = Field(default=None, max_length=64)
 
 
 class StudentStaffUpdateIn(CamelModel):
@@ -60,6 +64,10 @@ class StudentStaffUpdateIn(CamelModel):
     pinfl: str | None = None
     passport_series: str | None = None
     passport_number: str | None = None
+    # Xuddi shu qoida: yuborilmasa — o'zgarmaydi; bo'sh satr — o'chiriladi.
+    parent_phone: str | None = Field(default=None, max_length=32)
+    parent_notify_enabled: bool | None = None
+    card_number: str | None = Field(default=None, max_length=64)
 
 
 class StudentStaffDetailOut(StudentStaffOut):
@@ -69,6 +77,13 @@ class StudentStaffDetailOut(StudentStaffOut):
     pinfl: str | None = None
     passport_series: str | None = None
     passport_number: str | None = None
+    # Ota-ona xabarnomasi va turniket kartasi. parent_telegram_linked —
+    # faqat o'qiladi: ota-ona botga "/start <kod>" yuborganda bog'lanadi
+    # (POST /api/students-staff/{id}/parent-telegram-link).
+    parent_phone: str | None = None
+    parent_notify_enabled: bool = False
+    parent_telegram_linked: bool = False
+    card_number: str | None = None
 
 
 class StudentStaffFilterIn(CamelModel):

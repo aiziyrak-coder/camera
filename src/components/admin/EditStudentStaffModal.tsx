@@ -7,6 +7,8 @@ import { required } from '../../lib/validation';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { useFaculties } from '../../lib/useFaculties';
+import { formatUzPhone, normalizeUzPhone } from '../../lib/notificationsApi';
+import ParentNotifyFields from '../notifications/ParentNotifyFields';
 import type { StudentStaffDetail, StudentStaffRecord } from '../../types';
 
 interface FormState {
@@ -19,6 +21,9 @@ interface FormState {
   pinfl: string;
   passportSeries: string;
   passportNumber: string;
+  parentPhone: string;
+  parentNotifyEnabled: boolean;
+  cardNumber: string;
 }
 
 const COURSE_OPTIONS = [1, 2, 3, 4, 5, 6].map((n) => ({ value: String(n), label: `${n}-kurs` }));
@@ -37,6 +42,9 @@ function toForm(r: StudentStaffDetail | StudentStaffRecord): FormState {
     pinfl: detail.pinfl ?? '',
     passportSeries: detail.passportSeries ?? '',
     passportNumber: detail.passportNumber ?? '',
+    parentPhone: formatUzPhone(detail.parentPhone),
+    parentNotifyEnabled: detail.parentNotifyEnabled ?? false,
+    cardNumber: detail.cardNumber ?? '',
   };
 }
 
@@ -60,6 +68,7 @@ export default function EditStudentStaffModal({
   const [saving, setSaving] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [newFace, setNewFace] = useState<string | null>(null);
+  const [parentTelegramLinked, setParentTelegramLinked] = useState(false);
 
   useEffect(() => {
     if (!record) return;
@@ -68,6 +77,7 @@ export default function EditStudentStaffModal({
     setErrors({});
     setCapturing(false);
     setNewFace(null);
+    setParentTelegramLinked(false);
     if (!token) return;
     // JSHSHIR va pasport ro'yxatda yuborilmaydi — faqat tahrirlash ochilganda.
     let cancelled = false;
@@ -79,6 +89,7 @@ export default function EditStudentStaffModal({
         const next = toForm(detail);
         setForm(next);
         setOriginal(next);
+        setParentTelegramLinked(Boolean(detail.parentTelegramLinked));
       })
       .catch((err) => {
         if (!cancelled)
@@ -110,6 +121,9 @@ export default function EditStudentStaffModal({
     if (pinflDigits && pinflDigits.length !== 14) next.pinfl = 'JSHSHIR 14 ta raqam bo‘lishi kerak';
     if ((series || number) && !/^[A-Za-z]{2}$/.test(series)) next.passportSeries = '2 ta harf (masalan AD)';
     if ((series || number) && number.length !== 7) next.passportNumber = '7 ta raqam';
+    if (f.type === 'talaba' && f.parentPhone.trim() && !normalizeUzPhone(f.parentPhone)) {
+      next.parentPhone = "Telefon raqami noto'g'ri (+998 90 123 45 67)";
+    }
     return next;
   }
 
@@ -140,6 +154,13 @@ export default function EditStudentStaffModal({
       if (form.passportSeries !== original.passportSeries || form.passportNumber !== original.passportNumber) {
         payload.passportSeries = form.passportSeries;
         payload.passportNumber = form.passportNumber;
+      }
+      if (form.cardNumber !== original.cardNumber) payload.cardNumber = form.cardNumber.trim();
+      if (form.type === 'talaba') {
+        if (form.parentPhone !== original.parentPhone) payload.parentPhone = normalizeUzPhone(form.parentPhone) ?? '';
+        if (form.parentNotifyEnabled !== original.parentNotifyEnabled) {
+          payload.parentNotifyEnabled = form.parentNotifyEnabled;
+        }
       }
     }
 
@@ -263,6 +284,22 @@ export default function EditStudentStaffModal({
             </div>
             <p className="text-[11px] text-slate-400">Bo‘sh qoldirilsa, maydon o‘chiriladi.</p>
           </fieldset>
+
+          <ParentNotifyFields
+            key={record.id}
+            isStudent={isStudent}
+            value={{
+              parentPhone: form.parentPhone,
+              parentNotifyEnabled: form.parentNotifyEnabled,
+              cardNumber: form.cardNumber,
+            }}
+            onChange={(next) => setForm((f) => (f ? { ...f, ...next } : f))}
+            errors={{ parentPhone: errors.parentPhone, cardNumber: errors.cardNumber }}
+            disabled={loadingDetail || !original}
+            personId={record.type === 'talaba' ? record.id : undefined}
+            telegramLinked={parentTelegramLinked}
+            onTelegramUnlinked={() => setParentTelegramLinked(false)}
+          />
 
           <div className="rounded-xl border border-white/80 bg-white/40 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">

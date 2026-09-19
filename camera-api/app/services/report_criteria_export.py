@@ -34,6 +34,7 @@ from app.services.report_criteria import (
     decorate_people,
     people_query,
 )
+from app.services.event_status import STATUS_LABELS as EVENT_STATUS_LABELS, bucket_statuses
 from app.timezone import to_local
 
 HEADER_FILL = PatternFill("solid", fgColor="E0E7FF")
@@ -42,7 +43,6 @@ TITLE_FONT = Font(bold=True, size=14, color="1E1B4B")
 SECTION_FONT = Font(bold=True, size=11, color="334155")
 
 STATUS_LABELS = {"keldi": "Keldi", "kech_keldi": "Kechikdi", "kelmadi": "Kelmadi", "dam_olish": "Dam olish"}
-EVENT_STATUS_LABELS = {"yangi": "Ko'rilmagan", "tasdiqlangan": "Tasdiqlangan", "rad_etilgan": "Rad etilgan"}
 # Excel varaq nomida taqiqlangan belgilar.
 _SHEET_FORBIDDEN = str.maketrans({ch: " " for ch in "[]:*?/\\"})
 
@@ -250,7 +250,8 @@ async def _events_sheet(
         .order_by(Event.occurred_at)
     )
     if bucket:
-        stmt = stmt.where(Event.status == bucket)
+        # Toifa bir nechta holatni o'z ichiga oladi (masalan tasdiqlangan + hal_qilindi).
+        stmt = stmt.where(Event.status.in_(bucket_statuses(bucket)))
     events = list((await db.execute(stmt)).scalars().all())
     ws = _sheet(wb, criterion.title)
     _header(ws, ["№", "Vaqt", "Mezon", "Kamera", "Bino", "Kim", "Holat", "Ishonch, %"])

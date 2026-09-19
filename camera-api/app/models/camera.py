@@ -1,9 +1,9 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, Integer, SmallInteger, String, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, Integer, SmallInteger, String, event, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, attributes, mapped_column, relationship
 
 from app.database import Base
 from app.models.org import Building
@@ -185,3 +185,18 @@ class Camera(Base):
 
     building: Mapped[Building | None] = relationship("Building", lazy="joined")
     department: Mapped["Department | None"] = relationship("Department", lazy="joined")
+
+
+def _reset_plan_position(target: Camera, value, oldvalue, _initiator) -> None:
+    """Kamera boshqa bino yoki qavatga ko'chirilsa, eski qavat rejasidagi
+    joyi yangi qavat rejasida noto'g'ri nuqtada ko'rinib qolmasin.
+    Qiymat yuklanmagan (oldvalue noma'lum) bo'lsa tegilmaydi."""
+    if oldvalue in (attributes.NO_VALUE, attributes.NEVER_SET) or value == oldvalue:
+        return
+    target.plan_x = None
+    target.plan_y = None
+    target.plan_rotation = None
+
+
+event.listen(Camera.building_id, "set", _reset_plan_position)
+event.listen(Camera.floor, "set", _reset_plan_position)

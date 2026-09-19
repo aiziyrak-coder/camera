@@ -65,7 +65,8 @@ async def _review_stats(db: AsyncSession) -> dict[int, tuple[int, int, int, int]
     ).all()
     acc: dict[int, list[int]] = defaultdict(lambda: [0, 0, 0, 0])
     for code, status_value, is_trial, count in rows:
-        if status_value == "tasdiqlangan":
+        # hal_qilindi — signal haqiqiy bo'lib chiqqan va yopilgan.
+        if status_value in ("tasdiqlangan", "hal_qilindi"):
             acc[code][0] += count
         elif status_value == "rad_etilgan":
             acc[code][1] += count

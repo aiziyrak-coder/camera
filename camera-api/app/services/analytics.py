@@ -50,6 +50,7 @@ from app.schemas.report import (
     SecurityDayOut,
     SystemAnalyticsOut,
 )
+from app.services.event_status import OPEN_STATUSES, fold_review_counts, review_bucket
 from app.services.report_generator import _attendance_reliability, _working_days
 from app.services.report_insights import WEAK_PRECISION, InsightInputs, build_insights
 from app.timezone import INSTITUTE_TZ, INSTITUTE_TZ_NAME, UZ_MONTHS, local_date, local_now
@@ -325,8 +326,9 @@ async def _security(
             .group_by(text("1"), text("2"))
         )
     ).all()
-    status_counts = dict(
-        (await db.execute(select(Event.status, func.count()).where(in_range).group_by(Event.status))).all()
+    # Ish jarayoni holatlari uch toifaga yig'iladi (app/services/event_status.py).
+    status_counts = fold_review_counts(
+        dict((await db.execute(select(Event.status, func.count()).where(in_range).group_by(Event.status))).all())
     )
     heat_rows = (
         await db.execute(
@@ -359,7 +361,7 @@ async def _security(
     oldest = await db.scalar(
         select(func.min(Event.occurred_at))
         .where(Event.is_trial.is_(False))
-        .where(Event.status == "yangi")
+        .where(Event.status.in_(OPEN_STATUSES))
         .where(Event.module_code.in_(registered))
     )
     now = datetime.now(timezone.utc)
@@ -368,7 +370,7 @@ async def _security(
             select(func.count())
             .select_from(Event)
             .where(Event.is_trial.is_(False))
-            .where(Event.status == "yangi")
+            .where(Event.status.in_(OPEN_STATUSES))
             .where(Event.module_code.in_(registered))
             .where(Event.severity.in_(SERIOUS))
             .where(Event.occurred_at < now - timedelta(hours=24))
@@ -399,7 +401,8 @@ async def _security(
     for code, name, status_value, count in module_rows:
         row = modules.setdefault(code, {"name": name, "count": 0, "tasdiqlangan": 0, "rad_etilgan": 0, "yangi": 0})
         row["count"] = int(row["count"]) + count
-        row[status_value] = int(row.get(status_value, 0)) + count
+        bucket = review_bucket(status_value)
+        row[bucket] = int(row.get(bucket, 0)) + count
     total = sum(int(r["count"]) for r in modules.values())
 
     module_out: list[ModuleRowOut] = []
@@ -573,8 +576,9 @@ async def _core(db: AsyncSession, start: date, end: date) -> dict[str, float | i
     lo, hi = _utc_bounds(start, end)
     # Sinov rejimidagi modullar signali rahbariyat hisobotiga kirmaydi.
     in_range = and_(Event.occurred_at >= lo, Event.occurred_at < hi, Event.is_trial.is_(False))
-    status_counts = dict(
-        (await db.execute(select(Event.status, func.count()).where(in_range).group_by(Event.status))).all()
+    # Ish jarayoni holatlari uch toifaga yig'iladi (app/services/event_status.py).
+    status_counts = fold_review_counts(
+        dict((await db.execute(select(Event.status, func.count()).where(in_range).group_by(Event.status))).all())
     )
     serious = (
         await db.scalar(select(func.count()).select_from(Event).where(in_range).where(Event.severity.in_(SERIOUS)))

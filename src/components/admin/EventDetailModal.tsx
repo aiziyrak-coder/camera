@@ -1,31 +1,10 @@
 import { Check, ImageOff, User, X } from 'lucide-react';
 import Modal from '../Modal';
 import Badge from '../Badge';
-import type { AIEvent, EventStatus } from '../../types';
-
-const SEVERITY_TONE: Record<AIEvent['severity'], 'green' | 'amber' | 'red'> = {
-  past: 'green',
-  "o'rta": 'amber',
-  yuqori: 'red',
-};
-
-const SEVERITY_LABEL: Record<AIEvent['severity'], string> = {
-  past: 'Past',
-  "o'rta": "O'rta",
-  yuqori: 'Yuqori',
-};
-
-const STATUS_TONE: Record<EventStatus, 'amber' | 'green' | 'red'> = {
-  yangi: 'amber',
-  tasdiqlangan: 'green',
-  rad_etilgan: 'red',
-};
-
-const STATUS_LABEL: Record<EventStatus, string> = {
-  yangi: 'Yangi',
-  tasdiqlangan: 'Tasdiqlangan',
-  rad_etilgan: 'Rad etilgan',
-};
+import SlaBadge from '../events/SlaBadge';
+import { SEVERITY_LABEL, SEVERITY_TONE, STATUS_LABEL, STATUS_TONE } from '../../lib/eventLabels';
+import { isOpenStatus } from '../../lib/eventWorkflow';
+import type { AIEvent } from '../../types';
 
 export default function EventDetailModal({
   event,
@@ -34,7 +13,7 @@ export default function EventDetailModal({
 }: {
   event: AIEvent | null;
   onClose: () => void;
-  onReview: (id: string, status: EventStatus) => void;
+  onReview: (id: string, status: 'tasdiqlangan' | 'rad_etilgan') => void;
 }) {
   return (
     <Modal open={!!event} onClose={onClose} title={event?.moduleName} maxWidth="max-w-lg">
@@ -65,6 +44,7 @@ export default function EventDetailModal({
             <Badge tone={SEVERITY_TONE[event.severity]}>{`Muhimlik: ${SEVERITY_LABEL[event.severity]}`}</Badge>
             <Badge tone={STATUS_TONE[event.status]}>{STATUS_LABEL[event.status]}</Badge>
             <Badge tone="indigo">{`Ishonch: ${event.confidence}%`}</Badge>
+            <SlaBadge event={event} />
           </div>
 
           <div className="grid grid-cols-2 gap-3 text-sm">
@@ -89,6 +69,12 @@ export default function EventDetailModal({
                 </div>
               </div>
             )}
+            {event.assignedToName && (
+              <div className="glass-deep px-3 py-2.5">
+                <p className="text-[11px] text-slate-400">Mas&apos;ul</p>
+                <p className="font-medium text-slate-800">{event.assignedToName}</p>
+              </div>
+            )}
             {event.reviewedBy && (
               <div className="glass-deep px-3 py-2.5">
                 <p className="text-[11px] text-slate-400">Ko'rib chiqdi</p>
@@ -97,14 +83,21 @@ export default function EventDetailModal({
             )}
           </div>
 
-          {event.status === 'yangi' && (
+          {event.status === 'hal_qilindi' && event.resolutionNote && (
+            <div className="rounded-xl bg-emerald-50 p-3 text-xs text-emerald-900">
+              <p className="font-semibold">Yechim{event.resolvedBy ? ` · ${event.resolvedBy}` : ''}</p>
+              <p className="mt-0.5 whitespace-pre-line">{event.resolutionNote}</p>
+            </div>
+          )}
+
+          {isOpenStatus(event.status) && (
             <div className="rounded-xl bg-indigo-50 p-3 text-xs text-indigo-700">
               AI signal — bu "dalil" emas, "ko'rsatkich". Yakuniy qarorni yuqoridagi kadrni ko'rib chiqqan
               holda inson qabul qiladi (human-in-the-loop).
             </div>
           )}
 
-          {event.status === 'yangi' && (
+          {isOpenStatus(event.status) && (
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => onReview(event.id, 'rad_etilgan')}

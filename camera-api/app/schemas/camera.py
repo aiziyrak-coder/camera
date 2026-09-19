@@ -1,8 +1,9 @@
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from app.schemas.base import CamelModel
+from app.schemas.ptz import PtzProtocol
 
 # app/services/camera_roles.py ROOM_TYPES bilan bir xil (model CheckConstraint ham).
 RoomType = Literal["kirish", "auditoriya", "laboratoriya", "koridor", "ofis", "cheklangan", "tashqi"]
@@ -72,6 +73,11 @@ class CameraOut(CamelModel):
     # kamera kirayotganlarning yoki chiqayotganlarning yuzini ko'rishi.
     face_roi: list[list[float]] | None = None
     face_direction: FaceDirection | None = None
+    # PTZ boshqaruvi (app/services/ptz.py). onvif_port — kameraning HTTP
+    # porti (ONVIF va ISAPI uchun ham); None = 80.
+    ptz_enabled: bool = False
+    ptz_protocol: PtzProtocol | None = None
+    onvif_port: int | None = None
 
 
 class CameraCreateIn(CamelModel):
@@ -98,10 +104,30 @@ class CameraCreateIn(CamelModel):
     is_exit: bool = False
     room_type: RoomType | None = None
     room_code: str | None = Field(default=None, max_length=32)
+    ptz_enabled: bool = False
+    ptz_protocol: PtzProtocol | None = None
+    onvif_port: int | None = Field(default=None, ge=1, le=65535)
+    """Kameraning HTTP (ONVIF/ISAPI) porti; bo'sh — 80."""
+
+    @model_validator(mode="after")
+    def _ptz_needs_protocol(self):
+        if self.ptz_enabled and self.ptz_protocol is None:
+            raise ValueError("PTZ yoqilgan bo'lsa, protokolni tanlang (ONVIF yoki Hikvision ISAPI)")
+        return self
 
 
 class CameraUpdateIn(CameraCreateIn):
-    pass
+    """PTZ maydonlari (ptzEnabled, ptzProtocol, onvifPort) qavat kabi faqat
+    YUBORILGANDA o'zgaradi — ularni bilmaydigan eski mijoz PTZ sozlamasini
+    jimgina o'chirib yubormasin. "Yoqilgan, lekin protokolsiz" holati
+    router'da, bazadagi qiymat bilan birga tekshiriladi."""
+
+    @model_validator(mode="after")
+    def _ptz_needs_protocol(self):
+        if "ptz_enabled" in self.model_fields_set and "ptz_protocol" in self.model_fields_set:
+            if self.ptz_enabled and self.ptz_protocol is None:
+                raise ValueError("PTZ yoqilgan bo'lsa, protokolni tanlang (ONVIF yoki Hikvision ISAPI)")
+        return self
 
 
 class CameraSummaryOut(CamelModel):

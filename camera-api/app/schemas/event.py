@@ -4,6 +4,11 @@ from pydantic import Field
 
 from app.schemas.base import CamelModel
 
+EventStatusLiteral = Literal["yangi", "jarayonda", "tasdiqlangan", "rad_etilgan", "hal_qilindi"]
+# Bir nechta hodisaga birdan qo'llash mumkin bo'lgan qarorlar.
+BulkStatusLiteral = Literal["tasdiqlangan", "rad_etilgan", "hal_qilindi"]
+CommentKindLiteral = Literal["izoh", "holat", "tayinlash"]
+
 
 class EventOut(CamelModel):
     """Matches src/types/index.ts `AIEvent` exactly."""
@@ -18,7 +23,7 @@ class EventOut(CamelModel):
     group: Literal["A", "B", "C", "D", "E", "F"]
     confidence: int
     severity: Literal["past", "o'rta", "yuqori"]
-    status: Literal["yangi", "tasdiqlangan", "rad_etilgan"]
+    status: EventStatusLiteral
     person_name: str | None = None
     reviewed_by: str | None = None
     # Presigned URL to the frame that triggered this event — see
@@ -33,6 +38,20 @@ class EventOut(CamelModel):
     is_trial: bool = False
     # Dalil: {"reason": "...", "metrics": {...}} — app/services/event_bus.py.
     details: dict | None = None
+    # Ish jarayoni. Vaqtlar ISO (institut mintaqasi) — frontend muddatgacha
+    # qolgan vaqtni o'zi hisoblaydi.
+    assigned_to_id: str | None = None
+    assigned_to_name: str | None = None
+    assigned_at: str | None = None
+    due_at: str | None = None
+    # Muddat o'tgan va hali qaror qilinmagan (yangi/jarayonda).
+    overdue: bool = False
+    escalated_at: str | None = None
+    resolved_at: str | None = None
+    resolved_by: str | None = None
+    resolution_note: str | None = None
+    # Ro'yxatda hisoblanadi; WebSocket xabarida null bo'lishi mumkin.
+    comments_count: int | None = None
 
 
 class EventCreateIn(CamelModel):
@@ -54,13 +73,56 @@ class EventReviewIn(CamelModel):
 
 class EventBulkReviewIn(CamelModel):
     ids: list[str] = Field(min_length=1, max_length=200)
-    status: Literal["tasdiqlangan", "rad_etilgan"]
+    status: BulkStatusLiteral
+    # "hal_qilindi" uchun majburiy — barcha tanlangan hodisalarga yoziladi.
+    note: str | None = Field(default=None, max_length=2000)
 
 
 class EventBulkReviewOut(CamelModel):
     updated: int
     skipped: int
-    status: Literal["tasdiqlangan", "rad_etilgan"]
+    status: BulkStatusLiteral
+
+
+class EventAssignIn(CamelModel):
+    # null — tayinlovni olib tashlash; "me" — joriy foydalanuvchiga.
+    user_id: str | None = Field(default=None, max_length=64)
+
+
+class EventStatusIn(CamelModel):
+    status: EventStatusLiteral
+    # "hal_qilindi" uchun majburiy (qanday chora ko'rilgani).
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class EventCommentIn(CamelModel):
+    body: str = Field(min_length=1, max_length=2000)
+
+
+class EventCommentOut(CamelModel):
+    id: str
+    kind: CommentKindLiteral
+    body: str
+    author_id: str | None = None
+    author_name: str
+    created_at: str
+
+
+class EventTimelineItemOut(CamelModel):
+    """Hodisa tarixi: yaratilish, izohlar, holat/tayinlash o'zgarishlari va
+    muddat o'tgani haqidagi ogohlantirish — vaqt bo'yicha."""
+
+    id: str
+    kind: Literal["yaratildi", "izoh", "holat", "tayinlash", "muddat"]
+    at: str
+    author_name: str | None = None
+    body: str
+
+
+class EventAssigneeOut(CamelModel):
+    id: str
+    full_name: str
+    role: str
 
 
 class EventFacetOut(CamelModel):
@@ -77,9 +139,12 @@ class EventSummaryOut(CamelModel):
     /api/events so'rovi yuborardi."""
 
     total: int
+    # Holatlar bo'yicha aniq sonlar (ro'yxat filtrlari bilan mos keladi).
     unreviewed: int
+    in_progress: int = 0
     confirmed: int
     rejected: int
+    resolved: int = 0
     unreviewed_high: int
     unreviewed_medium: int
     unreviewed_low: int
@@ -89,10 +154,15 @@ class EventSummaryOut(CamelModel):
     oldest_unreviewed_hours: float | None = None
     # Oxirgi 30 kun: signal kelgandan operator qaroriga qadar o'rtacha vaqt.
     avg_review_minutes: float | None = None
-    # Oxirgi 30 kun: tasdiqlangan / ko'rib chiqilgan (kamida 10 ta bo'lsa).
-    # Nomida raqam yo'q: camelCase generatori "precision_30d" ni kutilgan
-    # "precision30d" ga aylantirmaydi.
+    # Oxirgi 30 kun: tasdiqlangan (+ hal qilingan) / ko'rib chiqilgan
+    # (kamida 10 ta bo'lsa). Nomida raqam yo'q: camelCase generatori
+    # "precision_30d" ni kutilgan "precision30d" ga aylantirmaydi.
     recent_precision: float | None = None
+    # Ish jarayoni: muddati o'tgan (yangi/jarayonda), menga tayinlangan
+    # (yangi/jarayonda/tasdiqlangan) va hech kimga tayinlanmagan (yangi/jarayonda).
+    overdue: int = 0
+    assigned_to_me: int = 0
+    unassigned: int = 0
     modules: list[EventFacetOut] = []
     # Sinov rejimidagi, hali baholanmagan signallar — "Sinov namunalari" uchun.
     trial_unreviewed: int = 0

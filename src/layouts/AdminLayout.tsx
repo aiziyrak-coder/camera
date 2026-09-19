@@ -89,7 +89,10 @@ export default function AdminLayout() {
   // Hodisalarni ko'rish huquqi bo'lmasa, server WebSocket'ni baribir
   // yopadi (4403) — ulanishga umuman urinmaymiz.
   const canReviewEvents = can('reviewEvents', role);
-  useLiveEvents(() => setUnreadEvents((n) => n + 1), canReviewEvents);
+  // event_updated — mavjud hodisaning holati o'zgargani, yangi hodisa emas.
+  useLiveEvents((event) => {
+    if (event.kind !== 'event_updated') setUnreadEvents((n) => n + 1);
+  }, canReviewEvents);
 
   const { pathname } = useLocation();
   const allowedPaths = role ? ROLE_PAGES[role] : undefined;

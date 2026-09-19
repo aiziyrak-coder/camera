@@ -51,6 +51,22 @@ export async function checkPose(expected: LivenessStep, frame: Blob): Promise<Po
   return res.json() as Promise<PoseCheckResult>;
 }
 
+/** Biometrik ma'lumotni qayta ishlashga rozilik matni
+ *  (GET /api/public/consent-text). */
+export interface ConsentText {
+  version: string;
+  /** false bo'lsa belgi ixtiyoriy (server sozlamasi). */
+  required: boolean;
+  title: string;
+  controller: string;
+  sections: { title: string; body: string }[];
+  statement: string;
+}
+
+export async function fetchConsentText(): Promise<ConsentText> {
+  return api.get<ConsentText>('/api/public/consent-text');
+}
+
 export interface EnrollmentFaculty {
   id: string;
   name: string;
@@ -107,11 +123,15 @@ export async function registerSelf(input: EnrollmentRegisterInput): Promise<Enro
  * qat'i nazar tanishini aniqroq qiladi.
  *
  * JWT talab qilinmaydi — /api/public/enrollment/* ochiq (parolsiz) yo'l.
+ *
+ * `consent` — odam rozilik matnini o'qib belgi qo'ygani. Server uni
+ * kadrlarni tahlil qilishdan OLDIN tekshiradi (sozlamada majburiy bo'lsa).
  */
 export async function submitEnrollment(
   recordId: string,
   identity: EnrollmentIdentity,
   frames: Blob[],
+  consent: boolean,
 ): Promise<EnrollmentSubmitResult> {
   const form = new FormData();
   // Server /lookup dagi bilan AYNAN bir xil tekshiruvni qayta bajaradi —
@@ -119,6 +139,7 @@ export async function submitEnrollment(
   Object.entries(identityPayload(identity)).forEach(([key, value]) => {
     if (value) form.append(key, value);
   });
+  if (consent) form.append('consent', 'true');
   frames.forEach((frame, i) => form.append('photos', frame, `frame-${i}.jpg`));
 
   const res = await fetch(`${config.apiBaseUrl}/api/public/enrollment/${recordId}/submit`, {

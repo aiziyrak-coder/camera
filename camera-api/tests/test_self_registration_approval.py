@@ -59,7 +59,7 @@ async def _register_and_submit(client: AsyncClient) -> dict:
     )
     assert resp.status_code == 201, resp.text
     record_id = resp.json()["recordId"]
-    resp = await client.post(f"/api/public/enrollment/{record_id}/submit", data={"pinfl": PINFL}, files=FRAMES)
+    resp = await client.post(f"/api/public/enrollment/{record_id}/submit", data={"pinfl": PINFL, "consent": "true"}, files=FRAMES)
     assert resp.status_code == 200, resp.text
     return {"id": record_id, **resp.json()}
 
@@ -88,7 +88,7 @@ class TestSelfRegisteredFaceWaits:
         assert resp.json()["alreadyEnrolled"] is False
         assert resp.json()["awaitingApproval"] is True
         record_id = resp.json()["recordId"]
-        again = await client.post(f"/api/public/enrollment/{record_id}/submit", data={"pinfl": PINFL}, files=FRAMES)
+        again = await client.post(f"/api/public/enrollment/{record_id}/submit", data={"pinfl": PINFL, "consent": "true"}, files=FRAMES)
         assert again.status_code == 200
         assert again.json()["biometricsStatus"] == "kutilmoqda"
 
@@ -99,7 +99,9 @@ class TestSelfRegisteredFaceWaits:
         await db_session.commit()
 
         resp = await client.post(
-            f"/api/public/enrollment/{record.id}/submit", data={"pinfl": "30000000000001"}, files=FRAMES
+            f"/api/public/enrollment/{record.id}/submit",
+            data={"pinfl": "30000000000001", "consent": "true"},
+            files=FRAMES,
         )
 
         assert resp.json()["biometricsStatus"] == "tasdiqlangan"

@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Annotated, Literal
@@ -12,29 +13,47 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
-from sqlalchemy import case, false, func, or_, select, true, update
+from sqlalchemy import case, false, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.audit import log_action
 from app.database import SessionLocal, get_db
 from app.dependencies import CurrentUser, has_any_permission, require_permission, user_from_token
-from app.models import Camera, Event, User
+from app.models import Camera, Event, EventComment, User
+from app.models.user import ROLE_LABELS, role_display_label
 from app.pagination import Page, PageParams, build_page, paginate
 from app.schemas.event import (
+    EventAssigneeOut,
+    EventAssignIn,
     EventBulkReviewIn,
     EventBulkReviewOut,
+    EventCommentIn,
+    EventCommentOut,
     EventCreateIn,
     EventFacetOut,
     EventOut,
     EventReviewIn,
+    EventStatusIn,
     EventSummaryOut,
+    EventTimelineItemOut,
 )
-from app.services.event_bus import event_to_out
+from app.services.event_bus import event_to_out, sla_due_at
 from app.services.event_scope import NOT_SUPPRESSED, OPERATOR_EVENTS, REGISTERED_MODULE
+from app.services.event_status import (
+    ACTIVE_STATUSES,
+    CONFIRMED_STATUSES,
+    OPEN_STATUSES,
+    STATUS_LABELS,
+    STATUSES,
+    can_transition,
+)
+from app.services.notifications import notify_user
 from app.storage import delete_files_quietly
-from app.timezone import INSTITUTE_TZ, local_now
+from app.timezone import INSTITUTE_TZ, local_now, to_local
 from app.ws import manager
+
+logger = logging.getLogger("app.events")
 
 router = APIRouter(tags=["events"])
 
@@ -42,9 +61,11 @@ SERIOUS = ("o'rta", "yuqori")
 REVIEW_STATS_DAYS = 30
 MIN_REVIEWS_FOR_PRECISION = 10
 FACET_LIMIT = 40
+AUDIT_MODULE = "AI Modullari"
 
 # Hodisalarni ko'rish va ko'rib chiqish huquqi (app/seed.py).
-ReviewDep = Annotated[CurrentUser, Depends(require_permission("reviewEvents"))]
+REVIEW_PERMISSION = "reviewEvents"
+ReviewDep = Annotated[CurrentUser, Depends(require_permission(REVIEW_PERMISSION))]
 
 # WebSocket yopilish kodlari — src/lib/realtime.ts ular kelganda qayta
 # ulanmaydi: token yaroqsiz yoki huquq yo'q bo'lsa, har 3 soniyada qayta
@@ -53,12 +74,150 @@ WS_CLOSE_UNAUTHORIZED = 4401
 WS_CLOSE_FORBIDDEN = 4403
 
 
-def _to_out(event: Event) -> EventOut:
-    return event_to_out(event)
+def _to_out(event: Event, *, assignee_name: str | None = None, comments_count: int | None = None) -> EventOut:
+    return event_to_out(event, assignee_name=assignee_name, comments_count=comments_count)
 
 
 def _local_day_start(day: date) -> datetime:
     return datetime.combine(day, time.min, tzinfo=INSTITUTE_TZ)
+
+
+def _iso(moment: datetime) -> str:
+    return to_local(moment).isoformat(timespec="seconds")
+
+
+def _parse_uuid(raw: str, message: str, code: int = status.HTTP_422_UNPROCESSABLE_ENTITY) -> uuid.UUID:
+    try:
+        return uuid.UUID(raw)
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(code, message) from None
+
+
+async def _get_event(db: AsyncSession, event_id: str, *, for_update: bool = False) -> Event:
+    """Hodisani topadi. Noto'g'ri identifikator ham "topilmadi" — bazaga
+    yaroqsiz UUID yuborilsa 500 qaytardi."""
+    parsed = _parse_uuid(event_id, "Hodisa topilmadi", status.HTTP_404_NOT_FOUND)
+    stmt = select(Event).where(Event.id == parsed)
+    if for_update:
+        # Ikki operator bir vaqtda holatni o'zgartirsa, o'tish qoidasi
+        # eskirgan holatga qarab tekshirilmasin.
+        stmt = stmt.with_for_update()
+    event = (await db.execute(stmt)).scalar_one_or_none()
+    if event is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Hodisa topilmadi")
+    return event
+
+
+async def _user_names(db: AsyncSession, ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
+    if not ids:
+        return {}
+    rows = (await db.execute(select(User.id, User.full_name).where(User.id.in_(ids)))).all()
+    return {user_id: name for user_id, name in rows}
+
+
+async def _comment_counts(db: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
+    if not ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(EventComment.event_id, func.count())
+            .where(EventComment.event_id.in_(ids))
+            .group_by(EventComment.event_id)
+        )
+    ).all()
+    return {event_id: count for event_id, count in rows}
+
+
+async def _outs(db: AsyncSession, events: list[Event]) -> list[EventOut]:
+    """Ro'yxat uchun: tayinlanganlar ismlari va izohlar soni ikkita so'rovda."""
+    names = await _user_names(db, {e.assigned_to_id for e in events if e.assigned_to_id})
+    counts = await _comment_counts(db, [e.id for e in events])
+    return [
+        _to_out(
+            e,
+            assignee_name=names.get(e.assigned_to_id) if e.assigned_to_id else None,
+            comments_count=counts.get(e.id, 0),
+        )
+        for e in events
+    ]
+
+
+async def _out(db: AsyncSession, event: Event) -> EventOut:
+    return (await _outs(db, [event]))[0]
+
+
+async def _broadcast_update(event: Event, out: EventOut) -> None:
+    """Ochiq sahifalar (jurnal, devor, panel) hodisani joyida yangilashi uchun.
+
+    Xabar tekis EventOut + "kind": "event_updated" — AIEvent sifatida ham
+    o'qiladi, shuning uchun eski ishlovchilar ham buzilmaydi. Sinov signali
+    operator sahifalariga umuman kelmagan — uning o'zgarishi ham yuborilmaydi."""
+    if event.is_trial:
+        return
+    await manager.broadcast({**out.model_dump(by_alias=True), "kind": "event_updated"})
+
+
+async def _actor_name(db: AsyncSession, current_user: CurrentUser) -> str:
+    actor = await db.get(User, current_user.id)
+    return actor.full_name if actor else "Noma'lum"
+
+
+def _apply_status(
+    event: Event,
+    target: str,
+    *,
+    actor_id: uuid.UUID,
+    actor_name: str,
+    note: str | None,
+    now: datetime,
+) -> str:
+    """Holatni o'zgartiradi va unga bog'liq maydonlarni moslaydi. Tarixga
+    yoziladigan matnni qaytaradi. O'tish qoidasi chaqiruvchida tekshiriladi.
+
+    - tasdiqlangan / rad_etilgan: ko'rib chiqish qarori (reviewed_by/at —
+      aniqlik va "o'rtacha ko'rib chiqish vaqti" shularga tayanadi);
+    - hal_qilindi: yechim izohi majburiy; qaror hali qilinmagan bo'lsa,
+      hal qilingan hodisa haqiqiy deb ham belgilanadi;
+    - jarayonda: yopilgan hodisa qayta ochilsa, avvalgi qaror bekor bo'ladi;
+      hech kimga tayinlanmagan bo'lsa — uni olgan operatorga tayinlanadi;
+    - yangi: navbatga qaytarish — tayinlov olib tashlanadi."""
+    previous = event.status
+    event.status = target
+    if target in ("tasdiqlangan", "rad_etilgan"):
+        event.reviewed_by = actor_name
+        event.reviewed_at = now
+        event.resolved_at = None
+        event.resolved_by = None
+        event.resolution_note = None
+    elif target == "hal_qilindi":
+        event.resolution_note = note
+        event.resolved_at = now
+        event.resolved_by = actor_name
+        if previous in OPEN_STATUSES or event.reviewed_at is None:
+            event.reviewed_by = actor_name
+            event.reviewed_at = now
+    elif target == "jarayonda":
+        if previous not in OPEN_STATUSES:
+            event.reviewed_by = None
+            event.reviewed_at = None
+            event.resolved_at = None
+            event.resolved_by = None
+            event.resolution_note = None
+        if event.assigned_to_id is None:
+            event.assigned_to_id = actor_id
+            event.assigned_at = now
+    elif target == "yangi":
+        event.assigned_to_id = None
+        event.assigned_at = None
+        event.reviewed_by = None
+        event.reviewed_at = None
+
+    text = f"{STATUS_LABELS.get(previous, previous)} → {STATUS_LABELS.get(target, target)}"
+    return f"{text}: {note}" if note else text
+
+
+def _clean_note(note: str | None) -> str | None:
+    return note.strip() if note and note.strip() else None
 
 
 async def authorize_events_socket(token: str | None, session_factory=SessionLocal) -> int | None:
@@ -74,7 +233,7 @@ async def authorize_events_socket(token: str | None, session_factory=SessionLoca
             user = await user_from_token(token, db)
         except HTTPException:
             return WS_CLOSE_UNAUTHORIZED
-        if not await has_any_permission(db, user.role, ("reviewEvents",)):
+        if not await has_any_permission(db, user.role, (REVIEW_PERMISSION,)):
             return WS_CLOSE_FORBIDDEN
     return None
 
@@ -107,7 +266,7 @@ async def events_websocket(websocket: WebSocket) -> None:
 @router.get("/api/events", response_model=Page[EventOut])
 async def list_events(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: ReviewDep,
+    current_user: ReviewDep,
     page_params: Annotated[PageParams, Depends()],
     severity: Annotated[str | None, Query()] = None,
     status_filter: Annotated[str | None, Query(alias="status")] = None,
@@ -120,9 +279,11 @@ async def list_events(
     camera_id: Annotated[str | None, Query(alias="cameraId")] = None,
     date_from: Annotated[date | None, Query(alias="from")] = None,
     date_to: Annotated[date | None, Query(alias="to")] = None,
-    sort: Annotated[Literal["newest", "oldest", "severity"], Query()] = "newest",
+    sort: Annotated[Literal["newest", "oldest", "severity", "due"], Query()] = "newest",
     trial: Annotated[bool, Query()] = False,
     exclude_suppressed: Annotated[bool, Query(alias="excludeSuppressed")] = False,
+    assigned_to: Annotated[str | None, Query(alias="assignedTo", max_length=64)] = None,
+    overdue: Annotated[bool, Query()] = False,
 ) -> Page[EventOut]:
     # trial=true — faqat sinov rejimidagi modullar signallari (baholash uchun).
     stmt = select(Event).where(Event.is_trial == (true() if trial else false())).where(REGISTERED_MODULE)
@@ -132,7 +293,25 @@ async def list_events(
     if severity:
         stmt = stmt.where(Event.severity == severity)
     if status_filter:
-        stmt = stmt.where(Event.status == status_filter)
+        # Bitta holat yoki vergul bilan bir nechtasi ("yangi,jarayonda" —
+        # ko'rib chiqish navbati).
+        statuses = [s.strip() for s in status_filter.split(",") if s.strip()]
+        unknown = [s for s in statuses if s not in STATUSES]
+        if unknown:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Noma'lum holat: {', '.join(unknown)}")
+        if statuses:
+            stmt = stmt.where(Event.status.in_(statuses))
+    if assigned_to:
+        if assigned_to == "me":
+            stmt = stmt.where(Event.assigned_to_id == uuid.UUID(current_user.id))
+        elif assigned_to == "none":
+            stmt = stmt.where(Event.assigned_to_id.is_(None))
+        else:
+            stmt = stmt.where(
+                Event.assigned_to_id == _parse_uuid(assigned_to, "Noto'g'ri foydalanuvchi identifikatori")
+            )
+    if overdue:
+        stmt = stmt.where(Event.due_at < datetime.now(timezone.utc)).where(Event.status.in_(OPEN_STATUSES))
     if search and search.strip():
         term = f"%{search.strip()}%"
         stmt = stmt.where(
@@ -155,10 +334,7 @@ async def list_events(
     if building:
         stmt = stmt.where(Event.building == building)
     if camera_id:
-        try:
-            stmt = stmt.where(Event.camera_id == uuid.UUID(camera_id))
-        except ValueError:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Noto'g'ri kamera identifikatori") from None
+        stmt = stmt.where(Event.camera_id == _parse_uuid(camera_id, "Noto'g'ri kamera identifikatori"))
     if hide_rejected:
         # Operator "yolg'on signal" deb belgilagan hodisa devorga qayta
         # chiqmasligi kerak — aks holda uni har safar qaytadan ko'rib
@@ -183,29 +359,32 @@ async def list_events(
         # Ko'rib chiqish navbati: avval yuqori, keyin o'rta, har biri ichida eng yangisi.
         rank = case((Event.severity == "yuqori", 0), (Event.severity == "o'rta", 1), else_=2)
         stmt = stmt.order_by(rank, Event.occurred_at.desc())
+    elif sort == "due":
+        # Muddati eng yaqin (yoki eng ko'p o'tgan) birinchi; muddatsizlar oxirida.
+        stmt = stmt.order_by(Event.due_at.asc().nulls_last(), Event.occurred_at.desc())
     else:
         stmt = stmt.order_by(Event.occurred_at.desc())
 
     records, total = await paginate(db, stmt, page_params)
-    items = [_to_out(e) for e in records]
-    return build_page(items, total, page_params)
+    return build_page(await _outs(db, records), total, page_params)
 
 
 @router.get("/api/events/summary", response_model=EventSummaryOut)
 async def events_summary(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: ReviewDep,
+    current_user: ReviewDep,
 ) -> EventSummaryOut:
     now = datetime.now(timezone.utc)
     status_counts = dict(
         (await db.execute(select(Event.status, func.count()).where(OPERATOR_EVENTS).group_by(Event.status))).all()
     )
+    # "Qaror kutayotgan" = yangi + jarayonda (ko'rib chiqish navbati).
     unreviewed_by_severity = dict(
         (
             await db.execute(
                 select(Event.severity, func.count())
                 .where(OPERATOR_EVENTS)
-                .where(Event.status == "yangi")
+                .where(Event.status.in_(OPEN_STATUSES))
                 .group_by(Event.severity)
             )
         ).all()
@@ -219,19 +398,29 @@ async def events_summary(
         )
     ).one()
     oldest = await db.scalar(
-        select(func.min(Event.occurred_at)).where(OPERATOR_EVENTS).where(Event.status == "yangi")
+        select(func.min(Event.occurred_at)).where(OPERATOR_EVENTS).where(Event.status.in_(OPEN_STATUSES))
     )
     stale_serious = (
         await db.scalar(
             select(func.count())
             .select_from(Event)
             .where(OPERATOR_EVENTS)
-            .where(Event.status == "yangi")
+            .where(Event.status.in_(OPEN_STATUSES))
             .where(Event.severity.in_(SERIOUS))
             .where(Event.occurred_at < now - timedelta(hours=24))
         )
         or 0
     )
+    me = uuid.UUID(current_user.id)
+    workflow_row = (
+        await db.execute(
+            select(
+                func.count().filter(Event.status.in_(OPEN_STATUSES), Event.due_at < now),
+                func.count().filter(Event.status.in_(ACTIVE_STATUSES), Event.assigned_to_id == me),
+                func.count().filter(Event.status.in_(OPEN_STATUSES), Event.assigned_to_id.is_(None)),
+            ).where(OPERATOR_EVENTS)
+        )
+    ).one()
 
     since = now - timedelta(days=REVIEW_STATS_DAYS)
     reviewed_recently = Event.reviewed_at >= since
@@ -239,7 +428,8 @@ async def events_summary(
         await db.execute(
             select(
                 func.avg(func.extract("epoch", Event.reviewed_at - Event.occurred_at)),
-                func.count().filter(Event.status == "tasdiqlangan"),
+                # Hal qilingan hodisa avval haqiqiy deb topilgan — tasdiqlangan hisoblanadi.
+                func.count().filter(Event.status.in_(CONFIRMED_STATUSES)),
                 func.count().filter(Event.status == "rad_etilgan"),
             )
             .where(OPERATOR_EVENTS)
@@ -283,8 +473,10 @@ async def events_summary(
     return EventSummaryOut(
         total=sum(status_counts.values()),
         unreviewed=status_counts.get("yangi", 0),
+        in_progress=status_counts.get("jarayonda", 0),
         confirmed=status_counts.get("tasdiqlangan", 0),
         rejected=status_counts.get("rad_etilgan", 0),
+        resolved=status_counts.get("hal_qilindi", 0),
         unreviewed_high=unreviewed_by_severity.get("yuqori", 0),
         unreviewed_medium=unreviewed_by_severity.get("o'rta", 0),
         unreviewed_low=unreviewed_by_severity.get("past", 0),
@@ -296,11 +488,28 @@ async def events_summary(
         recent_precision=(
             round(confirmed_recent * 100 / reviewed_total, 1) if reviewed_total >= MIN_REVIEWS_FOR_PRECISION else None
         ),
+        overdue=workflow_row[0],
+        assigned_to_me=workflow_row[1],
+        unassigned=workflow_row[2],
         modules=[EventFacetOut(value=str(code), label=name, count=count) for code, name, count in module_rows],
         buildings=[EventFacetOut(value=name, label=name, count=count) for name, count in building_rows],
         trial_unreviewed=sum(count for _code, _name, count in trial_rows),
         trial_modules=[EventFacetOut(value=str(code), label=name, count=count) for code, name, count in trial_rows],
     )
+
+
+@router.get("/api/events/assignees", response_model=list[EventAssigneeOut])
+async def list_assignees(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: ReviewDep,
+) -> list[EventAssigneeOut]:
+    """Tayinlash ro'yxati: hodisalarni ko'rib chiqish huquqi bor rollardagi
+    foydalanuvchilar (huquq matritsasi o'zgarsa, ro'yxat ham o'zgaradi)."""
+    roles = [role for role in ROLE_LABELS if await has_any_permission(db, role, (REVIEW_PERMISSION,))]
+    if not roles:
+        return []
+    users = (await db.execute(select(User).where(User.role.in_(roles)).order_by(User.full_name))).scalars().all()
+    return [EventAssigneeOut(id=str(u.id), full_name=u.full_name, role=role_display_label(u.role)) for u in users]
 
 
 @router.post("/api/events", response_model=EventOut, status_code=status.HTTP_201_CREATED)
@@ -326,13 +535,14 @@ async def create_event(
         severity=body.severity,
         person_name=body.person_name,
         status="yangi",
+        due_at=sla_due_at(body.severity, datetime.now(timezone.utc)),
     )
     db.add(event)
-    await log_action(db, request, current_user.id, f"Yangi AI hodisa: {body.module_name}", "AI Modullari")
+    await log_action(db, request, current_user.id, f"Yangi AI hodisa: {body.module_name}", AUDIT_MODULE)
     await db.commit()
     await db.refresh(event)
 
-    out = _to_out(event)
+    out = _to_out(event, comments_count=0)
     await manager.broadcast(out.model_dump(by_alias=True))
     return out
 
@@ -344,7 +554,12 @@ async def review_events_bulk(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: ReviewDep,
 ) -> EventBulkReviewOut:
-    """Bir nechta hodisani bitta tranzaksiyada tasdiqlash yoki rad etish.
+    """Bir nechta hodisani bitta tranzaksiyada tasdiqlash, rad etish yoki
+    hal qilingan deb yopish (umumiy yechim izohi bilan).
+
+    Holat o'tish qoidasiga to'g'ri kelmaydigan (masalan yolg'on signalni
+    "hal qilindi" qilish) yoki allaqachon shu holatdagi hodisalar
+    o'tkazib yuboriladi va "skipped" ga qo'shiladi.
 
     WebSocket'ga bitta yig'ma xabar ketadi ({"kind": "events_reviewed"}),
     har hodisa uchun alohida emas: 200 ta xabar har bir ochiq sahifani
@@ -353,22 +568,41 @@ async def review_events_bulk(
         ids = [uuid.UUID(raw) for raw in dict.fromkeys(body.ids)]
     except ValueError:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Noto'g'ri hodisa identifikatori") from None
+    note = _clean_note(body.note)
+    if body.status == "hal_qilindi" and note is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Hal qilish uchun yechim izohi majburiy")
 
-    reviewer = await db.get(User, current_user.id)
-    reviewer_name = reviewer.full_name if reviewer else None
-    result = await db.execute(
-        update(Event)
-        .where(Event.id.in_(ids))
-        .values(status=body.status, reviewed_by=reviewer_name, reviewed_at=datetime.now(timezone.utc))
-        .returning(Event.id)
+    actor_id = uuid.UUID(current_user.id)
+    reviewer_name = await _actor_name(db, current_user)
+    now = datetime.now(timezone.utc)
+    events = (
+        (await db.execute(select(Event).where(Event.id.in_(ids)).order_by(Event.id).with_for_update()))
+        .scalars()
+        .all()
     )
-    updated_ids = [str(event_id) for event_id in result.scalars().all()]
+    updated_ids: list[str] = []
+    for event in events:
+        if event.status == body.status or not can_transition(event.status, body.status):
+            continue
+        if body.status == "hal_qilindi" and event.is_trial:
+            continue
+        text = _apply_status(
+            event,
+            body.status,
+            actor_id=actor_id,
+            actor_name=reviewer_name,
+            note=note if body.status == "hal_qilindi" else None,
+            now=now,
+        )
+        db.add(EventComment(event_id=event.id, author_id=actor_id, author_name=reviewer_name, kind="holat", body=text))
+        updated_ids.append(str(event.id))
+
     await log_action(
         db,
         request,
         current_user.id,
         f"Hodisalarni ommaviy ko'rib chiqdi: {len(updated_ids)} ta — {body.status}",
-        "AI Modullari",
+        AUDIT_MODULE,
     )
     await db.commit()
 
@@ -379,6 +613,15 @@ async def review_events_bulk(
     return EventBulkReviewOut(updated=len(updated_ids), skipped=len(ids) - len(updated_ids), status=body.status)
 
 
+@router.get("/api/events/{event_id}", response_model=EventOut)
+async def get_event(
+    event_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: ReviewDep,
+) -> EventOut:
+    return await _out(db, await _get_event(db, event_id))
+
+
 @router.delete("/api/events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_event(
     event_id: str,
@@ -386,13 +629,9 @@ async def delete_event(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[CurrentUser, Depends(require_permission("deleteEvents"))],
 ) -> None:
-    result = await db.execute(select(Event).where(Event.id == event_id))
-    event = result.scalar_one_or_none()
-    if event is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Hodisa topilmadi")
-
+    event = await _get_event(db, event_id)
     snapshot_key = event.snapshot_key
-    await log_action(db, request, current_user.id, f"Hodisani o'chirdi: {event.module_name}", "AI Modullari")
+    await log_action(db, request, current_user.id, f"Hodisani o'chirdi: {event.module_name}", AUDIT_MODULE)
     await db.delete(event)
     await db.commit()
     # The row is the source of truth; its snapshot in object storage is
@@ -410,22 +649,274 @@ async def review_event(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: ReviewDep,
 ) -> EventOut:
-    result = await db.execute(select(Event).where(Event.id == event_id))
-    event = result.scalar_one_or_none()
-    if event is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Hodisa topilmadi")
+    """Tezkor qaror: tasdiqlash yoki rad etish (navbat kartalari, devor,
+    sinov namunalari). Har qanday holatdan ruxsat — qarorni o'zgartirish
+    ham shu yerdan; holat o'zgarsa tarixga yoziladi."""
+    event = await _get_event(db, event_id, for_update=True)
+    actor_id = uuid.UUID(current_user.id)
+    actor_name = await _actor_name(db, current_user)
+    previous = event.status
+    text = _apply_status(event, body.status, actor_id=actor_id, actor_name=actor_name, note=None, now=datetime.now(timezone.utc))
+    if previous != body.status:
+        db.add(EventComment(event_id=event.id, author_id=actor_id, author_name=actor_name, kind="holat", body=text))
 
-    event.status = body.status
-    reviewer = await db.get(User, current_user.id)
-    event.reviewed_by = reviewer.full_name if reviewer else None
-    event.reviewed_at = datetime.now(timezone.utc)
-
-    await log_action(db, request, current_user.id, f"Hodisani ko'rib chiqdi: {body.status}", "AI Modullari")
+    await log_action(db, request, current_user.id, f"Hodisani ko'rib chiqdi: {body.status}", AUDIT_MODULE)
     await db.commit()
     await db.refresh(event)
 
-    out = _to_out(event)
-    # Sinov signali operator sahifalariga umuman kelmagan — uning bahosini ham yubormaymiz.
-    if not event.is_trial:
-        await manager.broadcast(out.model_dump(by_alias=True))
+    out = await _out(db, event)
+    await _broadcast_update(event, out)
     return out
+
+
+@router.post("/api/events/{event_id}/status", response_model=EventOut)
+async def change_event_status(
+    event_id: str,
+    body: EventStatusIn,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: ReviewDep,
+) -> EventOut:
+    """Ish jarayoni bo'yicha holat o'zgarishi (app/services/event_status.py
+    TRANSITIONS). "hal_qilindi" uchun yechim izohi majburiy."""
+    event = await _get_event(db, event_id, for_update=True)
+    if event.is_trial:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Sinov signali ish jarayoniga kirmaydi — faqat baholanadi")
+    note = _clean_note(body.note)
+    if body.status == event.status:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"Hodisa allaqachon \"{STATUS_LABELS[event.status]}\" holatida")
+    if not can_transition(event.status, body.status):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"\"{STATUS_LABELS[event.status]}\" holatidan \"{STATUS_LABELS[body.status]}\" ga o'tib bo'lmaydi",
+        )
+    if body.status == "hal_qilindi" and note is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Hal qilish uchun yechim izohi majburiy")
+
+    actor_id = uuid.UUID(current_user.id)
+    actor_name = await _actor_name(db, current_user)
+    previous = event.status
+    text = _apply_status(event, body.status, actor_id=actor_id, actor_name=actor_name, note=note, now=datetime.now(timezone.utc))
+    db.add(EventComment(event_id=event.id, author_id=actor_id, author_name=actor_name, kind="holat", body=text))
+    await log_action(
+        db,
+        request,
+        current_user.id,
+        f"Hodisa holati: {STATUS_LABELS[previous]} → {STATUS_LABELS[body.status]} ({event.module_name})",
+        AUDIT_MODULE,
+    )
+    await db.commit()
+    await db.refresh(event)
+
+    out = await _out(db, event)
+    await _broadcast_update(event, out)
+    return out
+
+
+@router.post("/api/events/{event_id}/assign", response_model=EventOut)
+async def assign_event(
+    event_id: str,
+    body: EventAssignIn,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: ReviewDep,
+) -> EventOut:
+    """Hodisani operatorga tayinlash (userId: null — tayinlovni olib
+    tashlash). Yangi hodisa tayinlanganda "jarayonda" ga o'tadi va
+    tayinlangan foydalanuvchiga shaxsiy bildirishnoma yuboriladi."""
+    event = await _get_event(db, event_id, for_update=True)
+    if event.is_trial:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Sinov signali ish jarayoniga kirmaydi — faqat baholanadi")
+    if event.status in ("rad_etilgan", "hal_qilindi"):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, f"\"{STATUS_LABELS[event.status]}\" hodisani tayinlab bo'lmaydi — avval qayta oching"
+        )
+
+    assignee: User | None = None
+    if body.user_id is not None:
+        # "me" — o'zimga olish (frontend joriy foydalanuvchi identifikatorini bilmaydi).
+        raw_id = current_user.id if body.user_id == "me" else body.user_id
+        assignee = await db.get(User, _parse_uuid(raw_id, "Noto'g'ri foydalanuvchi identifikatori"))
+        if assignee is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Foydalanuvchi topilmadi")
+        if not await has_any_permission(db, assignee.role, (REVIEW_PERMISSION,)):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY, "Bu foydalanuvchida hodisalarni ko'rib chiqish huquqi yo'q"
+            )
+
+    new_id = assignee.id if assignee else None
+    if new_id == event.assigned_to_id:
+        return await _out(db, event)
+
+    actor_id = uuid.UUID(current_user.id)
+    actor_name = await _actor_name(db, current_user)
+    now = datetime.now(timezone.utc)
+    previous_names = await _user_names(db, {event.assigned_to_id} if event.assigned_to_id else set())
+    previous_name = previous_names.get(event.assigned_to_id) if event.assigned_to_id else None
+
+    event.assigned_to_id = new_id
+    event.assigned_at = now if new_id else None
+    moved_to_progress = assignee is not None and event.status == "yangi"
+    if moved_to_progress:
+        event.status = "jarayonda"
+
+    if assignee is not None:
+        text = f"Tayinlandi: {assignee.full_name}"
+        if previous_name:
+            text += f" (avval: {previous_name})"
+        if moved_to_progress:
+            text += f". Holat: {STATUS_LABELS['yangi']} → {STATUS_LABELS['jarayonda']}"
+    else:
+        text = f"Tayinlov olib tashlandi (avval: {previous_name})" if previous_name else "Tayinlov olib tashlandi"
+    db.add(EventComment(event_id=event.id, author_id=actor_id, author_name=actor_name, kind="tayinlash", body=text))
+    await log_action(
+        db,
+        request,
+        current_user.id,
+        f"Hodisani tayinladi: {event.module_name} — {assignee.full_name if assignee else 'hech kim'}",
+        AUDIT_MODULE,
+    )
+    await db.commit()
+    await db.refresh(event)
+
+    if assignee is not None and str(assignee.id) != current_user.id:
+        due = f" Muddat: {to_local(event.due_at).strftime('%H:%M')}." if event.due_at else ""
+        message = (
+            f"Sizga hodisa tayinlandi: {event.module_name} — {event.camera_name}"
+            f"{', ' + event.building if event.building else ''} "
+            f"(muhimlik: {event.severity}).{due} Tayinladi: {actor_name}."
+        )
+        try:
+            await notify_user(assignee.id, message, kind="system", ref_id=str(event.id))
+        except Exception:
+            # Bildirishnoma yetib bormagani tayinlovni bekor qilmaydi.
+            logger.exception("event assignment notification failed")
+
+    out = await _out(db, event)
+    await _broadcast_update(event, out)
+    return out
+
+
+@router.get("/api/events/{event_id}/comments", response_model=list[EventCommentOut])
+async def list_comments(
+    event_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: ReviewDep,
+) -> list[EventCommentOut]:
+    event = await _get_event(db, event_id)
+    comments = (
+        (
+            await db.execute(
+                select(EventComment)
+                .where(EventComment.event_id == event.id)
+                .order_by(EventComment.created_at, EventComment.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [_comment_out(c) for c in comments]
+
+
+def _comment_out(comment: EventComment) -> EventCommentOut:
+    return EventCommentOut(
+        id=str(comment.id),
+        kind=comment.kind,
+        body=comment.body,
+        author_id=str(comment.author_id) if comment.author_id else None,
+        author_name=comment.author_name,
+        created_at=_iso(comment.created_at),
+    )
+
+
+@router.post("/api/events/{event_id}/comments", response_model=EventCommentOut, status_code=status.HTTP_201_CREATED)
+async def add_comment(
+    event_id: str,
+    body: EventCommentIn,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: ReviewDep,
+) -> EventCommentOut:
+    text = body.body.strip()
+    if not text:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Izoh bo'sh bo'lmasligi kerak")
+    event = await _get_event(db, event_id)
+    comment = EventComment(
+        event_id=event.id,
+        author_id=uuid.UUID(current_user.id),
+        author_name=await _actor_name(db, current_user),
+        kind="izoh",
+        body=text,
+    )
+    db.add(comment)
+    await db.commit()
+    await db.refresh(comment)
+
+    # Boshqa operatorlar panelidagi izohlar soni va tarix yangilanadi.
+    await _broadcast_update(event, await _out(db, event))
+    return _comment_out(comment)
+
+
+@router.get("/api/events/{event_id}/timeline", response_model=list[EventTimelineItemOut])
+async def event_timeline(
+    event_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: ReviewDep,
+) -> list[EventTimelineItemOut]:
+    """Hodisa tarixi vaqt bo'yicha: yaratilish, izohlar, holat va tayinlash
+    o'zgarishlari, muddat o'tgani haqidagi ogohlantirish.
+
+    Ish jarayonidan oldin ko'rib chiqilgan hodisalarda holat yozuvi yo'q —
+    ular uchun qaror reviewed_by/reviewed_at dan tiklanadi."""
+    event = await _get_event(db, event_id)
+    comments = (
+        (await db.execute(select(EventComment).where(EventComment.event_id == event.id))).scalars().all()
+    )
+    items: list[tuple[datetime, EventTimelineItemOut]] = [
+        (
+            event.occurred_at,
+            EventTimelineItemOut(
+                id=f"created-{event.id}",
+                kind="yaratildi",
+                at=_iso(event.occurred_at),
+                author_name=None,
+                body=f"{event.module_name} signali — {event.camera_name}, ishonch {event.confidence}%",
+            ),
+        )
+    ]
+    for c in comments:
+        items.append(
+            (
+                c.created_at,
+                EventTimelineItemOut(
+                    id=str(c.id), kind=c.kind, at=_iso(c.created_at), author_name=c.author_name, body=c.body
+                ),
+            )
+        )
+    if event.reviewed_at and not any(c.kind == "holat" for c in comments):
+        items.append(
+            (
+                event.reviewed_at,
+                EventTimelineItemOut(
+                    id=f"reviewed-{event.id}",
+                    kind="holat",
+                    at=_iso(event.reviewed_at),
+                    author_name=event.reviewed_by,
+                    body=f"{STATUS_LABELS['yangi']} → {STATUS_LABELS.get(event.status, event.status)}",
+                ),
+            )
+        )
+    if event.escalated_at:
+        items.append(
+            (
+                event.escalated_at,
+                EventTimelineItemOut(
+                    id=f"escalated-{event.id}",
+                    kind="muddat",
+                    at=_iso(event.escalated_at),
+                    author_name=None,
+                    body="Hal qilish muddati o'tdi — mas'ullarga ogohlantirish yuborildi",
+                ),
+            )
+        )
+    items.sort(key=lambda pair: pair[0])
+    return [item for _at, item in items]

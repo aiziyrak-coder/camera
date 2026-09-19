@@ -22,6 +22,8 @@ python-json-logger==4.1.0
 openpyxl==3.1.5
 boto3==1.43.62
 httpx==0.28.1
+# Prometheus /metrics (app/routers/metrics.py) — deploy/monitoring/ o'qiydi.
+prometheus-client==0.26.0
 insightface==1.0.1
 # CPU-only inference engine — this is what runs in dev and in tests here.
 # On the production GPU server, install onnxruntime-gpu==1.28.0 INSTEAD OF

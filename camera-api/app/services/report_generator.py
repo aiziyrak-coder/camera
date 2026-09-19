@@ -31,6 +31,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AttendanceRecord, Camera, Event, StudentStaff
+from app.services.event_status import fold_review_counts
 from app.timezone import local_date, local_now
 
 VALID_PERIODS = ("Kunlik", "Haftalik", "Oylik")
@@ -172,7 +173,8 @@ async def generate_rule_based_report(db: AsyncSession, period: str, today: date 
             select(Event.status, func.count()).where(in_range).group_by(Event.status)
         )
     ).all()
-    by_event_status = {status: count for status, count in reviewed}
+    # jarayonda -> ko'rilmagan, hal_qilindi -> tasdiqlangan (app/services/event_status.py).
+    by_event_status = fold_review_counts({status: count for status, count in reviewed})
     confirmed_events = by_event_status.get("tasdiqlangan", 0)
     rejected_events = by_event_status.get("rad_etilgan", 0)
     unreviewed_events = by_event_status.get("yangi", 0)

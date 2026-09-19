@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { AlertTriangle, CheckCircle2, IdCard, ScanFace, UserCheck } from 'lucide-react';
+import EnrollmentConsent from '../../components/public/EnrollmentConsent';
 import EnrollmentFaceCapture from '../../components/public/EnrollmentFaceCapture';
 import EnrollmentRegisterForm from '../../components/public/EnrollmentRegisterForm';
 import { ApiError } from '../../lib/apiClient';
@@ -12,7 +13,9 @@ import {
   submitEnrollment,
 } from '../../lib/enrollment';
 
-type Step = 'identify' | 'register' | 'confirm' | 'photo' | 'success';
+/** 'consent' — yuzni skanerlashdan oldin: biometrik ma'lumotni qayta
+ *  ishlashga rozilik. Kamera faqat undan keyin yoqiladi. */
+type Step = 'identify' | 'register' | 'confirm' | 'consent' | 'photo' | 'success';
 
 /** Shaxsni aniqlash usuli.
  *
@@ -33,6 +36,7 @@ export default function EnrollmentPage() {
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [awaitingApproval, setAwaitingApproval] = useState(false);
+  const [consent, setConsent] = useState(false);
 
   const identity: EnrollmentIdentity =
     method === 'pinfl'
@@ -81,7 +85,7 @@ export default function EnrollmentPage() {
     setCaptureError(null);
     setLoading(true);
     try {
-      const result = await submitEnrollment(found.recordId, identity, frames);
+      const result = await submitEnrollment(found.recordId, identity, frames, consent);
       setAwaitingApproval(Boolean(result.awaitingApproval));
       setStep('success');
     } catch (err) {
@@ -221,7 +225,7 @@ export default function EnrollmentPage() {
                 </p>
                 <button
                   type="button"
-                  onClick={() => setStep('photo')}
+                  onClick={() => setStep('consent')}
                   className="flex items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-4 py-2.5 text-sm font-semibold text-indigo-600 transition-colors hover:bg-indigo-50"
                 >
                   <ScanFace size={16} />
@@ -235,7 +239,7 @@ export default function EnrollmentPage() {
                 </p>
                 <button
                   type="button"
-                  onClick={() => setStep('photo')}
+                  onClick={() => setStep('consent')}
                   className="flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700"
                 >
                   <ScanFace size={16} />
@@ -267,6 +271,17 @@ export default function EnrollmentPage() {
               setError(null);
             }}
             submitting={loading}
+          />
+        )}
+
+        {step === 'consent' && (
+          <EnrollmentConsent
+            onContinue={(agreed) => {
+              setConsent(agreed);
+              setCaptureError(null);
+              setStep('photo');
+            }}
+            onBack={() => setStep('confirm')}
           />
         )}
 

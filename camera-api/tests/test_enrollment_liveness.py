@@ -84,7 +84,7 @@ async def a_record(db_session, seeded) -> StudentStaff:
 async def submit(client, record, files=None):
     return await client.post(
         f"/api/public/enrollment/{record.id}/submit",
-        data={"pinfl": "31111111111111"},
+        data={"pinfl": "31111111111111", "consent": "true"},
         files=files if files is not None else frames(),
     )
 
@@ -277,7 +277,7 @@ class TestBrokenFramesDoNotCrash:
         qaysi kadr o'qilmaganini bilishi kerak."""
         resp = await client.post(
             f"/api/public/enrollment/{a_record.id}/submit",
-            data={"pinfl": "31111111111111"},
+            data={"pinfl": "31111111111111", "consent": "true"},
             files=[("photos", (f"{i}.jpg", b"", "image/jpeg")) for i in range(3)],
         )
         assert resp.status_code == 422

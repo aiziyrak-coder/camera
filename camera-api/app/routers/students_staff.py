@@ -8,6 +8,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy import and_, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -32,6 +33,7 @@ from app.schemas.student_staff import (
 from app.schemas.student_staff_import import StudentStaffImportResultOut
 from app.services.face_matching import announce_roster_change
 from app.services.name_matching import name_key, name_tokens, names_match
+from app.services.notifications.sms import normalize_phone
 from app.services.face_recognition import NoFaceDetectedError, extract_embedding
 from app.services.staff_export import (
     STATUS_LABELS,
@@ -66,6 +68,43 @@ async def _resolve_faculty(db: AsyncSession, faculty_name: str) -> Faculty:
     if faculty is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"'{faculty_name}' nomli fakultet topilmadi")
     return faculty
+
+
+def _clean_parent_phone(value: str | None) -> str | None:
+    """Ota-ona telefoni: bo'sh — o'chiriladi; aks holda +998XXXXXXXXX."""
+    if value is None or not value.strip():
+        return None
+    phone = normalize_phone(value)
+    if phone is None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "Ota-ona telefon raqami noto'g'ri (masalan: +998 90 123 45 67)"
+        )
+    return phone
+
+
+def _clean_card(value: str | None) -> str | None:
+    """Karta raqami — turniket qanday o'qisa shunday (bo'shliqlarsiz)."""
+    if value is None:
+        return None
+    card = "".join(value.split())
+    return card or None
+
+
+async def _ensure_card_free(db: AsyncSession, card: str | None, exclude_id: uuid.UUID | None = None) -> None:
+    if card is None:
+        return
+    stmt = select(StudentStaff).where(StudentStaff.card_number == card)
+    if exclude_id is not None:
+        stmt = stmt.where(StudentStaff.id != exclude_id)
+    other = (await db.execute(stmt)).scalars().first()
+    if other is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Bu karta raqami boshqa yozuvga biriktirilgan: {other.full_name} ({other.group_or_position})",
+        )
+
+
+CARD_CONFLICT_MESSAGE = "Bu karta raqami boshqa yozuvga biriktirilgan"
 
 
 def _confirmed_label(record: StudentStaff) -> str | None:
@@ -533,17 +572,27 @@ async def create_student_staff(
                 "Mavjud yozuvga yuz biriktiring yoki bu boshqa odam ekanini tasdiqlang.",
             )
     faculty = await _resolve_faculty(db, body.faculty)
+    card = _clean_card(body.card_number)
+    await _ensure_card_free(db, card)
     record = StudentStaff(
         full_name=body.full_name,
         type=body.type,
         faculty_id=faculty.id,
         group_or_position=body.group_or_position,
         biometrics_status=body.biometrics_status,
+        parent_phone=_clean_parent_phone(body.parent_phone),
+        parent_notify_enabled=body.parent_notify_enabled and body.type == "talaba",
+        card_number=card,
     )
     db.add(record)
     label = "Talaba" if body.type == "talaba" else "Xodim"
     await log_action(db, request, current_user.id, f"{label} qo'shdi: {body.full_name}", "Talabalar")
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Parallel so'rov xuddi shu kartani oldinroq yozib ulgurdi.
+        await db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, CARD_CONFLICT_MESSAGE) from None
     await db.refresh(record)
     return _to_out(record, faculty.name)
 
@@ -583,6 +632,10 @@ def _to_detail(record: StudentStaff) -> StudentStaffDetailOut:
         pinfl=record.pinfl,
         passport_series=record.passport_series,
         passport_number=record.passport_number,
+        parent_phone=record.parent_phone,
+        parent_notify_enabled=record.parent_notify_enabled,
+        parent_telegram_linked=bool(record.parent_telegram_chat_id),
+        card_number=record.card_number,
     )
 
 
@@ -704,16 +757,40 @@ async def update_student_staff(
             record.passport_number = number
             changed_identity.append("pasport")
 
+    if "card_number" in sent:
+        card = _clean_card(body.card_number)
+        if card != record.card_number:
+            await _ensure_card_free(db, card, exclude_id=record.id)
+            record.card_number = card
+            changed_identity.append("karta")
+
+    if "parent_phone" in sent:
+        phone = _clean_parent_phone(body.parent_phone)
+        if phone != record.parent_phone:
+            record.parent_phone = phone
+            changed_identity.append("ota-ona telefoni")
+    if "parent_notify_enabled" in sent and body.parent_notify_enabled is not None:
+        record.parent_notify_enabled = body.parent_notify_enabled
+
     type_changed = record.type != body.type
     record.full_name = body.full_name
     record.type = body.type
     record.faculty_id = faculty.id
     record.group_or_position = _compose_unit(body)
+    if body.type != "talaba":
+        # Ota-ona xabarnomasi faqat talabalar uchun.
+        record.parent_notify_enabled = False
 
     # Audit jurnaliga raqamlarning o'zi emas, faqat NIMA o'zgargani yoziladi.
     suffix = f" ({', '.join(changed_identity)} yangilandi)" if changed_identity else ""
     await log_action(db, request, current_user.id, f"Yozuvni tahrirladi: {body.full_name}{suffix}", "Talabalar")
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Karta raqami yoki JSHSHIR boshqa yozuvga biriktirilgan"
+        ) from None
     if type_changed and record.biometric_embedding:
         # Xodim/talaba ajratmasi yuz matritsasida saqlanadi (#6/#7 davomati,
         # #26 faqat xodimlarni qidiradi) — eski tur bilan qolmasin.

@@ -43,6 +43,7 @@ from app.services.camera_module_mapping import camera_allows_module_code, set_ca
 from app.services.camera_roles import ROOM_TYPE_LABELS, effective_room_type, normalize_room_code, role_allows
 from app.services.camera_roles_csv import export_roles_csv, import_roles_csv
 from app.services.connectivity import test_camera_connection
+from app.services.ptz import invalidate_camera as invalidate_ptz_session
 from app.services.stream_links import signed_stream_url
 from app.services.stream_sync import sync_camera_stream
 
@@ -122,6 +123,9 @@ def _to_out(camera: Camera) -> CameraOut:
         room_code=camera.room_code,
         face_roi=camera.face_roi,
         face_direction=camera.face_direction,
+        ptz_enabled=camera.ptz_enabled,
+        ptz_protocol=camera.ptz_protocol,
+        onvif_port=camera.onvif_port,
     )
 
 
@@ -393,6 +397,9 @@ async def create_camera(
         is_exit=body.is_exit,
         room_type=body.room_type,
         room_code=normalize_room_code(body.room_code),
+        ptz_enabled=body.ptz_enabled,
+        ptz_protocol=body.ptz_protocol,
+        onvif_port=body.onvif_port,
     )
     db.add(camera)
     await log_action(db, request, current_user.id, f"Yangi kamera qo'shdi: {body.name}", "Kameralar")
@@ -474,8 +481,30 @@ async def update_camera(
         camera.room_type = body.room_type
     if "room_code" in body.model_fields_set:
         camera.room_code = normalize_room_code(body.room_code)
+    # PTZ ham faqat YUBORILGANDA o'zgaradi (CameraUpdateIn izohiga qarang).
+    ptz_changed = False
+    if "ptz_enabled" in body.model_fields_set and camera.ptz_enabled != body.ptz_enabled:
+        camera.ptz_enabled = body.ptz_enabled
+        ptz_changed = True
+    if "ptz_protocol" in body.model_fields_set and camera.ptz_protocol != body.ptz_protocol:
+        camera.ptz_protocol = body.ptz_protocol
+        ptz_changed = True
+    if "onvif_port" in body.model_fields_set and camera.onvif_port != body.onvif_port:
+        camera.onvif_port = body.onvif_port
+        ptz_changed = True
+    if camera.ptz_enabled and not camera.ptz_protocol:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "PTZ yoqilgan bo'lsa, protokolni tanlang (ONVIF yoki Hikvision ISAPI)",
+        )
+    # Manzil, port yoki login o'zgargan bo'lishi mumkin — ONVIF sessiya
+    # keshi (profil tokeni, xizmat manzili) qayta aniqlansin.
+    invalidate_ptz_session(str(camera.id))
 
-    await log_action(db, request, current_user.id, f"Kamerani tahrirladi: {body.name}", "Kameralar")
+    action = f"Kamerani tahrirladi: {body.name}"
+    if ptz_changed:
+        action += " (PTZ: " + (f"yoqildi, {camera.ptz_protocol}" if camera.ptz_enabled else "o'chirildi") + ")"
+    await log_action(db, request, current_user.id, action, "Kameralar")
     await db.commit()
     await db.refresh(camera, attribute_names=["building"])
     await _sync_stream(db, camera)

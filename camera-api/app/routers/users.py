@@ -14,6 +14,7 @@ from app.rate_limit import limiter
 from app.schemas.permission import PermissionEntryOut, PermissionToggleIn
 from app.schemas.user import AdminUserOut, ResetUserPasswordIn, UserCreateIn, UserUpdateIn
 from app.security import hash_password
+from app.services.notifications.sms import normalize_phone
 from app.services.security_checks import forget_default_password_check
 from app.timezone import to_local
 from app.utils import compute_initials
@@ -36,7 +37,19 @@ def _to_admin_user_out(user: User) -> AdminUserOut:
         last_login=_format_last_login(user),
         role=role_display_label(user.role),
         email=user.email,
+        phone=user.phone,
+        telegram_linked=bool(user.telegram_chat_id),
     )
+
+
+def _clean_phone(value: str | None) -> str | None:
+    """Bo'sh — o'chiriladi; aks holda +998XXXXXXXXX (SMS shu ko'rinishni kutadi)."""
+    if value is None or not value.strip():
+        return None
+    phone = normalize_phone(value)
+    if phone is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Telefon raqami noto'g'ri (masalan: +998 90 123 45 67)")
+    return phone
 
 
 @router.get("/api/users", response_model=Page[AdminUserOut])
@@ -68,6 +81,7 @@ async def create_user(
         full_name=body.name,
         role=role_from_display_label(body.role),
         email=body.email,
+        phone=_clean_phone(body.phone),
     )
     db.add(user)
     await log_action(db, request, current_user.id, f"Yangi foydalanuvchi qo'shdi: {body.login}", "Foydalanuvchilar")
@@ -97,6 +111,8 @@ async def update_user(
     user.login = body.login
     user.role = role_from_display_label(body.role)
     user.email = body.email
+    if "phone" in body.model_fields_set:
+        user.phone = _clean_phone(body.phone)
 
     await log_action(db, request, current_user.id, f"Foydalanuvchini tahrirladi: {body.login}", "Foydalanuvchilar")
     await db.commit()

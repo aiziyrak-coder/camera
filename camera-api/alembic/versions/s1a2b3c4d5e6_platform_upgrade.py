@@ -32,7 +32,7 @@ def _id_col() -> sa.Column:
 
 
 def _created_col(name: str = "created_at") -> sa.Column:
-    return sa.Column(name, sa.DateTime(timezone=True), server_default=sa.func.now())
+    return sa.Column(name, sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
 
 
 def upgrade() -> None:

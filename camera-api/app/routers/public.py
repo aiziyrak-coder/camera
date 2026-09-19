@@ -89,6 +89,7 @@ def _to_public_camera(camera: Camera) -> PublicCameraOut:
         has_video=has_video,
         stream_url=signed_stream_url(camera.stream_url),
         floor=camera.floor,
+        ptz_enabled=bool(camera.ptz_enabled),
     )
 
 

@@ -103,7 +103,7 @@ class TestEnrollmentSubmit:
     ):
         resp = await client.post(
             f"/api/public/enrollment/{an_enrollable_record.id}/submit",
-            data={"passportSeries": "AD", "passportNumber": "1234567"},
+            data={"passportSeries": "AD", "passportNumber": "1234567", "consent": "true"},
             files=three_frames(),
         )
         assert resp.status_code == 200
@@ -128,7 +128,7 @@ class TestEnrollmentSubmit:
         other = OTHER_FACE_IMAGE_PATH.read_bytes()
         resp = await client.post(
             f"/api/public/enrollment/{an_enrollable_record.id}/submit",
-            data={"passportSeries": "AD", "passportNumber": "1234567"},
+            data={"passportSeries": "AD", "passportNumber": "1234567", "consent": "true"},
             files=[
                 ("photos", ("a.jpg", same, "image/jpeg")),
                 ("photos", ("b.png", other, "image/png")),
@@ -145,7 +145,7 @@ class TestEnrollmentSubmit:
 
         resp = await client.post(
             f"/api/public/enrollment/{an_enrollable_record.id}/submit",
-            data={"passportSeries": "AD", "passportNumber": "1234567"},
+            data={"passportSeries": "AD", "passportNumber": "1234567", "consent": "true"},
             files=three_frames(),
         )
         assert resp.status_code == 409
@@ -159,7 +159,7 @@ class TestEnrollmentSubmit:
         Endi kameradan uch burchak talab qilinadi."""
         resp = await client.post(
             f"/api/public/enrollment/{an_enrollable_record.id}/submit",
-            data={"passportSeries": "AD", "passportNumber": "1234567"},
+            data={"passportSeries": "AD", "passportNumber": "1234567", "consent": "true"},
             files=[("photos", ("a.jpg", FACE_IMAGE_PATH.read_bytes(), "image/jpeg"))],
         )
         assert resp.status_code == 422
@@ -172,7 +172,7 @@ class TestEnrollmentSubmit:
         blank = b"not an image at all"
         resp = await client.post(
             f"/api/public/enrollment/{an_enrollable_record.id}/submit",
-            data={"passportSeries": "AD", "passportNumber": "1234567"},
+            data={"passportSeries": "AD", "passportNumber": "1234567", "consent": "true"},
             files=[
                 ("photos", ("a.jpg", blank, "image/jpeg")),
                 ("photos", ("b.jpg", blank, "image/jpeg")),
@@ -184,7 +184,7 @@ class TestEnrollmentSubmit:
     async def test_no_photo_at_all_is_rejected(self, client: AsyncClient, an_enrollable_record):
         resp = await client.post(
             f"/api/public/enrollment/{an_enrollable_record.id}/submit",
-            data={"passportSeries": "AD", "passportNumber": "1234567"},
+            data={"passportSeries": "AD", "passportNumber": "1234567", "consent": "true"},
         )
         assert resp.status_code == 422
 

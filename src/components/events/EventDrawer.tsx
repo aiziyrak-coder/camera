@@ -2,12 +2,15 @@ import { useEffect } from 'react';
 import { Check, ChevronLeft, ChevronRight, ExternalLink, FlaskConical, ImageOff, Lightbulb, Trash2, X } from 'lucide-react';
 import Drawer from '../ui/Drawer';
 import Badge from '../Badge';
+import EventActivity from './EventActivity';
+import EventWorkflowPanel from './EventWorkflowPanel';
 import { detailMetrics } from '../../lib/eventDetails';
+import { isOpenStatus } from '../../lib/eventWorkflow';
 import { SEVERITY_LABEL, SEVERITY_TONE, STATUS_LABEL, STATUS_TONE } from '../../lib/eventLabels';
 import { relativeTime } from '../../lib/uzDate';
-import type { AIEvent, EventStatus } from '../../types';
+import type { AIEvent } from '../../types';
 
-type Decision = Exclude<EventStatus, 'yangi'>;
+type Decision = 'tasdiqlangan' | 'rad_etilgan';
 
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null;
@@ -20,11 +23,14 @@ function Field({ label, value }: { label: string; value: string | null | undefin
 }
 
 /** Hodisa tafsiloti — ro'yxatdan chiqmasdan, klaviatura bilan tez ko'rib chiqish:
- *  T — tasdiqlash, R — rad etish, ← → — oldingi/keyingi hodisa. */
+ *  T — tasdiqlash, R — rad etish, ← → — oldingi/keyingi hodisa.
+ *  Ish jarayoni (mas'ul, muddat, holat, yechim) va tarix/izohlar ham shu yerda;
+ *  `onChanged` berilmasa (masalan faqat ko'rish rejimi) ular ko'rsatilmaydi. */
 export default function EventDrawer({
   event,
   onClose,
   onReview,
+  onChanged,
   onDelete,
   onPrev,
   onNext,
@@ -34,6 +40,7 @@ export default function EventDrawer({
   event: AIEvent | null;
   onClose: () => void;
   onReview: (event: AIEvent, status: Decision) => void;
+  onChanged?: (updated: AIEvent) => void;
   onDelete?: (event: AIEvent) => void;
   onPrev?: () => void;
   onNext?: () => void;
@@ -44,7 +51,7 @@ export default function EventDrawer({
     if (!event) return;
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      if (target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === 'ArrowLeft' && onPrev) {
         e.preventDefault();
@@ -158,6 +165,8 @@ export default function EventDrawer({
             {event.isTrial && <Badge tone="amber">Sinov signali</Badge>}
           </div>
 
+          {onChanged && !event.isTrial && <EventWorkflowPanel key={event.id} event={event} onChanged={onChanged} />}
+
           {(reason || metrics.length > 0) && (
             <section className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-3">
               <h4 className="mb-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-indigo-700">
@@ -200,11 +209,12 @@ export default function EventDrawer({
             />
           </div>
 
-          {event.status === 'yangi' && !event.isTrial && (
+          {isOpenStatus(event.status) && !event.isTrial && (
             <p className="rounded-xl bg-indigo-50 px-3 py-2.5 text-xs leading-relaxed text-indigo-800">
               AI signal — bu dalil emas, ko&apos;rsatkich. Yakuniy qarorni kadrni ko&apos;rib chiqqan inson qabul qiladi.
             </p>
           )}
+          {onChanged && !event.isTrial && <EventActivity key={event.id} event={event} />}
           <p className="text-[11px] text-slate-400">Klaviatura: T — tasdiqlash · R — rad etish · ← → — oldingi / keyingi</p>
         </div>
       )}

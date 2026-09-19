@@ -43,6 +43,7 @@ from app.schemas.report_criteria import (
     ReportPersonDetailOut,
     ReportPersonRowOut,
 )
+from app.services.event_status import fold_review_counts
 from app.storage import presigned_url
 from app.timezone import INSTITUTE_TZ, UZ_WEEKDAYS, local_now
 from app.utils import compute_initials
@@ -163,7 +164,8 @@ async def _event_counts(db: AsyncSession, codes: tuple[int, ...], period: Period
             .group_by(Event.status)
         )
     ).all()
-    return {status: count for status, count in rows}
+    # Uch toifa: jarayonda -> ko'rilmagan, hal_qilindi -> tasdiqlangan.
+    return fold_review_counts({status: count for status, count in rows})
 
 
 async def _lesson_counts(db: AsyncSession, period: Period) -> dict[str, int]:

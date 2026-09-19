@@ -24,6 +24,12 @@ yuritiladi va ommaviy import qilingan xodimlarda pasport ma'lumotlari
 umuman yo'q. Pasport yo'li ilgari shu tarzda ro'yxatdan o'tganlar uchun
 saqlanadi.
 
+ROZILIK. /submit biometrik ma'lumotni qayta ishlashga rozilik belgisini
+(`consent=true`) kutadi — settings.consent_required_for_enrollment
+yoqilgan bo'lsa, usiz kadrlar umuman o'qilmaydi. Rozilik vaqti va matn
+versiyasi yozuvga saqlanadi; matnning o'zi — GET /api/public/consent-text
+(app/routers/privacy.py).
+
 Ikkala endpoint ham IP bo'yicha cheklangan (app/rate_limit.py): bu
 raqamlar kuchli sir emas va ommaviy taxmin qilishga yo'l qo'yib
 bo'lmaydi.
@@ -47,6 +53,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import settings
 from app.database import get_db
 from app.models import Faculty, StudentStaff
 from app.rate_limit import limiter
@@ -60,6 +67,7 @@ from app.schemas.enrollment import (
 )
 from app.services.face_matching import announce_roster_change
 from app.services.inference_gate import PRIORITY_LIVE
+from app.services.privacy import record_consent
 from app.services.face_recognition import (
     InconsistentFacesError,
     NoFaceDetectedError,
@@ -375,6 +383,7 @@ async def submit_enrollment(
     pinfl: Annotated[str | None, Form(alias="pinfl")] = None,
     passport_series: Annotated[str | None, Form(alias="passportSeries")] = None,
     passport_number: Annotated[str | None, Form(alias="passportNumber")] = None,
+    consent: Annotated[bool, Form(alias="consent")] = False,
 ) -> EnrollmentSubmitOut:
     result = await db.execute(
         select(StudentStaff).options(selectinload(StudentStaff.faculty)).where(StudentStaff.id == record_id)
@@ -405,6 +414,25 @@ async def submit_enrollment(
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "Siz allaqachon ro'yxatdan o'tgansiz. O'zgartirish uchun administratorga murojaat qiling.",
+        )
+
+    if not record.active:
+        # Faolsizlantirilgan (bitirgan, ishdan ketgan) odam kameralar
+        # tomonidan tanilmaydi, yuzi esa saqlash muddatidan keyin
+        # o'chiriladi — unga yangi biometrika yig'ishning maqsadi yo'q.
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Yozuvingiz faol emas. Ma'lumot uchun administratorga murojaat qiling.",
+        )
+
+    # Rozilik yuz kadrlari O'QILISHIDAN OLDIN tekshiriladi: biometrik
+    # ma'lumotni qayta ishlash (yuz aniqlash ham shunga kiradi) rozilikdan
+    # keyingina boshlanishi mumkin ("Shaxsga doir ma'lumotlar
+    # to'g'risida"gi Qonun). Matn — GET /api/public/consent-text.
+    if settings.consent_required_for_enrollment and not consent:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Davom etish uchun biometrik ma'lumotlarni qayta ishlashga rozilik berishingiz kerak",
         )
 
     if len(photos) != len(LIVENESS_STEPS):
@@ -440,6 +468,8 @@ async def submit_enrollment(
     _file_id, key = await asyncio.to_thread(upload_file, frames[0], "face.jpg", "image/jpeg", "biometrics")
     record.biometric_photo_key = key
     record.biometric_embedding = json.dumps(embedding)
+    if consent:
+        record_consent(record, "royxatdan_otish")
     if record.self_registered:
         # Institut ro'yxatida yo'q odam — administrator tasdiqlaguncha
         # tanish ro'yxatiga kirmaydi (register_self izohiga qarang).

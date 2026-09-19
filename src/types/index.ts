@@ -21,6 +21,9 @@ export interface CameraFeed {
   hasVideo?: boolean;
   /** Qavat raqami; belgilanmagan bo'lsa null (backend `Camera.floor`). */
   floor?: number | null;
+  /** PTZ boshqaruvi yoqilganmi. Ochiq ro'yxat buni qaytarmasa (undefined),
+   * boshqaruv paneli holatni GET /api/cameras/{id}/ptz dan o'zi so'raydi. */
+  ptzEnabled?: boolean;
 }
 
 /** GET /api/public/campus — bitta qavat kesimi. `floor: null` qavati
@@ -131,6 +134,14 @@ export interface StudentStaffDetail extends StudentStaffRecord {
   pinfl: string | null;
   passportSeries: string | null;
   passportNumber: string | null;
+  /** Ota-ona telefoni (+998XXXXXXXXX) — SMS xabarnomasi uchun. */
+  parentPhone?: string | null;
+  /** Ota-onaga "keldi/kelmadi" xabari yuborilsinmi (faqat talaba). */
+  parentNotifyEnabled?: boolean;
+  /** Ota-ona Telegram bot orqali bog'langan — faqat o'qiladi. */
+  parentTelegramLinked?: boolean;
+  /** Turniket/kirish kartasi raqami (unikal). */
+  cardNumber?: string | null;
 }
 
 /** "Aniqlash" oynasi — odam yuzini aniq qachon tasdiqlagani.
@@ -349,6 +360,9 @@ export interface Department {
 /** Kamera xona turi — backend app/services/camera_roles.py bilan bir xil. */
 export type RoomType = 'kirish' | 'auditoriya' | 'laboratoriya' | 'koridor' | 'ofis' | 'cheklangan' | 'tashqi';
 
+/** PTZ protokoli — backend app/schemas/ptz.py PtzProtocol bilan bir xil. */
+export type PtzProtocol = 'onvif' | 'isapi';
+
 export interface CameraConfig {
   id: string;
   name: string;
@@ -404,6 +418,11 @@ export interface CameraConfig {
    * kameralar uchun to'ldiriladi (qayta-import qilinganda IP emas, shu
    * bo'yicha aniqlanadi) — qo'lda qo'shilgan kameralarda null. */
   macAddress?: string | null;
+  /** PTZ boshqaruvi (app/services/ptz.py). Login/parol — RTSP bilan bir xil. */
+  ptzEnabled?: boolean;
+  ptzProtocol?: PtzProtocol | null;
+  /** Kameraning HTTP (ONVIF/ISAPI) porti; null — 80. */
+  onvifPort?: number | null;
 }
 
 export type AIModuleGroup = 'A' | 'B' | 'C' | 'D' | 'E' | 'F';
@@ -782,6 +801,10 @@ export interface AdminUser {
   lastLogin: string;
   role: 'Super Admin' | 'Admin' | "Kamera mas'uli";
   email?: string | null;
+  /** Shaxsiy bildirishnomalar uchun (Telegram bog'lanmagan bo'lsa SMS). */
+  phone?: string | null;
+  /** Foydalanuvchi Telegram botga bog'langan — faqat o'qiladi. */
+  telegramLinked?: boolean;
 }
 
 export interface AuditLogEntry {
@@ -795,7 +818,9 @@ export interface AuditLogEntry {
 }
 
 export type EventSeverity = 'past' | "o'rta" | 'yuqori';
-export type EventStatus = 'yangi' | 'tasdiqlangan' | 'rad_etilgan';
+/** Ish jarayoni: yangi -> jarayonda -> tasdiqlangan / rad_etilgan -> hal_qilindi
+ *  (app/services/event_status.py). */
+export type EventStatus = 'yangi' | 'jarayonda' | 'tasdiqlangan' | 'rad_etilgan' | 'hal_qilindi';
 
 /** Signal dalili — app/services/event_bus.py (details). */
 export interface EventDetails {
@@ -828,6 +853,50 @@ export interface AIEvent {
   isTrial?: boolean;
   /** Nega signal: sabab matni va o'lchangan qiymatlar. */
   details?: EventDetails | null;
+  /** Ish jarayoni. Vaqtlar ISO (institut mintaqasi). */
+  assignedToId?: string | null;
+  assignedToName?: string | null;
+  assignedAt?: string | null;
+  /** Hal qilish muddati (SLA) — og'irlik bo'yicha. */
+  dueAt?: string | null;
+  /** Muddat o'tgan va hali qaror qilinmagan (yangi/jarayonda). */
+  overdue?: boolean;
+  escalatedAt?: string | null;
+  resolvedAt?: string | null;
+  resolvedBy?: string | null;
+  resolutionNote?: string | null;
+  /** Ro'yxatda hisoblanadi; WebSocket xabarida null bo'lishi mumkin. */
+  commentsCount?: number | null;
+  /** WebSocket: mavjud hodisa o'zgardi (tayinlash, holat, izoh, muddat). */
+  kind?: 'event_updated';
+}
+
+export type EventCommentKind = 'izoh' | 'holat' | 'tayinlash';
+
+/** GET /api/events/{id}/comments */
+export interface EventComment {
+  id: string;
+  kind: EventCommentKind;
+  body: string;
+  authorId: string | null;
+  authorName: string;
+  createdAt: string;
+}
+
+/** GET /api/events/{id}/timeline */
+export interface EventTimelineItem {
+  id: string;
+  kind: 'yaratildi' | EventCommentKind | 'muddat';
+  at: string;
+  authorName: string | null;
+  body: string;
+}
+
+/** GET /api/events/assignees — tayinlash ro'yxati. */
+export interface EventAssignee {
+  id: string;
+  fullName: string;
+  role: string;
 }
 
 export type AttendanceDayStatus = 'keldi' | 'kelmadi' | 'kech_keldi' | 'dam_olish';
@@ -921,4 +990,13 @@ export interface EventSummary {
   /** Sinov rejimidagi, hali baholanmagan signallar. */
   trialUnreviewed: number;
   trialModules: EventFacet[];
+  /** Holatlar bo'yicha: jarayonda va hal qilingan. */
+  inProgress: number;
+  resolved: number;
+  /** Muddati o'tgan (yangi/jarayonda). */
+  overdue: number;
+  /** Menga tayinlangan (yangi/jarayonda/tasdiqlangan). */
+  assignedToMe: number;
+  /** Hech kimga tayinlanmagan (yangi/jarayonda). */
+  unassigned: number;
 }

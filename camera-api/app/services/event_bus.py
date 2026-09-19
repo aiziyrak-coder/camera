@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models import AIModuleConfig, Camera, Event
 from app.schemas.event import EventOut
+from app.services.event_status import OPEN_STATUSES
 from app.services.evidence import Shape, annotate_snapshot
 from app.services.notifications import notify_event
 from app.storage import presigned_url, upload_file
@@ -66,8 +67,24 @@ def sla_due_at(severity: str, occurred_at: datetime) -> datetime | None:
     return occurred_at + timedelta(minutes=minutes)
 
 
-def event_to_out(event: Event) -> EventOut:
-    """Event → API javobi. Routerlar va sweeplar bitta shakldan foydalanadi."""
+def _iso(moment: datetime | None) -> str | None:
+    return to_local(moment).isoformat(timespec="seconds") if moment else None
+
+
+def event_to_out(
+    event: Event,
+    *,
+    assignee_name: str | None = None,
+    comments_count: int | None = None,
+    now: datetime | None = None,
+) -> EventOut:
+    """Event → API javobi. Routerlar va sweeplar bitta shakldan foydalanadi.
+
+    Tayinlangan foydalanuvchi ismi va izohlar soni boshqa jadvallarda —
+    chaqiruvchi ularni (ro'yxat uchun bitta so'rovda) o'zi olib beradi.
+    "overdue" — muddat o'tgan va hali qaror qilinmagan (yangi/jarayonda)."""
+    now = now or datetime.now(timezone.utc)
+    overdue = bool(event.due_at and event.status in OPEN_STATUSES and event.due_at < now)
     return EventOut(
         id=str(event.id),
         timestamp=to_local(event.occurred_at).strftime("%Y-%m-%d %H:%M"),
@@ -87,6 +104,16 @@ def event_to_out(event: Event) -> EventOut:
         reviewed_at=to_local(event.reviewed_at).strftime("%Y-%m-%d %H:%M") if event.reviewed_at else None,
         is_trial=bool(event.is_trial),
         details=event.details,
+        assigned_to_id=str(event.assigned_to_id) if event.assigned_to_id else None,
+        assigned_to_name=assignee_name if event.assigned_to_id else None,
+        assigned_at=_iso(event.assigned_at),
+        due_at=_iso(event.due_at),
+        overdue=overdue,
+        escalated_at=_iso(event.escalated_at),
+        resolved_at=_iso(event.resolved_at),
+        resolved_by=event.resolved_by,
+        resolution_note=event.resolution_note,
+        comments_count=comments_count,
     )
 
 

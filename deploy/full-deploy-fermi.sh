@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Full production deploy for cam.fermi.uz — run on server as root.
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/riskgroup77/camera/main/deploy/full-deploy-fermi.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/aiziyrak-coder/camera/main/deploy/full-deploy-fermi.sh | sudo bash
 # Or after clone:
 #   sudo bash /opt/camera/deploy/full-deploy-fermi.sh
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/camera}"
-REPO_URL="${REPO_URL:-https://github.com/riskgroup77/camera.git}"
+REPO_URL="${REPO_URL:-https://github.com/aiziyrak-coder/camera.git}"
 FRONTEND=cam.fermi.uz
 API=camapi.fermi.uz
 STORAGE=storage.camapi.fermi.uz

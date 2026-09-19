@@ -4,12 +4,14 @@ import { TextField, SelectField } from '../FormField';
 import { required, minLength } from '../../lib/validation';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
+import { normalizeUzPhone } from '../../lib/notificationsApi';
 import type { AdminUser } from '../../types';
 
 interface FormErrors {
   name?: string;
   login?: string;
   role?: string;
+  phone?: string;
   password?: string;
   confirmPassword?: string;
   form?: string;
@@ -28,6 +30,7 @@ export default function AddUserModal({
   const [name, setName] = useState('');
   const [login, setLogin] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [role, setRole] = useState<AdminUser['role'] | ''>('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -38,6 +41,7 @@ export default function AddUserModal({
     setName('');
     setLogin('');
     setEmail('');
+    setPhone('');
     setRole('');
     setPassword('');
     setConfirmPassword('');
@@ -50,6 +54,7 @@ export default function AddUserModal({
       name: required(name, "F.I.Sh. kiritilishi shart") ?? minLength(name, 5),
       login: required(login, 'Login kiritilishi shart') ?? minLength(login, 3),
       role: role ? undefined : 'Rolni tanlang',
+      phone: phone.trim() && !normalizeUzPhone(phone) ? "Telefon raqami noto'g'ri (+998 90 123 45 67)" : undefined,
       password: required(password, 'Parol kiritilishi shart') ?? minLength(password, 8),
       confirmPassword:
         confirmPassword !== password ? 'Parollar mos kelmadi' : undefined,
@@ -61,7 +66,14 @@ export default function AddUserModal({
     try {
       const user = await api.post<AdminUser>(
         '/api/users',
-        { name: name.trim(), login: login.trim(), password, role, email: email.trim() || null },
+        {
+          name: name.trim(),
+          login: login.trim(),
+          password,
+          role,
+          email: email.trim() || null,
+          phone: normalizeUzPhone(phone),
+        },
         token,
       );
       onAdd(user);
@@ -104,6 +116,15 @@ export default function AddUserModal({
           placeholder="a.alimov@fjsti.uz"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          autoComplete="off"
+        />
+        <TextField
+          label="Telefon (ixtiyoriy — SMS bildirishnomalar uchun)"
+          type="tel"
+          placeholder="+998 90 123 45 67"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          error={errors.phone}
           autoComplete="off"
         />
         <SelectField

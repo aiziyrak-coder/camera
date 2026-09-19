@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Building2, Circle, Expand, MapPin, Minimize2, Sparkles, VideoOff } from 'lucide-react';
 import LiveVideoPlayer from '../LiveVideoPlayer';
+import PtzControls from '../ptz/PtzControls';
+import { usePtzAvailability } from '../ptz/usePtzAvailability';
 import { useCameraAnalysisStatus } from '../../lib/useCameraAnalysisStatus';
 import { formatModules, formatSecondsAgo } from '../../lib/formatAnalysis';
 import type { CameraFeed } from '../../types';
@@ -28,6 +30,10 @@ export default function MainCameraView({
   const [fullscreen, setFullscreen] = useState(false);
   const isLive = camera?.status === 'live';
   const analysis = useCameraAnalysisStatus(camera?.id, !!camera && isLive);
+  // PTZ paneli — faqat kamera PTZ yoqilgan va foydalanuvchida controlPtz
+  // huquqi bo'lsa (tekshiruv usePtzAvailability ichida; huquqsizlarda
+  // so'rov ham ketmaydi).
+  const ptzAvailable = usePtzAvailability(camera && isLive ? camera.id : null, camera?.ptzEnabled);
 
   useEffect(() => {
     setFullscreen(false);
@@ -100,6 +106,15 @@ export default function MainCameraView({
                 {analysis.eventsRaised > 0 ? ` · ${analysis.eventsRaised} hodisa` : ''}
               </span>
             </div>
+          )}
+
+          {ptzAvailable && (
+            <PtzControls
+              key={camera.id}
+              cameraId={camera.id}
+              defaultOpen={false}
+              className="absolute right-3 top-12 z-20"
+            />
           )}
 
           <button

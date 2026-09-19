@@ -32,7 +32,10 @@ services:
       retries: 5
 
   minio:
-    image: minio/minio:latest
+    # Versiyalar qotirilgan: ":latest" har `up --build` da boshqa narsa
+    # olib kelishi mumkin edi. MinIO Docker Hub'da rasmlarni to'xtatgan —
+    # rasmiy rasmlar quay.io da. Yangilash: deploy/monitoring/README.md.
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -44,13 +47,14 @@ services:
       - "9020:9000"
       - "9021:9001"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      # Yangi MinIO rasmida curl yo'q — ichidagi mc bilan tekshiriladi.
+      test: ["CMD", "mc", "ready", "local"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   createbuckets:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
     depends_on:
       minio:
         condition: service_healthy
@@ -62,7 +66,7 @@ services:
       "
 
   mediamtx:
-    image: bluenviron/mediamtx:latest
+    image: bluenviron/mediamtx:1.21.0
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
     restart: unless-stopped
@@ -113,6 +117,9 @@ services:
       # browser-facing stream URLs before opening them (see frame_grabber.py).
       MEDIAMTX_HLS_INTERNAL_BASE_URL: ${MEDIAMTX_HLS_INTERNAL_BASE_URL:-http://mediamtx:8888}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      # Joylangan git commit (deploy/server-pull.sh beradi) — /metrics dagi
+      # sm_app_info{version} va Grafana'da ko'rinadi.
+      APP_VERSION: ${APP_VERSION:-unknown}
       AI_SCHEDULER_ENABLED: ${AI_SCHEDULER_ENABLED:-false}
       # Number of uvicorn worker processes (see Dockerfile). Leave at 1 for
       # a single low-traffic instance; scale up (e.g. 4) for production —

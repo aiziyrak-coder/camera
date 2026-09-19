@@ -3,6 +3,7 @@ import { AlertTriangle, Loader2, LogIn, Siren } from 'lucide-react';
 import { api, type Page } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { useLiveEvents } from '../../lib/realtime';
+import { STATUS_LABEL } from '../../lib/eventLabels';
 import { useServerPage } from '../../lib/useServerPage';
 import type { AIEvent, CameraFeed } from '../../types';
 
@@ -98,6 +99,14 @@ export default function AlarmPanel({
                   <p className="truncate text-red-600/80">
                     {e.moduleName} · {e.timestamp}
                   </p>
+                  {/* Ish jarayonidagi holat: kimdir shug'ullanyaptimi yoki yopilganmi. */}
+                  {e.status !== 'yangi' && (
+                    <p className="truncate text-[10px] font-semibold text-red-700/70">
+                      {STATUS_LABEL[e.status]}
+                      {e.assignedToName ? ` · ${e.assignedToName}` : ''}
+                    </p>
+                  )}
+                  {e.overdue && <p className="text-[10px] font-bold uppercase text-red-700">Muddati o&apos;tgan</p>}
                 </div>
               </button>
             </li>

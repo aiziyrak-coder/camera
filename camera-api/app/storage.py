@@ -103,6 +103,15 @@ def object_last_modified(key: str) -> datetime | None:
     return head.get("LastModified")
 
 
+def read_file(key: str, max_bytes: int | None = None) -> bytes:
+    """Obyektni o'qiydi (sinxron boto3 — asyncio.to_thread orqali chaqiring).
+    max_bytes berilsa, ko'pi bilan max_bytes + 1 bayt o'qiladi: chaqiruvchi
+    hajm chegarasidan oshganini shu bilan biladi."""
+    obj = _s3.get_object(Bucket=settings.s3_bucket, Key=key)
+    body = obj["Body"]
+    return body.read(max_bytes + 1) if max_bytes is not None else body.read()
+
+
 def delete_file(key: str) -> None:
     _presign_cache.pop(key, None)
     _s3.delete_object(Bucket=settings.s3_bucket, Key=key)

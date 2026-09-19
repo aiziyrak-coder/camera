@@ -1,11 +1,29 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { BellRing, Check, CheckCheck, FlaskConical, Gauge, ImageOff, Inbox, Shuffle, Timer, X } from 'lucide-react';
+import {
+  AlarmClock,
+  BellRing,
+  Check,
+  CheckCheck,
+  CheckCircle2,
+  FlaskConical,
+  Gauge,
+  ImageOff,
+  Inbox,
+  MessageSquare,
+  Shuffle,
+  Timer,
+  UserCheck,
+  UserX,
+  X,
+} from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import Badge from '../../components/Badge';
 import Pagination from '../../components/Pagination';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import EventDrawer from '../../components/events/EventDrawer';
+import ResolveDialog from '../../components/events/ResolveDialog';
+import SlaBadge from '../../components/events/SlaBadge';
 import EmptyState from '../../components/ui/EmptyState';
 import ErrorState from '../../components/ui/ErrorState';
 import FilterBar from '../../components/ui/FilterBar';
@@ -18,13 +36,19 @@ import { ApiError, api, isAbortError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { usePermissions } from '../../lib/permissions';
 import { SEVERITY_LABEL, SEVERITY_STRIPE, SEVERITY_TONE, STATUS_LABEL, STATUS_TONE } from '../../lib/eventLabels';
+import { isEventUpdate, isOpenStatus } from '../../lib/eventWorkflow';
 import { useLiveEvents } from '../../lib/realtime';
 import { invalidateServerPageCache, useServerPage } from '../../lib/useServerPage';
 import { formatCount, formatMinutes, relativeTime } from '../../lib/uzDate';
 import type { AIEvent, EventStatus, EventSummary } from '../../types';
 
 type View = 'navbat' | 'jurnal' | 'sinov';
-type Decision = Exclude<EventStatus, 'yangi'>;
+type Decision = 'tasdiqlangan' | 'rad_etilgan';
+/** Tezkor filtrlar: menga tayinlangan, muddati o'tgan, hech kimga tayinlanmagan. */
+type Quick = '' | 'mening' | 'muddati' | 'tayinlanmagan';
+
+// Ko'rib chiqish navbati — qaror kutayotgan hodisalar.
+const QUEUE_STATUSES = 'yangi,jarayonda';
 
 const SEVERITY_OPTIONS: { value: '' | AIEvent['severity']; label: string }[] = [
   { value: '', label: 'Barchasi' },
@@ -113,6 +137,18 @@ function ReviewCard({
             {event.details.reason}
           </p>
         )}
+        {!event.isTrial && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {event.status === 'jarayonda' && <Badge tone={STATUS_TONE.jarayonda}>{STATUS_LABEL.jarayonda}</Badge>}
+            <SlaBadge event={event} />
+            {event.assignedToName && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500">
+                <UserCheck size={11} aria-hidden="true" />
+                {event.assignedToName}
+              </span>
+            )}
+          </div>
+        )}
         <div className="mt-auto grid grid-cols-2 gap-2 pt-3">
           <button
             type="button"
@@ -154,6 +190,8 @@ export default function EventsPage() {
   const cardView = queue || trialView;
   const severity = (params.get('muhimlik') ?? '') as '' | AIEvent['severity'];
   const statusFilter = (params.get('holat') ?? '') as '' | EventStatus;
+  const tezParam = params.get('tez');
+  const quick: Quick = tezParam === 'mening' || tezParam === 'muddati' || tezParam === 'tayinlanmagan' ? tezParam : '';
   const moduleCode = params.get('modul') ?? '';
   const building = params.get('bino') ?? '';
   const from = params.get('from') ?? '';
@@ -181,13 +219,15 @@ export default function EventsPage() {
     '/api/events',
     {
       severity: severity || undefined,
-      status: queue ? 'yangi' : statusFilter || undefined,
+      status: queue ? QUEUE_STATUSES : statusFilter || (quick === 'tayinlanmagan' ? QUEUE_STATUSES : undefined),
+      assignedTo: quick === 'mening' ? 'me' : quick === 'tayinlanmagan' ? 'none' : undefined,
+      overdue: quick === 'muddati' ? 'true' : undefined,
       moduleCodes: moduleCode || undefined,
       building: building || undefined,
       from: from || undefined,
       to: to || undefined,
       search: search.trim() || undefined,
-      sort: queue ? 'severity' : undefined,
+      sort: quick === 'muddati' ? 'due' : queue ? 'severity' : undefined,
     },
     queue ? 12 : 20,
     { enabled: !trialView },
@@ -261,10 +301,11 @@ export default function EventsPage() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [deleting, setDeleting] = useState<AIEvent | null>(null);
   const [pendingNew, setPendingNew] = useState(0);
+  const [bulkResolving, setBulkResolving] = useState(false);
 
   useEffect(() => {
     setSelected(new Set());
-  }, [page, view, severity, statusFilter, moduleCode, building, from, to, search]);
+  }, [page, view, severity, statusFilter, quick, moduleCode, building, from, to, search]);
 
   // Navbatdagi sahifa to'liq ko'rib chiqilsa, keyingisini yuklaymiz.
   useEffect(() => {
@@ -284,6 +325,17 @@ export default function EventsPage() {
     (incoming) => {
       loadSummary();
       if (trialView) return;
+      if (isEventUpdate(incoming)) {
+        // Mavjud hodisa o'zgardi (tayinlash, holat, izoh, muddat) — joyida yangilanadi.
+        if (sourceItems.some((e) => e.id === incoming.id)) {
+          applyUpdated(incoming);
+        } else if ((quick || statusFilter) && page === 1 && !openId) {
+          // Filtrga endi mos kelib qolgan bo'lishi mumkin (masalan menga tayinlandi).
+          invalidateServerPageCache('/api/events');
+          reload();
+        }
+        return;
+      }
       if (incoming.status !== 'yangi') {
         // Boshqa operator ko'rib chiqdi — ro'yxatni jimgina yangilaymiz.
         invalidateServerPageCache('/api/events');
@@ -301,6 +353,29 @@ export default function EventsPage() {
 
   const openIndex = rows.findIndex((r) => r.id === openId);
   const openEvent = openIndex >= 0 ? rows[openIndex] : null;
+
+  /** Server qaytargan (yoki WebSocket'dan kelgan) yangi holatni ekranga
+   *  qo'yadi. Navbatda qaror qilingan hodisa ro'yxatdan chiqadi. */
+  function applyUpdated(updated: AIEvent) {
+    const fields: AIEvent = { ...updated };
+    delete fields.kind;
+    if (queue && !isOpenStatus(fields.status)) {
+      const index = rows.findIndex((r) => r.id === fields.id);
+      if (openId === fields.id) setOpenId(rows[index + 1]?.id ?? rows[index - 1]?.id ?? null);
+      setHidden((prev) => new Set(prev).add(fields.id));
+    } else {
+      setOverrides((prev) => ({
+        ...prev,
+        [fields.id]: { ...fields, commentsCount: fields.commentsCount ?? prev[fields.id]?.commentsCount },
+      }));
+    }
+  }
+
+  function handleChanged(updated: AIEvent) {
+    applyUpdated(updated);
+    invalidateServerPageCache('/api/events');
+    loadSummary();
+  }
 
   async function review(event: AIEvent, decision: Decision) {
     if (busyId) return;
@@ -337,16 +412,25 @@ export default function EventsPage() {
     }
   }
 
-  async function bulkReview(decision: Decision) {
+  async function bulkReview(decision: Decision | 'hal_qilindi', note?: string) {
     const ids = [...selected];
     if (ids.length === 0) return;
     setBulkBusy(true);
     try {
-      const res = await api.post<{ updated: number; skipped: number }>('/api/events/review-bulk', { ids, status: decision }, token);
-      toast.success(`${res.updated} ta hodisa ${decision === 'tasdiqlangan' ? 'tasdiqlandi' : 'rad etildi'}`);
+      const res = await api.post<{ updated: number; skipped: number }>(
+        '/api/events/review-bulk',
+        { ids, status: decision, note },
+        token,
+      );
+      const verb = decision === 'tasdiqlangan' ? 'tasdiqlandi' : decision === 'rad_etilgan' ? 'rad etildi' : 'hal qilindi';
+      toast.success(
+        `${res.updated} ta hodisa ${verb}${res.skipped ? ` · ${res.skipped} tasi o'tkazib yuborildi (holati mos emas)` : ''}`,
+      );
       setSelected(new Set());
       refreshAll();
     } catch (err) {
+      // Yechim dialogi xatoni o'zida ko'rsatadi.
+      if (note !== undefined) throw new Error(errorText(err));
       toast.error(errorText(err));
     } finally {
       setBulkBusy(false);
@@ -369,12 +453,24 @@ export default function EventsPage() {
   }
 
   const activeFilters =
-    [severity, !queue && statusFilter, moduleCode, building, from || to, search.trim()].filter(Boolean).length;
+    [severity, !queue && statusFilter, quick, moduleCode, building, from || to, search.trim()].filter(Boolean).length;
 
   function resetFilters() {
     setSearch('');
-    setParam({ muhimlik: null, holat: null, modul: null, bino: null, from: null, to: null });
+    setParam({ muhimlik: null, holat: null, tez: null, modul: null, bino: null, from: null, to: null });
   }
+
+  const quickFilters: { value: Exclude<Quick, ''>; label: string; count?: number; icon: ReactNode; alert?: boolean }[] = [
+    { value: 'mening', label: 'Menga tayinlangan', count: summary?.assignedToMe, icon: <UserCheck size={13} /> },
+    {
+      value: 'muddati',
+      label: "Muddati o'tgan",
+      count: summary?.overdue,
+      icon: <AlarmClock size={13} />,
+      alert: !!summary && summary.overdue > 0,
+    },
+    { value: 'tayinlanmagan', label: 'Tayinlanmagan', count: summary?.unassigned, icon: <UserX size={13} /> },
+  ];
 
   const allOnPageSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
 
@@ -432,7 +528,11 @@ export default function EventsPage() {
         action={
           <SegmentedControl
             options={[
-              { value: 'navbat', label: "Ko'rib chiqish navbati", count: summary?.unreviewed },
+              {
+                value: 'navbat',
+                label: "Ko'rib chiqish navbati",
+                count: summary ? summary.unreviewed + (summary.inProgress ?? 0) : undefined,
+              },
               { value: 'jurnal', label: "To'liq jurnal" },
               { value: 'sinov', label: 'Sinov namunalari', count: summary?.trialUnreviewed },
             ]}
@@ -440,7 +540,7 @@ export default function EventsPage() {
             ariaLabel="Ko'rinish"
             onChange={(next) => {
               setOpenId(null);
-              setParam({ korinish: next === 'navbat' ? null : next, holat: null, modul: null });
+              setParam({ korinish: next === 'navbat' ? null : next, holat: null, modul: null, tez: null });
             }}
           />
         }
@@ -462,10 +562,16 @@ export default function EventsPage() {
         <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <SummaryTile
             icon={<Inbox size={19} />}
-            label="Ko'rib chiqilmagan"
-            value={formatCount(summary?.unreviewed)}
-            hint={summary ? `yuqori: ${summary.unreviewedHigh} · o'rta: ${summary.unreviewedMedium}` : null}
-            alert={!!summary && summary.unreviewedHigh > 0}
+            label="Qaror kutmoqda"
+            value={formatCount(summary ? summary.unreviewed + (summary.inProgress ?? 0) : undefined)}
+            hint={
+              summary
+                ? summary.overdue > 0
+                  ? `${summary.overdue} tasining muddati o'tgan · jarayonda: ${summary.inProgress}`
+                  : `yuqori: ${summary.unreviewedHigh} · jarayonda: ${summary.inProgress}`
+                : null
+            }
+            alert={!!summary && (summary.unreviewedHigh > 0 || summary.overdue > 0)}
           />
           <SummaryTile
             icon={<BellRing size={19} />}
@@ -529,7 +635,9 @@ export default function EventsPage() {
               options={[
                 { value: '', label: 'Barchasi', count: summary?.total },
                 { value: 'yangi', label: STATUS_LABEL.yangi, count: summary?.unreviewed },
+                { value: 'jarayonda', label: STATUS_LABEL.jarayonda, count: summary?.inProgress },
                 { value: 'tasdiqlangan', label: STATUS_LABEL.tasdiqlangan, count: summary?.confirmed },
+                { value: 'hal_qilindi', label: STATUS_LABEL.hal_qilindi, count: summary?.resolved },
                 { value: 'rad_etilgan', label: STATUS_LABEL.rad_etilgan, count: summary?.rejected },
               ]}
               value={statusFilter}
@@ -572,6 +680,35 @@ export default function EventsPage() {
           </div>
           <SearchInput value={search} onChange={setSearch} placeholder="Kriteriya, kamera yoki shaxs..." ariaLabel="Hodisalarni qidirish" />
         </FilterBar>
+      )}
+
+      {!trialView && (
+        <div className="-mt-1 mb-4 flex flex-wrap items-center gap-2" role="group" aria-label="Tezkor filtrlar">
+          {quickFilters.map((filter) => {
+            const active = quick === filter.value;
+            return (
+              <button
+                key={filter.value}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setParam({ tez: active ? null : filter.value })}
+                className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                  active
+                    ? 'border-indigo-600 bg-indigo-600 text-white'
+                    : filter.alert
+                      ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
+                      : 'border-white/80 bg-white/60 text-slate-600 hover:bg-white'
+                }`}
+              >
+                {filter.icon}
+                {filter.label}
+                {filter.count !== undefined && (
+                  <span className={`tabular-nums ${active ? 'text-white/80' : 'opacity-70'}`}>{filter.count}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       )}
 
       {!trialView && pendingNew > 0 && (
@@ -639,13 +776,22 @@ export default function EventsPage() {
                 <X size={13} />
                 Rad etish
               </button>
+              <button
+                type="button"
+                onClick={() => setBulkResolving(true)}
+                disabled={bulkBusy}
+                className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+              >
+                <CheckCircle2 size={13} />
+                Hal qilindi
+              </button>
               <button type="button" onClick={() => setSelected(new Set())} className="ml-auto text-xs font-semibold text-indigo-700 hover:underline">
                 Tanlovni bekor qilish
               </button>
             </div>
           )}
           <div className="overflow-x-auto rounded-xl border border-white/70">
-            <table className="w-full min-w-[56rem] text-left text-sm">
+            <table className="w-full min-w-[64rem] text-left text-sm">
               <thead>
                 <tr className="bg-white/50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                   <th className="w-10 px-3 py-3">
@@ -664,6 +810,7 @@ export default function EventsPage() {
                   <th className="px-3 py-3 text-right">Ishonch</th>
                   <th className="px-3 py-3">Muhimlik</th>
                   <th className="px-3 py-3">Holat</th>
+                  <th className="px-3 py-3">Mas&apos;ul / muddat</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/60">
@@ -712,6 +859,18 @@ export default function EventsPage() {
                     <td className="px-3 py-2">
                       <Badge tone={STATUS_TONE[event.status]}>{STATUS_LABEL[event.status]}</Badge>
                     </td>
+                    <td className="px-3 py-2">
+                      <p className="flex items-center gap-1.5 text-xs text-slate-600">
+                        {event.assignedToName ?? <span className="text-slate-400">—</span>}
+                        {!!event.commentsCount && (
+                          <span className="inline-flex items-center gap-0.5 text-slate-400" title="Tarix yozuvlari va izohlar">
+                            <MessageSquare size={11} aria-hidden="true" />
+                            {event.commentsCount}
+                          </span>
+                        )}
+                      </p>
+                      <SlaBadge event={event} className="mt-1" />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -728,11 +887,21 @@ export default function EventsPage() {
         event={openEvent}
         onClose={() => setOpenId(null)}
         onReview={review}
+        onChanged={trialView ? undefined : handleChanged}
         onDelete={canDelete ? setDeleting : undefined}
         onPrev={openIndex > 0 ? () => setOpenId(rows[openIndex - 1].id) : undefined}
         onNext={openIndex >= 0 && openIndex < rows.length - 1 ? () => setOpenId(rows[openIndex + 1].id) : undefined}
         position={openEvent ? `${openIndex + 1} / ${rows.length}` : undefined}
         busy={busyId !== null}
+      />
+      <ResolveDialog
+        open={bulkResolving}
+        count={selected.size}
+        onCancel={() => setBulkResolving(false)}
+        onConfirm={async (note) => {
+          await bulkReview('hal_qilindi', note);
+          setBulkResolving(false);
+        }}
       />
       <ConfirmDialog
         open={!!deleting}

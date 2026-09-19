@@ -5,17 +5,19 @@ import { TextField, SelectField } from '../FormField';
 import { required, minLength } from '../../lib/validation';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
+import { formatUzPhone, normalizeUzPhone } from '../../lib/notificationsApi';
 import type { AdminUser } from '../../types';
 
 interface FormState {
   name: string;
   login: string;
   email: string;
+  phone: string;
   role: AdminUser['role'];
 }
 
 function toForm(u: AdminUser): FormState {
-  return { name: u.name, login: u.login, email: u.email ?? '', role: u.role };
+  return { name: u.name, login: u.login, email: u.email ?? '', phone: formatUzPhone(u.phone), role: u.role };
 }
 
 export default function EditUserModal({
@@ -61,6 +63,8 @@ export default function EditUserModal({
       name: required(form.name, "F.I.Sh. kiritilishi shart") ?? minLength(form.name, 5),
       login: required(form.login, 'Login kiritilishi shart') ?? minLength(form.login, 3),
       role: form.role ? undefined : 'Rolni tanlang',
+      phone:
+        form.phone.trim() && !normalizeUzPhone(form.phone) ? "Telefon raqami noto'g'ri (+998 90 123 45 67)" : undefined,
     };
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;
@@ -69,7 +73,13 @@ export default function EditUserModal({
     try {
       const saved = await api.patch<AdminUser>(
         `/api/users/${user.id}`,
-        { name: form.name.trim(), login: form.login.trim(), role: form.role, email: form.email.trim() || null },
+        {
+          name: form.name.trim(),
+          login: form.login.trim(),
+          role: form.role,
+          email: form.email.trim() || null,
+          phone: normalizeUzPhone(form.phone) ?? '',
+        },
         token,
       );
       onSave(saved);
@@ -133,6 +143,18 @@ export default function EditUserModal({
               onChange={(e) => set('email', e.target.value)}
               autoComplete="off"
             />
+            <TextField
+              label="Telefon (ixtiyoriy — SMS bildirishnomalar uchun)"
+              type="tel"
+              placeholder="+998 90 123 45 67"
+              value={form.phone}
+              onChange={(e) => set('phone', e.target.value)}
+              error={errors.phone}
+              autoComplete="off"
+            />
+            {user.telegramLinked && (
+              <p className="-mt-2 text-[11px] font-semibold text-emerald-600">Telegram bog'langan</p>
+            )}
             <SelectField
               label="Rol"
               value={form.role}

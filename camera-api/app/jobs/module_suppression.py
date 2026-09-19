@@ -25,7 +25,7 @@ logger = logging.getLogger("app.module_suppression")
 
 def _review_columns():
     return (
-        func.count().filter(Event.status == "tasdiqlangan"),
+        func.count().filter(Event.status.in_(("tasdiqlangan", "hal_qilindi"))),
         func.count().filter(Event.status == "rad_etilgan"),
     )
 

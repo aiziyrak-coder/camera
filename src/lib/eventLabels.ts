@@ -23,14 +23,21 @@ export const SEVERITY_STRIPE: Record<AIEvent['severity'], string> = {
   yuqori: 'bg-red-500',
 };
 
+/** app/services/event_status.py STATUS_LABELS bilan bir xil. */
 export const STATUS_LABEL: Record<EventStatus, string> = {
   yangi: "Ko'rilmagan",
+  jarayonda: 'Jarayonda',
   tasdiqlangan: 'Tasdiqlangan',
   rad_etilgan: 'Rad etilgan',
+  hal_qilindi: 'Hal qilindi',
 };
 
-export const STATUS_TONE: Record<EventStatus, 'amber' | 'green' | 'slate'> = {
+/** Tasdiqlangan — haqiqiy, hali yopilmagan hodisa (qizil); hal qilingani
+ *  yashil: ish tugagan. Yolg'on signal kulrang. */
+export const STATUS_TONE: Record<EventStatus, 'amber' | 'green' | 'slate' | 'red' | 'indigo'> = {
   yangi: 'amber',
-  tasdiqlangan: 'green',
+  jarayonda: 'indigo',
+  tasdiqlangan: 'red',
   rad_etilgan: 'slate',
+  hal_qilindi: 'green',
 };

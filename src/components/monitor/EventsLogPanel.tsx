@@ -6,7 +6,7 @@ import { api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { useLiveEvents } from '../../lib/realtime';
 import { useServerPage } from '../../lib/useServerPage';
-import type { AIEvent, EventStatus } from '../../types';
+import type { AIEvent } from '../../types';
 
 const SEVERITY_TONE: Record<AIEvent['severity'], 'green' | 'amber' | 'red'> = {
   past: 'green',
@@ -18,7 +18,8 @@ const PAGE_SIZE = 6;
 
 /** O'ng panelning o'rta qismi — devorda ko'rsatiladigan hodisalar.
  *
- * Faqat operator TASDIQLAGAN hodisalar chiqadi. Bu ataylab: modullarning
+ * Faqat operator TASDIQLAGAN hodisalar chiqadi (hal qilinganlari ham —
+ * ular ham haqiqiy deb topilgan, ish jarayonida yopilgan xolos). Bu ataylab: modullarning
  * bir qismi hali ishonchli emas (o'lchangan holatlar — bo'sh xonadagi
  * "tartib buzilishi", 28 piksellik yuzda "uxlab qolish"), va devor
  * institutda ko'rsatiladigan joy. Tasdiqlanmagan signal shovqin bo'lishi
@@ -31,7 +32,7 @@ export default function EventsLogPanel() {
   const [selected, setSelected] = useState<AIEvent | null>(null);
   const { items: events, page, loading, error, reload } = useServerPage<AIEvent>(
     '/api/events',
-    { status: 'tasdiqlangan' },
+    { status: 'tasdiqlangan,hal_qilindi' },
     PAGE_SIZE,
   );
 
@@ -41,7 +42,7 @@ export default function EventsLogPanel() {
 
   // Bu yerdan ham tasdiqlash/rad etish mumkin: devorni kuzatib turgan
   // operator hodisani ko'rib, o'sha zahoti hukm qila oladi.
-  async function review(id: string, status: EventStatus) {
+  async function review(id: string, status: 'tasdiqlangan' | 'rad_etilgan') {
     try {
       await api.patch(`/api/events/${id}/review`, { status }, token);
     } finally {

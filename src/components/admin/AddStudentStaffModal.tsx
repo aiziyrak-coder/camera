@@ -9,16 +9,26 @@ import FaceMatchStep from './FaceMatchStep';
 import { ApiError, api, buildQuery } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { useFaculties } from '../../lib/useFaculties';
+import { normalizeUzPhone } from '../../lib/notificationsApi';
+import ParentNotifyFields, { type ParentFieldsValue } from '../notifications/ParentNotifyFields';
 import type { StudentStaffRecord } from '../../types';
 
-interface FormState {
+interface FormState extends ParentFieldsValue {
   fullName: string;
   type: 'talaba' | 'xodim' | '';
   faculty: string;
   groupOrPosition: string;
 }
 
-const EMPTY_FORM: FormState = { fullName: '', type: '', faculty: '', groupOrPosition: '' };
+const EMPTY_FORM: FormState = {
+  fullName: '',
+  type: '',
+  faculty: '',
+  groupOrPosition: '',
+  parentPhone: '',
+  parentNotifyEnabled: false,
+  cardNumber: '',
+};
 
 const STEPS = ["Ma'lumotlar", 'Pasport', 'Yuz skani', 'Tekshiruv'] as const;
 
@@ -122,6 +132,10 @@ export default function AddStudentStaffModal({
       type: form.type ? undefined : 'Turini tanlang',
       faculty: form.faculty ? undefined : 'Fakultetni tanlang',
       groupOrPosition: required(form.groupOrPosition, 'Guruh yoki lavozim kiritilishi shart'),
+      parentPhone:
+        form.type === 'talaba' && form.parentPhone.trim() && !normalizeUzPhone(form.parentPhone)
+          ? "Telefon raqami noto'g'ri (+998 90 123 45 67)"
+          : undefined,
     };
     setErrors(next);
     return !Object.values(next).some(Boolean);
@@ -180,6 +194,9 @@ export default function AddStudentStaffModal({
             groupOrPosition: form.groupOrPosition.trim(),
             biometricsStatus: matchResult?.passed ? 'tasdiqlangan' : 'kutilmoqda',
             allowDuplicate,
+            parentPhone: form.type === 'talaba' ? normalizeUzPhone(form.parentPhone) : null,
+            parentNotifyEnabled: form.type === 'talaba' && form.parentNotifyEnabled,
+            cardNumber: form.cardNumber.trim() || null,
           },
           token,
         ));
@@ -248,6 +265,14 @@ export default function AddStudentStaffModal({
             onChange={(e) => set('groupOrPosition', e.target.value)}
             error={errors.groupOrPosition}
           />
+          {form.type && (
+            <ParentNotifyFields
+              isStudent={form.type === 'talaba'}
+              value={{ parentPhone: form.parentPhone, parentNotifyEnabled: form.parentNotifyEnabled, cardNumber: form.cardNumber }}
+              onChange={(next) => setForm((f) => ({ ...f, ...next }))}
+              errors={{ parentPhone: errors.parentPhone }}
+            />
+          )}
 
           {similar && similar.length > 0 && (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
@@ -311,6 +336,8 @@ export default function AddStudentStaffModal({
           Yangi yozuv yaratilmaydi — yuz mavjud yozuvga biriktiriladi:{' '}
           <span className="font-semibold">{existing.fullName}</span> ({existing.groupOrPosition})
           {existing.biometricsStatus === 'tasdiqlangan' && ' · oldingi yuz rasmi yangisiga almashtiriladi'}
+          {(form.parentPhone || form.cardNumber || form.parentNotifyEnabled) &&
+            ". Ota-ona va karta ma'lumotlarini mavjud yozuvning tahrirlash oynasida kiriting"}
         </p>
       )}
 

@@ -246,7 +246,15 @@ async def check_lesson_session(
     faces_in_both = False
     evidence_frame: bytes | None = None
 
-    if camera and camera.stream_url and is_reachable(camera.last_seen_at) and teacher and teacher.biometric_embedding:
+    # Faolsizlantirilgan o'qituvchining yuzi solishtirilmaydi (app/routers/privacy.py).
+    if (
+        camera
+        and camera.stream_url
+        and is_reachable(camera.last_seen_at)
+        and teacher
+        and teacher.active
+        and teacher.biometric_embedding
+    ):
         # Slot kalit kadrni kutish uchun olinmaydi: tekshiruv darsga bir marta,
         # model chaqiruvlarini esa face_inference_gate cheklaydi.
         frames = await grab_frame_pair_for_camera(camera)

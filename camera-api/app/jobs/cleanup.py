@@ -5,21 +5,174 @@ expiry or already used/single-use), and AuditLog rows older than the
 retention window. No Celery/cron dependency: this runs as a plain asyncio
 task started from main.py's lifespan, since a single periodic sweep
 doesn't justify a task queue.
+
+Shaxsga doir ma'lumotlarni saqlash muddati (2026-09-19) ham shu yerda:
+
+* faolsizlantirilgan odamning biometrikasi (yuz rasmi va vektori)
+  settings.biometric_retention_days_after_inactive kundan keyin
+  o'chiriladi — maqsadga erishilgach ma'lumot saqlanmasligi kerak;
+* hodisa suratlari settings.snapshot_retention_days kundan keyin
+  ombordan o'chiriladi (hodisa qatorining o'zi event_retention_days
+  gacha qoladi, faqat surat ketadi);
+* turniket qaydlari (access_events) va bildirishnoma jurnali
+  (notification_log) o'z muddatidan keyin o'chiriladi.
+
+Har bir qadam PARTIYALAB ishlaydi: bir aylanishda cheklangan miqdor.
+Muddat birinchi marta yoqilganda yoki uzoq to'xtab qolgandan keyin
+yuz minglab qator to'planib qolgan bo'lishi mumkin — ularni bitta
+tranzaksiyada o'chirish bazani uzoq qulflab qo'yardi. Qolgani keyingi
+aylanishlarda o'chadi.
 """
 
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models import AuditLog, Event, PasswordResetToken, RevokedToken
-from app.storage import delete_files_quietly
+from app.models import AccessEvent, AuditLog, Event, NotificationLog, PasswordResetToken, RevokedToken, StudentStaff
+from app.services.face_matching import announce_roster_change
+from app.services.privacy import clear_biometrics, has_biometrics_clause
+from app.storage import delete_file, delete_files_quietly
 
 logger = logging.getLogger("app.cleanup")
+
+#: Bitta partiyadagi qatorlar soni va bir aylanishdagi partiyalar chegarasi.
+ROW_BATCH_SIZE = 5000
+SNAPSHOT_BATCH_SIZE = 500
+BIOMETRIC_BATCH_SIZE = 200
+MAX_BATCHES_PER_SWEEP = 20
+
+
+async def _delete_objects(keys: list[str]) -> list[str]:
+    """Ombordagi obyektlarni birma-bir o'chiradi va MUVAFFAQIYATLI
+    o'chganlarining kalitlarini qaytaradi. Xato bo'lgan kalit bazada
+    qoladi va keyingi aylanishda qayta urinib ko'riladi — suratni
+    "o'chdi" deb belgilab, aslida omborda qoldirib ketmaslik uchun."""
+    deleted: list[str] = []
+    for key in keys:
+        try:
+            await asyncio.to_thread(delete_file, key)
+            deleted.append(key)
+        except Exception:
+            logger.warning("could not delete stored object", extra={"key": key}, exc_info=True)
+    return deleted
+
+
+async def _purge_inactive_biometrics(db: AsyncSession, now: datetime) -> int:
+    days = settings.biometric_retention_days_after_inactive
+    if days <= 0:
+        return 0
+
+    # Faolsizlantirish vaqti yozilmagan yozuvlar (masalan to'g'ridan-to'g'ri
+    # bazada o'zgartirilgan) uchun soat shu paytdan boshlanadi. Aks holda
+    # ular hech qachon muddatga yetmasdi, yoki aksincha — vaqtsiz qolgan
+    # yozuvni darhol o'chirish ham adolatsiz bo'lardi.
+    await db.execute(
+        update(StudentStaff)
+        .where(StudentStaff.active.is_(False), StudentStaff.deactivated_at.is_(None))
+        .values(deactivated_at=now)
+    )
+    await db.commit()
+
+    cutoff = now - timedelta(days=days)
+    purged = 0
+    for _ in range(MAX_BATCHES_PER_SWEEP):
+        people = (
+            (
+                await db.execute(
+                    select(StudentStaff)
+                    .where(
+                        StudentStaff.active.is_(False),
+                        StudentStaff.deactivated_at < cutoff,
+                        has_biometrics_clause(),
+                    )
+                    .order_by(StudentStaff.deactivated_at)
+                    .limit(BIOMETRIC_BATCH_SIZE)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not people:
+            break
+        keys = [clear_biometrics(person) for person in people]
+        await db.commit()
+        # Commit'dan keyin: vektor bazadan ketgan, ombordagi xato buni
+        # orqaga qaytarmaydi (app/services/privacy.py, finish_erasure).
+        await delete_files_quietly(keys)
+        purged += len(people)
+        if len(people) < BIOMETRIC_BATCH_SIZE:
+            break
+
+    if purged:
+        await announce_roster_change()
+    return purged
+
+
+async def _prune_snapshots(db: AsyncSession, now: datetime) -> int:
+    days = settings.snapshot_retention_days
+    # 0 — suratlar hodisa bilan birga (event_retention_days) o'chadi.
+    if days <= 0:
+        return 0
+    cutoff = now - timedelta(days=days)
+    pruned = 0
+    for _ in range(MAX_BATCHES_PER_SWEEP):
+        rows = (
+            await db.execute(
+                select(Event.id, Event.snapshot_key)
+                .where(Event.occurred_at < cutoff, Event.snapshot_key.is_not(None))
+                .order_by(Event.occurred_at)
+                .limit(SNAPSHOT_BATCH_SIZE)
+            )
+        ).all()
+        if not rows:
+            break
+        deleted = set(await _delete_objects([key for _id, key in rows]))
+        ids = [event_id for event_id, key in rows if key in deleted]
+        if ids:
+            await db.execute(update(Event).where(Event.id.in_(ids)).values(snapshot_key=None))
+            await db.commit()
+            pruned += len(ids)
+        if not deleted:
+            # Ombor umuman javob bermayapti — shu partiyani qayta-qayta
+            # aylantirib o'tirmaymiz, keyingi sweep'da urinamiz.
+            logger.warning("snapshot pruning stopped: object storage rejected a whole batch")
+            break
+        if len(rows) < SNAPSHOT_BATCH_SIZE:
+            break
+    return pruned
+
+
+async def _delete_in_batches(db: AsyncSession, model, column, cutoff: datetime) -> int:
+    """`column < cutoff` bo'lgan qatorlarni ROW_BATCH_SIZE lab o'chiradi."""
+    removed = 0
+    for _ in range(MAX_BATCHES_PER_SWEEP):
+        batch_ids = select(model.id).where(column < cutoff).limit(ROW_BATCH_SIZE).scalar_subquery()
+        result = await db.execute(delete(model).where(model.id.in_(batch_ids)))
+        await db.commit()
+        count = result.rowcount or 0
+        removed += count
+        if count < ROW_BATCH_SIZE:
+            break
+    return removed
+
+
+async def _prune_access_events(db: AsyncSession, now: datetime) -> int:
+    days = settings.access_event_retention_days
+    if days <= 0:
+        return 0
+    return await _delete_in_batches(db, AccessEvent, AccessEvent.occurred_at, now - timedelta(days=days))
+
+
+async def _prune_notification_logs(db: AsyncSession, now: datetime) -> int:
+    days = settings.notification_log_retention_days
+    if days <= 0:
+        return 0
+    return await _delete_in_batches(db, NotificationLog, NotificationLog.created_at, now - timedelta(days=days))
 
 
 async def run_cleanup_once(db: AsyncSession) -> dict[str, int]:
@@ -60,6 +213,23 @@ async def run_cleanup_once(db: AsyncSession) -> dict[str, int]:
         "events": event_result.rowcount or 0,
         "event_snapshots": snapshots_deleted,
     }
+
+    # Shaxsga doir ma'lumotlar. Har biri alohida himoyalangan: bittasining
+    # xatosi (masalan ombor ishlamasligi) qolganlarini to'xtatmasin.
+    steps = (
+        ("biometrics_purged", _purge_inactive_biometrics),
+        ("snapshots_pruned", _prune_snapshots),
+        ("access_events", _prune_access_events),
+        ("notification_logs", _prune_notification_logs),
+    )
+    for name, step in steps:
+        try:
+            counts[name] = await step(db, now)
+        except Exception:
+            await db.rollback()
+            logger.exception("cleanup step failed", extra={"step": name})
+            counts[name] = 0
+
     if any(counts.values()):
         logger.info("cleanup sweep removed expired rows", extra=counts)
     return counts

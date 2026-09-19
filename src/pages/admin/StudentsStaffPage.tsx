@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   ArrowDown,
   ArrowUpDown,
@@ -210,11 +210,14 @@ function Avatar({ record }: { record: StudentStaffRecord }) {
 export default function StudentsStaffPage() {
   const { token } = useAuth();
   const toast = useToast();
-  const [tab, setTab] = useState<PersonType>('xodim');
+  // ?search=<matn>&tur=talaba|xodim — boshqa sahifalardan (turniket jurnali,
+  // tanilmagan kartalar) aniq odamga havola.
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState<PersonType>(searchParams.get('tur') === 'talaba' ? 'talaba' : 'xodim');
   const [facultyFilter, setFacultyFilter] = useState('');
   const [courseFilter, setCourseFilter] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('');
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(() => searchParams.get('search') ?? '');
   const [sort, setSort] = useState<Sort>('name');
   const [pageSizeChoice, setPageSizeChoice] = usePersistedState<number>('odamlar.sahifaHajmi', 10);
   const [overview, setOverview] = useState<Overview | null>(null);

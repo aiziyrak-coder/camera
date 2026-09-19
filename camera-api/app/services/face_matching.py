@@ -197,6 +197,11 @@ async def load_candidate_matrix(db: AsyncSession) -> CandidateMatrix:
     result = await db.execute(
         select(StudentStaff.id, StudentStaff.biometric_embedding, StudentStaff.type).where(
             StudentStaff.biometric_embedding.is_not(None),
+            # Faolsizlantirilgan (bitirgan, ishdan ketgan) odam tanilmaydi —
+            # biometrikasi saqlash muddatigacha bazada tursa ham
+            # (app/jobs/cleanup.py). Faollik o'zgarganda
+            # app/routers/privacy.py announce_roster_change() ni chaqiradi.
+            StudentStaff.active.is_(True),
             # O'zini o'zi ro'yxatdan o'tkazgan odam administrator
             # tasdiqlagunicha tanilmaydi (app/routers/enrollment.py).
             or_(StudentStaff.self_registered.is_(False), StudentStaff.biometrics_status == "tasdiqlangan"),

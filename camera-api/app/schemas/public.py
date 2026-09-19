@@ -17,6 +17,8 @@ class PublicCameraOut(CamelModel):
     floor: int | None = None
     """Qavat raqami; belgilanmagan bo'lsa None (Camera.floor izohiga qarang)."""
     has_video: bool = True
+    ptz_enabled: bool = False
+    """PTZ boshqaruvi yoqilgan (tugmalar faqat controlPtz huquqi bilan ko'rinadi)."""
     """Kamera tarmoqda javob beryapti, LEKIN tasvir kelyaptimi.
 
     `status` bilan qo'shilmaydi ataylab: "erishib bo'lmaydi" va

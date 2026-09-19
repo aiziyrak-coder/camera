@@ -14,6 +14,9 @@ class AdminUserOut(CamelModel):
     last_login: str
     role: str  # "Super Admin" | "Admin" — display label, see models.RoleDisplayLabel
     email: str | None = None
+    # Shaxsiy bildirishnomalar uchun (Telegram bog'lanmagan bo'lsa SMS).
+    phone: str | None = None
+    telegram_linked: bool = False
 
 
 class UserCreateIn(CamelModel):
@@ -24,6 +27,7 @@ class UserCreateIn(CamelModel):
     password: str = Field(min_length=8)
     role: str  # "Super Admin" | "Admin"
     email: EmailStr | None = None
+    phone: str | None = Field(default=None, max_length=32)
 
 
 class UserUpdateIn(CamelModel):
@@ -35,6 +39,8 @@ class UserUpdateIn(CamelModel):
     login: str = Field(min_length=3)
     role: str
     email: EmailStr | None = None
+    # Yuborilmasa — o'zgarmaydi; bo'sh satr — o'chiriladi.
+    phone: str | None = Field(default=None, max_length=32)
 
 
 class ResetUserPasswordIn(CamelModel):

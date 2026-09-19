@@ -163,10 +163,18 @@ async def seed_all(db: AsyncSession) -> None:
 
 
 async def _seed_permissions(db: AsyncSession) -> None:
-    count = await db.scalar(select(func.count()).select_from(Permission))
-    if count:
-        return
+    """Matritsada YO'Q kalitlarni standart qiymat bilan qo'shadi, mavjudlariga
+    tegmaydi (admin ularni o'zgartirgan bo'lishi mumkin).
+
+    Ilgari faqat jadval butunlay bo'sh bo'lsa to'ldirilardi. Lekin yangi
+    bazada `alembic upgrade head` ba'zi kalitlarni migratsiyalarning o'zi
+    yozadi (n7b8c9d0e1f2 va boshqalar) — jadval bo'sh bo'lmay qoladi va
+    viewLive, manageRoles kabi asosiy huquqlar hech qachon yaratilmasdi:
+    Super Admin ham yarim menyuni ko'rmasdi."""
+    existing = set((await db.execute(select(Permission.key))).scalars().all())
     for key, (super_admin, admin, camera_steward) in DEFAULT_PERMISSIONS.items():
+        if key in existing:
+            continue
         db.add(
             Permission(key=key, super_admin=super_admin, admin=admin, camera_steward=camera_steward)
         )
@@ -220,10 +228,14 @@ async def _seed_buildings(db: AsyncSession) -> None:
 
 
 async def _seed_ai_modules(db: AsyncSession) -> None:
-    count = await db.scalar(select(func.count()).select_from(AIModuleConfig))
-    if count:
-        return
+    """Yo'q modullarni qo'shadi, mavjudlarining sozlamasiga tegmaydi.
+    Sabab _seed_permissions'dagi bilan bir xil: yangi bazada migratsiya
+    bitta modulni o'zi yozadi va "jadval bo'shmi?" tekshiruvi qolganlarini
+    hech qachon yaratmasdi."""
+    existing = set((await db.execute(select(AIModuleConfig.code))).scalars().all())
     for m in DEFAULT_AI_MODULES:
+        if m["code"] in existing:
+            continue
         db.add(AIModuleConfig(**m, mode="sinov" if m["code"] in TRIAL_MODULE_CODES else "ishchi"))
 
 
