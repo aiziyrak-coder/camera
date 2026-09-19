@@ -49,7 +49,7 @@ export function ArrivalsChart({ rows, loading, currentHour, big }: Props) {
       {loading ? (
         <Skeleton className={cn('w-full', big ? 'h-[300px]' : 'h-[240px]')} />
       ) : total === 0 ? (
-        <EmptyState compact bordered={false} icon={TrendingUp} title="Hali kelish qayd etilmagan" description="Kirish kameralari birinchi odamni tanigach grafik to'ladi." />
+        <EmptyState compact bordered={false} icon={TrendingUp} title="Hali kelish qayd etilmagan" description="Kameralar birinchi odamni tanigach grafik to'ladi." />
       ) : (
         <div className="-ml-2 w-[calc(100%+0.5rem)]" style={{ height }} role="img" aria-label={`Kelish dinamikasi: jami ${total} kishi`}>
           <ResponsiveContainer width="100%" height="100%">

@@ -151,7 +151,7 @@ export function AttendanceCamerasPanel() {
       )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatTile label="Davomatda ishlaydigan" value={`${data.attendanceEnabled} / ${data.total}`} hint={`Kirish ${data.entrance} · chiqish ${data.exit}`} />
+        <StatTile label="Davomatda ishlaydigan" value={`${data.attendanceEnabled} / ${data.total}`} hint="Kelish — istalgan kameradagi birinchi ko'rinish" />
         <StatTile label="Tarmoqda / tasvir" value={`${data.online} / ${data.video}`} tone={data.video < data.attendanceEnabled ? 'warning' : 'success'} />
         <StatTile label="Bugun tanigan kameralar" value={data.recognizingToday} />
         <StatTile label="Bugun tanilgan odamlar" value={data.peopleRecognizedToday} hint={`Yuzi saqlangan: ${data.enrolledFaces}`} />

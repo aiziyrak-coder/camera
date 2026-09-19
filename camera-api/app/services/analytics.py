@@ -52,6 +52,7 @@ from app.schemas.report import (
 )
 from app.services.event_status import OPEN_STATUSES, fold_review_counts, review_bucket
 from app.services.report_generator import _attendance_reliability, _working_days
+from app.services.attendance_policy import load_policy
 from app.services.report_insights import WEAK_PRECISION, InsightInputs, build_insights
 from app.timezone import INSTITUTE_TZ, INSTITUTE_TZ_NAME, UZ_MONTHS, local_date, local_now
 
@@ -709,6 +710,7 @@ async def build_analytics(db: AsyncSession, start: date, end: date) -> ReportAna
         ),
     ]
 
+    await load_policy(db)  # tavsiyadagi kechikish chegarasi (report_insights)
     top_camera = security.top_cameras[0] if security.top_cameras else None
     students_coverage = next(c for c in system.coverage if c.type == "talaba")
     insights = build_insights(

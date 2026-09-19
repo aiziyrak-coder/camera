@@ -25,6 +25,10 @@ Davomat qoidalari:
     check_out oldinga suriladi;
   * kun "kelmadi" deb belgilangan bo'lsa-yu, odam turniketdan o'tgan
     bo'lsa — belgi tuzatiladi.
+
+ATTENDANCE_ARRIVAL_ONLY (production): yo'nalish ahamiyatsiz — kunning eng
+erta hodisasi kelish (talaba/xodim ish boshlanishi, attendance_policy),
+eng kechi (track_last_seen) — check_out, kamera yo'li bilan bir xil.
 """
 
 from __future__ import annotations
@@ -49,6 +53,7 @@ from sqlalchemy.orm.attributes import set_committed_value
 from app.config import settings
 from app.jobs.attendance_ai import first_sighting_status
 from app.models import AccessDevice, AccessEvent, AttendanceRecord, AuditLog, StudentStaff
+from app.services.attendance_policy import current_policy, load_policy
 from app.services.notifications import notify_access_denied, notify_attendance
 from app.timezone import INSTITUTE_TZ, local_now, to_local
 from app.ws import manager
@@ -376,6 +381,7 @@ async def _apply_attendance(
     record_date = local.date()
     moment = local.time().replace(microsecond=0)
     arrival_only = settings.attendance_arrival_only
+    await load_policy(db)  # first_sighting_status va track_last_seen keshdan o'qiydi
 
     def _select():
         return (
@@ -384,13 +390,19 @@ async def _apply_attendance(
             .where(AttendanceRecord.date == record_date)
         )
 
+    def _arrival(event_direction: str | None) -> tuple[str, time_type | None]:
+        # Talaba/xodim ish boshlanishi va dam olish kuni — attendance_policy.
+        return first_sighting_status(moment, _reader(event_direction), person.type, record_date)
+
     existing = (await db.execute(_select())).scalar_one_or_none()
     if existing is None:
-        if direction == "chiqish":
+        if direction == "chiqish" and not arrival_only:
             # Chiqish — odam binoda bo'lgan, lekin qachon kelgani noma'lum.
-            status, check_in, check_out = "keldi", None, (None if arrival_only else moment)
+            status, check_in, check_out = "keldi", None, moment
         else:
-            status, check_in = first_sighting_status(moment, _reader(direction))
+            # ATTENDANCE_ARRIVAL_ONLY: kelish — kunning birinchi ko'rinishi,
+            # yo'nalishidan qat'i nazar (kamera yo'li bilan bir xil).
+            status, check_in = _arrival(direction)
             check_out = None
         inserted = (
             await db.execute(
@@ -411,7 +423,7 @@ async def _apply_attendance(
             return inserted, True
         existing = (await db.execute(_select())).scalar_one()
 
-    values = _attendance_changes(existing, moment, direction, arrival_only)
+    values = _attendance_changes(existing, moment, direction, arrival_only, _arrival)
     if not values:
         return existing, False
     record = (
@@ -427,24 +439,41 @@ async def _apply_attendance(
 
 
 def _attendance_changes(
-    existing: AttendanceRecord, moment: time_type, direction: str | None, arrival_only: bool
+    existing: AttendanceRecord,
+    moment: time_type,
+    direction: str | None,
+    arrival_only: bool,
+    arrival=None,
 ) -> dict[str, Any]:
     """Mavjud kunlik yozuvga keyingi turniket hodisasi nimani o'zgartiradi."""
+    if arrival is None:
+        def arrival(event_direction):
+            return first_sighting_status(moment, _reader(event_direction))
+
     if existing.status == "dam_olish":
         return {}
+    if arrival_only:
+        # Kelish — birinchi ko'rinish (istalgan yo'nalish), ketish — oxirgi
+        # ko'rinish (track_last_seen), kamera yo'li bilan bir xil.
+        if existing.status == "kelmadi" or existing.check_in is None or moment < existing.check_in:
+            status, check_in = arrival(direction)
+            return {"status": status, "check_in": check_in, "source": "turniket"}
+        if not current_policy().track_last_seen:
+            return {}
+        if moment <= existing.check_in or (existing.check_out is not None and moment <= existing.check_out):
+            return {}
+        return {"check_out": moment}
     if existing.status == "kelmadi":
         if direction == "chiqish":
-            return {"status": "keldi", "check_in": None, "check_out": None if arrival_only else moment, "source": "turniket"}
-        status, check_in = first_sighting_status(moment, _reader(direction))
+            return {"status": "keldi", "check_in": None, "check_out": moment, "source": "turniket"}
+        status, check_in = arrival(direction)
         return {"status": status, "check_in": check_in, "source": "turniket"}
     if direction == "kirish":
         if existing.check_in is None or moment < existing.check_in:
-            status, check_in = first_sighting_status(moment, _reader(direction))
+            status, check_in = arrival(direction)
             return {"status": status, "check_in": check_in, "source": "turniket"}
         return {}
     # "chiqish" yoki yo'nalishi noma'lum qurilmadagi keyingi hodisa.
-    if arrival_only:
-        return {}
     if existing.check_in is not None and moment <= existing.check_in:
         return {}
     if existing.check_out is not None and moment <= existing.check_out:

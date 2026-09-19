@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 
 from app.config import settings
 from app.schemas.report import InsightOut
+from app.services.attendance_policy import current_policy
 
 LEVEL_ORDER = {"critical": 0, "warning": 1, "info": 2, "ok": 3}
 MAX_INSIGHTS = 6
@@ -54,6 +55,14 @@ class InsightInputs:
     cameras_live_rate: float | None = None
     students_coverage: float | None = None
     students_population: int = 0
+
+
+def _staff_late_after() -> str:
+    """Xodim kechikish chegarasi — kech_keldi qaysi qoidadan yozilgan bo'lsa
+    o'sha (ATTENDANCE_ARRIVAL_ONLY: attendance_policy, 08:00 + 10 daqiqa)."""
+    if settings.attendance_arrival_only:
+        return current_policy().late_after("xodim").strftime("%H:%M")
+    return settings.attendance_ai_late_cutoff
 
 
 def _num(value: float) -> str:
@@ -108,7 +117,7 @@ def build_insights(i: InsightInputs) -> list[InsightOut]:
                 title="Kech qolish ko'p",
                 text=(
                     f"Kelgan xodimlarning {_num(i.staff_late_share)}% i soat "
-                    f"{settings.attendance_ai_late_cutoff} dan keyin kelgan."
+                    f"{_staff_late_after()} dan keyin kelgan."
                 ),
                 action_label="Davomat kalendari",
                 action_href="/talabalar",

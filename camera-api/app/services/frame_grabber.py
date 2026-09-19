@@ -14,6 +14,7 @@ import asyncio
 import logging
 import random
 import time
+from urllib.parse import urlsplit
 
 from app.config import settings
 from app.crypto import decrypt
@@ -40,8 +41,10 @@ _POLL_SECONDS = 0.25
 def _is_security_camera(camera: Camera) -> bool:
     """Asosiy oqim o'qiladigan kameralar. ATTENDANCE_ALL_CAMERAS da har
     kamera davomat uchun yuz taniydi — substream'da yuz tanib bo'lmas darajada kichik."""
-    if camera.is_entrance or camera.is_perimeter:
+    if camera.is_entrance or (camera.is_perimeter and settings.ai_perimeter_main_stream):
         return True
+    if camera.is_perimeter:
+        return False
     if not settings.attendance_all_cameras:
         return False
     if settings.ai_room_cameras_main_stream:
@@ -106,8 +109,23 @@ def ai_prefers_substream(camera: Camera) -> bool:
     return True
 
 
+def mediamtx_relay_url(camera: Camera) -> str | None:
+    """Kameraning MediaMTX yo'li RTSP orqali (docker ichki tarmog'i)."""
+    if not camera.stream_url:
+        return None
+    parts = urlsplit(public_hls_to_internal(camera.stream_url))
+    segments = [s for s in parts.path.split("/") if s]
+    if not parts.hostname or not segments or not segments[0].startswith("cam-"):
+        return None
+    return f"rtsp://{parts.hostname}:{settings.mediamtx_internal_rtsp_port}/{segments[0]}"
+
+
 def rtsp_url_for_camera(camera: Camera, *, substream: bool | None = None) -> str:
     use_sub = ai_prefers_substream(camera) if substream is None else substream
+    if use_sub and settings.ai_read_via_mediamtx:
+        relay = mediamtx_relay_url(camera)
+        if relay:
+            return relay
     path = settings.rtsp_substream_path if use_sub else (camera.rtsp_path or "/Streaming/Channels/101")
     return build_rtsp_url(
         camera.ip,

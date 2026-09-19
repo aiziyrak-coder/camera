@@ -116,11 +116,52 @@ def test_attendance_changes_rules():
     assert access_control._attendance_changes(record, time(9, 0), "kirish", False) == {}
     assert access_control._attendance_changes(record, time(17, 0), "chiqish", False) == {"check_out": time(17, 0)}
     assert access_control._attendance_changes(record, time(17, 0), None, False) == {"check_out": time(17, 0)}
-    assert access_control._attendance_changes(record, time(17, 0), "chiqish", True) == {}
+    # ATTENDANCE_ARRIVAL_ONLY + track_last_seen: oxirgi ko'rinish check_out ga.
+    assert access_control._attendance_changes(record, time(17, 0), "chiqish", True) == {"check_out": time(17, 0)}
     absent = AttendanceRecord(status="kelmadi", check_in=None, check_out=None)
     assert access_control._attendance_changes(absent, time(9, 30), "kirish", False)["status"] == "kech_keldi"
     off = AttendanceRecord(status="dam_olish", check_in=None, check_out=None)
     assert access_control._attendance_changes(off, time(9, 30), "kirish", False) == {}
+
+
+def test_attendance_changes_arrival_only_follows_policy(monkeypatch):
+    """ATTENDANCE_ARRIVAL_ONLY: turniket ham attendance_policy bo'yicha —
+    09:00 chegarasi emas, 08:00 + 10 daqiqa; birinchi hodisa yo'nalishidan
+    qat'i nazar kelish."""
+    from app.services import attendance_policy
+
+    monkeypatch.setattr(settings, "attendance_arrival_only", True)
+    monkeypatch.setattr(attendance_policy, "_cached", attendance_policy.Policy(student_start=time(8, 30)))
+    monkeypatch.setattr(attendance_policy, "_loaded_at", 1e12)  # keshni DB bosmasin
+    absent = AttendanceRecord(status="kelmadi", check_in=None, check_out=None)
+    assert access_control._attendance_changes(absent, time(8, 20), "chiqish", True) == {
+        "status": "kech_keldi", "check_in": time(8, 20), "source": "turniket"
+    }
+    record = AttendanceRecord(status="keldi", check_in=time(8, 0), check_out=time(12, 0))
+    assert access_control._attendance_changes(record, time(11, 0), "kirish", True) == {}
+    assert access_control._attendance_changes(record, time(7, 50), "chiqish", True)["check_in"] == time(7, 50)
+
+
+async def test_turnstile_student_uses_student_start(db_session, notifications, monkeypatch):
+    from app.services import attendance_policy
+
+    monkeypatch.setattr(settings, "attendance_arrival_only", True)
+    monkeypatch.setattr(
+        attendance_policy, "_cached", attendance_policy.Policy(staff_start=time(8, 0), student_start=time(9, 0))
+    )
+    monkeypatch.setattr(attendance_policy, "_loaded_at", 1e12)
+    person = await _person(db_session, card="555", ptype="talaba")
+    device = await _device(db_session)
+    day = date(2026, 9, 21)  # dushanba
+    result = await access_control.ingest_access_event(
+        db_session, device, "s-1", _local(8, 30, day), "555", None, "kirish", True, None
+    )
+    assert result.attendance.status == "keldi" and result.attendance.check_in == time(8, 30)
+    staff = await _person(db_session, name="Xodim", card="556", ptype="xodim")
+    result = await access_control.ingest_access_event(
+        db_session, device, "s-2", _local(8, 30, day), "556", None, "kirish", True, None
+    )
+    assert staff.id == result.attendance.student_staff_id and result.attendance.status == "kech_keldi"
 
 
 def test_api_key_hashing():

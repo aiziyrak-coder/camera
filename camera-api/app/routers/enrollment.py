@@ -185,7 +185,9 @@ def _lookup_out(record: StudentStaff) -> EnrollmentLookupOut:
 
 
 @router.post("/lookup", response_model=EnrollmentLookupOut)
-@limiter.limit("5/minute")
+# Institut Wi-Fi: yuzlab talaba BITTA tashqi IP bilan chiqadi — QR bilan
+# ommaviy topshirishda 3/minute talabalarni bloklardi (2026-09-19).
+@limiter.limit("60/minute")
 async def lookup_person(
     request: Request,
     body: EnrollmentLookupIn,
@@ -214,7 +216,7 @@ async def list_faculties(db: Annotated[AsyncSession, Depends(get_db)]) -> list[E
 
 
 @router.post("/register", response_model=EnrollmentLookupOut, status_code=status.HTTP_201_CREATED)
-@limiter.limit("3/minute")
+@limiter.limit("30/minute")
 async def register_self(
     request: Request,
     body: EnrollmentRegisterIn,
@@ -372,7 +374,7 @@ async def pose_check(
 
 
 @router.post("/{record_id}/submit", response_model=EnrollmentSubmitOut)
-@limiter.limit("3/minute")
+@limiter.limit("30/minute")
 async def submit_enrollment(
     request: Request,
     record_id: str,

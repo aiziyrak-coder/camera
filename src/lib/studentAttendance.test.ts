@@ -207,3 +207,14 @@ describe('shaxs KPI', () => {
     expect(w[5]).toMatchObject({ label: 'Sha', present: 1 });
   });
 });
+
+import { LATE_CUTOFF_MINUTES as POLICY_DEFAULT_LATE, lateAfterMinutes } from './studentAttendance';
+
+describe('lateAfterMinutes', () => {
+  it("attendance_policy chegarasini daqiqaga o'giradi, standart — 08:10", () => {
+    expect(lateAfterMinutes('08:10')).toBe(490);
+    expect(lateAfterMinutes('09:40')).toBe(580);
+    expect(lateAfterMinutes(undefined)).toBe(POLICY_DEFAULT_LATE);
+    expect(POLICY_DEFAULT_LATE).toBe(490);
+  });
+});

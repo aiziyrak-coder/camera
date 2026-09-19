@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import settings
 from app.database import SessionLocal
 from app.models import AIModuleConfig, AttendanceRecord, StudentStaff
+from app.services.attendance_policy import current_policy, load_policy
 from app.services.notifications import notify_absences
 from app.timezone import local_now
 
@@ -42,13 +43,14 @@ logger = logging.getLogger("app.absence_marker")
 
 
 def _working_weekdays() -> set[int]:
-    """ISO weekdays (Mon=1 .. Sun=7) the institute expects attendance on."""
-    days: set[int] = set()
-    for part in settings.attendance_working_weekdays.split(","):
-        part = part.strip()
-        if part.isdigit() and 1 <= int(part) <= 7:
-            days.add(int(part))
-    return days
+    """ISO weekdays (Mon=1 .. Sun=7) the institute expects attendance on.
+
+    Ish kunlari — attendance_policy (Sozlamalar → Ish vaqti), kechikish va
+    hisobot bilan bir xil manba. Ilgari ATTENDANCE_WORKING_WEEKDAYS
+    ishlatilardi: admin shanbani dam olish qilsa ham, shu job shanba kuni
+    hammani "kelmadi" deb yozardi. Qoida yuklanmagan bo'lsa — standart
+    (1-6), sozlamaning standarti bilan bir xil."""
+    return set(current_policy().work_days)
 
 
 def is_working_day(day: date_type) -> bool:
@@ -104,6 +106,8 @@ async def mark_absences_for_day(db: AsyncSession, day: date_type) -> int:
         await db.execute(
             select(StudentStaff.id, StudentStaff.type)
             .where(StudentStaff.biometrics_status == "tasdiqlangan")
+            # Faol bo'lmagan (chetlatilgan/arxivlangan) odam — "kelmadi" emas.
+            .where(StudentStaff.active.is_(True))
             .where(StudentStaff.type.in_(types))
         )
     ).all()
@@ -177,12 +181,13 @@ async def run_absence_marking_once(
 
     now = local_now()  # institute-local clock, not UTC — see app/timezone.py
     today = now.date()
-    if not is_working_day(today):
-        return 0
     if now.time() < _cutoff_time():
         return 0
 
     async with session_factory() as db:
+        await load_policy(db)  # ish kunlari — attendance_policy
+        if not is_working_day(today):
+            return 0
         return await mark_absences_for_day(db, today)
 
 

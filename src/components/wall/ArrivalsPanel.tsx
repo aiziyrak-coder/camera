@@ -24,7 +24,7 @@ export function ArrivalsPanel({ arrivals, freshIds }: { arrivals: LastArrival[];
         <div className="flex flex-1 flex-col items-center justify-center text-center text-muted">
           <DoorOpen className="mb-[0.5em] h-[2.5em] w-[2.5em] opacity-50" />
           <div className="text-[1em]">Bugun hali hech kim kelmadi</div>
-          <div className="text-[0.8em]">Kamera kirishni ko'rishi bilan shu yerda paydo bo'ladi</div>
+          <div className="text-[0.8em]">Kamera odamni kunda birinchi marta taniganda shu yerda paydo bo'ladi</div>
         </div>
       ) : (
         <ul className="flex min-h-0 flex-1 flex-col gap-[0.55em] overflow-hidden">

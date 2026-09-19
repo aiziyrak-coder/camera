@@ -15,8 +15,19 @@ function delta(cur: number | null, prev: number | null | undefined, better: Stat
 }
 
 /** Xodim uchun davr KPI'lari: oldingi xuddi shunday davrga nisbatan o'zgarish bilan. */
-export function StaffKpis({ current, previous, days }: { current: PersonKpis; previous: PersonKpis | null; days: number }) {
-  const arrivalLate = current.avgArrivalMinutes !== null && current.avgArrivalMinutes > LATE_CUTOFF_MINUTES;
+export function StaffKpis({
+  current,
+  previous,
+  days,
+  lateCutoff = LATE_CUTOFF_MINUTES,
+}: {
+  current: PersonKpis;
+  previous: PersonKpis | null;
+  days: number;
+  /** Kechikish chegarasi (daqiqa) — attendance_policy. */
+  lateCutoff?: number;
+}) {
+  const arrivalLate = current.avgArrivalMinutes !== null && current.avgArrivalMinutes > lateCutoff;
   return (
     <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
       <StatTile
@@ -32,7 +43,7 @@ export function StaffKpis({ current, previous, days }: { current: PersonKpis; pr
         icon={LogIn}
         tone={arrivalLate ? 'warning' : 'info'}
         delta={delta(current.avgArrivalMinutes, previous?.avgArrivalMinutes, 'down', ' daq')}
-        hint={arrivalLate ? `${minutesClock(LATE_CUTOFF_MINUTES)} dan kech` : `chegara ${minutesClock(LATE_CUTOFF_MINUTES)}`}
+        hint={arrivalLate ? `${minutesClock(lateCutoff)} dan kech` : `chegara ${minutesClock(lateCutoff)}`}
       />
       <StatTile
         label="Kech qolgan kunlar"
@@ -64,7 +75,7 @@ export function StaffKpis({ current, previous, days }: { current: PersonKpis; pr
 }
 
 /** Hafta kunlari naqshi: o'rtacha kelish va kechikishlar — qaysi kun "og'ir". */
-export function WeekdayPatternCard({ rows }: { rows: WeekdayStat[] }) {
+export function WeekdayPatternCard({ rows, lateCutoff = LATE_CUTOFF_MINUTES }: { rows: WeekdayStat[]; lateCutoff?: number }) {
   const withData = rows.filter((r) => r.days > 0);
   const worst = withData.reduce<WeekdayStat | null>((w, r) => (!w || r.late + r.absent > w.late + w.absent ? r : w), null);
   // Shkala: 07:30 … 10:00
@@ -86,12 +97,12 @@ export function WeekdayPatternCard({ rows }: { rows: WeekdayStat[] }) {
             <li key={r.weekday} className="grid grid-cols-[2.5rem_minmax(0,1fr)_3.5rem_5.5rem] items-center gap-3 text-[13px]">
               <span className={cn('font-medium', r === worst && r.late + r.absent > 0 ? 'text-warning' : 'text-fg')}>{r.label}</span>
               <div className="relative h-2 rounded-full bg-surface-2" aria-hidden="true">
-                <span className="absolute inset-y-[-3px] w-px bg-warning" style={{ left: pos(LATE_CUTOFF_MINUTES) }} />
+                <span className="absolute inset-y-[-3px] w-px bg-warning" style={{ left: pos(lateCutoff) }} />
                 {r.avgArrivalMinutes !== null && (
                   <span
                     className={cn(
                       'absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-surface',
-                      r.avgArrivalMinutes > LATE_CUTOFF_MINUTES ? 'bg-warning' : 'bg-primary',
+                      r.avgArrivalMinutes > lateCutoff ? 'bg-warning' : 'bg-primary',
                     )}
                     style={{ left: pos(r.avgArrivalMinutes) }}
                   />
@@ -111,7 +122,7 @@ export function WeekdayPatternCard({ rows }: { rows: WeekdayStat[] }) {
         </ul>
       )}
       <p className="mt-3 flex items-center gap-1.5 text-xs text-muted">
-        <span className="h-3 w-px bg-warning" aria-hidden="true" /> {minutesClock(LATE_CUTOFF_MINUTES)} chegara · shkala 07:30–10:00
+        <span className="h-3 w-px bg-warning" aria-hidden="true" /> {minutesClock(lateCutoff)} chegara · shkala 07:30–10:00
       </p>
     </Card>
   );

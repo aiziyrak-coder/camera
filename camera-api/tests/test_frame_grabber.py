@@ -16,7 +16,20 @@ def _camera(**kwargs):
     cam.rtsp_path = "/Streaming/Channels/101"
     cam.rtsp_username = None
     cam.rtsp_password = None
+    cam.stream_url = kwargs.get("stream_url")
     return cam
+
+
+def test_ai_reads_the_substream_through_the_mediamtx_relay(monkeypatch):
+    """Kameraga bitta ulanish: AI MediaMTX yo'lini o'qiydi (kamera sessiya cheklovi)."""
+    monkeypatch.setattr(settings, "ai_read_via_mediamtx", True)
+    monkeypatch.setattr(settings, "mediamtx_shard_hls_base_urls", "/s0,/s1")
+    monkeypatch.setattr(settings, "mediamtx_shard_hls_internal_base_urls", "http://mediamtx-0:8888,http://mediamtx-1:8888")
+    cam = _camera(stream_url="/s1/cam-abc/index.m3u8")
+    assert frame_grabber.rtsp_url_for_camera(cam, substream=True) == "rtsp://mediamtx-1:8554/cam-abc"
+    # Asosiy oqim va yo'li yo'q kamera — to'g'ridan-to'g'ri kameraga.
+    assert frame_grabber.rtsp_url_for_camera(cam, substream=False).startswith("rtsp://192.168.0.8")
+    assert frame_grabber.rtsp_url_for_camera(_camera(), substream=True).startswith("rtsp://192.168.0.8")
 
 
 def test_entrance_uses_main_stream_when_enabled(monkeypatch):
@@ -35,9 +48,12 @@ def test_non_entrance_uses_substream(monkeypatch):
     assert "/Streaming/Channels/102" in url
 
 
-def test_perimeter_uses_main_stream(monkeypatch):
+def test_perimeter_uses_main_stream_only_when_enabled(monkeypatch):
+    """720p substream'dan keyin perimetr ham standart bo'yicha substream'da."""
     monkeypatch.setattr(settings, "ai_entrance_use_main_stream", True)
     cam = _camera(is_perimeter=True)
+    assert frame_grabber.ai_prefers_substream(cam) is True
+    monkeypatch.setattr(settings, "ai_perimeter_main_stream", True)
     assert frame_grabber.ai_prefers_substream(cam) is False
 
 

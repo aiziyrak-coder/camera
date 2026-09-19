@@ -96,8 +96,8 @@ export function TeacherDayDrawer({ person, date, onClose, children }: TeacherDay
             <KeyValue
               items={[
                 { label: 'Fakultet / bo‘lim', value: [data.faculty, data.unit].filter(Boolean).join(' · ') || '—' },
-                { label: 'Eshikdan kirish', value: <span className="tabular-nums">{hhmm(data.checkIn)}</span> },
-                { label: 'Eshikdan oxirgi chiqish', value: <span className="tabular-nums">{hhmm(data.checkOut)}</span> },
+                { label: "Kelgan (birinchi ko'rinish)", value: <span className="tabular-nums">{hhmm(data.checkIn)}</span> },
+                { label: "Oxirgi ko'rilgan", value: <span className="tabular-nums">{hhmm(data.checkOut)}</span> },
                 {
                   label: "Kameralarda ko'rilgan",
                   value: data.firstSeen ? <span className="tabular-nums">{hhmm(data.firstSeen)} – {hhmm(data.lastSeen)}</span> : '—',

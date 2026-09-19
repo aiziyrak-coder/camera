@@ -455,8 +455,15 @@ export function neededPerDay(remaining: number, today: string, target: string): 
 
 // ───────────────────────────────────────────── Shaxs KPI (xodim)
 
-/** Kechikish chegarasi (server sozlamasi `attendance_ai_late_cutoff` standarti). */
-export const LATE_CUTOFF_MINUTES = 9 * 60;
+/** Kechikish chegarasi standarti — attendance_policy: 08:00 + 10 daqiqa.
+ *  Haqiqiy qiymat /api/attendance-policy dan olinadi (lateAfterMinutes). */
+export const LATE_CUTOFF_MINUTES = 8 * 60 + 10;
+
+/** "08:10" -> 490; noto'g'ri qiymat -> standart chegara. */
+export function lateAfterMinutes(hhmm: string | null | undefined): number {
+  const m = /^(\d{1,2}):(\d{2})/.exec(hhmm ?? '');
+  return m ? Number(m[1]) * 60 + Number(m[2]) : LATE_CUTOFF_MINUTES;
+}
 
 export interface PersonKpis {
   rate: number | null;

@@ -149,6 +149,25 @@ class TestMarkAbsencesForDay:
         assert second == 0
 
 
+@pytest.mark.usefixtures("seeded")
+class TestInactiveAndPolicy:
+    async def test_inactive_person_is_never_marked_absent(self, db_session):
+        person = await _person(db_session, "Chetlatilgan", enrolled=True)
+        person.active = False
+        await db_session.commit()
+        await mark_absences_for_day(db_session, date(2026, 9, 2))
+        rows = (
+            await db_session.execute(select(AttendanceRecord).where(AttendanceRecord.student_staff_id == person.id))
+        ).scalars().all()
+        assert rows == []
+
+    def test_working_days_follow_attendance_policy(self, monkeypatch):
+        from app.services import attendance_policy
+
+        monkeypatch.setattr(attendance_policy, "_cached", attendance_policy.Policy(work_days=(1, 2, 3, 4, 5)))
+        assert is_working_day(date(2026, 9, 5)) is False  # shanba — qoidada dam olish
+
+
 class TestWorkingDays:
     def test_sunday_is_not_a_working_day_by_default(self):
         assert settings.attendance_working_weekdays == "1,2,3,4,5,6"

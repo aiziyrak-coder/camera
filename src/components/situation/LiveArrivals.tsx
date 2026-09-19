@@ -15,7 +15,7 @@ interface Props {
   big?: boolean;
 }
 
-/** "So'nggi kelganlar" — kirish kameralari tanigan oxirgi odamlar. */
+/** "So'nggi kelganlar" — kunning birinchi ko'rinishi (istalgan kamera yoki turniket) bo'yicha. */
 export function LiveArrivals({ items, loading, live, freshIds, personLink, big }: Props) {
   return (
     <Card padding="none" className="flex min-h-0 flex-col">
@@ -31,7 +31,7 @@ export function LiveArrivals({ items, loading, live, freshIds, personLink, big }
               )}
             </span>
           }
-          subtitle="Kirish kameralari tanigan oxirgi odamlar"
+          subtitle="Bugun birinchi marta tanilgan oxirgi odamlar"
           icon={UserCheck}
           className="mb-3"
         />
@@ -50,7 +50,7 @@ export function LiveArrivals({ items, loading, live, freshIds, personLink, big }
         </ul>
       ) : items.length === 0 ? (
         <div className="px-4 pb-5 sm:px-5">
-          <EmptyState compact icon={UserCheck} title="Hozircha hech kim kelmagan" description="Kirish kamerasi odamni taniganda shu yerda darhol paydo bo'ladi." />
+          <EmptyState compact icon={UserCheck} title="Hozircha hech kim kelmagan" description="Kamera odamni kunda birinchi marta taniganda shu yerda darhol paydo bo'ladi." />
         </div>
       ) : (
         <ul className="divide-y divide-border border-t border-border" aria-live="polite">

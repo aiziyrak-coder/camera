@@ -194,7 +194,12 @@ class Settings(BaseSettings):
     # =False), lekin yuz ko'rinadigan-u, kichikligi sababli tanilmaydigan bir
     # nechta kamerani asosiy oqimga o'tkazish mumkin. Byudjet — bir vaqtda
     # asosiy oqimda ishlaydigan xona kameralari soni.
-    ai_main_stream_promotion_enabled: bool = True
+    # 2026-09-19: qo'shimcha oqim 1280x720 ga ko'tarildi, yuz aniqlash esa
+    # kadrni baribir 1280 gacha kichraytiradi — 4K asosiy oqim endi yuzni
+    # kattalashtirmaydi, faqat tarmoq/CPU yuklaydi va tez-tez kadr bermaydi.
+    ai_main_stream_promotion_enabled: bool = False
+    # Perimetr kameralari ham shu sababdan substream'da (kirish kamerasi — ai_entrance_use_main_stream).
+    ai_perimeter_main_stream: bool = False
     ai_main_stream_promotion_budget: int = 3
     # Kamerada bugun kamida shuncha yuz ko'ringan bo'lsin...
     ai_main_stream_promotion_min_faces: int = 10
@@ -877,6 +882,12 @@ class Settings(BaseSettings):
 
     # AI frame_grabber reads RTSP substream directly (bypasses MediaMTX/HLS).
     ai_use_direct_rtsp: bool = True
+    # AI qo'shimcha oqimni kameradan EMAS, MediaMTX relay'idan o'qiydi
+    # (rtsp://mediamtx-N:8554/cam-<id>): kameraga bitta ulanish qoladi.
+    # 2026-09-19: arzon kameralar parallel RTSP sessiyalarni cheklaydi — 4 ta
+    # kamera videodevorda ishlagani holda AI ga umuman kadr bermadi.
+    ai_read_via_mediamtx: bool = True
+    mediamtx_internal_rtsp_port: int = 8554
     # Hikvision substream — lower bandwidth than /Streaming/Channels/101.
     rtsp_substream_path: str = "/Streaming/Channels/102"
     # Kirish/perimetr kameralarda yuz kichik bo'ladi (768x432 substream) —

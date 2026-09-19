@@ -27,6 +27,7 @@ from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.models import AttendanceRecord, PresenceVisit, StudentStaff
+from app.services.attendance_policy import current_policy, load_policy
 from app.schemas.attendance import (
     AttendanceDayOut,
     AttendanceMonthOut,
@@ -123,7 +124,14 @@ def _is_early_leave(
       o'zi hal qiladi."""
     if record.status not in PRESENT_STATUSES or record.check_out is None or record.check_in is None:
         return False
-    cutoff = time_type.fromisoformat(settings.attendance_early_leave_cutoff)
+    # Ish tugashi — attendance_policy (Sozlamalar → Ish vaqti), hisobot
+    # (app/services/hisobot.py) bilan bir xil. Ilgari alohida
+    # ATTENDANCE_EARLY_LEAVE_CUTOFF (16:00) ishlatilardi: odam kartasi va
+    # hisobot bir kun uchun turlicha "erta ketdi" ko'rsatardi.
+    policy = current_policy()
+    if not policy.is_work_day(record.date):
+        return False
+    cutoff = policy.work_end
     if record.check_out >= cutoff:
         return False
     current = now or local_now()
@@ -213,6 +221,7 @@ async def get_attendance_calendar(
         .order_by(AttendanceRecord.date)
     )
     result = await db.execute(stmt)
+    await load_policy(db)  # _is_early_leave ish tugashini keshdan o'qiydi
     last_seen = await _last_seen_by_day(db, person_id, first, _add_months(first, 1))
     return [_to_out(r, last_seen.get(r.date)) for r in result.scalars().all()]
 
@@ -249,6 +258,7 @@ async def get_attendance_summary(
         )
     ).scalars().all()
 
+    await load_policy(db)
     last_seen = await _last_seen_by_day(db, person.id, first, _add_months(current, 1))
     by_month: dict[str, list[AttendanceRecord]] = defaultdict(list)
     for record in records:
@@ -267,7 +277,7 @@ async def get_attendance_summary(
             biometric_photo_url=presigned_url(person.biometric_photo_key) if person.biometric_photo_key else None,
         ),
         months=[_month_summary(key, by_month.get(key, []), last_seen) for key in keys],
-        working_weekdays=sorted(_working_weekdays()),
+        working_weekdays=sorted(_working_weekdays()),  # attendance_policy.work_days
     )
 
 

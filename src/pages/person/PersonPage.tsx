@@ -34,13 +34,14 @@ import {
   type TabItem,
 } from '../../ui';
 import { api } from '../../lib/apiClient';
+import { getAttendancePolicy } from '../../lib/attendancePolicyApi';
 import { useAuth } from '../../lib/auth';
 import { usePermissions } from '../../lib/permissions';
 import { useLiveAttendance, type LiveAttendanceMessage } from '../../lib/realtime';
 import { getPerson, situationPaths, type Lesson, type PersonLesson, type PersonProfile } from '../../lib/situationApi';
 import { DEFAULT_WORKING_WEEKDAYS, buildMonthGrid, monthOf, type CalendarCell } from '../../lib/attendanceCalendar';
 import {
-  LATE_CUTOFF_MINUTES,
+  lateAfterMinutes,
   LESSON_ATTENDANCE_META,
   arrivalSeries,
   biometricsMeta,
@@ -154,7 +155,6 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
-const lateLabel = `${String(Math.floor(LATE_CUTOFF_MINUTES / 60)).padStart(2, '0')}:${String(LATE_CUTOFF_MINUTES % 60).padStart(2, '0')}`;
 const linkClass = cn('rounded text-primary hover:underline', focusRing);
 
 /** Shaxs profili (talaba yoki o'qituvchi/xodim): surat, bugungi holat,
@@ -199,6 +199,13 @@ export default function PersonPage() {
   const data = profile.data;
   const person = data?.person;
   const isStaff = person?.type === 'xodim';
+  // Kechikish chegarasi — Sozlamalar → Ish vaqti (talaba/xodim alohida),
+  // server kech_keldi ni shu qoida bilan yozadi. Ilgari 09:00 qotirilgan edi.
+  const policy = useAsyncData('attendance-policy', () => getAttendancePolicy(null));
+  const lateCutoff = lateAfterMinutes(
+    person?.type === 'talaba' ? policy.data?.studentLateAfter : policy.data?.staffLateAfter,
+  );
+  const lateLabel = `${String(Math.floor(lateCutoff / 60)).padStart(2, '0')}:${String(lateCutoff % 60).padStart(2, '0')}`;
   // Xodim: oldingi, xuddi shu uzunlikdagi davr — KPI o'zgarishlari uchun.
   const prevRange = previousRange(range.from, range.to);
   const previous = useAsyncData<PersonProfile>(
@@ -404,7 +411,7 @@ export default function PersonPage() {
             <>
               {isStaff && kpis ? (
                 <>
-                  <StaffKpis current={kpis} previous={prevKpis} days={daysBetween(range.from, range.to) + 1} />
+                  <StaffKpis current={kpis} previous={prevKpis} days={daysBetween(range.from, range.to) + 1} lateCutoff={lateCutoff} />
                   <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]">
                     <Card>
                       <CardHeader
@@ -413,12 +420,12 @@ export default function PersonPage() {
                         icon={LogIn}
                       />
                       {data.calendar.some((d) => d.checkIn) ? (
-                        <ArrivalTimeChart points={arrivalSeries(data.calendar)} threshold={LATE_CUTOFF_MINUTES} average={kpis.avgArrivalMinutes} height={240} />
+                        <ArrivalTimeChart points={arrivalSeries(data.calendar)} threshold={lateCutoff} average={kpis.avgArrivalMinutes} height={240} />
                       ) : (
                         <EmptyState compact bordered={false} title="Kelish vaqti qayd etilmagan" />
                       )}
                     </Card>
-                    <WeekdayPatternCard rows={weekdays} />
+                    <WeekdayPatternCard rows={weekdays} lateCutoff={lateCutoff} />
                   </div>
                 </>
               ) : (
@@ -469,7 +476,7 @@ export default function PersonPage() {
                     <Card>
                       <CardHeader title="Kelish vaqti" subtitle="Tanlangan davrda har kuni" icon={LogIn} />
                       {data.calendar.some((d) => d.checkIn) ? (
-                        <ArrivalTimeChart points={arrivalSeries(data.calendar)} threshold={LATE_CUTOFF_MINUTES} />
+                        <ArrivalTimeChart points={arrivalSeries(data.calendar)} threshold={lateCutoff} />
                       ) : (
                         <EmptyState compact bordered={false} title="Kelish vaqti qayd etilmagan" />
                       )}
