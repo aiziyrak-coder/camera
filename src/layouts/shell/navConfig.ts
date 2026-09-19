@@ -2,7 +2,6 @@ import {
   BellRing,
   BookUser,
   BrainCircuit,
-  CalendarClock,
   Clock,
   Cctv,
   ChartColumn,
@@ -10,7 +9,6 @@ import {
   GraduationCap,
   LayoutDashboard,
   Lock,
-  Map as MapIcon,
   MonitorPlay,
   Network,
   PlugZap,
@@ -44,7 +42,6 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: '/', label: 'Situatsion markaz', icon: LayoutDashboard, end: true },
       { to: '/videodevor', label: 'Videodevor', icon: MonitorPlay, permission: 'viewLive' },
-      { to: '/xarita', label: 'Qavat xaritasi', icon: MapIcon, permission: 'viewLive' },
       { to: '/hodisalar', label: 'Hodisalar', icon: Siren, permission: 'reviewEvents' },
     ],
   },
@@ -54,7 +51,6 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: '/talabalar', label: 'Talabalar', icon: GraduationCap, permission: 'manageAttendance' },
       { to: '/oqituvchilar', label: 'Xodimlar', icon: BookUser, permission: 'manageAttendance' },
-      { to: '/darslar', label: 'Darslar', icon: CalendarClock, permission: 'manageLessons' },
     ],
   },
   {
@@ -151,7 +147,7 @@ export function findActive(pathname: string): { section: NavSection; item: NavIt
 }
 
 /** Global sana tanlagichi ko'rinadigan (davomat) sahifalar. */
-const DATE_ROUTES = ['/', '/talabalar', '/oqituvchilar', '/darslar', '/shaxs'];
+const DATE_ROUTES = ['/', '/talabalar', '/oqituvchilar', '/shaxs'];
 
 export function usesViewDate(pathname: string): boolean {
   return DATE_ROUTES.some((to) => matchesPath(pathname, to));

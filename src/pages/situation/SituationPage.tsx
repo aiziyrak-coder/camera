@@ -94,7 +94,6 @@ export default function SituationPage() {
   const canStudentsPages = has('manageAttendance');
   const canData = canStudentsPages || has('viewReports');
   const canLessons = canData || has('manageLessons');
-  const canLessonsPage = has('manageLessons');
   const canEvents = has('reviewEvents');
   const cameraLink = has('editCameraLocation') ? '/sozlamalar/kameralar' : has('viewLive') ? '/videodevor' : null;
 
@@ -254,7 +253,7 @@ export default function SituationPage() {
 
   const studentsLink = canStudentsPages ? withDate('/talabalar') : undefined;
   const teachersLink = canStudentsPages ? withDate('/oqituvchilar') : undefined;
-  const lessonsLink = canLessonsPage ? withDate('/darslar') : null;
+  const lessonsLink: string | null = null;
 
   return (
     <Page title="Situatsion markaz" subtitle={subtitle} titleAddon={titleAddon} actions={big ? undefined : actions}>

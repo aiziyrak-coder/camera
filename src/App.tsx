@@ -24,7 +24,6 @@ const FacultyPage = lazyPage(() => import('./pages/students/FacultyPage'));
 const GroupPage = lazyPage(() => import('./pages/students/GroupPage'));
 const KafedrasPage = lazyPage(() => import('./pages/teachers/KafedrasPage'));
 const KafedraPage = lazyPage(() => import('./pages/teachers/KafedraPage'));
-const LessonsPage = lazyPage(() => import('./pages/lessons/LessonsPage'));
 const PersonPage = lazyPage(() => import('./pages/person/PersonPage'));
 const WorkHoursPage = lazyPage(() => import('./pages/settings/WorkHoursPage'));
 const SystemPage = lazyPage(() => import('./pages/settings/SystemPage'));
@@ -34,7 +33,6 @@ const StyleGuidePage = lazyPage(() => import('./pages/settings/StyleGuidePage'))
 const EventsPage = lazyPage(() => import('./pages/admin/EventsPage'));
 const ReportsPage = lazyPage(() => import('./pages/admin/ReportsPage'));
 const VideoWallPage = lazyPage(() => import('./pages/admin/VideoWallPage'));
-const FloorPlansPage = lazyPage(() => import('./pages/admin/FloorPlansPage'));
 const StudentsStaffPage = lazyPage(() => import('./pages/admin/StudentsStaffPage'));
 const OrgStructurePage = lazyPage(() => import('./pages/admin/OrgStructurePage'));
 const CamerasZonesPage = lazyPage(() => import('./pages/admin/CamerasZonesPage'));
@@ -111,13 +109,12 @@ export default function App() {
                 <Route path="/oqituvchilar/kafedra/:departmentId" element={<KafedraPage />} />
                 <Route path="/shaxs/:personId" element={<PersonPage />} />
               </Route>
-              <Route element={<RequirePermission permission="manageLessons" />}>
-                <Route path="/darslar" element={<LessonsPage />} />
-              </Route>
 
               <Route element={<RequirePermission permission="viewLive" />}>
                 <Route path="/videodevor" element={<VideoWallRoute />} />
-                <Route path="/xarita" element={<FloorPlansPage />} />
+                {/* Olib tashlangan sahifalar (2026-09-19): bo'sh edi, chalg'itardi. */}
+                <Route path="/xarita" element={<Navigate to="/videodevor" replace />} />
+                <Route path="/darslar" element={<Navigate to="/" replace />} />
               </Route>
               <Route element={<RequirePermission permission="reviewEvents" />}>
                 <Route path="/hodisalar" element={<EventsPage />} />

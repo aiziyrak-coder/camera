@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Building2, CalendarX2, Clock, LayoutGrid, Rows3, Timer, UserCheck } from 'lucide-react';
 import {
   Badge,
@@ -180,9 +180,7 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
             <p className="font-medium text-fg">Dars jadvali hali yuklanmagan</p>
             <p className="mt-1 text-xs text-muted">
               Darsga punktuallik jadval yuklangach ko'rinadi —{' '}
-              <Link to="/darslar" className="font-medium text-primary hover:underline">
-                Darslar → Import
-              </Link>
+              <span className="font-medium text-fg">HEMIS ulangach avtomatik</span>
             </p>
           </div>
         )}

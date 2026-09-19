@@ -381,9 +381,7 @@ function LessonsSection({ rows, loading, error, onRetry }: { rows: Lesson[]; loa
         emptyDescription={
           <>
             Dars jadvali hali yuklanmagan bo'lishi mumkin —{' '}
-            <Link to="/darslar" className="font-medium text-primary hover:underline">
-              Darslar → Import
-            </Link>
+            <span className="font-medium text-fg">HEMIS ulangach avtomatik yuklanadi</span>
             . Darslar bo'linmaga o'qituvchi orqali bog'lanadi.
           </>
         }
