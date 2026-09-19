@@ -53,6 +53,7 @@ from app.schemas.situation import CountsOut, LessonOut
 from app.services.event_scope import OPERATOR_EVENTS
 from app.services.event_status import OPEN_STATUSES
 from app.services.staff_export import NO_FACULTY_LABEL, split_course
+from app.services.unit_names import canonical_map, is_position, unit_key
 from app.storage import presigned_url
 from app.timezone import INSTITUTE_TZ, local_now, to_local
 
@@ -428,6 +429,10 @@ def classify_unit(name: str | None) -> str:
         return LAVOZIM_KIND
     if any(t in POSITION_WORDS for t in tokens) and all(t in POSITION_WORDS or t in POSITION_MODIFIERS for t in tokens):
         return LAVOZIM_KIND
+    # Imlo xatoli va kirilcha lavozimlar ("Asisent", "Коровул", "Stajor-o'qituvchi")
+    # — app/services/unit_names.py.
+    if is_position(name):
+        return LAVOZIM_KIND
     if "kafedra" in key:
         return "kafedra"
     if any(word in key for word in DEKANAT_KEYWORDS):
@@ -464,8 +469,12 @@ class UnitCatalog:
     by_key: dict[str, str]  # norm_name(group_or_position) -> id
     staff: list[tuple[uuid.UUID, str | None]]  # faol xodimlar (id, group_or_position)
 
+    # unit_key -> kanonik unit_key (imlo xatoli variantlar birlashtirilgan).
+    aliases: dict[str, str] = field(default_factory=dict)
+
     def unit_id(self, raw: str | None) -> str:
-        return self.by_key.get(norm_name(raw), UNASSIGNED_KAFEDRA_ID)
+        key = unit_key(raw)
+        return self.by_key.get(self.aliases.get(key, key), UNASSIGNED_KAFEDRA_ID)
 
     def staff_ids(self, unit_id: str) -> list[uuid.UUID]:
         return [pid for pid, unit in self.staff if self.unit_id(unit) == unit_id]
@@ -498,8 +507,9 @@ def build_catalog(deps: list[DepartmentInfo], staff: list[tuple[uuid.UUID, str |
     yozilishi. Sof lavozim matnlari bo'linma bo'lmaydi."""
     units: dict[str, UnitInfo] = {}
     by_key: dict[str, str] = {}
+    aliases = canonical_map([raw for _pid, raw in staff])
     for dep in deps:
-        key = norm_name(dep.name)
+        key = unit_key(dep.name)
         if key in by_key:  # bir xil nomli ikkinchi Department — birinchisi yutadi
             continue
         kind = classify_unit(dep.name)
@@ -509,7 +519,10 @@ def build_catalog(deps: list[DepartmentInfo], staff: list[tuple[uuid.UUID, str |
 
     variants: dict[str, Counter] = defaultdict(Counter)
     for _pid, raw in staff:
-        key = norm_name(raw)
+        if is_position(raw):
+            continue
+        key = unit_key(raw)
+        key = aliases.get(key, key)
         if key and key not in by_key:
             variants[key][" ".join((raw or "").split())] += 1
     for key, names in variants.items():
@@ -525,7 +538,7 @@ def build_catalog(deps: list[DepartmentInfo], staff: list[tuple[uuid.UUID, str |
     catalog = {u.id: u for u in ordered}
     catalog[UNASSIGNED_KAFEDRA_ID] = UnitInfo(UNASSIGNED_KAFEDRA_ID, UNASSIGNED_KAFEDRA_NAME, LAVOZIM_KIND,
                                               unassigned=True)
-    return UnitCatalog(catalog, by_key, staff)
+    return UnitCatalog(catalog, by_key, staff, aliases)
 
 
 async def unit_catalog(db: AsyncSession) -> UnitCatalog:
