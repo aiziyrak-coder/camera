@@ -35,6 +35,7 @@ from app.services.report_criteria import (
     person_detail,
     resolve_period,
 )
+from app.services.report_criteria_export import build_criteria_workbook
 from app.services.report_export import build_analytics_workbook
 from app.services.report_generator import _date_range, generate_rule_based_report
 from app.services.staff_export import XLSX_MIME
@@ -245,6 +246,33 @@ async def report_criteria(
     """Hisobot sahifasining birinchi darajasi: tanlangan populyatsiya va
     davr uchun kriteriya kartalari, har birida raqamlari bilan."""
     return await build_criteria(db, population, resolve_period(period))
+
+
+@router.get("/criteria.xlsx")
+async def report_criteria_xlsx(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: PermDep,
+    population: Annotated[Literal["xodim", "talaba"], Query()] = "xodim",
+    period: Annotated[Literal["bugun", "kecha", "hafta", "oy"], Query()] = "bugun",
+    variant: Annotated[Literal["qisqa", "toliq"], Query()] = "qisqa",
+    criterion: Annotated[str | None, Query(max_length=40)] = None,
+    bucket: Annotated[str, Query(max_length=40)] = "",
+    search: Annotated[str | None, Query(max_length=100)] = None,
+) -> Response:
+    """Sahifadagi filtr bo'yicha Excel: qisqa — faqat raqamlar, to'liq —
+    raqamlar va har raqam ortidagi odamlar ism-familiyasi bilan
+    (app/services/report_criteria_export.py)."""
+    resolved = resolve_period(period)
+    content = await build_criteria_workbook(
+        db, population, resolved, variant=variant, criterion_key=criterion, bucket=bucket, search=search
+    )
+    span = resolved.start.isoformat() if resolved.start == resolved.end else f"{resolved.start}_{resolved.end}"
+    filename = f"hisobot-{population}-{span}-{variant}.xlsx"
+    return Response(
+        content=content,
+        media_type=XLSX_MIME,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/criteria/{criterion}/people", response_model=Page[ReportPersonRowOut])

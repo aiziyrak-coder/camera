@@ -267,3 +267,64 @@ class TestPersonDetail:
             )
         ).status_code == 404
         assert (await client.get("/api/reports/people/not-a-uuid", headers=headers)).status_code == 404
+
+
+def _workbook(content: bytes):
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    return load_workbook(BytesIO(content))
+
+
+@pytest.mark.usefixtures("seeded")
+class TestCriteriaExport:
+    """Hisobotlar sahifasidan Excel: qisqa — raqamlar, to'liq — ism-familiyalar bilan."""
+
+    async def test_short_file_has_only_the_numbers(self, client: AsyncClient, today_data):
+        headers = await auth_headers(client, "admin", "admin123")
+        response = await client.get(
+            "/api/reports/criteria.xlsx",
+            headers=headers,
+            params={"population": "xodim", "period": "bugun", "variant": "qisqa"},
+        )
+        assert response.status_code == 200
+        assert "qisqa" in response.headers["content-disposition"]
+        wb = _workbook(response.content)
+        assert wb.sheetnames == ["Xulosa"]
+        rows = [tuple(r) for r in wb["Xulosa"].iter_rows(values_only=True)]
+        assert ("Davomat", "Keldi", 1) in [tuple(r[:3]) for r in rows]
+        assert ("", "Kelmadi", 1) in [tuple(r[:3]) for r in rows] or (None, "Kelmadi", 1) in [tuple(r[:3]) for r in rows]
+        names = " ".join(str(v) for r in rows for v in r if v)
+        assert "Kelgan Xodim" not in names
+
+    async def test_full_file_lists_people_by_name(self, client: AsyncClient, today_data):
+        headers = await auth_headers(client, "admin", "admin123")
+        response = await client.get(
+            "/api/reports/criteria.xlsx",
+            headers=headers,
+            params={"population": "xodim", "period": "bugun", "variant": "toliq"},
+        )
+        assert response.status_code == 200
+        wb = _workbook(response.content)
+        assert "Davomat" in wb.sheetnames
+        attendance = [r for r in wb["Davomat"].iter_rows(min_row=2, values_only=True)]
+        names = {r[2]: r for r in attendance}
+        assert names["Kelgan Xodim"][5] == "Keldi"
+        assert names["Kelgan Xodim"][6] == "08:40"
+        assert names["Kechikkan Xodim"][5] == "Kechikdi"
+
+    async def test_full_file_follows_the_selected_bucket(self, client: AsyncClient, today_data):
+        headers = await auth_headers(client, "admin", "admin123")
+        response = await client.get(
+            "/api/reports/criteria.xlsx",
+            headers=headers,
+            params={
+                "population": "xodim", "period": "bugun", "variant": "toliq",
+                "criterion": "davomat", "bucket": "keldi",
+            },
+        )
+        wb = _workbook(response.content)
+        assert wb.sheetnames == ["Xulosa", "Davomat"]
+        people = [r[2] for r in wb["Davomat"].iter_rows(min_row=2, values_only=True)]
+        assert people == ["Kelgan Xodim"]

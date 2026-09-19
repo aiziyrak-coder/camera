@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowLeft, CalendarRange, RefreshCw } from 'lucide-react';
+import { ArrowLeft, CalendarRange, Download, Loader2, RefreshCw } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import SegmentedControl from '../../components/ui/SegmentedControl';
 import ErrorState from '../../components/ui/ErrorState';
@@ -12,7 +12,9 @@ import PersonReport from '../../components/reports/PersonReport';
 import EventDrawer from '../../components/events/EventDrawer';
 import Badge from '../../components/Badge';
 import Pagination from '../../components/Pagination';
-import { buildQuery } from '../../lib/apiClient';
+import { ApiError, api, buildQuery } from '../../lib/apiClient';
+import { useAuth } from '../../lib/auth';
+import { downloadBlob } from '../../lib/download';
 import { useApiResource } from '../../lib/useApiResource';
 import { useServerPage } from '../../lib/useServerPage';
 import { relativeTime } from '../../lib/uzDate';
@@ -62,6 +64,9 @@ export default function ReportsPage() {
 
   const [search, setSearch] = useState('');
   const [openEvent, setOpenEvent] = useState<AIEvent | null>(null);
+  const { token } = useAuth();
+  const [exporting, setExporting] = useState<'qisqa' | 'toliq' | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const setQuery = useCallback(
     (patch: Record<string, string | null>) => {
@@ -134,6 +139,36 @@ export default function ReportsPage() {
         ? 'events'
         : 'cards';
 
+  // Excel: sahifadagi filtr bo'yicha (bo'lim, davr, ochiq kriteriya va guruh,
+  // qidiruv). Qisqa — faqat raqamlar, to'liq — har raqam ortidagi odamlar
+  // ism-familiyasi bilan (backend app/services/report_criteria_export.py).
+  async function exportExcel(variant: 'qisqa' | 'toliq') {
+    setExporting(variant);
+    setExportError(null);
+    try {
+      const openCriterion = level === 'people' || level === 'events' ? criterion : null;
+      const query = buildQuery({
+        population,
+        period: periodKey,
+        variant,
+        criterion: openCriterion?.key,
+        bucket: openCriterion ? activeBucket || undefined : undefined,
+        search: openCriterion && search.trim() ? search.trim() : undefined,
+      });
+      const span = criteria
+        ? criteria.period.start === criteria.period.end
+          ? criteria.period.start
+          : `${criteria.period.start}_${criteria.period.end}`
+        : periodKey;
+      const blob = await api.blob(`/api/reports/criteria.xlsx${query}`, token);
+      downloadBlob(blob, `hisobot-${population}-${span}-${variant}.xlsx`);
+    } catch (err) {
+      setExportError(err instanceof ApiError ? err.message : "Faylni yuklab bo'lmadi");
+    } finally {
+      setExporting(null);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <section className="glass p-4 sm:p-6">
@@ -141,14 +176,36 @@ export default function ReportsPage() {
           title="Hisobotlar"
           subtitle="Kriteriya bo'yicha raqam, raqam ortidagi ro'yxat va har bir odamning kamera isboti"
           action={
-            <button
-              type="button"
-              onClick={reload}
-              className="btn-glass flex items-center gap-1.5"
-            >
-              <RefreshCw size={14} className={criteriaLoading ? 'animate-spin' : ''} />
-              Yangilash
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => exportExcel('qisqa')}
+                disabled={exporting !== null}
+                title="Tanlangan filtr bo'yicha faqat raqamlar (Excel)"
+                className="btn-glass flex items-center gap-1.5 disabled:opacity-60"
+              >
+                {exporting === 'qisqa' ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                Qisqa
+              </button>
+              <button
+                type="button"
+                onClick={() => exportExcel('toliq')}
+                disabled={exporting !== null}
+                title="Tanlangan filtr bo'yicha raqamlar va ism-familiyalar (Excel)"
+                className="btn-glass flex items-center gap-1.5 disabled:opacity-60"
+              >
+                {exporting === 'toliq' ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                To&apos;liq
+              </button>
+              <button
+                type="button"
+                onClick={reload}
+                className="btn-glass flex items-center gap-1.5"
+              >
+                <RefreshCw size={14} className={criteriaLoading ? 'animate-spin' : ''} />
+                Yangilash
+              </button>
+            </div>
           }
         />
 
@@ -182,6 +239,9 @@ export default function ReportsPage() {
       </section>
 
       {criteriaError && <ErrorState message={criteriaError} onRetry={reload} />}
+      {exportError && (
+        <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-600">{exportError}</p>
+      )}
 
       {level === 'cards' && (
         <CriteriaCards
