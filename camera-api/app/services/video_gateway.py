@@ -122,6 +122,11 @@ def _path_config(rtsp_url: str, *, relay: bool | None = None) -> dict:
     if relay:
         return {
             "source": rtsp_url,
+            # TCP: MediaMTX standart bo'yicha UDP bilan oladi va LAN'da
+            # "RTP packets lost / invalid FU-A packet" — buzilgan kadrlar,
+            # qotib qolgan tasvir va ochilmaydigan oqimlar (production,
+            # 2026-09-19). TCP'da paket yo'qolmaydi.
+            "rtspTransport": "tcp",
             "sourceOnDemand": True,
             "sourceOnDemandStartTimeout": "45s",
             "sourceOnDemandCloseAfter": "300s",
