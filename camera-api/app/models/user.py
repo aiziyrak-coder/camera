@@ -30,6 +30,11 @@ class User(Base):
     token_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Shaxsiy bildirishnomalar (hodisa tayinlanganda va h.k.) —
+    # app/services/notifications. Telegram botga "/start <kod>" yuborib bog'lanadi.
+    phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    telegram_chat_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    telegram_link_code: Mapped[str | None] = mapped_column(String(32), nullable=True, unique=True)
 
 
 # Rol qiymati <-> ekranda ko'rinadigan nomi. src/layouts/AdminLayout.tsx

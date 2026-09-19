@@ -18,7 +18,11 @@ export type PermissionKey =
   | 'deleteEvents'
   | 'manageAttendance'
   | 'manageOrgStructure'
-  | 'manageLessons';
+  | 'manageLessons'
+  | 'manageNotifications'
+  | 'manageIntegrations'
+  | 'controlPtz'
+  | 'managePrivacy';
 
 export const PERMISSION_LABELS: Record<PermissionKey, string> = {
   manageCameras: "Kameralarni qo'shish va o'chirish",
@@ -35,6 +39,10 @@ export const PERMISSION_LABELS: Record<PermissionKey, string> = {
   manageAttendance: "Davomat va o'qituvchilar kuzatuvini ko'rish, davomatni tuzatish",
   manageOrgStructure: "Tashkiliy tuzilmani o'zgartirish (bino, fakultet, guruh, kafedra)",
   manageLessons: 'Dars jadvali va dars monitoringi',
+  manageNotifications: 'Bildirishnomalar (Telegram, SMS) sozlash',
+  manageIntegrations: 'Integratsiyalar (HEMIS, turniket)',
+  controlPtz: 'PTZ kamerani boshqarish (burish, yaqinlashtirish)',
+  managePrivacy: "Maxfiylik: rozilik, ma'lumotni eksport va o'chirish",
 };
 
 export type PermissionMatrix = Record<
@@ -62,6 +70,11 @@ export const DEFAULT_PERMISSIONS: PermissionMatrix = {
   manageAttendance: { superAdmin: true, admin: true, cameraSteward: false },
   manageOrgStructure: { superAdmin: true, admin: true, cameraSteward: false },
   manageLessons: { superAdmin: true, admin: true, cameraSteward: false },
+  // Backenddagi app/seed.py va alembic s1a2b3c4d5e6 bilan bir xil.
+  manageNotifications: { superAdmin: true, admin: true, cameraSteward: false },
+  manageIntegrations: { superAdmin: true, admin: false, cameraSteward: false },
+  controlPtz: { superAdmin: true, admin: true, cameraSteward: false },
+  managePrivacy: { superAdmin: true, admin: false, cameraSteward: false },
 };
 
 /** Rol qaysi ustundan o'qiladi — backenddagi _PERMISSION_COLUMN bilan bir xil. */

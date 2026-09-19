@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, SmallInteger, String, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, Integer, SmallInteger, String, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -21,6 +21,10 @@ class Camera(Base):
             "room_type IS NULL OR room_type IN "
             "('kirish', 'auditoriya', 'laboratoriya', 'koridor', 'ofis', 'cheklangan', 'tashqi')",
             name="ck_cameras_room_type",
+        ),
+        CheckConstraint(
+            "ptz_protocol IS NULL OR ptz_protocol IN ('onvif', 'isapi')",
+            name="ck_cameras_ptz_protocol",
         ),
     )
 
@@ -167,6 +171,17 @@ class Camera(Base):
     # (kamera ikkala tomonni ham ko'radi). app/jobs/attendance_ai.py kelish va
     # ketishni shu bo'yicha ajratadi.
     face_direction: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # PTZ boshqaruvi (app/services/ptz.py). ptz_protocol: 'onvif' yoki
+    # 'isapi' (Hikvision). onvif_port NULL — 80. Login/parol RTSP bilan bir xil.
+    ptz_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    ptz_protocol: Mapped[str | None] = mapped_column(String, nullable=True)
+    onvif_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Qavat rejasidagi joyi (app/models/platform.py FloorPlan): nisbiy
+    # koordinatalar 0..1, burchak — kamera qaragan yo'nalish (gradus).
+    plan_x: Mapped[float | None] = mapped_column(Float, nullable=True)
+    plan_y: Mapped[float | None] = mapped_column(Float, nullable=True)
+    plan_rotation: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
 
     building: Mapped[Building | None] = relationship("Building", lazy="joined")
     department: Mapped["Department | None"] = relationship("Department", lazy="joined")

@@ -36,3 +36,5 @@ class AttendanceRecord(Base):
     status: Mapped[str] = mapped_column(String, nullable=False)
     check_in: Mapped[time | None] = mapped_column(Time, nullable=True)
     check_out: Mapped[time | None] = mapped_column(Time, nullable=True)
+    # Qaysi manba yozgan: 'kamera', 'turniket', 'qolda', 'dars'. NULL — eski yozuvlar.
+    source: Mapped[str | None] = mapped_column(String, nullable=True)

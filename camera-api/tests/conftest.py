@@ -1,3 +1,5 @@
+import os
+
 import pytest
 from collections.abc import AsyncGenerator
 
@@ -12,7 +14,11 @@ from app.models import Base
 from app.rate_limit import limiter
 from app.seed import seed_all
 
-TEST_DATABASE_URL = settings.database_url.rsplit("/", 1)[0] + "/camera_api_test"
+# TEST_DATABASE_URL — bir nechta test jarayoni parallel ishlaganda har biri
+# o'z bazasini oladi (aks holda drop_all/create_all bir-birini buzadi).
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or (
+    settings.database_url.rsplit("/", 1)[0] + "/camera_api_test"
+)
 
 # Testlar demo hisoblar (admin/admin123, operator/operator123) bilan
 # ishlaydi. Production'da ular standart bo'yicha yaratilmaydi.

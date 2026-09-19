@@ -62,6 +62,7 @@ from app.services.frame_grabber import (
 from app.services import recognition_stats
 from app.services.camera_roles import face_roi_box
 from app.services.motion_gate import MotionGate
+from app.services.notifications import notify_attendance
 from app.services.presence import record_visit
 from app.timezone import local_now, to_local
 from app.ws import manager
@@ -245,6 +246,7 @@ async def upsert_attendance_from_recognition(
                 status=status,
                 check_in=check_in,
                 check_out=None,
+                source="kamera",
             )
             .on_conflict_do_nothing(index_elements=[AttendanceRecord.student_staff_id, AttendanceRecord.date])
             .returning(AttendanceRecord)
@@ -354,6 +356,7 @@ async def _announce_attendance(record: AttendanceRecord, person: StudentStaff | 
         )
     except Exception:
         logger.warning("attendance announcement failed", exc_info=True)
+    await notify_attendance(record, person, camera)
 
 
 async def process_camera_frame(

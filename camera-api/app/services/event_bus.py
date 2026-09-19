@@ -34,6 +34,7 @@ from app.config import settings
 from app.models import AIModuleConfig, Camera, Event
 from app.schemas.event import EventOut
 from app.services.evidence import Shape, annotate_snapshot
+from app.services.notifications import notify_event
 from app.storage import presigned_url, upload_file
 from app.timezone import to_local
 from app.ws import manager
@@ -51,6 +52,18 @@ def rate_limited_counts() -> dict[int, int]:
 
 def reset_rate_limited_for_tests() -> None:
     _rate_limited.clear()
+
+
+def sla_due_at(severity: str, occurred_at: datetime) -> datetime | None:
+    """Og'irlik bo'yicha hal qilish muddati (settings.event_sla_minutes_*)."""
+    minutes = {
+        "yuqori": settings.event_sla_minutes_high,
+        "o'rta": settings.event_sla_minutes_medium,
+        "past": settings.event_sla_minutes_low,
+    }.get(severity, 0)
+    if minutes <= 0:
+        return None
+    return occurred_at + timedelta(minutes=minutes)
 
 
 def event_to_out(event: Event) -> EventOut:
@@ -215,6 +228,7 @@ async def raise_event(
         snapshot_key=snapshot_key,
         is_trial=is_trial,
         details=details,
+        due_at=None if is_trial else sla_due_at(severity, datetime.now(timezone.utc)),
     )
     db.add(event)
     await db.flush()
@@ -224,4 +238,5 @@ async def raise_event(
     # paneli va Hodisalar navbati uni ko'rsatmasligi kerak.
     if not is_trial:
         await manager.broadcast(event_out.model_dump(by_alias=True))
+        await notify_event(event)
     return event

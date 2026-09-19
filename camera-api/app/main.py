@@ -28,6 +28,10 @@ from app.jobs.unauthorized_person_ai import unauthorized_person_ai_loop
 from app.jobs.unified_face_sweep import unified_face_sweep_loop
 from app.jobs.vision_ai import vision_ai_loop
 from app.jobs.zone_entry_ai import zone_entry_ai_loop
+from app.jobs.access_poll import access_poll_loop
+from app.jobs.event_escalation import event_escalation_loop
+from app.jobs.hemis_sync import hemis_sync_loop
+from app.jobs.telegram_bot import telegram_bot_loop
 from app.logging_config import configure_logging
 from app.rate_limit import limiter
 from app.redis_bus import start_redis_listener, stop_redis_listener
@@ -41,6 +45,7 @@ from app.services.thread_limits import apply_thread_limits
 from app.storage import check_bucket
 from app.routers import (
     presence,
+    access_control,
     ai_modules,
     attendance,
     audit_log,
@@ -49,8 +54,14 @@ from app.routers import (
     enrollment,
     events,
     face,
+    floor_plans,
+    integrations,
     lesson_sessions,
+    metrics,
+    notifications,
     org_structure,
+    privacy,
+    ptz,
     public,
     reports,
     students_staff,
@@ -90,11 +101,24 @@ async def _sync_streams_once() -> None:
         logger.exception("startup MediaMTX stream sync failed")
 
 
+def _start_platform_loops(tasks: list[asyncio.Task]) -> None:
+    """Bitta nusxada ishlashi kerak bo'lgan fon vazifalari (leader'da):
+    Telegram bot, SLA ogohlantirish, HEMIS sinxronlash, turniket so'rovi."""
+    for loop_coro in (
+        telegram_bot_loop(),
+        event_escalation_loop(),
+        hemis_sync_loop(),
+        access_poll_loop(),
+    ):
+        tasks.append(asyncio.create_task(loop_coro))
+
+
 def _start_ai_loops(tasks: list[asyncio.Task]) -> None:
     """Leader jarayonida AI sweeplarini ishga tushiradi."""
     # AI statistikasi faqat shu jarayon xotirasida — boshqa API
     # jarayonlari uni Redis orqali ko'radi (app/services/runtime_snapshot.py).
     tasks.append(asyncio.create_task(runtime_snapshot_loop()))
+    _start_platform_loops(tasks)
     stagger = settings.ai_loop_stagger_seconds
     if settings.ai_scheduler_enabled:
         tasks.append(asyncio.create_task(ai_scheduler_loop()))
@@ -251,6 +275,13 @@ app.include_router(system.router)
 app.include_router(public.router)
 app.include_router(enrollment.router)
 app.include_router(presence.router)
+app.include_router(notifications.router)
+app.include_router(integrations.router)
+app.include_router(access_control.router)
+app.include_router(ptz.router)
+app.include_router(floor_plans.router)
+app.include_router(metrics.router)
+app.include_router(privacy.router)
 
 
 @app.get("/health")

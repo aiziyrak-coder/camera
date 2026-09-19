@@ -17,6 +17,11 @@ import {
   Bell,
   Menu,
   X,
+  MonitorPlay,
+  Map as MapIcon,
+  BellRing,
+  PlugZap,
+  Lock,
 } from 'lucide-react';
 import { useAuth, type Role } from '../lib/auth';
 import { usePermissions, type PermissionKey } from '../lib/permissions';
@@ -39,10 +44,15 @@ const NAV_ITEMS: {
   // Ruxsatsiz: o'qish hammaga ochiq, o'zgartirish tugmalari sahifaning
   // o'zida manageOrgStructure bo'yicha yashiriladi.
   { to: '/admin/org-structure', label: 'Tashkiliy tuzilma', icon: Building2 },
+  { to: '/admin/video-wall', label: 'Videodevor', icon: MonitorPlay, permission: 'viewLive' },
+  { to: '/admin/floor-plans', label: 'Qavat rejalari', icon: MapIcon, permission: 'viewLive' },
   { to: '/admin/cameras', label: 'Kameralar va Zonalar', icon: Video, permission: 'editCameraLocation' },
   { to: '/admin/ai-modules', label: 'AI Modullari', icon: BrainCircuit, permission: 'configureAi' },
   { to: '/admin/reports', label: 'Hisobotlar', icon: FileBarChart, permission: 'viewReports' },
+  { to: '/admin/notifications', label: 'Bildirishnomalar', icon: BellRing, permission: 'manageNotifications' },
+  { to: '/admin/integrations', label: 'Integratsiyalar', icon: PlugZap, permission: 'manageIntegrations' },
   { to: '/admin/users-roles', label: 'Foydalanuvchilar va Rollar', icon: ShieldCheck, permission: 'manageRoles' },
+  { to: '/admin/privacy', label: 'Maxfiylik', icon: Lock, permission: 'managePrivacy' },
   { to: '/admin/system-log', label: 'Tizim jurnali', icon: ScrollText, permission: 'systemSettings' },
 ];
 

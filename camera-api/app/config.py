@@ -978,5 +978,78 @@ class Settings(BaseSettings):
     smtp_from: str = "no-reply@fjsti.local"
     smtp_use_tls: bool = True
 
+    # ------------------------------------------------------------------
+    # Platforma kengaytmasi (2026-09-19)
+    # ------------------------------------------------------------------
+    # Tashkilot nomi — sarlavhalar, bildirishnomalar va hisobotlarda.
+    org_name: str = "Farg'ona JSSTI"
+    org_system_name: str = "Situatsion Markaz"
+
+    # Bildirishnomalar (app/services/notifications). Token bo'sh — Telegram
+    # o'chiq. Bot @BotFather'da yaratiladi; bot_username bog'lash havolasi
+    # (t.me/<bot>?start=<kod>) uchun.
+    telegram_bot_token: str = ""
+    telegram_bot_username: str = ""
+    # Botga yozilgan "/start <kod>" xabarlarini o'qish (getUpdates, leader
+    # jarayonida). Webhook ishlatilsa o'chiriladi.
+    telegram_polling_enabled: bool = True
+    telegram_api_base_url: str = "https://api.telegram.org"
+    # SMS: 'eskiz' (eskiz.uz) yoki 'none'.
+    sms_provider: Literal["eskiz", "none"] = "none"
+    eskiz_email: str = ""
+    eskiz_password: str = ""
+    eskiz_sender: str = "4546"
+    eskiz_base_url: str = "https://notify.eskiz.uz/api"
+    # Bir xabarni yuborishga urinishlar orasidagi vaqt va urinishlar soni.
+    notification_timeout_seconds: float = 10.0
+    notification_log_retention_days: int = 90
+    # Ota-onaga xabar: kelganda (birinchi qayd) va kun oxirida kelmaganda.
+    parent_notify_arrival_enabled: bool = False
+    parent_notify_absence_enabled: bool = False
+
+    # Hodisa ish jarayoni: og'irlik bo'yicha hal qilish muddati (daqiqa).
+    # 0 — muddat qo'yilmaydi. Muddati o'tgan hodisa 'event_overdue' qoidasiga
+    # ko'ra ogohlantiriladi.
+    event_sla_minutes_high: int = 15
+    event_sla_minutes_medium: int = 60
+    event_sla_minutes_low: int = 240
+    event_escalation_interval_seconds: int = 60
+
+    # Prometheus /metrics. Token bo'sh bo'lmasa "Authorization: Bearer <token>"
+    # talab qilinadi; bo'sh bo'lsa faqat ichki tarmoqdan (nginx uni tashqariga
+    # ochmaydi).
+    metrics_enabled: bool = True
+    metrics_token: str = ""
+
+    # HEMIS (hemis.uz universitet API). base_url masalan
+    # https://student.fjsti.uz/rest — token HEMIS admin panelidan olinadi.
+    hemis_base_url: str = ""
+    hemis_api_token: str = ""
+    # 0 — faqat qo'lda ("Sinxronlash" tugmasi). >0 — har N soatda.
+    hemis_sync_interval_hours: int = 0
+    hemis_page_size: int = 200
+    # HEMIS'da endi yo'q odamni faolsizlantirish (o'chirmaydi).
+    hemis_deactivate_missing: bool = False
+
+    # Turniket / kirish nazorati (app/services/integrations/access_control.py).
+    access_control_enabled: bool = True
+    access_poll_interval_seconds: int = 10
+
+    # PTZ (app/services/ptz.py).
+    ptz_timeout_seconds: float = 5.0
+
+    # Maxfiylik va saqlash muddati (app/jobs/cleanup.py).
+    # Rozilik matni versiyasi — matn o'zgarsa oshiriladi.
+    consent_version: str = "v1"
+    # Ochiq ro'yxatdan o'tishda rozilik belgisi majburiy.
+    consent_required_for_enrollment: bool = True
+    # Faolsizlantirilgan odamning yuz rasmi va embedding'i shuncha kundan
+    # keyin o'chiriladi. 0 — o'chirilmaydi.
+    biometric_retention_days_after_inactive: int = 30
+    # Hodisa snapshotlari (MinIO) — hodisaning o'zidan oldin o'chirilishi
+    # mumkin. 0 — event_retention_days bilan birga.
+    snapshot_retention_days: int = 90
+    access_event_retention_days: int = 365
+
 
 settings = Settings()

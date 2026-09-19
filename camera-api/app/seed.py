@@ -46,6 +46,11 @@ DEFAULT_PERMISSIONS = {
     # mas'uli ham o'qiydi — kamerani joylashtirish uchun kerak.
     "manageOrgStructure": (True, True, False),
     "manageLessons": (True, True, False),
+    # Platforma kengaytmasi (2026-09-19, alembic s1a2b3c4d5e6).
+    "manageNotifications": (True, True, False),
+    "manageIntegrations": (True, False, False),
+    "controlPtz": (True, True, False),
+    "managePrivacy": (True, False, False),
 }
 
 # Faqat settings.seed_demo_users yoqilganda (lokal ishlab chiqish, testlar).

@@ -32,6 +32,7 @@ from app.jobs.camera_health_metrics import (
 from app.jobs.sweep_guard import SweepGuard
 from app.models import AuditLog, Camera
 from app.services.frame_grabber import camera_video_source
+from app.services.notifications import notify_camera_status
 from app.services.stream_cache import peek_cached_frame
 from app.services.connectivity import tcp_check
 from app.services.thumbnail_cache import frames_seen_at
@@ -111,6 +112,7 @@ async def _maybe_raise_offline_alert(db: AsyncSession, camera: Camera, offline_s
             ip="internal",
         )
     )
+    await notify_camera_status(camera, online=False, offline_since=offline_since)
 
 
 def _track_offline_camera(camera: Camera, now: datetime) -> datetime:
@@ -120,10 +122,13 @@ def _track_offline_camera(camera: Camera, now: datetime) -> datetime:
     return _offline_since[camera_id]
 
 
-def _mark_camera_online(camera: Camera) -> None:
+def _mark_camera_online(camera: Camera) -> bool:
+    """True — kamera ilgari "o'chdi" deb ogohlantirilgan edi (endi tiklandi)."""
     camera_id = str(camera.id)
     _offline_since.pop(camera_id, None)
+    was_alerted = camera_id in _alerted
     _alerted.discard(camera_id)
+    return was_alerted
 
 
 def reset_camera_health_state_for_tests() -> None:
@@ -171,7 +176,8 @@ async def run_camera_health_sweep_once(db: AsyncSession) -> int:
         ok, _latency_ms = outcome
         if ok:
             camera.last_seen_at = now
-            _mark_camera_online(camera)
+            if _mark_camera_online(camera):
+                await notify_camera_status(camera, online=True)
             reachable_count += 1
             # Tasvir kelayotganini ham shu yerda belgilaymiz. Bu deyarli
             # tekin: kadr allaqachon xotirada turadi, peek esa o'quvchi

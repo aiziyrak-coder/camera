@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import settings
 from app.database import SessionLocal
 from app.models import AIModuleConfig, AttendanceRecord, StudentStaff
+from app.services.notifications import notify_absences
 from app.timezone import local_now
 
 logger = logging.getLogger("app.absence_marker")
@@ -146,19 +147,22 @@ async def mark_absences_for_day(db: AsyncSession, day: date_type) -> int:
     if not missing:
         return 0
 
-    inserted = 0
+    marked: list = []
     for start in range(0, len(missing), INSERT_CHUNK_SIZE):
         chunk = missing[start : start + INSERT_CHUNK_SIZE]
         stmt = (
             insert(AttendanceRecord)
             .values([{"student_staff_id": person_id, "date": day, "status": "kelmadi"} for person_id in chunk])
             .on_conflict_do_nothing(index_elements=["student_staff_id", "date"])
+            .returning(AttendanceRecord.student_staff_id)
         )
         result = await db.execute(stmt)
-        inserted += result.rowcount or 0
+        marked.extend(result.scalars().all())
     await db.commit()
+    inserted = len(marked)
     if inserted:
         logger.info("marked absences", extra={"date": day.isoformat(), "count": inserted})
+        await notify_absences(marked, day)
     return inserted
 
 

@@ -28,6 +28,11 @@ const EventsPage = lazyPage(() => import('./pages/admin/EventsPage'));
 const AttendancePage = lazyPage(() => import('./pages/admin/AttendancePage'));
 const TeachingPage = lazyPage(() => import('./pages/admin/TeachingPage'));
 const PresencePage = lazyPage(() => import('./pages/admin/PresencePage'));
+const NotificationsPage = lazyPage(() => import('./pages/admin/NotificationsPage'));
+const IntegrationsPage = lazyPage(() => import('./pages/admin/IntegrationsPage'));
+const FloorPlansPage = lazyPage(() => import('./pages/admin/FloorPlansPage'));
+const VideoWallPage = lazyPage(() => import('./pages/admin/VideoWallPage'));
+const PrivacyPage = lazyPage(() => import('./pages/admin/PrivacyPage'));
 
 export default function App() {
   return (
@@ -45,6 +50,13 @@ export default function App() {
             <Route path="/" element={<MonitoringPage />} />
           </Route>
           <Route path="/royxatdan-otish" element={<EnrollmentPage />} />
+        </Route>
+
+        {/* Videodevor — ikkinchi monitor uchun menyusiz, to'liq ekran. */}
+        <Route element={<RequireAuth />}>
+          <Route element={<RequirePermission permission="viewLive" />}>
+            <Route path="/videodevor" element={<VideoWallPage standalone />} />
+          </Route>
         </Route>
 
         <Route path="/admin/login" element={<LoginPage />} />
@@ -76,6 +88,19 @@ export default function App() {
             </Route>
             <Route element={<RequirePermission permission="systemSettings" />}>
               <Route path="system-log" element={<SystemLogPage />} />
+            </Route>
+            <Route element={<RequirePermission permission="viewLive" />}>
+              <Route path="video-wall" element={<VideoWallPage />} />
+              <Route path="floor-plans" element={<FloorPlansPage />} />
+            </Route>
+            <Route element={<RequirePermission permission="manageNotifications" />}>
+              <Route path="notifications" element={<NotificationsPage />} />
+            </Route>
+            <Route element={<RequirePermission permission="manageIntegrations" />}>
+              <Route path="integrations" element={<IntegrationsPage />} />
+            </Route>
+            <Route element={<RequirePermission permission="managePrivacy" />}>
+              <Route path="privacy" element={<PrivacyPage />} />
             </Route>
           </Route>
         </Route>

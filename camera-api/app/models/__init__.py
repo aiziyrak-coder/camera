@@ -10,6 +10,15 @@ from app.models.module_suppression import ModuleCameraSuppression
 from app.models.org import Building, Department, Faculty, StudentGroup
 from app.models.password_reset_token import PasswordResetToken
 from app.models.permission import Permission
+from app.models.platform import (
+    AccessDevice,
+    AccessEvent,
+    EventComment,
+    FloorPlan,
+    IntegrationSyncRun,
+    NotificationLog,
+    NotificationRule,
+)
 from app.models.presence_visit import PresenceVisit
 from app.models.report import Report
 from app.models.revoked_token import RevokedToken
@@ -37,4 +46,11 @@ __all__ = [
     "Report",
     "RevokedToken",
     "PasswordResetToken",
+    "NotificationRule",
+    "NotificationLog",
+    "EventComment",
+    "FloorPlan",
+    "AccessDevice",
+    "AccessEvent",
+    "IntegrationSyncRun",
 ]
