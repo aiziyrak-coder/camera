@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { CheckCircle2, XCircle } from 'lucide-react';
-import Modal from '../Modal';
-import { SelectField, TextField } from '../FormField';
+import { Send } from 'lucide-react';
+import { Button, Field, Input, Modal, Select, Textarea } from '../../ui';
+import { Notice } from '../settings/kit';
 import { ApiError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import {
@@ -11,6 +11,11 @@ import {
   type NotificationStatus,
   type NotificationTestResult,
 } from '../../lib/notificationsApi';
+
+const CHANNEL_OPTIONS = [
+  { value: 'telegram', label: 'Telegram' },
+  { value: 'sms', label: 'SMS (Eskiz)' },
+];
 
 /** "Sinov xabari": sozlamalar to'g'riligini darhol tekshirish — natija
  *  (yoki Telegram/Eskiz qaytargan xato) shu oynada ko'rinadi. */
@@ -66,62 +71,56 @@ export default function TestMessageModal({
   const channelReady = channel === 'telegram' ? status?.telegramConfigured : status?.smsConfigured;
 
   return (
-    <Modal open={open} onClose={onClose} title="Sinov xabari" maxWidth="max-w-md">
-      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-        <SelectField
-          label="Kanal"
-          value={channel}
-          onChange={(e) => {
-            setChannel(e.target.value as NotificationChannel);
-            setResult(null);
-          }}
-          options={[
-            { value: 'telegram', label: 'Telegram' },
-            { value: 'sms', label: 'SMS (Eskiz)' },
-          ]}
-        />
-        {status && !channelReady && (
-          <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
-            Bu kanal serverda sozlanmagan — xabar yuborilmaydi, jurnalga sababi yoziladi.
-          </p>
-        )}
-        <TextField
-          label={channel === 'telegram' ? 'Telegram chat ID' : 'Telefon raqami'}
-          placeholder={channel === 'telegram' ? '123456789 yoki -100…' : '+998 90 123 45 67'}
-          value={recipient}
-          onChange={(e) => setRecipient(e.target.value)}
-          error={error ?? undefined}
-          autoComplete="off"
-        />
-        <TextField
-          label="Matn (ixtiyoriy)"
-          placeholder="Bildirishnomalar to'g'ri sozlangan."
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          maxLength={500}
-        />
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Sinov xabari"
+      description="Kanal sozlamalari to'g'riligini darhol tekshiring — natija jurnalga ham yoziladi."
+      size="md"
+      dismissible={!sending}
+      footer={
+        <>
+          <Button onClick={onClose} disabled={sending}>
+            Yopish
+          </Button>
+          <Button type="submit" form="notification-test-form" variant="primary" icon={Send} loading={sending}>
+            Yuborish
+          </Button>
+        </>
+      }
+    >
+      <form id="notification-test-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+        <Field label="Kanal">
+          <Select
+            value={channel}
+            onChange={(v) => {
+              setChannel(v as NotificationChannel);
+              setResult(null);
+            }}
+            options={CHANNEL_OPTIONS}
+          />
+        </Field>
+        {status && !channelReady && <Notice tone="warning">Bu kanal serverda sozlanmagan — xabar yuborilmaydi, jurnalga sababi yoziladi.</Notice>}
+        <Field label={channel === 'telegram' ? 'Telegram chat ID' : 'Telefon raqami'} required error={error}>
+          <Input
+            placeholder={channel === 'telegram' ? '123456789 yoki -100…' : '+998 90 123 45 67'}
+            value={recipient}
+            onChange={(e) => setRecipient(e.target.value)}
+            autoComplete="off"
+            className="font-mono"
+          />
+        </Field>
+        <Field label="Matn (ixtiyoriy)" hint={`${text.length} / 500`}>
+          <Textarea placeholder="Bildirishnomalar to'g'ri sozlangan." value={text} onChange={(e) => setText(e.target.value)} maxLength={500} rows={3} />
+        </Field>
         {result &&
           (result.ok ? (
-            <p className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 text-xs font-semibold text-emerald-700">
-              <CheckCircle2 size={15} /> Xabar yuborildi.
-            </p>
+            <Notice tone="success">Xabar yuborildi.</Notice>
           ) : (
-            <p className="flex items-start gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
-              <XCircle size={15} className="mt-0.5 shrink-0" /> {result.error ?? "Yuborib bo'lmadi"}
-            </p>
+            <Notice tone="danger" title="Yuborib bo'lmadi">
+              {result.error ?? "Yuborib bo'lmadi"}
+            </Notice>
           ))}
-        <div className="flex justify-end gap-2 pt-1">
-          <button type="button" onClick={onClose} className="btn-glass">
-            Yopish
-          </button>
-          <button
-            type="submit"
-            disabled={sending}
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {sending ? 'Yuborilmoqda...' : 'Yuborish'}
-          </button>
-        </div>
       </form>
     </Modal>
   );

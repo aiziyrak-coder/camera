@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { buttonClasses, cn } from '../../ui';
 
-/** Asboblar panelidagi ochiladigan menyu (ko'rinishlar, tur, yordam).
- * Tashqarida bosilganda yoki Escape bilan yopiladi. */
+/** Videodevor asboblaridagi ochiladigan panel (ko'rinishlar, tur, yordam).
+ * Tashqarida bosilganda yoki Escape bilan yopiladi. Ichida forma bo'lgani
+ * uchun (nom kiritish, slayder) oddiy `Menu` emas — erkin tarkibli panel. */
 export default function WallPopover({
   label,
   icon,
@@ -9,14 +11,17 @@ export default function WallPopover({
   active = false,
   align = 'left',
   title,
+  ariaLabel,
   widthClass = 'w-80',
 }: {
-  label: ReactNode;
+  label?: ReactNode;
   icon?: ReactNode;
   children: (close: () => void) => ReactNode;
   active?: boolean;
   align?: 'left' | 'right';
   title?: string;
+  /** Faqat ikonkali tugma uchun majburiy. */
+  ariaLabel?: string;
   widthClass?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -41,25 +46,35 @@ export default function WallPopover({
     };
   }, [open]);
 
+  const iconOnly = !label;
+
   return (
     <div ref={root} className="relative">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-label={ariaLabel}
         title={title}
-        className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-          active || open ? 'bg-indigo-600 text-white' : 'bg-white/10 text-white/80 hover:bg-white/15 hover:text-white'
-        }`}
+        className={buttonClasses({
+          variant: active ? 'soft' : 'secondary',
+          size: 'md',
+          className: cn(iconOnly && 'w-9 px-0', open && !active && 'border-border-strong bg-surface-2'),
+        })}
       >
         {icon}
         {label}
       </button>
       {open && (
         <div
-          className={`absolute top-full z-50 mt-1.5 ${widthClass} max-w-[calc(100vw-2rem)] rounded-xl bg-slate-900 p-3 text-white shadow-2xl ring-1 ring-white/15 ${
-            align === 'right' ? 'right-0' : 'left-0'
-          }`}
+          role="dialog"
+          aria-label={ariaLabel ?? title}
+          className={cn(
+            'absolute top-full z-50 mt-2 max-w-[calc(100vw-2rem)] animate-pop-in rounded-card border border-border bg-surface p-3 text-fg shadow-pop',
+            widthClass,
+            align === 'right' ? 'right-0' : 'left-0',
+          )}
         >
           {children(() => setOpen(false))}
         </div>

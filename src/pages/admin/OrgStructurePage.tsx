@@ -1,24 +1,96 @@
-import { useEffect, useState } from 'react';
-import { BookOpen, Building2, Camera, Landmark, Loader2, Pencil, Plus, Trash2, Users2 } from 'lucide-react';
-import PageHeader from '../../components/PageHeader';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { BookOpen, Building2, Landmark, Pencil, Plus, Trash2, Users2 } from 'lucide-react';
+import {
+  Badge,
+  Button,
+  ConfirmDialog,
+  DataTable,
+  ErrorState,
+  IconButton,
+  Page,
+  SearchInput,
+  Select,
+  Toolbar,
+  formatNumber,
+  useToast,
+  useUrlTab,
+  type DataTableColumn,
+  type TabItem,
+} from '../../ui';
 import AddBuildingModal from '../../components/admin/AddBuildingModal';
 import AddDepartmentModal from '../../components/admin/AddDepartmentModal';
 import AddFacultyModal from '../../components/admin/AddFacultyModal';
 import AddGroupModal from '../../components/admin/AddGroupModal';
-import { ApiError, api } from '../../lib/apiClient';
+import { ApiError, api, isAbortError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { usePermissions } from '../../lib/permissions';
+import { situationPaths } from '../../lib/situationApi';
 import type { Building, Department, Faculty, StudentGroup } from '../../types';
 
-const TABS = ["O'quv korpuslari", 'Kafedralar', 'Fakultetlar va Kurslar', "Guruhlar ro'yxati"] as const;
+type TabId = 'binolar' | 'fakultetlar' | 'guruhlar' | 'kafedralar';
+
+type DeleteTarget =
+  | { kind: 'building'; item: Building }
+  | { kind: 'faculty'; item: Faculty }
+  | { kind: 'group'; item: StudentGroup }
+  | { kind: 'department'; item: Department };
+
+const DELETE_META: Record<DeleteTarget['kind'], { noun: string; path: string }> = {
+  building: { noun: 'korpus', path: '/api/buildings' },
+  faculty: { noun: 'fakultet', path: '/api/faculties' },
+  group: { noun: 'guruh', path: '/api/student-groups' },
+  department: { noun: 'kafedra', path: '/api/departments' },
+};
+
+const ADD_LABEL: Record<TabId, string> = {
+  binolar: "Korpus qo'shish",
+  fakultetlar: "Fakultet qo'shish",
+  guruhlar: "Guruh qo'shish",
+  kafedralar: "Kafedra qo'shish",
+};
+
+function matches(text: string | null | undefined, query: string): boolean {
+  return (text ?? '').toLocaleLowerCase('uz').includes(query);
+}
+
+/** Qator ichidagi tugmalar — qator bosilishi (havola) bilan to'qnashmasin. */
+function RowActions({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="flex items-center justify-end gap-1"
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
+    >
+      {children}
+    </div>
+  );
+}
+
+function NameCell({ icon: Icon, name, hint }: { icon: typeof Building2; name: string; hint?: ReactNode }) {
+  return (
+    <span className="flex min-w-0 items-center gap-2.5">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-control bg-primary-soft text-primary">
+        <Icon size={15} aria-hidden="true" />
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate font-medium text-fg">{name}</span>
+        {hint && <span className="block truncate text-xs text-muted">{hint}</span>}
+      </span>
+    </span>
+  );
+}
 
 export default function OrgStructurePage() {
   const { token, role } = useAuth();
   const { can } = usePermissions();
+  const navigate = useNavigate();
+  const toast = useToast();
   // O'qish hammaga ochiq (kamera mas'uli binolar ro'yxatini ko'radi),
   // o'zgartirish tugmalari faqat huquqi borlarga. Server ham tekshiradi.
   const canEdit = can('manageOrgStructure', role);
-  const [tab, setTab] = useState<(typeof TABS)[number]>(TABS[0]);
+  // Fakultet/guruh/kafedra sahifalari davomat huquqini talab qiladi.
+  const canOpenAttendance = can('manageAttendance', role);
 
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -26,339 +98,352 @@ export default function OrgStructurePage() {
   const [groups, setGroups] = useState<StudentGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [nonce, setNonce] = useState(0);
 
-  const [buildingModalOpen, setBuildingModalOpen] = useState(false);
-  const [departmentModalOpen, setDepartmentModalOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [facultyFilter, setFacultyFilter] = useState('');
+  const [courseFilter, setCourseFilter] = useState('');
+
+  const [addOpen, setAddOpen] = useState<TabId | null>(null);
   const [editingBuilding, setEditingBuilding] = useState<Building | null>(null);
-  const [facultyModalOpen, setFacultyModalOpen] = useState(false);
-  const [groupModalOpen, setGroupModalOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
   useEffect(() => {
     if (!token) return;
-    let cancelled = false;
+    const controller = new AbortController();
+    const opts = { signal: controller.signal };
     setLoading(true);
     Promise.all([
-      api.get<Building[]>('/api/buildings', token),
-      api.get<Department[]>('/api/departments', token),
-      api.get<Faculty[]>('/api/faculties', token),
-      api.get<StudentGroup[]>('/api/student-groups', token),
+      api.get<Building[]>('/api/buildings', token, opts),
+      api.get<Department[]>('/api/departments', token, opts),
+      api.get<Faculty[]>('/api/faculties', token, opts),
+      api.get<StudentGroup[]>('/api/student-groups', token, opts),
     ])
       .then(([b, d, f, g]) => {
-        if (cancelled) return;
         setBuildings(b);
         setDepartments(d);
         setFaculties(f);
         setGroups(g);
         setError(null);
+        setLoading(false);
       })
-      .catch((err: Error) => {
-        if (!cancelled) setError(err.message);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+      .catch((err: unknown) => {
+        if (isAbortError(err)) return;
+        setError(err instanceof ApiError ? err.message : "Tuzilmani yuklab bo'lmadi — ulanishni tekshiring");
+        setLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
+    return () => controller.abort();
+  }, [token, nonce]);
 
-  async function handleDeleteBuilding(id: string) {
+  const reload = useCallback(() => setNonce((n) => n + 1), []);
+
+  const tabs = useMemo<TabItem<TabId>[]>(
+    () => [
+      { id: 'binolar', label: 'Binolar', icon: Building2, count: loading ? null : buildings.length },
+      { id: 'fakultetlar', label: 'Fakultetlar', icon: BookOpen, count: loading ? null : faculties.length },
+      { id: 'guruhlar', label: 'Guruhlar', icon: Users2, count: loading ? null : groups.length },
+      { id: 'kafedralar', label: 'Kafedralar', icon: Landmark, count: loading ? null : departments.length },
+    ],
+    [loading, buildings.length, faculties.length, groups.length, departments.length],
+  );
+  const [tab] = useUrlTab(tabs);
+
+  const query = search.trim().toLocaleLowerCase('uz');
+
+  const shownBuildings = useMemo(() => buildings.filter((b) => matches(b.name, query)), [buildings, query]);
+  const shownFaculties = useMemo(() => faculties.filter((f) => matches(f.name, query)), [faculties, query]);
+  const shownDepartments = useMemo(
+    () => departments.filter((d) => matches(d.name, query) || matches(d.buildingName, query)),
+    [departments, query],
+  );
+  const shownGroups = useMemo(
+    () =>
+      groups.filter(
+        (g) =>
+          matches(g.name, query) &&
+          (!facultyFilter || g.faculty === facultyFilter) &&
+          (!courseFilter || String(g.course) === courseFilter),
+      ),
+    [groups, query, facultyFilter, courseFilter],
+  );
+
+  const courseOptions = useMemo(
+    () =>
+      Array.from(new Set(groups.map((g) => g.course)))
+        .sort((a, b) => a - b)
+        .map((c) => ({ value: String(c), label: `${c}-kurs` })),
+    [groups],
+  );
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    const { kind, item } = deleteTarget;
     try {
-      await api.del(`/api/buildings/${id}`, token);
-      setBuildings((prev) => prev.filter((b) => b.id !== id));
+      await api.del(`${DELETE_META[kind].path}/${item.id}`, token);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Binoni o'chirib bo'lmadi");
+      // ConfirmDialog xatoni o'z ichida ko'rsatadi va yopilmaydi.
+      throw new Error(err instanceof ApiError ? err.message : `${DELETE_META[kind].noun}ni o'chirib bo'lmadi`);
     }
+    if (kind === 'building') setBuildings((prev) => prev.filter((b) => b.id !== item.id));
+    if (kind === 'faculty') setFaculties((prev) => prev.filter((f) => f.id !== item.id));
+    if (kind === 'group') setGroups((prev) => prev.filter((g) => g.id !== item.id));
+    if (kind === 'department') setDepartments((prev) => prev.filter((d) => d.id !== item.id));
+    toast.success(`«${item.name}» o'chirildi`);
+    setDeleteTarget(null);
   }
 
-  async function handleDeleteDepartment(id: string) {
-    try {
-      await api.del(`/api/departments/${id}`, token);
-      setDepartments((prev) => prev.filter((d) => d.id !== id));
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Kafedrani o'chirib bo'lmadi");
-    }
+  function deleteButton(target: DeleteTarget) {
+    return <IconButton icon={Trash2} label={`«${target.item.name}» — o'chirish`} size="sm" variant="danger" onClick={() => setDeleteTarget(target)} />;
   }
 
-  async function handleDeleteFaculty(id: string) {
-    try {
-      await api.del(`/api/faculties/${id}`, token);
-      setFaculties((prev) => prev.filter((f) => f.id !== id));
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Fakultetni o'chirib bo'lmadi");
-    }
-  }
+  const buildingColumns: DataTableColumn<Building>[] = [
+    {
+      key: 'name',
+      header: 'Korpus',
+      cell: (b) => <NameCell icon={Building2} name={b.name} />,
+      sortValue: (b) => b.sortOrder ?? b.name,
+    },
+    {
+      key: 'floors',
+      header: 'Qavatlar',
+      align: 'right',
+      cell: (b) => (b.floors ? formatNumber(b.floors) : <span className="text-subtle">kiritilmagan</span>),
+      sortValue: (b) => b.floors ?? null,
+      sortFirst: 'desc',
+    },
+    {
+      key: 'cameras',
+      header: 'Kameralar',
+      align: 'right',
+      cell: (b) => formatNumber(b.cameraCount),
+      sortValue: (b) => b.cameraCount,
+      sortFirst: 'desc',
+    },
+    ...(canEdit
+      ? [
+          {
+            key: 'actions',
+            header: <span className="sr-only">Amallar</span>,
+            align: 'right' as const,
+            width: '6rem',
+            mobileLabel: 'Amallar',
+            cell: (b: Building) => (
+              <RowActions>
+                <IconButton icon={Pencil} label={`«${b.name}» — tahrirlash`} size="sm" onClick={() => setEditingBuilding(b)} />
+                {deleteButton({ kind: 'building', item: b })}
+              </RowActions>
+            ),
+          },
+        ]
+      : []),
+  ];
 
-  async function handleDeleteGroup(id: string) {
-    try {
-      await api.del(`/api/student-groups/${id}`, token);
-      setGroups((prev) => prev.filter((g) => g.id !== id));
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Guruhni o'chirib bo'lmadi");
-    }
-  }
+  const facultyColumns: DataTableColumn<Faculty>[] = [
+    { key: 'name', header: 'Fakultet', cell: (f) => <NameCell icon={BookOpen} name={f.name} />, sortValue: (f) => f.name },
+    { key: 'courses', header: 'Kurslar', align: 'right', cell: (f) => formatNumber(f.courseCount), sortValue: (f) => f.courseCount, sortFirst: 'desc' },
+    {
+      key: 'groups',
+      header: 'Guruhlar',
+      align: 'right',
+      cell: (f) => formatNumber(groups.filter((g) => g.faculty === f.name).length),
+      sortValue: (f) => groups.filter((g) => g.faculty === f.name).length,
+      sortFirst: 'desc',
+      hideOnMobile: true,
+    },
+    { key: 'students', header: 'Talabalar', align: 'right', cell: (f) => formatNumber(f.studentCount), sortValue: (f) => f.studentCount, sortFirst: 'desc' },
+    ...(canEdit
+      ? [
+          {
+            key: 'actions',
+            header: <span className="sr-only">Amallar</span>,
+            align: 'right' as const,
+            width: '4rem',
+            mobileLabel: 'Amallar',
+            cell: (f: Faculty) => <RowActions>{deleteButton({ kind: 'faculty', item: f })}</RowActions>,
+          },
+        ]
+      : []),
+  ];
+
+  const groupColumns: DataTableColumn<StudentGroup>[] = [
+    { key: 'name', header: 'Guruh', cell: (g) => <NameCell icon={Users2} name={g.name} />, sortValue: (g) => g.name },
+    { key: 'faculty', header: 'Fakultet', cell: (g) => g.faculty || <span className="text-subtle">—</span>, sortValue: (g) => g.faculty },
+    { key: 'course', header: 'Kurs', cell: (g) => <Badge>{g.course}-kurs</Badge>, sortValue: (g) => g.course },
+    { key: 'students', header: 'Talabalar', align: 'right', cell: (g) => formatNumber(g.studentCount), sortValue: (g) => g.studentCount, sortFirst: 'desc' },
+    ...(canEdit
+      ? [
+          {
+            key: 'actions',
+            header: <span className="sr-only">Amallar</span>,
+            align: 'right' as const,
+            width: '4rem',
+            mobileLabel: 'Amallar',
+            cell: (g: StudentGroup) => <RowActions>{deleteButton({ kind: 'group', item: g })}</RowActions>,
+          },
+        ]
+      : []),
+  ];
+
+  const departmentColumns: DataTableColumn<Department>[] = [
+    { key: 'name', header: 'Kafedra', cell: (d) => <NameCell icon={Landmark} name={d.name} />, sortValue: (d) => d.name },
+    {
+      key: 'building',
+      header: 'Bino',
+      cell: (d) => d.buildingName || <Badge tone="warning">ko&apos;rsatilmagan</Badge>,
+      sortValue: (d) => d.buildingName || null,
+    },
+    { key: 'cameras', header: 'Kameralar', align: 'right', cell: (d) => formatNumber(d.cameraCount), sortValue: (d) => d.cameraCount, sortFirst: 'desc' },
+    ...(canEdit
+      ? [
+          {
+            key: 'actions',
+            header: <span className="sr-only">Amallar</span>,
+            align: 'right' as const,
+            width: '4rem',
+            mobileLabel: 'Amallar',
+            cell: (d: Department) => <RowActions>{deleteButton({ kind: 'department', item: d })}</RowActions>,
+          },
+        ]
+      : []),
+  ];
+
+  const filtersActive = (query ? 1 : 0) + (tab === 'guruhlar' ? (facultyFilter ? 1 : 0) + (courseFilter ? 1 : 0) : 0);
+  const searchPlaceholder: Record<TabId, string> = {
+    binolar: 'Korpus nomi…',
+    fakultetlar: 'Fakultet nomi…',
+    guruhlar: 'Guruh nomi…',
+    kafedralar: 'Kafedra yoki bino…',
+  };
+
+  const toolbar = (
+    <Toolbar
+      activeCount={filtersActive}
+      onReset={() => {
+        setSearch('');
+        setFacultyFilter('');
+        setCourseFilter('');
+      }}
+    >
+      <SearchInput value={search} onChange={setSearch} placeholder={searchPlaceholder[tab]} />
+      {tab === 'guruhlar' && (
+        <>
+          <Select
+            value={facultyFilter}
+            onChange={setFacultyFilter}
+            placeholder="Barcha fakultetlar"
+            ariaLabel="Fakultet"
+            options={faculties.map((f) => ({ value: f.name, label: f.name }))}
+            highlightActive
+          />
+          <Select value={courseFilter} onChange={setCourseFilter} placeholder="Barcha kurslar" ariaLabel="Kurs" options={courseOptions} highlightActive />
+        </>
+      )}
+    </Toolbar>
+  );
+
+  const emptyAction = (id: TabId) =>
+    canEdit && !query ? (
+      <Button icon={Plus} variant="primary" onClick={() => setAddOpen(id)}>
+        {ADD_LABEL[id]}
+      </Button>
+    ) : undefined;
+
+  const common = { loading, loadingRows: 5 } as const;
 
   return (
-    <section className="glass p-6">
-      <PageHeader
-        title="Tashkiliy tuzilma"
-        subtitle={
-          canEdit
-            ? 'Binolar, kafedralar, fakultetlar, kurslar va guruhlar boshqaruvi'
-            : "Binolar, kafedralar, fakultetlar va guruhlar — faqat ko'rish"
-        }
-      />
-
-      {error && (
-        <p className="mb-4 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
-          {error}
-        </p>
-      )}
-
-      <div className="mb-5 flex gap-2 border-b border-white/70 text-sm">
-        {TABS.map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`-mb-px border-b-2 px-3 py-2 font-medium transition-colors ${
-              tab === t
-                ? 'border-indigo-600 text-indigo-600'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-
-      {loading ? (
-        <div className="flex items-center justify-center py-10 text-slate-400">
-          <Loader2 size={20} className="animate-spin" />
-        </div>
+    <Page
+      title="Tashkiliy tuzilma"
+      subtitle={
+        canEdit
+          ? "Binolar, fakultetlar, guruhlar va kafedralar — institut tuzilmasi boshqaruvi"
+          : "Binolar, fakultetlar, guruhlar va kafedralar — faqat ko'rish"
+      }
+      tabs={tabs}
+      actions={
+        canEdit && (
+          <Button variant="primary" icon={Plus} onClick={() => setAddOpen(tab)} disabled={loading}>
+            {ADD_LABEL[tab]}
+          </Button>
+        )
+      }
+      toolbar={error ? undefined : toolbar}
+    >
+      {error ? (
+        <ErrorState variant="block" message={error} onRetry={reload} className="rounded-card border border-border bg-surface" />
       ) : (
         <>
-          {tab === "O'quv korpuslari" && (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {buildings.map((b) => (
-                <div key={b.id} className="glass-deep flex flex-col gap-3 p-5">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
-                    <Building2 size={18} />
-                  </div>
-                  <div>
-                    <p className="font-bold text-slate-900">{b.name}</p>
-                    <p className="flex items-center gap-1 text-xs text-slate-500">
-                      <Camera size={12} />
-                      {b.cameraCount} ta kamera biriktirilgan
-                      {b.floors ? ` · ${b.floors} qavat` : ' · qavatlar soni kiritilmagan'}
-                    </p>
-                  </div>
-                  {canEdit && (
-                    <div className="flex gap-3 border-t border-white/70 pt-3 text-xs font-semibold">
-                      <button
-                        onClick={() => setEditingBuilding(b)}
-                        className="flex items-center gap-1 text-indigo-600 hover:underline"
-                      >
-                        <Pencil size={12} />
-                        Tahrirlash
-                      </button>
-                      <button
-                        onClick={() => handleDeleteBuilding(b.id)}
-                        className="flex items-center gap-1 text-red-500 hover:underline"
-                      >
-                        <Trash2 size={12} />
-                        O'chirish
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              {canEdit && (
-                <button
-                  onClick={() => setBuildingModalOpen(true)}
-                  className="glass-deep flex min-h-[140px] flex-col items-center justify-center gap-2 border-dashed text-sm font-semibold text-slate-500 transition-colors hover:text-indigo-600"
-                >
-                  <Plus size={20} />
-                  Yangi korpus qo'shish
-                </button>
-              )}
-            </div>
+          {tab === 'binolar' && (
+            <DataTable
+              {...common}
+              ariaLabel="O'quv korpuslari"
+              columns={buildingColumns}
+              rows={shownBuildings}
+              rowKey={(b) => b.id}
+              defaultSort={{ key: 'name', dir: 'asc' }}
+              emptyTitle={query ? 'Korpus topilmadi' : "Hozircha korpus qo'shilmagan"}
+              emptyDescription={query ? "Qidiruv so'zini o'zgartiring." : "Kameralarni joylashtirish uchun avval o'quv korpuslarini kiriting."}
+              emptyAction={emptyAction('binolar')}
+            />
           )}
 
-          {tab === 'Kafedralar' && (
-            <div className="space-y-4">
-              <p className="text-xs leading-relaxed text-slate-500">
-                Kafedra — bino ichidagi tashkiliy birlik. Monitoring sahifasida kameralar avval bino,
-                so&apos;ngra kafedra bo&apos;yicha filtrlanadi, shuning uchun har bir kafedra o&apos;z
-                binosiga biriktirilgani ma&apos;qul.
+          {tab === 'fakultetlar' && (
+            <DataTable
+              {...common}
+              ariaLabel="Fakultetlar"
+              columns={facultyColumns}
+              rows={shownFaculties}
+              rowKey={(f) => f.id}
+              onRowClick={canOpenAttendance ? (f) => navigate(situationPaths.faculty(f.id)) : undefined}
+              defaultSort={{ key: 'name', dir: 'asc' }}
+              emptyTitle={query ? 'Fakultet topilmadi' : "Hozircha fakultet qo'shilmagan"}
+              emptyAction={emptyAction('fakultetlar')}
+            />
+          )}
+
+          {tab === 'guruhlar' && (
+            <DataTable
+              {...common}
+              ariaLabel="Guruhlar"
+              columns={groupColumns}
+              rows={shownGroups}
+              rowKey={(g) => g.id}
+              onRowClick={canOpenAttendance ? (g) => navigate(situationPaths.group(g.name)) : undefined}
+              defaultSort={{ key: 'name', dir: 'asc' }}
+              emptyTitle={filtersActive ? 'Guruh topilmadi' : "Hozircha guruh qo'shilmagan"}
+              emptyDescription={filtersActive ? "Filtrlarni o'zgartiring yoki tozalang." : undefined}
+              emptyAction={emptyAction('guruhlar')}
+            />
+          )}
+
+          {tab === 'kafedralar' && (
+            <>
+              <p className="text-[13px] leading-relaxed text-muted">
+                Kafedra — bino ichidagi tashkiliy birlik. Monitoringda kameralar avval bino, so&apos;ngra kafedra bo&apos;yicha
+                filtrlanadi, shuning uchun har bir kafedrani o&apos;z binosiga biriktirish ma&apos;qul.
               </p>
-              <div className="overflow-x-auto rounded-xl border border-white/70">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="bg-white/50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      <th className="px-4 py-3">Kafedra</th>
-                      <th className="px-4 py-3">Bino</th>
-                      <th className="px-4 py-3">Kameralar</th>
-                      {canEdit && <th className="px-4 py-3">Amallar</th>}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/60">
-                    {departments.length === 0 && (
-                      <tr>
-                        <td colSpan={canEdit ? 4 : 3} className="px-4 py-8 text-center text-xs text-slate-400">
-                          Hozircha kafedra qo&apos;shilmagan.
-                        </td>
-                      </tr>
-                    )}
-                    {departments.map((d) => (
-                      <tr key={d.id} className="transition-colors hover:bg-white/40">
-                        <td className="px-4 py-3 font-medium text-slate-900">
-                          <span className="flex items-center gap-2">
-                            <Landmark size={14} className="text-indigo-500" />
-                            {d.name}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {d.buildingName || <span className="text-slate-400">— ko&apos;rsatilmagan</span>}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">{d.cameraCount}</td>
-                        {canEdit && (
-                          <td className="px-4 py-3">
-                            <button
-                              onClick={() => handleDeleteDepartment(d.id)}
-                              className="flex items-center gap-1 text-xs font-semibold text-red-500 hover:underline"
-                            >
-                              <Trash2 size={12} />
-                              O&apos;chirish
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {canEdit && (
-                <button onClick={() => setDepartmentModalOpen(true)} className="btn-glass flex items-center gap-1.5">
-                  <Plus size={14} />
-                  Yangi kafedra qo&apos;shish
-                </button>
-              )}
-            </div>
-          )}
-
-          {tab === 'Fakultetlar va Kurslar' && (
-            <div className="space-y-4">
-              <div className="overflow-x-auto rounded-xl border border-white/70">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="bg-white/50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      <th className="px-4 py-3">Fakultet</th>
-                      <th className="px-4 py-3">Kurslar soni</th>
-                      <th className="px-4 py-3">Talabalar soni</th>
-                      {canEdit && <th className="px-4 py-3">Amallar</th>}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/60">
-                    {faculties.map((f) => (
-                      <tr key={f.id} className="transition-colors hover:bg-white/40">
-                        <td className="px-4 py-3 font-medium text-slate-900">
-                          <span className="flex items-center gap-2">
-                            <BookOpen size={14} className="text-indigo-500" />
-                            {f.name}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">{f.courseCount}</td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {f.studentCount.toLocaleString('ru-RU')}
-                        </td>
-                        {canEdit && (
-                          <td className="px-4 py-3">
-                            <button
-                              onClick={() => handleDeleteFaculty(f.id)}
-                              className="flex items-center gap-1 text-xs font-semibold text-red-500 hover:underline"
-                            >
-                              <Trash2 size={12} />
-                              O'chirish
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {canEdit && (
-                <button
-                  onClick={() => setFacultyModalOpen(true)}
-                  className="btn-glass flex items-center gap-1.5"
-                >
-                  <Plus size={14} />
-                  Yangi fakultet qo'shish
-                </button>
-              )}
-            </div>
-          )}
-
-          {tab === "Guruhlar ro'yxati" && (
-            <div className="space-y-4">
-              <div className="overflow-x-auto rounded-xl border border-white/70">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="bg-white/50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      <th className="px-4 py-3">Guruh</th>
-                      <th className="px-4 py-3">Fakultet</th>
-                      <th className="px-4 py-3">Kurs</th>
-                      <th className="px-4 py-3">Talabalar soni</th>
-                      {canEdit && <th className="px-4 py-3">Amallar</th>}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/60">
-                    {groups.map((g) => (
-                      <tr key={g.id} className="transition-colors hover:bg-white/40">
-                        <td className="px-4 py-3 font-medium text-slate-900">
-                          <span className="flex items-center gap-2">
-                            <Users2 size={14} className="text-indigo-500" />
-                            {g.name}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">{g.faculty}</td>
-                        <td className="px-4 py-3 text-slate-600">{g.course}-kurs</td>
-                        <td className="px-4 py-3 text-slate-600">{g.studentCount}</td>
-                        {canEdit && (
-                          <td className="px-4 py-3">
-                            <button
-                              onClick={() => handleDeleteGroup(g.id)}
-                              className="flex items-center gap-1 text-xs font-semibold text-red-500 hover:underline"
-                            >
-                              <Trash2 size={12} />
-                              O'chirish
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {canEdit && (
-                <button
-                  onClick={() => setGroupModalOpen(true)}
-                  className="btn-glass flex items-center gap-1.5"
-                >
-                  <Plus size={14} />
-                  Yangi guruh qo'shish
-                </button>
-              )}
-            </div>
+              <DataTable
+                {...common}
+                ariaLabel="Kafedralar"
+                columns={departmentColumns}
+                rows={shownDepartments}
+                rowKey={(d) => d.id}
+                onRowClick={canOpenAttendance ? (d) => navigate(situationPaths.kafedra(d.id)) : undefined}
+                defaultSort={{ key: 'name', dir: 'asc' }}
+                emptyTitle={query ? 'Kafedra topilmadi' : "Hozircha kafedra qo'shilmagan"}
+                emptyAction={emptyAction('kafedralar')}
+              />
+            </>
           )}
         </>
       )}
 
       <AddBuildingModal
-        open={buildingModalOpen}
-        onClose={() => setBuildingModalOpen(false)}
-        onSave={(building) => setBuildings((prev) => [...prev, building])}
+        open={addOpen === 'binolar'}
+        onClose={() => setAddOpen(null)}
+        onSave={(building) => {
+          setBuildings((prev) => [...prev, building]);
+          toast.success(`«${building.name}» qo'shildi`);
+        }}
       />
       <AddBuildingModal
         open={!!editingBuilding}
@@ -367,25 +452,54 @@ export default function OrgStructurePage() {
         onSave={(building) => {
           setBuildings((prev) => prev.map((b) => (b.id === building.id ? building : b)));
           setEditingBuilding(null);
+          toast.success('Saqlandi');
         }}
       />
       <AddDepartmentModal
-        open={departmentModalOpen}
+        open={addOpen === 'kafedralar'}
         buildings={buildings}
-        onClose={() => setDepartmentModalOpen(false)}
-        onAdd={(department) => setDepartments((prev) => [...prev, department])}
+        onClose={() => setAddOpen(null)}
+        onAdd={(department) => {
+          setDepartments((prev) => [...prev, department]);
+          toast.success(`«${department.name}» qo'shildi`);
+        }}
       />
       <AddFacultyModal
-        open={facultyModalOpen}
-        onClose={() => setFacultyModalOpen(false)}
-        onAdd={(faculty) => setFaculties((prev) => [...prev, faculty])}
+        open={addOpen === 'fakultetlar'}
+        onClose={() => setAddOpen(null)}
+        onAdd={(faculty) => {
+          setFaculties((prev) => [...prev, faculty]);
+          toast.success(`«${faculty.name}» qo'shildi`);
+        }}
       />
       <AddGroupModal
-        open={groupModalOpen}
+        open={addOpen === 'guruhlar'}
         faculties={faculties}
-        onClose={() => setGroupModalOpen(false)}
-        onAdd={(group) => setGroups((prev) => [...prev, group])}
+        onClose={() => setAddOpen(null)}
+        onAdd={(group) => {
+          setGroups((prev) => [...prev, group]);
+          toast.success(`«${group.name}» qo'shildi`);
+        }}
       />
-    </section>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title={deleteTarget ? `${capitalize(DELETE_META[deleteTarget.kind].noun)}ni o'chirasizmi?` : ''}
+        message={
+          deleteTarget && (
+            <>
+              <span className="font-medium text-fg">«{deleteTarget.item.name}»</span> butunlay o&apos;chiriladi. Bu amalni qaytarib bo&apos;lmaydi.
+            </>
+          )
+        }
+        confirmLabel="O'chirish"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+      />
+    </Page>
   );
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }

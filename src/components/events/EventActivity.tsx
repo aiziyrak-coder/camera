@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlarmClock, ArrowRightLeft, Loader2, MessageSquare, Send, Sparkles, UserCheck } from 'lucide-react';
+import { AlarmClock, ArrowRightLeft, MessageSquare, Send, Sparkles, UserCheck } from 'lucide-react';
+import { ErrorState, IconButton, SkeletonText, TONE_SOFT, Textarea, cn } from '../../ui';
 import { ApiError, api, isAbortError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { relativeTime } from '../../lib/uzDate';
@@ -16,11 +17,11 @@ const KIND_ICON: Record<EventTimelineItem['kind'], typeof MessageSquare> = {
 };
 
 const KIND_TONE: Record<EventTimelineItem['kind'], string> = {
-  yaratildi: 'bg-indigo-100 text-indigo-600',
-  izoh: 'bg-sky-100 text-sky-700',
-  holat: 'bg-emerald-100 text-emerald-700',
-  tayinlash: 'bg-violet-100 text-violet-700',
-  muddat: 'bg-red-100 text-red-600',
+  yaratildi: TONE_SOFT.primary,
+  izoh: TONE_SOFT.info,
+  holat: TONE_SOFT.success,
+  tayinlash: TONE_SOFT.neutral,
+  muddat: TONE_SOFT.danger,
 };
 
 /** Hodisa tarixi va izohlar: kim, qachon, nima qildi. Hodisa o'zgarganda
@@ -83,39 +84,33 @@ export default function EventActivity({ event }: { event: AIEvent }) {
   }, [draft, sending, event.id, token]);
 
   return (
-    <section className="rounded-2xl border border-slate-100 bg-white/70 p-3">
-      <h4 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">Tarix va izohlar</h4>
+    <section className="rounded-card border border-border p-3.5">
+      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">Tarix va izohlar</h3>
 
       {loading && items.length === 0 ? (
-        <div className="flex justify-center py-4 text-slate-400">
-          <Loader2 size={16} className="animate-spin" />
-        </div>
+        <SkeletonText lines={3} className="py-1" />
       ) : error ? (
-        <p className="text-xs font-medium text-red-600">
-          {error}{' '}
-          <button type="button" onClick={() => setNonce((n) => n + 1)} className="font-semibold underline">
-            Qayta urinish
-          </button>
-        </p>
+        <ErrorState title="Tarixni yuklab bo'lmadi" message={error} onRetry={() => setNonce((n) => n + 1)} />
       ) : (
         <ol className="space-y-2.5">
           {items.map((item) => {
             const Icon = KIND_ICON[item.kind];
             return (
               <li key={item.id} className="flex gap-2.5">
-                <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${KIND_TONE[item.kind]}`}>
+                <span className={cn('mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full', KIND_TONE[item.kind])}>
                   <Icon size={12} aria-hidden="true" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[11px] text-slate-400" title={item.at.slice(0, 19).replace('T', ' ')}>
-                    {item.authorName ? <span className="font-semibold text-slate-600">{item.authorName}</span> : 'Tizim'}
+                  <p className="text-xs text-muted" title={item.at.slice(0, 19).replace('T', ' ')}>
+                    {item.authorName ? <span className="font-medium text-fg">{item.authorName}</span> : 'Tizim'}
                     {' · '}
                     {relativeTime(item.at)}
                   </p>
                   <p
-                    className={`whitespace-pre-line break-words text-sm ${
-                      item.kind === 'izoh' ? 'rounded-lg bg-slate-50 px-2.5 py-1.5 text-slate-800' : 'text-slate-700'
-                    }`}
+                    className={cn(
+                      'whitespace-pre-line break-words text-sm text-fg',
+                      item.kind === 'izoh' && 'mt-0.5 rounded-control bg-surface-2 px-2.5 py-1.5',
+                    )}
                   >
                     {item.body}
                   </p>
@@ -127,7 +122,7 @@ export default function EventActivity({ event }: { event: AIEvent }) {
       )}
 
       <div className="mt-3 flex items-end gap-2">
-        <textarea
+        <Textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value.slice(0, MAX_COMMENT))}
           onKeyDown={(e) => {
@@ -139,19 +134,15 @@ export default function EventActivity({ event }: { event: AIEvent }) {
           rows={2}
           aria-label="Izoh yozish"
           placeholder="Izoh yozing… (Ctrl+Enter — yuborish)"
-          className="min-w-0 flex-1 resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-300"
+          className="min-w-0 flex-1 resize-y"
         />
-        <button
-          type="button"
-          onClick={send}
-          disabled={!draft.trim() || sending}
-          aria-label="Izohni yuborish"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-btn hover:bg-indigo-700 disabled:opacity-40"
-        >
-          {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-        </button>
+        <IconButton icon={Send} label="Izohni yuborish" variant="primary" onClick={send} disabled={!draft.trim()} loading={sending} />
       </div>
-      {sendError && <p className="mt-1.5 text-xs font-semibold text-red-600">{sendError}</p>}
+      {sendError && (
+        <p role="alert" className="mt-1.5 text-xs font-medium text-danger">
+          {sendError}
+        </p>
+      )}
     </section>
   );
 }

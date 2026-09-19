@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEVICE_STATUS_META,
   EMPTY_DEVICE_FORM,
+  RUN_STATUS_META,
   buildDevicePayload,
   deviceToForm,
   formatDateTime,
@@ -107,8 +109,18 @@ describe('device form', () => {
   });
 });
 
+describe('status meta', () => {
+  it('dizayn tizimi ohanglaridan foydalanadi', () => {
+    expect(DEVICE_STATUS_META.onlayn.tone).toBe('success');
+    expect(DEVICE_STATUS_META.xato.tone).toBe('danger');
+    expect(RUN_STATUS_META.muvaffaqiyatli.tone).toBe('success');
+    expect(RUN_STATUS_META.ishlamoqda.tone).toBe('info');
+  });
+});
+
 describe('peopleSearchLink', () => {
   it('qidiruv parametrini kodlaydi', () => {
-    expect(peopleSearchLink('00 12')).toBe('/admin/students-staff?search=00+12');
+    expect(peopleSearchLink('00 12')).toBe('/reestr?search=00+12');
+    expect(peopleSearchLink('Ali Valiyev')).toBe('/reestr?search=Ali+Valiyev');
   });
 });

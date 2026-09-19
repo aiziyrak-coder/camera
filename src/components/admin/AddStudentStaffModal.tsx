@@ -1,7 +1,6 @@
-import { useState, type FormEvent } from 'react';
+import { useId, useState, type FormEvent } from 'react';
 import { Check } from 'lucide-react';
-import Modal from '../Modal';
-import { TextField, SelectField } from '../FormField';
+import { Button, ErrorState, Field, Input, Modal, Select, cn } from '../../ui';
 import { required, minLength } from '../../lib/validation';
 import PassportUploadStep from './PassportUploadStep';
 import FaceCapture from './FaceCapture';
@@ -34,39 +33,30 @@ const STEPS = ["Ma'lumotlar", 'Pasport', 'Yuz skani', 'Tekshiruv'] as const;
 
 function Stepper({ step }: { step: number }) {
   return (
-    <div className="mb-6 flex items-center">
+    <ol className="mb-5 flex items-center" aria-label={`Qadam ${step} / ${STEPS.length}`}>
       {STEPS.map((label, i) => {
         const n = i + 1;
         const state = n < step ? 'done' : n === step ? 'active' : 'pending';
         return (
-          <div key={label} className="flex flex-1 items-center last:flex-none">
+          <li key={label} className="flex flex-1 items-center last:flex-none" aria-current={state === 'active' ? 'step' : undefined}>
             <div className="flex flex-col items-center gap-1">
               <div
-                className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
-                  state === 'done'
-                    ? 'bg-indigo-600 text-white'
-                    : state === 'active'
-                      ? 'bg-indigo-100 text-indigo-600 ring-2 ring-indigo-400'
-                      : 'bg-slate-100 text-slate-400'
-                }`}
+                className={cn(
+                  'flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold tabular-nums',
+                  state === 'done' && 'bg-primary text-primary-fg',
+                  state === 'active' && 'bg-primary-soft text-primary ring-2 ring-primary',
+                  state === 'pending' && 'bg-surface-2 text-subtle',
+                )}
               >
-                {state === 'done' ? <Check size={14} /> : n}
+                {state === 'done' ? <Check size={14} aria-hidden="true" /> : n}
               </div>
-              <span
-                className={`whitespace-nowrap text-[10px] font-semibold ${
-                  state === 'pending' ? 'text-slate-400' : 'text-slate-700'
-                }`}
-              >
-                {label}
-              </span>
+              <span className={cn('whitespace-nowrap text-[11px] font-medium', state === 'pending' ? 'text-subtle' : 'text-fg')}>{label}</span>
             </div>
-            {n < STEPS.length && (
-              <div className={`mx-2 h-0.5 flex-1 ${n < step ? 'bg-indigo-600' : 'bg-slate-200'}`} />
-            )}
-          </div>
+            {n < STEPS.length && <div className={cn('mx-2 mb-4 h-0.5 flex-1 rounded-full', n < step ? 'bg-primary' : 'bg-surface-3')} />}
+          </li>
         );
       })}
-    </div>
+    </ol>
   );
 }
 
@@ -81,6 +71,7 @@ export default function AddStudentStaffModal({
 }) {
   const { token } = useAuth();
   const { faculties } = useFaculties();
+  const formId = useId();
   const [step, setStep] = useState(1);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
@@ -226,45 +217,99 @@ export default function AddStudentStaffModal({
     }
   }
 
+  const hasSimilar = Boolean(similar && similar.length > 0);
+
+  const footer =
+    step === 1 ? (
+      <>
+        <Button onClick={handleClose}>Bekor qilish</Button>
+        {!hasSimilar && (
+          <Button type="submit" form={formId} variant="primary" loading={checking}>
+            {checking ? 'Tekshirilmoqda…' : 'Keyingi'}
+          </Button>
+        )}
+      </>
+    ) : step === 2 ? (
+      <>
+        <Button onClick={() => setStep(1)} className="mr-auto">
+          Orqaga
+        </Button>
+        <Button variant="primary" disabled={!passportPhoto} onClick={() => setStep(3)}>
+          Keyingi
+        </Button>
+      </>
+    ) : step === 3 ? (
+      <Button onClick={() => setStep(2)} className="mr-auto">
+        Orqaga
+      </Button>
+    ) : (
+      <>
+        <Button onClick={() => setStep(3)} disabled={saving} className="mr-auto">
+          Orqaga
+        </Button>
+        {matchResult && !matchResult.passed && !existing && (
+          <Button variant="ghost" disabled={saving} onClick={handleSave}>
+            Qo&apos;lda tekshirish uchun saqlash
+          </Button>
+        )}
+        <Button variant="primary" disabled={!matchResult?.passed} loading={saving} onClick={handleSave}>
+          Saqlash
+        </Button>
+      </>
+    );
+
   return (
-    <Modal open={open} onClose={handleClose} title="Yangi biriktirish" maxWidth="max-w-lg">
+    <Modal
+      open={open}
+      onClose={handleClose}
+      title="Yangi shaxs qo'shish"
+      description="Ma'lumotlar, pasport nusxasi va jonli yuz surati — kameralar odamni shu yuz orqali taniydi."
+      size="md"
+      dismissible={false}
+      footer={footer}
+    >
       <Stepper step={step} />
 
       {step === 1 && (
-        <form onSubmit={handleStep1Submit} noValidate className="flex flex-col gap-4">
-          <TextField
-            label="F.I.Sh."
-            placeholder="Karimova Dildora Baxtiyorovna"
-            value={form.fullName}
-            onChange={(e) => set('fullName', e.target.value)}
-            error={errors.fullName}
-          />
-          <SelectField
-            label="Turi"
-            placeholder="Tanlang"
-            value={form.type}
-            onChange={(e) => set('type', e.target.value as FormState['type'])}
-            error={errors.type}
-            options={[
-              { value: 'talaba', label: 'Talaba' },
-              { value: 'xodim', label: 'Xodim' },
-            ]}
-          />
-          <SelectField
-            label="Fakultet"
-            placeholder="Tanlang"
-            value={form.faculty}
-            onChange={(e) => set('faculty', e.target.value)}
-            error={errors.faculty}
-            options={faculties.map((f) => ({ value: f.name, label: f.name }))}
-          />
-          <TextField
-            label="Guruh / Lavozim"
-            placeholder={form.type === 'xodim' ? "O'qituvchi, Anatomiya" : '302-guruh, 3-kurs'}
-            value={form.groupOrPosition}
-            onChange={(e) => set('groupOrPosition', e.target.value)}
+        <form id={formId} onSubmit={handleStep1Submit} noValidate className="flex flex-col gap-4">
+          <Field label="F.I.Sh." required error={errors.fullName}>
+            <Input placeholder="Karimova Dildora Baxtiyorovna" value={form.fullName} onChange={(e) => set('fullName', e.target.value)} autoFocus />
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Turi" required error={errors.type}>
+              <Select
+                value={form.type}
+                onChange={(value) => set('type', value as FormState['type'])}
+                placeholder="Tanlang"
+                options={[
+                  { value: 'talaba', label: 'Talaba' },
+                  { value: 'xodim', label: 'Xodim' },
+                ]}
+                className="sm:w-full"
+              />
+            </Field>
+            <Field label="Fakultet" required error={errors.faculty}>
+              <Select
+                value={form.faculty}
+                onChange={(value) => set('faculty', value)}
+                placeholder="Tanlang"
+                options={faculties.map((f) => ({ value: f.name, label: f.name }))}
+                className="sm:w-full"
+              />
+            </Field>
+          </div>
+          <Field
+            label={form.type === 'xodim' ? 'Lavozim / kafedra' : form.type === 'talaba' ? 'Guruh va kurs' : 'Guruh / Lavozim'}
+            required
             error={errors.groupOrPosition}
-          />
+            hint={form.type === 'talaba' ? 'Masalan: «2-kurs, DI-2301» — kurs va guruh davomat sahifalarida shundan olinadi.' : undefined}
+          >
+            <Input
+              placeholder={form.type === 'xodim' ? "O'qituvchi, Anatomiya" : '2-kurs, DI-2301'}
+              value={form.groupOrPosition}
+              onChange={(e) => set('groupOrPosition', e.target.value)}
+            />
+          </Field>
           {form.type && (
             <ParentNotifyFields
               isStudent={form.type === 'talaba'}
@@ -275,66 +320,39 @@ export default function AddStudentStaffModal({
           )}
 
           {similar && similar.length > 0 && (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
-              <p className="text-sm font-bold text-amber-900">Bu odam bazada allaqachon bo&apos;lishi mumkin</p>
-              <p className="mt-0.5 text-xs leading-relaxed text-amber-800">
-                Ro&apos;yxatdagi odamni qayta qo&apos;shsangiz, u ikki marta sanaladi. O&apos;zi bo&apos;lsa — yuzni
-                mavjud yozuvga biriktiring.
+            <div role="alert" className="rounded-card border border-warning/30 bg-warning-soft p-3.5">
+              <p className="text-sm font-semibold text-fg">Bu odam bazada allaqachon bo&apos;lishi mumkin</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-muted">
+                Ro&apos;yxatdagi odamni qayta qo&apos;shsangiz, u ikki marta sanaladi. O&apos;zi bo&apos;lsa — yuzni mavjud yozuvga biriktiring.
               </p>
-              <ul className="mt-2 flex max-h-56 flex-col gap-1.5 overflow-y-auto">
+              <ul className="mt-2.5 flex max-h-56 flex-col gap-1.5 overflow-y-auto">
                 {similar.map((person) => (
-                  <li
-                    key={person.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white px-3 py-2"
-                  >
+                  <li key={person.id} className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-border bg-surface px-3 py-2">
                     <span className="min-w-0">
-                      <span className="block text-sm font-semibold text-slate-900">{person.fullName}</span>
-                      <span className="block text-xs text-slate-500">
+                      <span className="block text-sm font-medium text-fg">{person.fullName}</span>
+                      <span className="block text-xs text-muted">
                         {[person.faculty, person.groupOrPosition].filter(Boolean).join(' · ')} ·{' '}
                         {person.biometricsStatus === 'tasdiqlangan' ? 'yuzi tasdiqlangan' : 'yuzi tasdiqlanmagan'}
                       </span>
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => chooseExisting(person)}
-                      className="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
-                    >
+                    <Button size="sm" variant="primary" onClick={() => chooseExisting(person)}>
                       Shu odamga yuz biriktirish
-                    </button>
+                    </Button>
                   </li>
                 ))}
               </ul>
-              <button
-                type="button"
-                onClick={confirmNewPerson}
-                className="mt-2 text-xs font-semibold text-amber-900 underline hover:text-amber-950"
-              >
+              <Button size="sm" variant="ghost" onClick={confirmNewPerson} className="-ml-2 mt-2">
                 Bu boshqa odam — yangi yozuv yaratish
-              </button>
+              </Button>
             </div>
           )}
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={handleClose} className="btn-glass">
-              Bekor qilish
-            </button>
-            {!(similar && similar.length > 0) && (
-              <button
-                type="submit"
-                disabled={checking}
-                className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {checking ? 'Tekshirilmoqda...' : 'Keyingi'}
-              </button>
-            )}
-          </div>
         </form>
       )}
 
       {step > 1 && existing && (
-        <p className="mb-3 rounded-xl bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
-          Yangi yozuv yaratilmaydi — yuz mavjud yozuvga biriktiriladi:{' '}
-          <span className="font-semibold">{existing.fullName}</span> ({existing.groupOrPosition})
+        <p className="mb-3 rounded-control bg-primary-soft px-3 py-2 text-xs text-fg">
+          Yangi yozuv yaratilmaydi — yuz mavjud yozuvga biriktiriladi: <span className="font-semibold">{existing.fullName}</span> (
+          {existing.groupOrPosition})
           {existing.biometricsStatus === 'tasdiqlangan' && ' · oldingi yuz rasmi yangisiga almashtiriladi'}
           {(form.parentPhone || form.cardNumber || form.parentNotifyEnabled) &&
             ". Ota-ona va karta ma'lumotlarini mavjud yozuvning tahrirlash oynasida kiriting"}
@@ -343,36 +361,19 @@ export default function AddStudentStaffModal({
 
       {step === 2 && (
         <div className="flex flex-col gap-4">
-          <p className="text-center text-xs text-slate-500">
-            {form.fullName} uchun pasport nusxasini (PDF) yuklang — rasm avtomatik ajratib olinadi
-          </p>
+          <p className="text-center text-[13px] text-muted">{form.fullName} uchun pasport nusxasini (PDF) yuklang — rasm avtomatik ajratib olinadi</p>
           <PassportUploadStep
             onLoaded={(url, name) => {
               setPassportPhoto(url);
               setPassportFileName(name);
             }}
           />
-          <div className="flex justify-between gap-2 pt-2">
-            <button type="button" onClick={() => setStep(1)} className="btn-glass">
-              Orqaga
-            </button>
-            <button
-              type="button"
-              disabled={!passportPhoto}
-              onClick={() => setStep(3)}
-              className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Keyingi
-            </button>
-          </div>
         </div>
       )}
 
       {step === 3 && (
         <div className="flex flex-col gap-4">
-          <p className="text-center text-xs text-slate-500">
-            Endi kamera orqali jonli yuzingizni suratga oling
-          </p>
+          <p className="text-center text-[13px] text-muted">Endi kamera orqali jonli yuzni suratga oling</p>
           <FaceCapture
             onConfirm={(dataUrl) => {
               setCapturedFace(dataUrl);
@@ -380,11 +381,6 @@ export default function AddStudentStaffModal({
               setStep(4);
             }}
           />
-          <div className="flex justify-start pt-2">
-            <button type="button" onClick={() => setStep(2)} className="btn-glass">
-              Orqaga
-            </button>
-          </div>
         </div>
       )}
 
@@ -396,44 +392,8 @@ export default function AddStudentStaffModal({
             onRetake={() => setStep(3)}
             onResult={(score, passed) => setMatchResult({ score, passed })}
           />
-
-          {passportFileName && (
-            <p className="text-center text-[11px] text-slate-400">
-              Pasport fayli: {passportFileName}
-            </p>
-          )}
-
-          {saveError && (
-            <p className="rounded-xl bg-red-50 px-3 py-2.5 text-center text-xs font-semibold text-red-600">
-              {saveError}
-            </p>
-          )}
-
-          <div className="flex justify-between gap-2 pt-2">
-            <button type="button" onClick={() => setStep(3)} className="btn-glass">
-              Orqaga
-            </button>
-            <div className="flex items-center gap-3">
-              {matchResult && !matchResult.passed && !existing && (
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={handleSave}
-                  className="text-xs font-semibold text-slate-400 underline hover:text-slate-600 disabled:cursor-not-allowed"
-                >
-                  Qo'lda tekshirish uchun saqlash
-                </button>
-              )}
-              <button
-                type="button"
-                disabled={!matchResult?.passed || saving}
-                onClick={handleSave}
-                className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {saving ? 'Saqlanmoqda...' : 'Saqlash'}
-              </button>
-            </div>
-          </div>
+          {passportFileName && <p className="text-center text-xs text-muted">Pasport fayli: {passportFileName}</p>}
+          {saveError && <ErrorState title="Saqlab bo'lmadi" message={saveError} />}
         </div>
       )}
     </Modal>

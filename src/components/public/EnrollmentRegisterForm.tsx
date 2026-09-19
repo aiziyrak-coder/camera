@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
-import { UserPlus } from 'lucide-react';
-import {
-  type EnrollmentFaculty,
-  type EnrollmentRegisterInput,
-  listEnrollmentFaculties,
-} from '../../lib/enrollment';
+import { ArrowLeft, UserPlus } from 'lucide-react';
+import { Button, Field, Input, Select } from '../../ui';
+import { Notice, Segmented } from '../settings/kit';
+import { type EnrollmentFaculty, type EnrollmentRegisterInput, listEnrollmentFaculties } from '../../lib/enrollment';
 
 interface EnrollmentRegisterFormProps {
   /** Qidiruvda kiritilgan identifikator — qayta so'ralmaydi. */
@@ -15,6 +13,11 @@ interface EnrollmentRegisterFormProps {
   onCancel: () => void;
   submitting?: boolean;
 }
+
+const TYPE_OPTIONS = [
+  { value: 'talaba' as const, label: 'Talaba' },
+  { value: 'xodim' as const, label: 'Xodim' },
+];
 
 /**
  * Tizimda yozuvi yo'q odam uchun ro'yxatdan o'tish formasi.
@@ -58,8 +61,8 @@ export default function EnrollmentRegisterForm({
     };
   }, []);
 
-  const inputClass =
-    'w-full rounded-xl border border-white/80 bg-white/60 px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-indigo-300';
+  // Telefonda 16px dan kichik shrift iOS'da maydonni kattalashtirib yuboradi.
+  const mobileText = '[&_input]:text-base';
 
   return (
     <form
@@ -77,95 +80,67 @@ export default function EnrollmentRegisterForm({
       }}
       className="flex flex-col gap-4"
     >
-      <div className="rounded-xl bg-amber-50 p-3 text-sm leading-relaxed text-amber-700">
-        Bu raqam bo&apos;yicha tizimda yozuv topilmadi. Ma&apos;lumotlaringizni kiriting — ro&apos;yxatdan
-        o&apos;tkazamiz.
+      <div>
+        <h2 className="text-base font-semibold text-fg">Ma&apos;lumotlaringizni kiriting</h2>
+        <Notice tone="warning" className="mt-2">
+          Bu raqam bo&apos;yicha tizimda yozuv topilmadi. Ma&apos;lumotlaringizni kiriting — ro&apos;yxatdan o&apos;tkazamiz.
+        </Notice>
       </div>
 
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-500">F.I.SH.</label>
-        <input
+      <Field label="F.I.SH." required>
+        <Input
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
           placeholder="Familiya Ism Sharif"
+          autoComplete="name"
           required
           minLength={3}
-          className={inputClass}
+          size="lg"
+          className={mobileText}
         />
-      </div>
+      </Field>
 
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-500">Kim sifatida</label>
-        <div className="grid grid-cols-2 gap-2">
-          {(['talaba', 'xodim'] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setType(value)}
-              className={`rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors ${
-                type === value
-                  ? 'bg-indigo-600 text-white shadow-btn'
-                  : 'bg-white/60 text-slate-600 hover:bg-white/90'
-              }`}
-            >
-              {value === 'talaba' ? 'Talaba' : 'Xodim'}
-            </button>
-          ))}
-        </div>
-      </div>
+      <fieldset className="flex flex-col gap-1.5">
+        <legend className="mb-1.5 text-[13px] font-medium text-fg">Kim sifatida</legend>
+        <Segmented ariaLabel="Kim sifatida" value={type} onChange={setType} options={TYPE_OPTIONS} size="lg" />
+      </fieldset>
 
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-500">
-          {type === 'talaba' ? 'Guruh' : 'Lavozim'}
-        </label>
-        <input
+      <Field label={type === 'talaba' ? 'Guruh' : 'Lavozim'} required>
+        <Input
           value={groupOrPosition}
           onChange={(e) => setGroupOrPosition(e.target.value)}
           placeholder={type === 'talaba' ? '301-guruh' : 'Laborant'}
           required
-          className={inputClass}
+          size="lg"
+          className={mobileText}
         />
-      </div>
+      </Field>
 
       {faculties.length > 0 && (
-        <div>
-          <label className="mb-1 block text-xs font-semibold text-slate-500">
-            Fakultet <span className="font-normal text-slate-400">(ixtiyoriy)</span>
-          </label>
-          <select value={facultyId} onChange={(e) => setFacultyId(e.target.value)} className={inputClass}>
-            <option value="">Tanlanmagan</option>
-            {faculties.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        <Field label={<>Fakultet <span className="font-normal text-muted">(ixtiyoriy)</span></>}>
+          <Select
+            value={facultyId}
+            onChange={setFacultyId}
+            placeholder="Tanlanmagan"
+            options={faculties.map((f) => ({ value: f.id, label: f.name }))}
+            size="lg"
+            className="sm:!w-full [&_select]:text-base"
+          />
+        </Field>
       )}
 
-      <div className="rounded-xl bg-slate-50 px-3 py-2.5 text-xs text-slate-500">
+      <p className="rounded-control border border-border bg-surface-2 px-3.5 py-2.5 text-[13px] text-muted">
         {pinfl ? 'JSHSHIR: ' : 'Pasport: '}
-        <span className="font-semibold text-slate-700">
-          {pinfl || `${passportSeries} ${passportNumber}`}
-        </span>
-      </div>
+        <span className="font-mono font-semibold text-fg">{pinfl || `${passportSeries} ${passportNumber}`}</span>
+      </p>
 
-      <button
-        type="submit"
-        disabled={submitting}
-        className="flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        <UserPlus size={16} />
+      <Button type="submit" variant="primary" size="lg" icon={UserPlus} loading={submitting} fullWidth>
         {submitting ? 'Saqlanmoqda...' : "Ro'yxatdan o'tish"}
-      </button>
+      </Button>
 
-      <button
-        type="button"
-        onClick={onCancel}
-        className="text-xs font-medium text-slate-400 hover:text-slate-600"
-      >
+      <Button variant="ghost" icon={ArrowLeft} onClick={onCancel} fullWidth>
         Boshqa raqam bilan qayta urinish
-      </button>
+      </Button>
     </form>
   );
 }

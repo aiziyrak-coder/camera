@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { AlertCircle, CheckCircle2, Loader2, Lock, ShieldCheck } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { AlertCircle, CheckCircle2, Link2Off, Lock } from 'lucide-react';
 import { ApiError, api } from '../../lib/apiClient';
 import { required, minLength } from '../../lib/validation';
+import { Button, ButtonLink, Card, Field, Input } from '../../ui';
 
 export default function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
@@ -34,117 +35,80 @@ export default function ResetPasswordPage() {
     }
   }
 
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-canvas p-4">
-      <div className="glass w-full max-w-md p-8">
-        <div className="mb-6 text-center">
-          <h1 className="text-[15px] font-extrabold leading-tight text-slate-900">
-            Farg'ona jamoat salomatligi tibbiyot instituti
-          </h1>
-          <p className="mt-1 text-xs text-slate-500">Yangi parol o'rnatish</p>
+  if (!token) {
+    return (
+      <Card padding="lg" className="text-center shadow-pop">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-danger-soft text-danger">
+          <Link2Off size={22} aria-hidden="true" />
         </div>
+        <h1 className="mt-4 text-lg font-semibold text-fg">Havola yaroqsiz</h1>
+        <p className="mt-1 text-[13px] text-muted">
+          Bu sahifaga elektron xatdagi tiklash havolasi orqali o'tiladi. Kirish sahifasidan qaytadan so'rov yuboring.
+        </p>
+        <ButtonLink to="/kirish" className="mt-5" fullWidth>
+          Kirish sahifasiga qaytish
+        </ButtonLink>
+      </Card>
+    );
+  }
 
-        {!token ? (
-          <div className="flex flex-col items-center gap-3 py-4 text-center">
-            <AlertCircle size={28} className="text-red-500" />
-            <p className="text-sm font-semibold text-slate-800">
-              Havola yaroqsiz
-            </p>
-            <p className="text-xs text-slate-500">
-              Ushbu sahifaga tiklash havolasi orqali o'tish kerak. Login sahifasidan qaytadan
-              so'rov yuboring.
-            </p>
-            <Link to="/admin/login" className="btn-glass mt-2">
-              Login sahifasiga qaytish
-            </Link>
+  if (done) {
+    return (
+      <Card padding="lg" className="text-center shadow-pop">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success-soft text-success">
+          <CheckCircle2 size={24} aria-hidden="true" />
+        </div>
+        <h1 className="mt-4 text-lg font-semibold text-fg">Parol o'zgartirildi</h1>
+        <p className="mt-1 text-[13px] text-muted">Barcha eski sessiyalar tugatildi — yangi parol bilan qayta kiring.</p>
+        <ButtonLink to="/kirish" variant="primary" className="mt-5" fullWidth>
+          Tizimga kirish
+        </ButtonLink>
+      </Card>
+    );
+  }
+
+  return (
+    <Card padding="lg" className="shadow-pop">
+      <h1 className="text-lg font-semibold text-fg">Yangi parol o'rnatish</h1>
+      <p className="mt-1 text-[13px] text-muted">Kamida 8 belgidan iborat yangi parol kiriting.</p>
+
+      <form onSubmit={handleSubmit} noValidate className="mt-5 flex flex-col gap-4">
+        {errors.form && (
+          <div role="alert" className="flex items-start gap-2 rounded-control bg-danger-soft px-3 py-2.5 text-[13px] font-medium text-danger">
+            <AlertCircle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+            {errors.form}
           </div>
-        ) : done ? (
-          <div className="flex flex-col items-center gap-3 py-4 text-center">
-            <CheckCircle2 size={32} className="text-emerald-500" />
-            <p className="text-sm font-semibold text-slate-800">
-              Parol muvaffaqiyatli o'zgartirildi
-            </p>
-            <p className="text-xs text-slate-500">
-              Barcha eski sessiyalar tugatildi — yangi parol bilan qayta kiring.
-            </p>
-            <Link
-              to="/admin/login"
-              className="mt-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700"
-            >
-              Tizimga kirish
-            </Link>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-            {errors.form && (
-              <div className="flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
-                <AlertCircle size={14} />
-                {errors.form}
-              </div>
-            )}
-
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-600">
-                Yangi parol
-              </label>
-              <div className="relative">
-                <Lock
-                  size={16}
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                />
-                <input
-                  type="password"
-                  placeholder="Kamida 8 belgi"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="new-password"
-                  className="w-full rounded-xl border border-white/80 bg-white/60 py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-indigo-300"
-                />
-              </div>
-              {errors.password && (
-                <p className="mt-1 text-xs font-medium text-red-500">{errors.password}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-600">
-                Parolni tasdiqlang
-              </label>
-              <div className="relative">
-                <Lock
-                  size={16}
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                />
-                <input
-                  type="password"
-                  placeholder="Parolni qayta kiriting"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  autoComplete="new-password"
-                  className="w-full rounded-xl border border-white/80 bg-white/60 py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-indigo-300"
-                />
-              </div>
-              {errors.confirmPassword && (
-                <p className="mt-1 text-xs font-medium text-red-500">{errors.confirmPassword}</p>
-              )}
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {loading && <Loader2 size={16} className="animate-spin" />}
-              {loading ? 'Saqlanmoqda...' : 'Parolni saqlash'}
-            </button>
-          </form>
         )}
 
-        <p className="mt-6 flex items-center justify-center gap-1.5 text-xs text-slate-400">
-          <ShieldCheck size={14} />
-          256-bit SSL shifrlash bilan himoyalangan
-        </p>
-      </div>
-    </div>
+        <Field label="Yangi parol" error={errors.password}>
+          <Input
+            icon={Lock}
+            size="lg"
+            type="password"
+            placeholder="Kamida 8 belgi"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="new-password"
+            autoFocus
+          />
+        </Field>
+
+        <Field label="Parolni tasdiqlang" error={errors.confirmPassword}>
+          <Input
+            icon={Lock}
+            size="lg"
+            type="password"
+            placeholder="Parolni qayta kiriting"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            autoComplete="new-password"
+          />
+        </Field>
+
+        <Button type="submit" variant="primary" size="lg" fullWidth loading={loading}>
+          {loading ? 'Saqlanmoqda…' : 'Parolni saqlash'}
+        </Button>
+      </form>
+    </Card>
   );
 }

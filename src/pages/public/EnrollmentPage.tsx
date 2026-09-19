@@ -1,9 +1,12 @@
-import { useState } from 'react';
-import { AlertTriangle, CheckCircle2, IdCard, ScanFace, UserCheck } from 'lucide-react';
+import { useEffect, useState, type FormEvent } from 'react';
+import { Check, CheckCircle2, Clock, IdCard, RotateCcw, ScanFace, UserCheck } from 'lucide-react';
 import EnrollmentConsent from '../../components/public/EnrollmentConsent';
 import EnrollmentFaceCapture from '../../components/public/EnrollmentFaceCapture';
 import EnrollmentRegisterForm from '../../components/public/EnrollmentRegisterForm';
+import { Notice, Segmented } from '../../components/settings/kit';
+import { Avatar, Button, Card, Field, Input, cn } from '../../ui';
 import { ApiError } from '../../lib/apiClient';
+import { branding } from '../../lib/branding';
 import {
   type EnrollmentLookupResult,
   type EnrollmentRegisterInput,
@@ -25,6 +28,50 @@ type Step = 'identify' | 'register' | 'confirm' | 'consent' | 'photo' | 'success
  *  uchun qoldirilgan. */
 type Method = 'pinfl' | 'passport';
 
+const METHOD_OPTIONS = [
+  { value: 'pinfl' as const, label: 'JSHSHIR' },
+  { value: 'passport' as const, label: 'Pasport' },
+];
+
+/** Bosqichlar ko'rsatkichi: odam telefonda qayerda turganini va nechta qadam qolganini ko'radi. */
+const PROGRESS = ['Aniqlash', 'Tasdiqlash', 'Rozilik', 'Yuz'] as const;
+
+function progressIndex(step: Step): number {
+  switch (step) {
+    case 'identify':
+    case 'register':
+      return 0;
+    case 'confirm':
+      return 1;
+    case 'consent':
+      return 2;
+    case 'photo':
+      return 3;
+    case 'success':
+      return PROGRESS.length;
+  }
+}
+
+function StepProgress({ current }: { current: number }) {
+  return (
+    <ol className="grid grid-cols-4 gap-2" aria-label="Ro'yxatdan o'tish bosqichlari">
+      {PROGRESS.map((label, index) => {
+        const done = index < current;
+        const active = index === current;
+        return (
+          <li key={label} className="min-w-0" aria-current={active ? 'step' : undefined}>
+            <div className={cn('h-1 rounded-full transition-colors', done ? 'bg-success' : active ? 'bg-primary' : 'bg-surface-3')} />
+            <p className={cn('mt-1.5 flex items-center gap-1 truncate text-xs', active ? 'font-semibold text-fg' : done ? 'text-success' : 'text-subtle')}>
+              {done && <Check size={12} aria-hidden="true" className="shrink-0" />}
+              <span className="truncate">{label}</span>
+            </p>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 export default function EnrollmentPage() {
   const [step, setStep] = useState<Step>('identify');
   const [method, setMethod] = useState<Method>('pinfl');
@@ -38,12 +85,23 @@ export default function EnrollmentPage() {
   const [awaitingApproval, setAwaitingApproval] = useState(false);
   const [consent, setConsent] = useState(false);
 
-  const identity: EnrollmentIdentity =
-    method === 'pinfl'
-      ? { kind: 'pinfl', pinfl }
-      : { kind: 'passport', passportSeries: series, passportNumber: number };
+  useEffect(() => {
+    const previous = document.title;
+    document.title = `Ro'yxatdan o'tish · ${branding.systemName}`;
+    return () => {
+      document.title = previous;
+    };
+  }, []);
 
-  async function handleLookup(e: React.FormEvent) {
+  // Har yangi bosqichda sahifa tepasiga — telefonda oldingi forma pastda qolib ketmasin.
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [step]);
+
+  const identity: EnrollmentIdentity =
+    method === 'pinfl' ? { kind: 'pinfl', pinfl } : { kind: 'passport', passportSeries: series, passportNumber: number };
+
+  async function handleLookup(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
@@ -100,163 +158,141 @@ export default function EnrollmentPage() {
     }
   }
 
-  return (
-    <div className="mx-auto flex max-w-md flex-col gap-4 pb-10 pt-4">
-      <div className="glass rounded-2xl p-6">
-        <div className="mb-5 flex items-center gap-2">
-          <ScanFace size={20} className="text-indigo-500" />
-          <h2 className="text-base font-bold text-slate-900">Yuzni ro'yxatdan o'tkazish</h2>
-        </div>
+  function restartIdentify() {
+    setStep('identify');
+    setFound(null);
+    setError(null);
+  }
 
-        {error && (
-          <div className="mb-4 flex items-start gap-2 rounded-xl bg-red-50 p-3 text-sm text-red-600">
-            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
+  const pinflShort = method === 'pinfl' && pinfl.length > 0 && pinfl.length < 13;
+
+  return (
+    <div className="mx-auto flex w-full max-w-md flex-col gap-5 pb-10">
+      <header className="flex items-start gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-primary-soft text-primary">
+          <ScanFace size={20} aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <h1 className="text-lg font-semibold tracking-tight text-fg sm:text-xl">Yuzni ro'yxatdan o'tkazish</h1>
+          <p className="mt-0.5 text-sm text-muted">Kameralar sizni tanishi va davomat avtomatik belgilanishi uchun.</p>
+        </div>
+      </header>
+
+      <StepProgress current={progressIndex(step)} />
+
+      <Card padding="lg" className="flex flex-col gap-4">
+        {error && <Notice tone="danger">{error}</Notice>}
 
         {step === 'identify' && (
           <form onSubmit={handleLookup} className="flex flex-col gap-4">
-            <p className="text-sm leading-relaxed text-slate-500">
-              Tizimda mavjud yozuvingizni topish uchun JSHSHIR raqamingizni kiriting. U pasportingizning
-              ma&apos;lumot sahifasida, 14 raqamdan iborat.
-            </p>
-
-            <div className="grid grid-cols-2 gap-2">
-              {([
-                ['pinfl', 'JSHSHIR'],
-                ['passport', 'Pasport'],
-              ] as const).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => {
-                    setMethod(value);
-                    setError(null);
-                  }}
-                  className={`rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${
-                    method === value
-                      ? 'bg-indigo-600 text-white shadow-btn'
-                      : 'bg-white/60 text-slate-600 hover:bg-white/90'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
+            <div>
+              <h2 className="text-base font-semibold text-fg">Shaxsingizni aniqlaymiz</h2>
+              <p className="mt-1 text-sm leading-relaxed text-muted">
+                Tizimdagi yozuvingizni topish uchun JSHSHIR raqamingizni kiriting. U pasportingizning ma&apos;lumot sahifasida, 14
+                raqamdan iborat.
+              </p>
             </div>
 
+            <Segmented
+              ariaLabel="Aniqlash usuli"
+              value={method}
+              onChange={(value) => {
+                setMethod(value);
+                setError(null);
+              }}
+              options={METHOD_OPTIONS}
+              size="lg"
+            />
+
             {method === 'pinfl' ? (
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-500">
-                  JSHSHIR (14 raqam)
-                </label>
-                <input
+              <Field label="JSHSHIR (14 raqam)" hint={`Kiritilgan: ${pinfl.length}/14 raqam`} required>
+                <Input
                   value={pinfl}
                   onChange={(e) => setPinfl(e.target.value.replace(/\D/g, '').slice(0, 14))}
                   placeholder="30302654150047"
                   inputMode="numeric"
+                  autoComplete="off"
                   required
                   minLength={13}
-                  className="w-full rounded-xl border border-white/80 bg-white/60 px-3 py-2.5 font-mono text-sm tracking-wide text-slate-900 outline-none transition-colors placeholder:font-sans placeholder:tracking-normal placeholder:text-slate-400 focus:border-indigo-300"
+                  size="lg"
+                  invalid={pinflShort}
+                  className="[&_input]:text-base [&_input]:font-mono [&_input]:tracking-wide [&_input::placeholder]:font-sans [&_input::placeholder]:tracking-normal"
                 />
-                <p className="mt-1 text-[11px] text-slate-400">
-                  Kiritilgan: {pinfl.length}/14 raqam
-                </p>
-              </div>
+              </Field>
             ) : (
-              <div className="grid grid-cols-3 gap-2">
-                <div className="col-span-1">
-                  <label className="mb-1 block text-xs font-semibold text-slate-500">Seriya</label>
-                  <input
+              <div className="grid grid-cols-3 gap-3">
+                <Field label="Seriya" required>
+                  <Input
                     value={series}
                     onChange={(e) => setSeries(e.target.value.toUpperCase())}
                     placeholder="AD"
                     maxLength={4}
+                    autoComplete="off"
+                    autoCapitalize="characters"
                     required
-                    className="w-full rounded-xl border border-white/80 bg-white/60 px-3 py-2.5 text-sm uppercase text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-indigo-300"
+                    size="lg"
+                    className="[&_input]:text-base [&_input]:uppercase"
                   />
-                </div>
-                <div className="col-span-2">
-                  <label className="mb-1 block text-xs font-semibold text-slate-500">Raqam</label>
-                  <input
+                </Field>
+                <Field label="Raqam" required className="col-span-2">
+                  <Input
                     value={number}
                     onChange={(e) => setNumber(e.target.value.replace(/\D/g, ''))}
                     placeholder="1234567"
                     maxLength={10}
+                    inputMode="numeric"
+                    autoComplete="off"
                     required
-                    className="w-full rounded-xl border border-white/80 bg-white/60 px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-indigo-300"
+                    size="lg"
+                    className="[&_input]:text-base"
                   />
-                </div>
+                </Field>
               </div>
             )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <IdCard size={16} />
+            <Button type="submit" variant="primary" size="lg" icon={IdCard} loading={loading} fullWidth>
               {loading ? 'Qidirilmoqda...' : 'Davom etish'}
-            </button>
+            </Button>
           </form>
         )}
 
         {step === 'confirm' && found && (
           <div className="flex flex-col gap-4">
-            <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-4">
-              <UserCheck size={22} className="shrink-0 text-emerald-500" />
-              <div>
-                <p className="text-sm font-bold text-slate-900">{found.fullName}</p>
-                <p className="text-xs text-slate-500">
+            <h2 className="text-base font-semibold text-fg">Bu sizmi?</h2>
+            <div className="flex items-center gap-3 rounded-control border border-border bg-surface-2 p-3.5">
+              <Avatar name={found.fullName} size="md" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-fg">{found.fullName}</p>
+                <p className="text-[13px] text-muted">
                   {found.typeLabel} · {found.groupOrPosition}
                 </p>
               </div>
+              <UserCheck size={20} className="shrink-0 text-success" aria-hidden="true" />
             </div>
 
             {found.alreadyEnrolled ? (
-              <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-700">
-                Siz allaqachon ro'yxatdan o'tgansiz. O'zgartirish kerak bo'lsa, administratorga murojaat qiling.
-              </p>
+              <Notice tone="warning">Siz allaqachon ro&apos;yxatdan o&apos;tgansiz. O&apos;zgartirish kerak bo&apos;lsa, administratorga murojaat qiling.</Notice>
             ) : found.awaitingApproval ? (
               <>
-                <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-700">
-                  Yuzingiz qabul qilingan va administrator tasdig'ini kutmoqda. Rasmni almashtirmoqchi bo'lsangiz,
-                  qayta skanerlashingiz mumkin.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setStep('consent')}
-                  className="flex items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-4 py-2.5 text-sm font-semibold text-indigo-600 transition-colors hover:bg-indigo-50"
-                >
-                  <ScanFace size={16} />
+                <Notice tone="warning" icon={Clock}>
+                  Yuzingiz qabul qilingan va administrator tasdig&apos;ini kutmoqda. Rasmni almashtirmoqchi bo&apos;lsangiz, qayta skanerlashingiz
+                  mumkin.
+                </Notice>
+                <Button size="lg" icon={ScanFace} onClick={() => setStep('consent')} fullWidth>
                   Qayta skanerlash
-                </button>
+                </Button>
               </>
             ) : (
               <>
-                <p className="text-sm text-slate-500">
-                  Bu siz ekanligingizni tasdiqlab, yuzingizni skanerlashga o'ting.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setStep('consent')}
-                  className="flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700"
-                >
-                  <ScanFace size={16} />
+                <p className="text-sm text-muted">Bu siz ekanligingizni tasdiqlab, yuzingizni skanerlashga o&apos;ting.</p>
+                <Button variant="primary" size="lg" icon={ScanFace} onClick={() => setStep('consent')} fullWidth>
                   Ha, bu men — davom etish
-                </button>
+                </Button>
               </>
             )}
-            <button
-              type="button"
-              onClick={() => {
-                setStep('identify');
-                setFound(null);
-              }}
-              className="text-xs font-medium text-slate-400 hover:text-slate-600"
-            >
-              Boshqa ma'lumot bilan qayta urinish
-            </button>
+            <Button variant="ghost" icon={RotateCcw} onClick={restartIdentify} fullWidth>
+              Boshqa ma&apos;lumot bilan qayta urinish
+            </Button>
           </div>
         )}
 
@@ -285,26 +321,26 @@ export default function EnrollmentPage() {
           />
         )}
 
-        {step === 'photo' && (
-          <EnrollmentFaceCapture
-            onSubmit={handleFramesSubmit}
-            submitting={loading}
-            externalError={captureError}
-          />
-        )}
+        {step === 'photo' && <EnrollmentFaceCapture onSubmit={handleFramesSubmit} submitting={loading} externalError={captureError} />}
 
         {step === 'success' && found && (
-          <div className="flex flex-col items-center gap-3 py-6 text-center">
-            <CheckCircle2 size={40} className="text-emerald-500" />
-            <p className="text-sm font-bold text-slate-900">Muvaffaqiyatli saqlandi!</p>
-            <p className="text-sm text-slate-500">
+          <div className="flex flex-col items-center gap-3 py-6 text-center" role="status">
+            <span className={cn('flex h-14 w-14 items-center justify-center rounded-full', awaitingApproval ? 'bg-warning-soft text-warning' : 'bg-success-soft text-success')}>
+              {awaitingApproval ? <Clock size={28} aria-hidden="true" /> : <CheckCircle2 size={28} aria-hidden="true" />}
+            </span>
+            <p className="text-base font-semibold text-fg">{awaitingApproval ? 'Qabul qilindi' : 'Muvaffaqiyatli saqlandi!'}</p>
+            <p className="text-sm leading-relaxed text-muted">
               {awaitingApproval
                 ? `${found.fullName}, ma'lumotlaringiz qabul qilindi. Siz institut ro'yxatida yo'q edingiz, shuning uchun administrator tasdiqlagandan keyin kameralar sizni taniy boshlaydi.`
                 : `${found.fullName}, yuzingiz endi kameralar orqali tanib olinadi.`}
             </p>
           </div>
         )}
-      </div>
+      </Card>
+
+      <p className="text-center text-xs leading-relaxed text-subtle">
+        Ma&apos;lumotlaringiz faqat davomat va bino xavfsizligi uchun ishlatiladi. Rozilikni istalgan vaqtda qaytarib olishingiz mumkin.
+      </p>
     </div>
   );
 }

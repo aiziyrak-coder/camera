@@ -1,18 +1,16 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ExternalLink, Loader2, Lock, Siren, VideoOff } from 'lucide-react';
-import Drawer from '../ui/Drawer';
-import Badge from '../Badge';
+import { ExternalLink, Lock, Siren, VideoOff } from 'lucide-react';
+import { Badge, ButtonLink, Drawer, EmptyState, ErrorState, SkeletonText, StatusBadge, cn, type Tone } from '../../ui';
 import LiveVideoPlayer from '../LiveVideoPlayer';
 import { ApiError, api, buildQuery, isAbortError, type Page } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { MARKER_TONE_LABEL, markerTone } from '../../lib/floorPlan';
 import type { FloorPlanCamera } from '../../lib/floorPlansApi';
-import { SEVERITY_TONE, STATUS_LABEL, STATUS_TONE } from '../../lib/eventLabels';
+import { SEVERITY_STRIPE } from '../../lib/eventLabels';
 import { relativeTime } from '../../lib/uzDate';
 import type { AIEvent } from '../../types';
 
-const TONE_BADGE = { online: 'green', noVideo: 'amber', offline: 'red' } as const;
+const TONE_BADGE: Record<string, Tone> = { online: 'success', noVideo: 'warning', offline: 'danger' };
 const ADMIN_STATUS_LABEL: Record<string, string> = { faol: 'Faol', nofaol: 'Nofaol', tamirda: "Ta'mirda" };
 const RECENT_LIMIT = 6;
 
@@ -70,7 +68,7 @@ export default function CameraDetailDrawer({
 
   if (!camera) return null;
   const tone = markerTone(camera);
-  const eventsLink = `/admin/events${buildQuery({ korinish: 'jurnal', bino: buildingName })}`;
+  const eventsLink = `/hodisalar${buildQuery({ korinish: 'jurnal', bino: buildingName })}`;
 
   let videoPlaceholder: { icon: typeof VideoOff; text: string } | null = null;
   if (!canViewLive) videoPlaceholder = { icon: Lock, text: "Jonli tasvirni ko'rish huquqi yo'q" };
@@ -78,90 +76,67 @@ export default function CameraDetailDrawer({
   else if (!camera.streamUrl) videoPlaceholder = { icon: VideoOff, text: 'Jonli oqim sozlanmagan' };
 
   return (
-    <Drawer
-      open
-      onClose={onClose}
-      title={camera.name}
-      subtitle={`${buildingName} · ${floor}-qavat · ${camera.zone}`}
-      width="max-w-2xl"
-    >
+    <Drawer open onClose={onClose} title={camera.name} subtitle={`${buildingName} · ${floor}-qavat · ${camera.zone}`} size="lg">
       <div className="space-y-4">
-        <div className="relative aspect-video overflow-hidden rounded-xl bg-slate-900">
+        <div className="relative aspect-video overflow-hidden rounded-card bg-black">
           {videoPlaceholder ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-slate-300">
-              <videoPlaceholder.icon size={26} className="text-slate-500" />
+            <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-white/60">
+              <videoPlaceholder.icon size={26} aria-hidden="true" className="text-white/40" />
               {videoPlaceholder.text}
             </div>
           ) : (
-            <LiveVideoPlayer
-              key={camera.id}
-              streamUrl={camera.streamUrl ?? undefined}
-              cameraId={camera.id}
-              priority
-              fit="contain"
-              className="h-full w-full"
-            />
+            <LiveVideoPlayer key={camera.id} streamUrl={camera.streamUrl ?? undefined} cameraId={camera.id} priority fit="contain" className="h-full w-full" />
           )}
           {camera.online && !camera.videoFlowing && (
-            <div className="absolute left-3 top-3 rounded-lg bg-amber-500/90 px-2 py-1 text-[11px] font-semibold text-white">
+            <div className="absolute left-3 top-3 rounded-control bg-warning px-2 py-1 text-[11px] font-semibold text-warning-fg">
               Kamera javob beryapti, lekin yaroqli kadr kelmayapti
             </div>
           )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={TONE_BADGE[tone]}>{MARKER_TONE_LABEL[tone]}</Badge>
-          <Badge tone="slate">{ADMIN_STATUS_LABEL[camera.status] ?? camera.status}</Badge>
-          {camera.ptzEnabled && <Badge tone="indigo">PTZ</Badge>}
+          <Badge tone={TONE_BADGE[tone]} dot>{MARKER_TONE_LABEL[tone]}</Badge>
+          <Badge>{ADMIN_STATUS_LABEL[camera.status] ?? camera.status}</Badge>
+          {camera.ptzEnabled && <Badge tone="primary">PTZ</Badge>}
           {camera.openEvents > 0 ? (
-            <Badge tone="red">24 soatda {camera.openEvents} ta ochiq signal</Badge>
+            <Badge tone="danger">24 soatda {camera.openEvents} ta ochiq signal</Badge>
           ) : (
-            <Badge tone="green">Ochiq signal yo'q</Badge>
+            <Badge tone="success">Ochiq signal yo&apos;q</Badge>
           )}
         </div>
 
         <section>
           <div className="mb-2 flex items-center justify-between gap-2">
-            <h4 className="flex items-center gap-1.5 text-sm font-bold text-slate-800">
-              <Siren size={15} className="text-red-500" /> Oxirgi signallar
-            </h4>
+            <h3 className="flex items-center gap-1.5 text-sm font-semibold text-fg">
+              <Siren size={15} aria-hidden="true" className="text-danger" /> Oxirgi signallar
+            </h3>
             {canReviewEvents && (
-              <Link to={eventsLink} className="flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:underline">
-                Hodisalar jurnali <ExternalLink size={12} />
-              </Link>
+              <ButtonLink to={eventsLink} size="sm" variant="ghost" iconRight={ExternalLink}>
+                Hodisalar
+              </ButtonLink>
             )}
           </div>
           {!canReviewEvents ? (
-            <p className="text-xs text-slate-500">Hodisalarni ko'rish huquqi yo'q.</p>
+            <p className="text-[13px] text-muted">Hodisalarni ko&apos;rish huquqi yo&apos;q.</p>
           ) : eventsError ? (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{eventsError}</p>
+            <ErrorState message={eventsError} />
           ) : eventsLoading && events.length === 0 ? (
-            <p className="flex items-center gap-2 text-xs text-slate-500">
-              <Loader2 size={13} className="animate-spin" /> Yuklanmoqda...
-            </p>
+            <SkeletonText lines={3} />
           ) : events.length === 0 ? (
-            <p className="text-xs text-slate-500">Bu kamerada signal qayd etilmagan.</p>
+            <EmptyState compact icon={Siren} title="Bu kamerada signal qayd etilmagan" />
           ) : (
-            <ul className="divide-y divide-slate-100 rounded-xl border border-slate-100 bg-white/70">
+            <ul className="divide-y divide-border rounded-card border border-border">
               {events.map((event) => (
                 <li key={event.id} className="flex items-center gap-3 px-3 py-2.5">
-                  <span
-                    className={`h-8 w-1 shrink-0 rounded-full ${
-                      SEVERITY_TONE[event.severity] === 'red'
-                        ? 'bg-red-500'
-                        : SEVERITY_TONE[event.severity] === 'amber'
-                          ? 'bg-amber-400'
-                          : 'bg-slate-300'
-                    }`}
-                  />
+                  <span className={cn('h-8 w-1 shrink-0 rounded-full', SEVERITY_STRIPE[event.severity])} aria-hidden="true" />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-slate-800">{event.moduleName}</p>
-                    <p className="truncate text-[11px] text-slate-500">
+                    <p className="truncate text-sm font-medium text-fg">{event.moduleName}</p>
+                    <p className="truncate text-xs text-muted">
                       {event.occurredAt ? relativeTime(event.occurredAt) : event.timestamp}
                       {event.personName ? ` · ${event.personName}` : ''}
                     </p>
                   </div>
-                  <Badge tone={STATUS_TONE[event.status] ?? 'slate'}>{STATUS_LABEL[event.status] ?? event.status}</Badge>
+                  <StatusBadge kind="event" status={event.status} />
                 </li>
               ))}
             </ul>

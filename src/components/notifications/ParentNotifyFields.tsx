@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Link2, Loader2, Unlink } from 'lucide-react';
-import { TextField } from '../FormField';
+import { Link2, Unlink } from 'lucide-react';
+import { Button, Field, Input, cn } from '../../ui';
 import TelegramLinkBox from './TelegramLinkBox';
 import { ApiError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
@@ -74,88 +74,73 @@ export default function ParentNotifyFields({
   }
 
   return (
-    <fieldset className="flex flex-col gap-3 rounded-xl border border-white/80 bg-white/40 p-3">
-      <legend className="px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-        {isStudent ? 'Ota-ona va turniket' : 'Turniket'}
-      </legend>
+    <fieldset className="flex min-w-0 flex-col gap-3 rounded-card border border-border bg-surface-2/60 p-3.5">
+      <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-muted">{isStudent ? 'Ota-ona va turniket' : 'Turniket'}</legend>
       {isStudent && (
         <>
-          <TextField
-            label="Ota-ona telefoni"
-            type="tel"
-            placeholder="+998 90 123 45 67"
-            autoComplete="off"
-            value={value.parentPhone}
-            disabled={disabled}
-            onChange={(e) => set('parentPhone', e.target.value)}
-            error={errors?.parentPhone}
-          />
-          <label className="flex items-start gap-2.5 text-sm">
+          <Field label="Ota-ona telefoni" error={errors?.parentPhone}>
+            <Input
+              type="tel"
+              placeholder="+998 90 123 45 67"
+              autoComplete="off"
+              value={value.parentPhone}
+              disabled={disabled}
+              onChange={(e) => set('parentPhone', e.target.value)}
+            />
+          </Field>
+          <label className={cn('flex items-start gap-2.5 text-sm', disabled && 'opacity-60')}>
             <input
               type="checkbox"
               checked={value.parentNotifyEnabled}
               disabled={disabled}
               onChange={(e) => set('parentNotifyEnabled', e.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+              className="mt-0.5 h-4 w-4 shrink-0 rounded border-border-strong accent-primary"
             />
-            <span className="text-slate-700">
+            <span className="text-fg">
               Ota-onaga xabar yuborilsin
-              <span className="block text-[11px] text-slate-400">
-                Institutga kelganda va kun oxirida kelmaganda (Telegram bog'langan bo'lsa Telegram, aks holda SMS).
+              <span className="block text-xs text-muted">
+                Institutga kelganda va kun oxirida kelmaganda (Telegram bog&apos;langan bo&apos;lsa Telegram, aks holda SMS).
               </span>
             </span>
           </label>
           {!personId && (
-            <p className="text-[11px] text-slate-400">
-              Ota-ona Telegramini bog'lash havolasi yozuv saqlangandan keyin tahrirlash oynasida yaratiladi.
-            </p>
+            <p className="text-xs text-muted">Ota-ona Telegramini bog&apos;lash havolasi yozuv saqlangandan keyin tahrirlash oynasida yaratiladi.</p>
           )}
           {personId && (
             <div className="flex flex-col gap-2">
               {telegramLinked ? (
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-emerald-50 px-3 py-2">
-                  <span className="text-xs font-semibold text-emerald-700">Ota-ona Telegrami bog'langan</span>
-                  <button
-                    type="button"
-                    onClick={unlink}
-                    disabled={busy}
-                    className="flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-xs font-semibold text-red-600 shadow-sm hover:bg-red-50 disabled:opacity-60"
-                  >
-                    <Unlink size={12} />
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-control bg-success-soft px-3 py-2">
+                  <span className="text-xs font-semibold text-success">Ota-ona Telegrami bog&apos;langan</span>
+                  <Button size="sm" variant="ghost" icon={Unlink} onClick={unlink} loading={busy} className="text-danger hover:text-danger">
                     Uzish
-                  </button>
+                  </Button>
                 </div>
               ) : link ? (
-                <TelegramLinkBox
-                  link={link}
-                  hint="Havolani ota-onaga yuboring: u havolani ochib Telegram'da «Start» ni bossa, bog'lanadi."
-                />
+                <TelegramLinkBox link={link} hint="Havolani ota-onaga yuboring: u havolani ochib Telegram'da «Start» ni bossa, bog'lanadi." />
               ) : (
-                <button
-                  type="button"
-                  onClick={createLink}
-                  disabled={busy || disabled}
-                  className="btn-glass flex items-center justify-center gap-1.5 !py-1.5 text-xs"
-                >
-                  {busy ? <Loader2 size={13} className="animate-spin" /> : <Link2 size={13} />}
-                  Ota-ona Telegramini bog'lash
-                </button>
+                <Button size="sm" icon={Link2} onClick={createLink} loading={busy} disabled={disabled}>
+                  Ota-ona Telegramini bog&apos;lash
+                </Button>
               )}
-              {linkError && <p className="text-xs font-medium text-red-500">{linkError}</p>}
+              {linkError && (
+                <p role="alert" className="text-xs font-medium text-danger">
+                  {linkError}
+                </p>
+              )}
             </div>
           )}
         </>
       )}
-      <TextField
-        label="Kirish kartasi raqami (ixtiyoriy)"
-        autoComplete="off"
-        maxLength={64}
-        placeholder="Turniket o'qiydigan raqam"
-        value={value.cardNumber}
-        disabled={disabled}
-        onChange={(e) => set('cardNumber', e.target.value)}
-        error={errors?.cardNumber}
-      />
+      <Field label="Kirish kartasi raqami (ixtiyoriy)" error={errors?.cardNumber}>
+        <Input
+          autoComplete="off"
+          maxLength={64}
+          placeholder="Turniket o'qiydigan raqam"
+          value={value.cardNumber}
+          disabled={disabled}
+          onChange={(e) => set('cardNumber', e.target.value)}
+        />
+      </Field>
     </fieldset>
   );
 }

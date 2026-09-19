@@ -102,11 +102,11 @@ async def test_event_message_format(monkeypatch):
     assert "Daraja: Yuqori" in html_text
     # UTC 09:05 -> Toshkent 14:05
     assert "Vaqt: 19.09.2026 14:05:07" in html_text
-    assert '<a href="https://markaz.example.uz/admin/events?id=abc">Hodisani ochish</a>' in html_text
+    assert '<a href="https://markaz.example.uz/hodisalar?id=abc">Hodisani ochish</a>' in html_text
     assert "Shaxs" not in html_text  # bo'sh qiymat yozilmaydi
     plain = msg.plain()
     assert "<" not in plain.replace("<aniqlash>", "")
-    assert plain.endswith("https://markaz.example.uz/admin/events?id=abc")
+    assert plain.endswith("https://markaz.example.uz/hodisalar?id=abc")
     assert msg.sms().startswith(f"{settings.org_name}: AI hodisa: Yong'in <aniqlash>. Kirish-1, Bosh bino, Yuqori")
 
 
@@ -298,7 +298,7 @@ async def test_notify_event_sends_to_matching_rules_and_logs(apis, db_session):
     tg = apis.of("sendMessage")
     assert sorted(c.body["chat_id"] for c in tg) == ["-100222", "111"]
     assert "AI hodisa: Yong&#x27;in aniqlash" in tg[0].body["text"]
-    assert f"/admin/events?id={event.id}" in tg[0].body["text"]
+    assert f"/hodisalar?id={event.id}" in tg[0].body["text"]
     assert "Vaqt: 19.09.2026 09:00:00" in tg[0].body["text"]
     sent_sms = apis.of("message/sms/send")
     assert len(sent_sms) == 1 and sent_sms[0].body["mobile_phone"] == "998901112233"

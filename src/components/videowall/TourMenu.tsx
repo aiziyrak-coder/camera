@@ -1,4 +1,5 @@
 import { Pause, Play, Repeat } from 'lucide-react';
+import { Button, Input, Tabs } from '../../ui';
 import {
   TOUR_MAX_SECONDS,
   TOUR_MIN_SECONDS,
@@ -27,6 +28,11 @@ export function sanitizeTour(raw: unknown): TourSettings {
   };
 }
 
+const KIND_TABS = [
+  { id: 'views' as const, label: "Ko'rinishlar" },
+  { id: 'pages' as const, label: 'Kamera sahifalari' },
+];
+
 /** Aylanish (tur): saqlangan ko'rinishlar yoki filtrlangan kameralar
  * sahifalari har N soniyada almashadi. Katak kattalashtirilganda yoki
  * varaq fonda bo'lsa tur to'xtab turadi. */
@@ -37,6 +43,7 @@ export default function TourMenu({
   onToggle,
   views,
   pages,
+  align = 'right',
 }: {
   settings: TourSettings;
   onChange: (next: TourSettings) => void;
@@ -44,75 +51,72 @@ export default function TourMenu({
   onToggle: () => void;
   views: WallView[];
   pages: number;
+  align?: 'left' | 'right';
 }) {
   const selected = new Set(settings.viewIds);
   const canRun = settings.kind === 'views' ? views.length >= 2 : pages >= 2;
 
   return (
     <WallPopover
-      icon={running ? <Repeat size={14} className="animate-spin [animation-duration:3s]" /> : <Repeat size={14} />}
+      icon={<Repeat size={16} aria-hidden="true" className={running ? 'animate-spin [animation-duration:3s] motion-reduce:animate-none' : undefined} />}
       label={running ? `Tur · ${settings.intervalSec}s` : 'Tur'}
       active={running}
       title="Aylanish rejimi (T)"
+      align={align}
       widthClass="w-72"
     >
       {() => (
-        <div className="space-y-3 text-xs">
-          <p className="text-sm font-bold">Aylanish rejimi</p>
-          <div role="tablist" aria-label="Tur turi" className="flex gap-1 rounded-lg bg-slate-800 p-0.5">
-            {(
-              [
-                ['views', "Ko'rinishlar"],
-                ['pages', 'Kamera sahifalari'],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                role="tab"
-                aria-selected={settings.kind === value}
-                onClick={() => onChange({ ...settings, kind: value })}
-                className={`flex-1 rounded-md px-2 py-1 font-semibold ${
-                  settings.kind === value ? 'bg-indigo-600 text-white' : 'text-white/60 hover:text-white'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+        <div className="space-y-3 text-[13px]">
+          <p className="text-sm font-semibold">Aylanish rejimi</p>
+          <Tabs
+            variant="segmented"
+            size="sm"
+            ariaLabel="Tur turi"
+            tabs={KIND_TABS}
+            value={settings.kind}
+            onChange={(kind) => onChange({ ...settings, kind })}
+            className="w-full [&>button]:flex-1 [&>button]:justify-center"
+          />
 
-          <label className="block font-semibold text-white/70">
-            Almashish oralig&apos;i: {settings.intervalSec} soniya
-            <input
-              type="range"
-              min={TOUR_MIN_SECONDS}
-              max={120}
-              step={5}
-              value={Math.min(settings.intervalSec, 120)}
-              onChange={(event) => onChange({ ...settings, intervalSec: normalizeTourInterval(Number(event.target.value)) })}
-              className="mt-1 w-full accent-indigo-400"
-            />
-            <input
-              type="number"
-              min={TOUR_MIN_SECONDS}
-              max={TOUR_MAX_SECONDS}
-              value={settings.intervalSec}
-              onChange={(event) => onChange({ ...settings, intervalSec: normalizeTourInterval(Number(event.target.value)) })}
-              aria-label="Oraliq (soniya)"
-              className="mt-1 w-20 rounded-md border border-white/10 bg-slate-800 px-2 py-1 text-xs outline-none"
-            />
-          </label>
+          <div>
+            <label className="block font-medium text-fg" htmlFor="videowall-tour-range">
+              Almashish oralig&apos;i: <span className="tabular-nums">{settings.intervalSec}</span> soniya
+            </label>
+            <div className="mt-1.5 flex items-center gap-2">
+              <input
+                id="videowall-tour-range"
+                type="range"
+                min={TOUR_MIN_SECONDS}
+                max={120}
+                step={5}
+                value={Math.min(settings.intervalSec, 120)}
+                onChange={(event) => onChange({ ...settings, intervalSec: normalizeTourInterval(Number(event.target.value)) })}
+                className="min-w-0 flex-1 accent-primary"
+              />
+              <Input
+                type="number"
+                size="sm"
+                min={TOUR_MIN_SECONDS}
+                max={TOUR_MAX_SECONDS}
+                value={settings.intervalSec}
+                onChange={(event) => onChange({ ...settings, intervalSec: normalizeTourInterval(Number(event.target.value)) })}
+                aria-label="Oraliq (soniya)"
+                className="w-20 shrink-0"
+              />
+            </div>
+          </div>
 
           {settings.kind === 'views' ? (
             <div>
-              <p className="mb-1 font-semibold text-white/70">Qaysi ko&apos;rinishlar (tanlanmasa — hammasi)</p>
+              <p className="mb-1 font-medium text-fg">Qaysi ko&apos;rinishlar</p>
+              <p className="mb-1.5 text-xs text-muted">Tanlanmasa — hammasi.</p>
               {views.length === 0 ? (
-                <p className="text-white/40">Avval ko&apos;rinishlarni saqlang.</p>
+                <p className="text-muted">Avval ko&apos;rinishlarni saqlang.</p>
               ) : (
                 <ul className="max-h-40 space-y-0.5 overflow-y-auto">
                   {views.map((view) => (
                     <li key={view.id}>
-                      <label className="flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-white/5">
+                      <label className="flex items-center gap-2 rounded-[6px] px-1.5 py-1 hover:bg-surface-2">
                         <input
                           type="checkbox"
                           checked={selected.has(view.id)}
@@ -122,7 +126,7 @@ export default function TourMenu({
                             else next.delete(view.id);
                             onChange({ ...settings, viewIds: [...next] });
                           }}
-                          className="h-3.5 w-3.5 accent-indigo-500"
+                          className="h-4 w-4 accent-primary"
                         />
                         <span className="truncate">{view.name}</span>
                       </label>
@@ -132,24 +136,22 @@ export default function TourMenu({
               )}
             </div>
           ) : (
-            <p className="text-white/50">
+            <p className="text-muted">
               Yon paneldagi filtrga mos kameralar setka sig&apos;imi bo&apos;yicha sahifalanadi ({pages} sahifa).
             </p>
           )}
 
-          <button
-            type="button"
+          <Button
+            variant={running ? 'danger' : 'primary'}
+            icon={running ? Pause : Play}
+            fullWidth
             onClick={onToggle}
             disabled={!running && !canRun}
-            className={`flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 font-semibold disabled:opacity-40 ${
-              running ? 'bg-rose-600 hover:bg-rose-500' : 'bg-indigo-600 hover:bg-indigo-500'
-            }`}
           >
-            {running ? <Pause size={13} /> : <Play size={13} />}
             {running ? "To'xtatish" : 'Boshlash'}
-          </button>
+          </Button>
           {!running && !canRun && (
-            <p className="text-[10px] text-amber-300">
+            <p className="text-xs text-warning">
               {settings.kind === 'views' ? "Kamida 2 ta ko'rinish kerak." : "Kamida 2 sahifa bo'lishi kerak."}
             </p>
           )}

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Check, RotateCcw, ScanFace, VideoOff } from 'lucide-react';
+import { Check, Loader2, RotateCcw, ScanFace, VideoOff } from 'lucide-react';
+import { Button, cn } from '../../ui';
+import { Notice } from '../settings/kit';
 import { type LivenessStep, LIVENESS_STEPS, checkPose } from '../../lib/enrollment';
 
 interface EnrollmentFaceCaptureProps {
@@ -242,21 +244,12 @@ export default function EnrollmentFaceCapture({
   if (cameraError) {
     return (
       <div className="flex flex-col gap-4">
-        <div className="flex items-start gap-2 rounded-xl bg-red-50 p-4 text-sm text-red-600">
-          <VideoOff size={18} className="mt-0.5 shrink-0" />
-          <div>
-            <p className="font-semibold">Kamera ochilmadi</p>
-            <p className="mt-1 leading-relaxed">{cameraError}</p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => window.location.reload()}
-          className="btn-glass flex items-center justify-center gap-1.5"
-        >
-          <RotateCcw size={15} />
+        <Notice tone="danger" icon={VideoOff} title="Kamera ochilmadi">
+          {cameraError}
+        </Notice>
+        <Button size="lg" icon={RotateCcw} onClick={() => window.location.reload()} fullWidth>
           Qayta urinish
-        </button>
+        </Button>
       </div>
     );
   }
@@ -267,10 +260,8 @@ export default function EnrollmentFaceCapture({
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <p className="text-sm font-semibold text-slate-900">
-          Yuzingizni kamera orqali tasdiqlang
-        </p>
-        <p className="mt-1 text-xs leading-relaxed text-slate-500">
+        <h2 className="text-base font-semibold text-fg">Yuzingizni kamera orqali tasdiqlang</h2>
+        <p className="mt-1 text-[13px] leading-relaxed text-muted">
           Uch bosqich: to&apos;g&apos;riga qarang, so&apos;ng boshingizni chapga va o&apos;ngga
           buring. Yorug&apos; joyda turing, ko&apos;zoynak va niqobni oling.
         </p>
@@ -281,13 +272,10 @@ export default function EnrollmentFaceCapture({
         <ProgressRing done={captured.length} total={total} active={matching} />
 
         <div
-          className={`absolute inset-[9%] overflow-hidden rounded-full border-[3px] transition-colors duration-200 ${
-            matching
-              ? 'border-emerald-400'
-              : finished
-                ? 'border-emerald-500'
-                : 'border-white/70'
-          }`}
+          className={cn(
+            'absolute inset-[9%] overflow-hidden rounded-full border-[3px] bg-surface-2 transition-colors duration-200',
+            matching || finished ? 'border-success' : 'border-border-strong',
+          )}
         >
           <video
             ref={videoRef}
@@ -297,7 +285,7 @@ export default function EnrollmentFaceCapture({
             className="h-full w-full scale-x-[-1] object-cover"
           />
           {!ready && (
-            <div className="absolute inset-0 flex items-center justify-center bg-slate-900/70 text-white">
+            <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-white">
               <ScanFace size={30} className="animate-pulse" />
             </div>
           )}
@@ -306,9 +294,10 @@ export default function EnrollmentFaceCapture({
         {/* Burilish yo'nalishi ko'rsatkichi */}
         {ui?.arrow && !matching && (
           <span
-            className={`pointer-events-none absolute top-1/2 -translate-y-1/2 text-4xl font-bold text-indigo-400 ${
-              step === 'left' ? 'left-0' : 'right-0'
-            } animate-pulse`}
+            className={cn(
+              'pointer-events-none absolute top-1/2 -translate-y-1/2 animate-pulse text-4xl font-bold text-primary',
+              step === 'left' ? 'left-0' : 'right-0',
+            )}
             aria-hidden
           >
             {ui.arrow}
@@ -319,19 +308,17 @@ export default function EnrollmentFaceCapture({
       {/* Bosqich va maslahat */}
       <div className="text-center">
         {finished ? (
-          <p className="flex items-center justify-center gap-1.5 text-sm font-bold text-emerald-600">
+          <p className="flex items-center justify-center gap-1.5 text-sm font-semibold text-success">
             <Check size={16} />
             Uchala bosqich bajarildi
           </p>
         ) : (
           <>
-            <p className="text-sm font-bold text-slate-900">
+            <p className="text-[15px] font-semibold text-fg" aria-live="polite">
               {stepIndex + 1}/{total} — {ui?.title}
             </p>
             <p
-              className={`mt-1 text-xs font-medium transition-colors ${
-                matching ? 'text-emerald-600' : 'text-slate-500'
-              }`}
+              className={cn('mt-1 text-[13px] font-medium transition-colors', matching ? 'text-success' : 'text-muted')}
             >
               {hint || ui?.hint}
             </p>
@@ -345,14 +332,15 @@ export default function EnrollmentFaceCapture({
           {LIVENESS_STEPS.map((s, i) => (
             <div
               key={s}
-              className={`h-14 w-14 overflow-hidden rounded-xl border-2 ${
-                captured[i] ? 'border-emerald-400' : 'border-dashed border-slate-300'
-              }`}
+              className={cn(
+                'h-14 w-14 overflow-hidden rounded-control border-2',
+                captured[i] ? 'border-success' : 'border-dashed border-border-strong',
+              )}
             >
               {captured[i] ? (
                 <img src={captured[i]} alt="" className="h-full w-full scale-x-[-1] object-cover" />
               ) : (
-                <div className="flex h-full w-full items-center justify-center text-[10px] text-slate-400">
+                <div className="flex h-full w-full items-center justify-center text-xs text-subtle">
                   {i + 1}
                 </div>
               )}
@@ -362,27 +350,20 @@ export default function EnrollmentFaceCapture({
       )}
 
       {externalError && (
-        <div className="flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-700">
-          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-          <span>{externalError} Bosqichlar boshidan boshlandi.</span>
-        </div>
+        <Notice tone="warning">{externalError} Bosqichlar boshidan boshlandi.</Notice>
       )}
 
       {submitting && (
-        <p className="text-center text-xs font-medium text-indigo-600">
+        <p className="flex items-center justify-center gap-1.5 text-center text-[13px] font-medium text-primary" role="status">
+          <Loader2 size={14} className="animate-spin" aria-hidden="true" />
           Yuz saqlanmoqda...
         </p>
       )}
 
       {captured.length > 0 && !submitting && (
-        <button
-          type="button"
-          onClick={restart}
-          className="mx-auto flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-slate-600"
-        >
-          <RotateCcw size={13} />
+        <Button variant="ghost" size="sm" icon={RotateCcw} onClick={restart} className="mx-auto">
           Boshidan boshlash
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -410,13 +391,7 @@ function ProgressRing({ done, total, active }: { done: number; total: number; ac
             y2={50 + 49 * Math.sin(rad)}
             strokeWidth={1.6}
             strokeLinecap="round"
-            className={
-              isDone
-                ? 'stroke-emerald-400'
-                : isActive
-                  ? 'stroke-indigo-400 animate-pulse'
-                  : 'stroke-slate-300'
-            }
+            className={isDone ? 'stroke-success' : isActive ? 'animate-pulse stroke-primary' : 'stroke-border-strong'}
           />
         );
       })}

@@ -1,0 +1,350 @@
+import { useEffect, useMemo, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import { BookOpen, CalendarCheck, Clock, LayoutGrid, Rows3, Timer, UserCheck, Users } from 'lucide-react';
+import {
+  Avatar,
+  Badge,
+  DataTable,
+  DateRangePicker,
+  EmptyState,
+  ErrorState,
+  KeyValue,
+  Page,
+  PageSkeleton,
+  PersonCard,
+  PersonGrid,
+  ProgressRing,
+  SearchInput,
+  Select,
+  StatTile,
+  StatusBadge,
+  Tabs,
+  Toolbar,
+  formatPercent,
+  formatUzRange,
+  rangeForPreset,
+  toneForRate,
+  useShell,
+  useUrlTab,
+  type DataTableColumn,
+  type DateRangeValue,
+  type TabItem,
+} from '../../ui';
+import { LessonDrawer } from '../../components/lessons/LessonDrawer';
+import { LessonsTable } from '../../components/lessons/LessonsTable';
+import { TeacherCardMeta, TodayLessons } from '../../components/teachers/TeacherBits';
+import { TeacherDayDrawer } from '../../components/teachers/TeacherDayDrawer';
+import { useLoader } from '../../components/teachers/useLoader';
+import { getKafedra, getLessons, type KafedraDetail, type KafedraTeacher, type Lesson } from '../../lib/situationApi';
+import { matchesName, sortTeachers, type TeacherSort } from '../../lib/teachersApi';
+import { usePersistedState } from '../../lib/usePersistedState';
+import { useViewDate } from '../../lib/viewDate';
+import type { FixedPreset } from '../../lib/reportPeriods';
+
+type TabId = 'oqituvchilar' | 'darslar';
+type View = 'grid' | 'table';
+
+const PERIOD_PRESETS: readonly FixedPreset[] = ['last7', 'last30', 'month'];
+const SORT_OPTIONS: { value: TeacherSort; label: string }[] = [
+  { value: 'lateness', label: 'Kechikish bo‘yicha' },
+  { value: 'onTime', label: "O'z vaqtida % (past birinchi)" },
+  { value: 'activity', label: 'Faollik (yuqori birinchi)' },
+  { value: 'name', label: 'F.I.Sh.' },
+];
+const REFRESH_MS = 60_000;
+
+export default function KafedraPage() {
+  const { departmentId = '' } = useParams();
+  const { date, isToday } = useViewDate();
+  const { presentation } = useShell();
+
+  // Punktuallik davri: standart — ko'rilayotgan sanagacha 30 kun.
+  const [period, setPeriod] = useState<DateRangeValue>(() => rangeForPreset('last30', date));
+  const [view, setView] = usePersistedState<View>('kafedra.view', 'grid');
+  const [sort, setSort] = usePersistedState<TeacherSort>('kafedra.sort', 'lateness');
+  const [search, setSearch] = useState('');
+  useEffect(() => {
+    setPeriod((p) => (p.preset === 'custom' ? p : rangeForPreset(p.preset as FixedPreset, date)));
+  }, [date]);
+
+  const periodValid = period.from <= period.to;
+  const detailKey = periodValid ? `${departmentId}:${date}:${period.from}:${period.to}` : null;
+  const detail = useLoader(
+    detailKey,
+    (signal) => getKafedra(departmentId, { date, from: period.from, to: period.to }, { signal }),
+    { refreshMs: isToday ? REFRESH_MS : undefined, group: `${departmentId}:${date}` },
+  );
+  const lessons = useLoader(
+    `${departmentId}:${date}`,
+    (signal) => getLessons({ date, departmentId, pageSize: 500 }, { signal }),
+    { refreshMs: isToday ? REFRESH_MS : undefined },
+  );
+
+  const data = detail.data;
+  const tabs: TabItem<TabId>[] = [
+    { id: 'oqituvchilar', label: "O'qituvchilar", icon: Users, count: data?.teachers.length ?? null },
+    { id: 'darslar', label: 'Darslar', icon: BookOpen, count: lessons.data?.total ?? null },
+  ];
+  const [tab] = useUrlTab(tabs, { defaultTab: 'oqituvchilar' });
+
+  const notFound = detail.error && !data && /topilmadi|404/i.test(detail.error);
+  const title = data?.name ?? (notFound ? 'Kafedra topilmadi' : 'Kafedra');
+
+  if (detail.loading && !data && !detail.error) {
+    return (
+      <Page title="Kafedra" breadcrumbs={[{ label: "O'qituvchilar", to: '/oqituvchilar' }, { label: 'Kafedra' }]}>
+        <PageSkeleton />
+      </Page>
+    );
+  }
+
+  return (
+    <Page
+      title={title}
+      subtitle={data ? [data.building, `${data.today.total} xodim`, data.unassigned ? "lavozimi hech bir kafedra nomiga mos kelmagan xodimlar" : null].filter(Boolean).join(' · ') : undefined}
+      titleAddon={data?.unassigned ? <Badge tone="warning">Biriktirilmagan</Badge> : undefined}
+      breadcrumbs={[{ label: "O'qituvchilar", to: '/oqituvchilar' }, { label: title }]}
+      tabs={data ? tabs : undefined}
+      defaultTab="oqituvchilar"
+      toolbar={
+        data && tab === 'oqituvchilar' ? (
+          <Toolbar
+            end={
+              !presentation && (
+                <Tabs
+                  variant="segmented"
+                  size="sm"
+                  value={view}
+                  onChange={setView}
+                  ariaLabel="Ko'rinish"
+                  tabs={[
+                    { id: 'grid', label: 'Yuzlar', icon: LayoutGrid },
+                    { id: 'table', label: 'Jadval', icon: Rows3 },
+                  ]}
+                />
+              )
+            }
+          >
+            <SearchInput value={search} onChange={setSearch} placeholder="Ism bo'yicha…" ariaLabel="O'qituvchini qidirish" />
+            <Select value={sort} onChange={(v) => setSort(v as TeacherSort)} options={SORT_OPTIONS} label="Tartib:" ariaLabel="Tartiblash" />
+            {!presentation && <DateRangePicker value={period} onChange={setPeriod} presets={PERIOD_PRESETS} size="sm" showSummary={false} />}
+          </Toolbar>
+        ) : undefined
+      }
+    >
+      {detail.error && !data ? (
+        notFound ? (
+          <EmptyState icon={Users} title="Kafedra topilmadi" description="Kafedra o'chirilgan yoki havola noto'g'ri. O'qituvchilar ro'yxatiga qayting." />
+        ) : (
+          <ErrorState variant="block" message={detail.error} onRetry={detail.reload} />
+        )
+      ) : data ? (
+        <>
+          <KafedraTiles data={data} />
+          {tab === 'oqituvchilar' ? (
+            <TeachersSection data={data} date={date} view={presentation ? 'grid' : view} sort={sort} search={search} />
+          ) : (
+            <LessonsSection
+              rows={lessons.data?.items ?? []}
+              loading={lessons.loading}
+              error={lessons.data ? null : lessons.error}
+              onRetry={lessons.reload}
+            />
+          )}
+        </>
+      ) : null}
+    </Page>
+  );
+}
+
+function KafedraTiles({ data }: { data: KafedraDetail }) {
+  const t = data.today;
+  const p = data.period;
+  const checked = p.onTime + p.late + p.missed;
+  return (
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <StatTile
+        label="Xodimlar keldi"
+        icon={UserCheck}
+        tone={toneForRate(t.rate)}
+        value={t.present}
+        unit={`/ ${t.total}`}
+        progress={t.rate}
+        hint={`${formatPercent(t.rate)} · ${t.absent} kelmadi${t.notYet ? ` · ${t.notYet} hali kelmagan` : ''}`}
+      />
+      <StatTile label="Kech qolganlar" icon={Timer} tone={t.late ? 'warning' : 'neutral'} value={t.late} hint={t.noData ? `${t.noData} kishida ma'lumot yo'q` : undefined} />
+      <StatTile
+        label="Darsga o'z vaqtida"
+        icon={Clock}
+        tone={toneForRate(p.onTimeRate)}
+        value={formatPercent(p.onTimeRate)}
+        progress={p.onTimeRate}
+        hint={`${formatUzRange(p.dateFrom, p.dateTo)} · ${p.onTime}/${checked} dars`}
+      />
+      <StatTile
+        label="Kechikkan / kelmagan darslar"
+        icon={CalendarCheck}
+        tone={p.late + p.missed ? 'danger' : 'neutral'}
+        value={`${p.late} / ${p.missed}`}
+        hint={`Davrda ${p.lessons} dars · o'rtacha faollik ${p.avgActivityScore === null ? '—' : `${Math.round(p.avgActivityScore)}%`}`}
+      />
+    </div>
+  );
+}
+
+function TeachersSection({ data, date, view, sort, search }: { data: KafedraDetail; date: string; view: View; sort: TeacherSort; search: string }) {
+  const { presentation } = useShell();
+  const [selected, setSelected] = useState<KafedraTeacher | null>(null);
+
+  const rows = useMemo(() => {
+    const filtered = search.trim() ? data.teachers.filter((t) => matchesName(t.fullName, search)) : data.teachers;
+    return sortTeachers(filtered, sort);
+  }, [data.teachers, search, sort]);
+
+  const columns: DataTableColumn<KafedraTeacher>[] = [
+    {
+      key: 'name',
+      header: "O'qituvchi",
+      cell: (t) => (
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar name={t.fullName} src={t.photoUrl} size="md" />
+          <div className="min-w-0">
+            <p className="truncate font-medium text-fg">{t.fullName}</p>
+            <p className="truncate text-xs text-muted">{t.position}</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Bugun',
+      cell: (t) => <StatusBadge status={t.status === 'malumot_yoq' ? 'nomalum' : t.status} time={t.checkIn} />,
+    },
+    { key: 'lessons', header: 'Darslar', cell: (t) => <TodayLessons t={t} /> },
+    {
+      key: 'onTime',
+      header: "O'z vaqtida (davr)",
+      cell: (t) => (
+        <div className="flex items-center gap-2.5">
+          <ProgressRing value={t.onTimeRate} size={34} thickness={4} />
+          <span className="text-xs tabular-nums text-muted">
+            {t.periodLessons} dars
+            {t.periodLate > 0 && <span className="text-warning"> · {t.periodLate} kech</span>}
+            {t.periodMissed > 0 && <span className="text-danger"> · {t.periodMissed} yo'q</span>}
+          </span>
+        </div>
+      ),
+    },
+    {
+      key: 'days',
+      header: 'Ishga kelish (davr)',
+      hideOnMobile: true,
+      cell: (t) => (
+        <span className="text-xs tabular-nums text-muted">
+          <span className="font-medium text-fg">{t.periodPresentDays}</span> kun
+          {t.periodLateDays > 0 && <span className="text-warning"> · {t.periodLateDays} kech</span>}
+          {t.periodAbsentDays > 0 && <span className="text-danger"> · {t.periodAbsentDays} yo'q</span>}
+        </span>
+      ),
+    },
+    {
+      key: 'activity',
+      header: 'Faollik',
+      align: 'right',
+      cell: (t) => (t.avgActivityScore === null ? <span className="text-subtle">—</span> : `${Math.round(t.avgActivityScore)}%`),
+    },
+  ];
+
+  return (
+    <>
+      {data.teachers.length === 0 ? (
+        <EmptyState
+          icon={Users}
+          title="Bu kafedrada xodim yo'q"
+          description="Xodim kafedraga reestrdagi lavozimi (bo'limi) kafedra nomi bilan bir xil bo'lganda bog'lanadi."
+        />
+      ) : rows.length === 0 ? (
+        <EmptyState icon={Users} compact title="Hech kim topilmadi" description="Qidiruv so'zini o'zgartiring." />
+      ) : view === 'grid' ? (
+        <PersonGrid minItemWidth={presentation ? 170 : 180}>
+          {rows.map((t) => (
+            <PersonCard
+              key={t.id}
+              name={t.fullName}
+              photoUrl={t.photoUrl}
+              subtitle={t.position}
+              status={t.status === 'malumot_yoq' ? 'nomalum' : t.status}
+              time={t.checkIn}
+              meta={<TeacherCardMeta t={t} />}
+              onClick={() => setSelected(t)}
+              selected={selected?.id === t.id}
+            />
+          ))}
+        </PersonGrid>
+      ) : (
+        <DataTable
+          columns={columns}
+          rows={rows}
+          rowKey={(t) => t.id}
+          onRowClick={setSelected}
+          selectedKey={selected?.id ?? null}
+          manualSort
+          rowTone={(t) => (t.lessonsMissed ? 'danger' : t.lessonsLate || t.status === 'kech_keldi' ? 'warning' : null)}
+          ariaLabel="Kafedra o'qituvchilari"
+        />
+      )}
+
+      <TeacherDayDrawer
+        person={selected ? { id: selected.id, fullName: selected.fullName, photoUrl: selected.photoUrl, subtitle: selected.position } : null}
+        date={date}
+        onClose={() => setSelected(null)}
+      >
+        {selected && (
+          <div className="rounded-card border border-border bg-surface-2 p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-fg">Davr: {formatUzRange(data.period.dateFrom, data.period.dateTo)}</p>
+                <p className="text-xs text-muted">Darsga o'z vaqtida kelish va ishga kelish</p>
+              </div>
+              <ProgressRing value={selected.onTimeRate} size={52} ariaLabel="O'z vaqtida" />
+            </div>
+            <KeyValue
+              layout="stacked"
+              columns={4}
+              items={[
+                { label: 'Darslar', value: selected.periodLessons },
+                { label: "O'z vaqtida", value: selected.periodOnTime },
+                { label: 'Kechikkan', value: selected.periodLate },
+                { label: 'Kelmagan', value: selected.periodMissed },
+                { label: 'Kelgan kunlar', value: selected.periodPresentDays },
+                { label: 'Kech kelgan kunlar', value: selected.periodLateDays },
+                { label: 'Kelmagan kunlar', value: selected.periodAbsentDays },
+                { label: "O'rtacha faollik", value: selected.avgActivityScore === null ? '—' : `${Math.round(selected.avgActivityScore)}%` },
+              ]}
+            />
+          </div>
+        )}
+      </TeacherDayDrawer>
+    </>
+  );
+}
+
+function LessonsSection({ rows, loading, error, onRetry }: { rows: Lesson[]; loading: boolean; error: string | null; onRetry: () => void }) {
+  const [selected, setSelected] = useState<Lesson | null>(null);
+  return (
+    <>
+      <LessonsTable
+        rows={rows}
+        loading={loading}
+        error={error}
+        onRetry={onRetry}
+        onRowClick={setSelected}
+        selectedId={selected?.id ?? null}
+        showState
+        emptyTitle="Bu kunda kafedra o'qituvchilarining darsi yo'q"
+        emptyDescription="Darslar o'qituvchi (teacherId) bo'yicha kafedraga bog'lanadi."
+      />
+      <LessonDrawer lesson={selected} onClose={() => setSelected(null)} />
+    </>
+  );
+}

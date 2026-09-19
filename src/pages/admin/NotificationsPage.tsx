@@ -1,14 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BellRing, Loader2, MessageSquare, Pencil, Plus, Send, Trash2 } from 'lucide-react';
-import PageHeader from '../../components/PageHeader';
-import Badge from '../../components/Badge';
-import ConfirmDialog from '../../components/ConfirmDialog';
-import EmptyState from '../../components/ui/EmptyState';
-import ErrorState from '../../components/ui/ErrorState';
-import { useToast } from '../../components/ui/Toast';
+import { BellRing, History, MessageSquare, Pencil, Plus, Radio, Send, Trash2 } from 'lucide-react';
+import { Badge, Button, ConfirmDialog, DataTable, IconButton, Page, useToast, useUrlTab, type DataTableColumn, type TabItem } from '../../ui';
+import { Notice, Switch } from '../../components/settings/kit';
 import NotificationRuleModal from '../../components/notifications/NotificationRuleModal';
 import NotificationStatusCard from '../../components/notifications/NotificationStatusCard';
-import NotificationLogTable from '../../components/notifications/NotificationLogTable';
+import NotificationLogTable, { NotificationLogToolbar, type LogFilters } from '../../components/notifications/NotificationLogTable';
 import MyTelegramCard from '../../components/notifications/MyTelegramCard';
 import TestMessageModal from '../../components/notifications/TestMessageModal';
 import { ApiError } from '../../lib/apiClient';
@@ -16,20 +12,16 @@ import { useAuth } from '../../lib/auth';
 import { useAiModules } from '../../lib/useAiModules';
 import { useApiResource } from '../../lib/useApiResource';
 import { useBuildings } from '../../lib/useBuildings';
-import {
-  describeRuleFilters,
-  kindLabel,
-  notificationsApi,
-  type NotificationRule,
-  type NotificationStatus,
-} from '../../lib/notificationsApi';
+import { describeRuleFilters, kindLabel, notificationsApi, type NotificationRule, type NotificationStatus } from '../../lib/notificationsApi';
+
+type Tab = 'qoidalar' | 'kanallar' | 'jurnal';
 
 export default function NotificationsPage() {
   const { token } = useAuth();
   const toast = useToast();
   const { modules } = useAiModules();
   const { buildings } = useBuildings();
-  const { data: status, loading: statusLoading } = useApiResource<NotificationStatus>('/api/notifications/status');
+  const { data: status, loading: statusLoading, error: statusError, reload: reloadStatus } = useApiResource<NotificationStatus>('/api/notifications/status');
 
   const [rules, setRules] = useState<NotificationRule[]>([]);
   const [rulesLoading, setRulesLoading] = useState(true);
@@ -40,6 +32,17 @@ export default function NotificationsPage() {
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [testOpen, setTestOpen] = useState(false);
   const [logRefresh, setLogRefresh] = useState(0);
+  const [logFilters, setLogFilters] = useState<LogFilters>({ search: '', status: '', channel: '', kind: '' });
+
+  const tabs = useMemo<readonly TabItem<Tab>[]>(
+    () => [
+      { id: 'qoidalar', label: 'Qoidalar', icon: BellRing, count: rulesLoading ? null : rules.length },
+      { id: 'kanallar', label: 'Kanallar', icon: Radio },
+      { id: 'jurnal', label: 'Yetkazish jurnali', icon: History },
+    ],
+    [rulesLoading, rules.length],
+  );
+  const [tab] = useUrlTab(tabs);
 
   const loadRules = useCallback(async () => {
     if (!token) return;
@@ -107,133 +110,164 @@ export default function NotificationsPage() {
 
   const noChannel = status && !status.telegramConfigured && !status.smsConfigured;
 
-  return (
-    <div className="space-y-4">
-      <section className="glass p-6">
-        <PageHeader
-          title="Bildirishnomalar"
-          subtitle="AI hodisalari, kamera holati va turniket signallari — Telegram va SMS orqali"
-          action={
-            <button
-              onClick={openCreate}
-              className="btn-glass flex items-center gap-1.5 !bg-indigo-600 !text-white hover:!bg-indigo-700"
+  const columns: DataTableColumn<NotificationRule>[] = [
+    {
+      key: 'name',
+      header: 'Qoida',
+      sortValue: (r) => r.name,
+      cell: (rule) => {
+        const ChannelIcon = rule.channel === 'telegram' ? Send : MessageSquare;
+        return (
+          <div className="flex min-w-0 items-start gap-3">
+            <span
+              className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-control ${rule.enabled ? 'bg-primary-soft text-primary' : 'bg-surface-2 text-muted'}`}
             >
-              <Plus size={14} />
-              Yangi qoida
-            </button>
-          }
-        />
-        {noChannel && (
-          <p className="mb-4 rounded-xl bg-amber-50 px-3 py-2.5 text-xs font-semibold text-amber-700">
-            Hech bir kanal sozlanmagan — qoidalar saqlanadi, lekin xabar yuborilmaydi. Server .env faylida
-            TELEGRAM_BOT_TOKEN yoki Eskiz sozlamalarini kiriting.
-          </p>
-        )}
-
-        {rulesError && <ErrorState message={rulesError} onRetry={loadRules} />}
-        {rulesLoading && rules.length === 0 ? (
-          <div className="flex items-center justify-center py-10 text-slate-400">
-            <Loader2 size={20} className="animate-spin" />
+              <ChannelIcon size={15} aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <p className={`truncate font-medium ${rule.enabled ? 'text-fg' : 'text-muted'}`}>{rule.name}</p>
+              <p className="truncate font-mono text-xs text-muted" title={rule.recipients.join(', ')}>
+                {rule.channel === 'telegram' ? 'Telegram' : 'SMS'} · {rule.recipients.join(', ')}
+              </p>
+            </div>
           </div>
-        ) : rules.length === 0 && !rulesError ? (
-          <EmptyState
-            icon={<BellRing size={18} />}
-            title="Hali qoida yo'q"
-            description="Qoida kim, qaysi kanal orqali va qanday signallar haqida xabar olishini belgilaydi. Masalan: yuqori darajali AI hodisalari — navbatchilar Telegram guruhiga."
-            action={
-              <button onClick={openCreate} className="btn-glass flex items-center gap-1.5 text-xs">
-                <Plus size={13} /> Birinchi qoidani qo'shish
-              </button>
-            }
-          />
+        );
+      },
+    },
+    {
+      key: 'kinds',
+      header: 'Signal turlari',
+      mobileLabel: 'Signallar',
+      cell: (rule) => (
+        <div className="flex flex-wrap justify-end gap-1 md:justify-start">
+          {rule.kinds.map((kind) => (
+            <Badge key={kind} tone="info">
+              {kindLabel(kind)}
+            </Badge>
+          ))}
+        </div>
+      ),
+    },
+    {
+      key: 'filters',
+      header: 'Cheklovlar',
+      hideOnMobile: true,
+      cell: (rule) => {
+        const filters = describeRuleFilters(rule, moduleName, buildingName);
+        return filters.length ? (
+          <ul className="max-w-xs space-y-0.5 text-xs text-muted">
+            {filters.map((f) => (
+              <li key={f} className="line-clamp-2">
+                {f}
+              </li>
+            ))}
+          </ul>
         ) : (
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {rules.map((rule) => {
-              const filters = describeRuleFilters(rule, moduleName, buildingName);
-              const ChannelIcon = rule.channel === 'telegram' ? Send : MessageSquare;
-              return (
-                <div key={rule.id} className={`glass-deep flex flex-col gap-2 p-4 ${rule.enabled ? '' : 'opacity-60'}`}>
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
-                      <ChannelIcon size={15} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-bold text-slate-900">{rule.name}</p>
-                      <p className="truncate font-mono text-[11px] text-slate-500" title={rule.recipients.join(', ')}>
-                        {rule.channel === 'telegram' ? 'Telegram' : 'SMS'} · {rule.recipients.join(', ')}
-                      </p>
-                    </div>
-                    <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-[11px] font-semibold text-slate-500">
-                      <input
-                        type="checkbox"
-                        checked={rule.enabled}
-                        disabled={togglingId === rule.id}
-                        onChange={() => toggleEnabled(rule)}
-                        className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                      />
-                      {rule.enabled ? 'Yoqilgan' : "O'chiq"}
-                    </label>
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {rule.kinds.map((kind) => (
-                      <Badge key={kind} tone="indigo">
-                        {kindLabel(kind)}
-                      </Badge>
-                    ))}
-                  </div>
-                  {filters.length > 0 && (
-                    <ul className="space-y-0.5 text-[11px] text-slate-500">
-                      {filters.map((f) => (
-                        <li key={f}>{f}</li>
-                      ))}
-                    </ul>
-                  )}
-                  <div className="mt-auto flex justify-end gap-1 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => openEdit(rule)}
-                      aria-label={`${rule.name} ni tahrirlash`}
-                      className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/70 hover:text-indigo-600"
-                    >
-                      <Pencil size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDeleting(rule)}
-                      aria-label={`${rule.name} ni o'chirish`}
-                      className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
+          <span className="text-xs text-subtle">Hammasi</span>
+        );
+      },
+    },
+    {
+      key: 'enabled',
+      header: 'Holat',
+      sortValue: (r) => (r.enabled ? 1 : 0),
+      cell: (rule) => (
+        <div onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-2">
+          <Switch
+            checked={rule.enabled}
+            disabled={togglingId === rule.id}
+            onChange={() => void toggleEnabled(rule)}
+            label={`${rule.name}: ${rule.enabled ? "o'chirish" : 'yoqish'}`}
+          />
+          <span className={`text-[13px] ${rule.enabled ? 'text-fg' : 'text-muted'}`}>{rule.enabled ? 'Yoqilgan' : "O'chiq"}</span>
+        </div>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      align: 'right',
+      mobileLabel: 'Amallar',
+      cell: (rule) => (
+        <div onClick={(e) => e.stopPropagation()} className="flex justify-end gap-1">
+          <IconButton icon={Pencil} label={`${rule.name} ni tahrirlash`} size="sm" onClick={() => openEdit(rule)} />
+          <IconButton icon={Trash2} label={`${rule.name} ni o'chirish`} size="sm" variant="danger" onClick={() => setDeleting(rule)} />
+        </div>
+      ),
+    },
+  ];
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <NotificationStatusCard status={status} loading={statusLoading} onTest={() => setTestOpen(true)} />
-        <MyTelegramCard />
-      </div>
+  return (
+    <Page
+      title="Bildirishnomalar"
+      subtitle="AI hodisalari, kamera holati va turniket signallari — Telegram va SMS orqali"
+      breadcrumbs={[{ label: 'Sozlamalar' }, { label: 'Bildirishnomalar' }]}
+      actions={
+        <>
+          <Button icon={Send} onClick={() => setTestOpen(true)} disabled={!status}>
+            Sinov xabari
+          </Button>
+          <Button variant="primary" icon={Plus} onClick={openCreate}>
+            Yangi qoida
+          </Button>
+        </>
+      }
+      tabs={tabs}
+      toolbar={
+        tab === 'jurnal' ? (
+          <NotificationLogToolbar filters={logFilters} onChange={setLogFilters} onRefresh={() => setLogRefresh((n) => n + 1)} />
+        ) : undefined
+      }
+    >
+      {noChannel && tab !== 'jurnal' && (
+        <Notice tone="warning" title="Hech bir kanal sozlanmagan">
+          Qoidalar saqlanadi, lekin xabar yuborilmaydi. Server .env faylida <code className="font-mono">TELEGRAM_BOT_TOKEN</code> yoki Eskiz
+          sozlamalarini kiriting.
+        </Notice>
+      )}
 
-      <NotificationLogTable refreshKey={logRefresh} />
+      {tab === 'qoidalar' && (
+        <DataTable
+          columns={columns}
+          rows={rules}
+          rowKey={(r) => r.id}
+          onRowClick={openEdit}
+          rowTone={(r) => (r.enabled ? null : 'neutral')}
+          loading={rulesLoading && rules.length === 0}
+          loadingRows={3}
+          error={rulesError}
+          onRetry={() => void loadRules()}
+          emptyTitle="Hali qoida yo'q"
+          emptyDescription="Qoida kim, qaysi kanal orqali va qanday signallar haqida xabar olishini belgilaydi. Masalan: yuqori darajali AI hodisalari — navbatchilar Telegram guruhiga."
+          emptyAction={
+            <Button variant="primary" icon={Plus} onClick={openCreate}>
+              Birinchi qoidani qo'shish
+            </Button>
+          }
+          ariaLabel="Bildirishnoma qoidalari"
+          maxHeight="none"
+        />
+      )}
+
+      {tab === 'kanallar' && (
+        <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
+          <NotificationStatusCard status={status} loading={statusLoading} error={statusError} onRetry={reloadStatus} onTest={() => setTestOpen(true)} />
+          <MyTelegramCard />
+        </div>
+      )}
+
+      {tab === 'jurnal' && <NotificationLogTable refreshKey={logRefresh} filters={logFilters} />}
 
       <NotificationRuleModal open={modalOpen} rule={editing} onClose={() => setModalOpen(false)} onSaved={handleSaved} />
-      <TestMessageModal
-        open={testOpen}
-        status={status}
-        onClose={() => setTestOpen(false)}
-        onSent={() => setLogRefresh((n) => n + 1)}
-      />
+      <TestMessageModal open={testOpen} status={status} onClose={() => setTestOpen(false)} onSent={() => setLogRefresh((n) => n + 1)} />
       <ConfirmDialog
         open={!!deleting}
         title="Qoidani o'chirish"
         message={`"${deleting?.name ?? ''}" qoidasi o'chiriladi — unga ko'ra xabarlar endi yuborilmaydi.`}
+        confirmLabel="O'chirish"
         onCancel={() => setDeleting(null)}
         onConfirm={handleDelete}
       />
-    </div>
+    </Page>
   );
 }

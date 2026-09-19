@@ -368,9 +368,9 @@ export default function LiveVideoPlayer({
   return (
     <>
       {loading && (
-        <div className="absolute inset-0 z-[1] flex flex-col items-center justify-center gap-1.5 bg-slate-900/80">
-          <Loader2 size={22} className="animate-spin text-slate-400" />
-          {retrying && <span className="text-[10px] font-medium text-slate-400">Navbatda...</span>}
+        <div className="absolute inset-0 z-[1] flex flex-col items-center justify-center gap-1.5 bg-black/70">
+          <Loader2 size={22} className="animate-spin text-white/60" />
+          {retrying && <span className="text-[10px] font-medium text-white/60">Navbatda...</span>}
         </div>
       )}
       <video

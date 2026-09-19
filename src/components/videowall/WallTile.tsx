@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from 'react';
-import { Circle, Loader2, Maximize2, Minimize2, Plus, VideoOff, X } from 'lucide-react';
+import { Loader2, Maximize2, Minimize2, Plus, VideoOff, X } from 'lucide-react';
+import { StatusDot, cn } from '../../ui';
 import LiveVideoPlayer from '../LiveVideoPlayer';
 import CameraThumbnail from '../monitor/campus/CameraThumbnail';
 import PtzControls from '../ptz/PtzControls';
@@ -113,13 +114,15 @@ export default function WallTile({
       onDrop={handleDrop}
       onClick={() => onSelect(index)}
       onDoubleClick={() => cameraId && onToggleMaximize(index)}
-      className={`group relative min-h-0 min-w-0 overflow-hidden bg-slate-900 outline-none ${
-        selected && !maximized ? 'ring-2 ring-inset ring-indigo-400' : ''
-      } ${dragOver ? 'ring-2 ring-inset ring-emerald-400' : ''}`}
+      className={cn(
+        'group relative min-h-0 min-w-0 overflow-hidden bg-neutral-900 outline-none',
+        selected && !maximized && 'ring-2 ring-inset ring-primary',
+        dragOver && 'ring-2 ring-inset ring-success',
+      )}
     >
       {!cameraId && (
         <div className="flex h-full w-full flex-col items-center justify-center gap-1 border border-dashed border-white/10 text-white/25">
-          <Plus size={compact ? 14 : 20} />
+          <Plus size={compact ? 14 : 20} aria-hidden="true" />
           {!compact && <span className="px-2 text-center text-[10px] font-medium">Kamerani shu yerga torting</span>}
         </div>
       )}
@@ -145,7 +148,7 @@ export default function WallTile({
       )}
 
       {camera && playback === 'offline' && (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-slate-900 text-white/40">
+        <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-neutral-900 text-white/40">
           <VideoOff size={compact ? 16 : 24} />
           <span className="text-[10px] font-bold tracking-wide">{noVideo ? 'TASVIRSIZ' : 'OFLAYN'}</span>
         </div>
@@ -154,12 +157,7 @@ export default function WallTile({
       {camera && (
         <>
           <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center gap-1.5 bg-gradient-to-b from-black/70 to-transparent px-2 py-1">
-            <Circle
-              size={7}
-              className={
-                isLive && !noVideo ? 'fill-emerald-400 text-emerald-400' : noVideo ? 'fill-amber-400 text-amber-400' : 'fill-slate-500 text-slate-500'
-              }
-            />
+            <StatusDot tone={isLive && !noVideo ? 'success' : noVideo ? 'warning' : 'neutral'} className="scale-75" />
             <span className={`truncate font-semibold text-white ${compact ? 'text-[10px]' : 'text-xs'}`}>{camera.name}</span>
             {playback === 'snapshot' && (
               <span className="ml-auto shrink-0 rounded bg-black/50 px-1 text-[9px] font-medium text-white/60" title="Jonli oqimlar chegarasiga yetildi — kadr har 10 soniyada yangilanadi">
@@ -198,7 +196,7 @@ export default function WallTile({
               }}
               aria-label="Katakdan olib tashlash"
               title="Katakdan olib tashlash"
-              className="rounded-md bg-black/60 p-1 text-white hover:bg-rose-600"
+              className="rounded-md bg-black/60 p-1 text-white hover:bg-danger"
             >
               <X size={13} />
             </button>

@@ -1,33 +1,77 @@
 /** @type {import('tailwindcss').Config} */
+
+/** Dizayn tokenlari src/index.css'dagi CSS o'zgaruvchilarida ("R G B"
+ *  ko'rinishida) — shu sababli `bg-primary/10` kabi shaffoflik ishlaydi,
+ *  qorong'i mavzu esa faqat o'zgaruvchilarni almashtiradi. */
+const token = (name) => `rgb(var(--c-${name}) / <alpha-value>)`;
+
+const semantic = (name) => ({
+  DEFAULT: token(name),
+  fg: token(`${name}-fg`),
+  soft: token(`${name}-soft`),
+});
+
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
       fontFamily: {
-        sans: [
-          '-apple-system',
-          'BlinkMacSystemFont',
-          '"SF Pro Display"',
-          '"SF Pro Text"',
-          '"Plus Jakarta Sans"',
-          'Inter',
-          'system-ui',
-          'sans-serif',
-        ],
+        sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
       },
       colors: {
-        canvas: '#E8EDFF',
-        ink: '#0F172A',
+        bg: token('bg'),
+        surface: {
+          DEFAULT: token('surface'),
+          2: token('surface-2'),
+          3: token('surface-3'),
+        },
+        border: {
+          DEFAULT: token('border'),
+          strong: token('border-strong'),
+        },
+        fg: token('fg'),
+        muted: token('muted'),
+        subtle: token('subtle'),
+        primary: semantic('primary'),
+        success: semantic('success'),
+        warning: semantic('warning'),
+        danger: semantic('danger'),
+        info: semantic('info'),
+        // Eski sahifalar uchun (migratsiyagacha) — tokenlarga bog'langan.
+        canvas: token('bg'),
+        ink: token('fg'),
+      },
+      borderColor: {
+        DEFAULT: token('border'),
+      },
+      ringColor: {
+        DEFAULT: token('primary'),
       },
       boxShadow: {
-        glass: '0 8px 32px 0 rgba(99,102,241,0.10), 0 2px 8px 0 rgba(15,23,42,0.05)',
-        'glass-green': '0 8px 32px 0 rgba(34,197,94,0.10), 0 2px 8px 0 rgba(15,23,42,0.05)',
-        'glass-red': '0 8px 32px 0 rgba(239,68,68,0.10), 0 2px 8px 0 rgba(15,23,42,0.05)',
-        'glass-amber': '0 8px 32px 0 rgba(245,158,11,0.10), 0 2px 8px 0 rgba(15,23,42,0.05)',
-        btn: '0 2px 14px 0 rgba(15,23,42,0.07), 0 1px 4px 0 rgba(15,23,42,0.04), inset 0 1px 0 0 rgba(255,255,255,0.92)',
+        card: 'var(--shadow-card)',
+        pop: 'var(--shadow-pop)',
+        // Eski sinflar (glass) — migratsiyagacha ishlashi uchun.
+        glass: 'var(--shadow-card)',
+        'glass-green': 'var(--shadow-card)',
+        'glass-red': 'var(--shadow-card)',
+        'glass-amber': 'var(--shadow-card)',
+        btn: '0 1px 2px 0 rgb(16 24 40 / 0.06)',
       },
       borderRadius: {
-        card: '20px',
+        card: '12px',
+        control: '8px',
+      },
+      keyframes: {
+        'ui-fade-in': { from: { opacity: '0' }, to: { opacity: '1' } },
+        'ui-slide-in-right': { from: { transform: 'translateX(24px)', opacity: '0' }, to: { transform: 'translateX(0)', opacity: '1' } },
+        'ui-slide-in-left': { from: { transform: 'translateX(-24px)', opacity: '0' }, to: { transform: 'translateX(0)', opacity: '1' } },
+        'ui-pop-in': { from: { transform: 'translateY(4px) scale(0.98)', opacity: '0' }, to: { transform: 'none', opacity: '1' } },
+      },
+      animation: {
+        'fade-in': 'ui-fade-in 150ms ease-out',
+        'slide-in-right': 'ui-slide-in-right 200ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+        'slide-in-left': 'ui-slide-in-left 200ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+        'pop-in': 'ui-pop-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
       },
     },
   },

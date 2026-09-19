@@ -1,6 +1,15 @@
 import { AlertTriangle, ChevronRight, Info } from 'lucide-react';
-import { SkeletonBlock } from '../ui/Skeleton';
-import type { ReportCriterion } from '../../types';
+import { Card, Skeleton, TONE_SOFT, TONE_TEXT, cn, focusRing, formatNumber, type Tone } from '../../ui';
+import type { ReportBucket, ReportCriterion } from '../../types';
+
+/** Backend chelak ohanglari → dizayn tizimi ohanglari. */
+const BUCKET_TONE: Record<ReportBucket['tone'], Tone> = {
+  green: 'success',
+  amber: 'warning',
+  red: 'danger',
+  indigo: 'primary',
+  slate: 'neutral',
+};
 
 /** 1-daraja: kriteriya kartalari.
  *
@@ -8,22 +17,6 @@ import type { ReportCriterion } from '../../types';
  * ajratilgan — chelakni bosish o'sha raqam ORTIDAGI ro'yxatni ochadi.
  * Nol raqam izohsiz qolmaydi: `note` bo'lsa, u kartaning pastida
  * ko'rinadi, chunki "0 ta kelmadi" va "tizim qaramadi" bir xil emas. */
-const TONE_TEXT: Record<string, string> = {
-  green: 'text-emerald-600',
-  amber: 'text-amber-600',
-  red: 'text-rose-600',
-  indigo: 'text-indigo-600',
-  slate: 'text-slate-500',
-};
-
-const TONE_BG: Record<string, string> = {
-  green: 'bg-emerald-50 hover:bg-emerald-100',
-  amber: 'bg-amber-50 hover:bg-amber-100',
-  red: 'bg-rose-50 hover:bg-rose-100',
-  indigo: 'bg-indigo-50 hover:bg-indigo-100',
-  slate: 'bg-slate-50 hover:bg-slate-100',
-};
-
 export default function CriteriaCards({
   criteria,
   loading,
@@ -35,77 +28,84 @@ export default function CriteriaCards({
 }) {
   if (loading && criteria.length === 0) {
     return (
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {[0, 1, 2, 3].map((key) => (
-          <SkeletonBlock key={key} className="h-44 rounded-2xl" />
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-busy="true" aria-label="Yuklanmoqda">
+        {[0, 1, 2, 3, 4, 5].map((key) => (
+          <Card key={key}>
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="mt-2 h-3 w-3/4" />
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <Skeleton className="h-14" />
+              <Skeleton className="h-14" />
+              <Skeleton className="h-14" />
+            </div>
+          </Card>
         ))}
       </div>
     );
   }
 
   return (
-    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {criteria.map((criterion) => {
         const openable = criterion.detail !== 'none';
         return (
-          <div key={criterion.key} className="glass flex flex-col gap-3 p-4">
+          <Card key={criterion.key} as="article" className="flex flex-col gap-3.5">
             <div>
               <div className="flex items-start justify-between gap-2">
-                <h3 className="text-sm font-extrabold text-slate-900">{criterion.title}</h3>
-                <span className="shrink-0 text-xs font-bold tabular-nums text-slate-400">
-                  {criterion.total} {criterion.unit}
+                <h3 className="text-[15px] font-semibold leading-6 text-fg">{criterion.title}</h3>
+                <span className="shrink-0 rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium tabular-nums text-muted">
+                  {formatNumber(criterion.total)} {criterion.unit}
                 </span>
               </div>
-              <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{criterion.subtitle}</p>
+              <p className="mt-0.5 text-[13px] leading-5 text-muted">{criterion.subtitle}</p>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              {criterion.buckets.map((bucket) => (
-                <button
-                  key={bucket.key}
-                  type="button"
-                  disabled={!openable}
-                  onClick={() => onOpen(criterion, bucket.key)}
-                  title={openable ? `${bucket.label} — ro'yxatni ochish` : undefined}
-                  className={`rounded-xl px-2 py-2 text-left transition disabled:cursor-default disabled:opacity-70 ${
-                    TONE_BG[bucket.tone] ?? TONE_BG.slate
-                  }`}
-                >
-                  <span className={`block text-lg font-extrabold tabular-nums ${TONE_TEXT[bucket.tone] ?? TONE_TEXT.slate}`}>
-                    {bucket.count}
-                  </span>
-                  <span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                    {bucket.label}
-                  </span>
-                </button>
-              ))}
+            <div className={cn('grid gap-2', criterion.buckets.length === 2 ? 'grid-cols-2' : 'grid-cols-3')}>
+              {criterion.buckets.map((bucket) => {
+                const tone = BUCKET_TONE[bucket.tone] ?? 'neutral';
+                return (
+                  <button
+                    key={bucket.key}
+                    type="button"
+                    disabled={!openable}
+                    onClick={() => onOpen(criterion, bucket.key)}
+                    title={openable ? `${bucket.label} — ro'yxatni ochish` : undefined}
+                    className={cn(
+                      'min-w-0 rounded-control px-2.5 py-2 text-left transition-[filter,box-shadow] enabled:hover:brightness-95 disabled:cursor-default',
+                      TONE_SOFT[tone],
+                      focusRing,
+                    )}
+                  >
+                    <span className={cn('block text-xl font-semibold tabular-nums leading-7', TONE_TEXT[tone])}>{bucket.count}</span>
+                    <span className="block truncate text-xs font-medium text-muted">{bucket.label}</span>
+                  </button>
+                );
+              })}
             </div>
 
-            {criterion.note ? (
-              <p className="flex items-start gap-1.5 rounded-xl bg-amber-50/80 px-2.5 py-2 text-[11px] leading-relaxed text-amber-800">
-                <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-                {criterion.note}
-              </p>
-            ) : (
-              openable && (
+            <div className="mt-auto">
+              {criterion.note ? (
+                <p className="flex items-start gap-1.5 rounded-control bg-warning-soft px-2.5 py-2 text-xs leading-relaxed text-fg">
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0 text-warning" aria-hidden="true" />
+                  {criterion.note}
+                </p>
+              ) : openable ? (
                 <button
                   type="button"
                   onClick={() => onOpen(criterion, criterion.buckets[0]?.key ?? '')}
-                  className="flex items-center gap-1 self-start text-[11px] font-semibold text-indigo-600 hover:underline"
+                  className={cn('inline-flex items-center gap-1 rounded text-[13px] font-medium text-primary hover:underline', focusRing)}
                 >
                   {criterion.detail === 'events' ? 'Signallarni ochish' : "Ro'yxatni ochish"}
-                  <ChevronRight size={12} />
+                  <ChevronRight size={14} aria-hidden="true" />
                 </button>
-              )
-            )}
-
-            {!openable && !criterion.note && (
-              <p className="flex items-center gap-1.5 text-[11px] text-slate-400">
-                <Info size={12} />
-                Bu kriteriya bo&apos;yicha batafsil ro&apos;yxat hozircha yo&apos;q
-              </p>
-            )}
-          </div>
+              ) : (
+                <p className="flex items-center gap-1.5 text-xs text-muted">
+                  <Info size={12} aria-hidden="true" />
+                  Bu kriteriya bo&apos;yicha batafsil ro&apos;yxat hozircha yo&apos;q
+                </p>
+              )}
+            </div>
+          </Card>
         );
       })}
     </div>

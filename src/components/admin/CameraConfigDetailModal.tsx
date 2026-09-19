@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Cpu, Eye, EyeOff, Gamepad2, Loader2, XCircle } from 'lucide-react';
-import Modal from '../Modal';
-import Badge from '../Badge';
+import { Cpu, Eye, EyeOff, Gamepad2, VideoOff } from 'lucide-react';
 import LiveVideoPlayer from '../LiveVideoPlayer';
 import PtzControls from '../ptz/PtzControls';
 import { usePtzAvailability } from '../ptz/usePtzAvailability';
+import { Notice } from '../settings/kit';
+import { Badge, Button, Drawer, KeyValue, Section, type Tone } from '../../ui';
 import { ApiError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { formatModuleSummary } from '../../lib/cameraModules';
+import { ROOM_TYPE_LABELS } from '../../lib/cameraRoles';
 import { usePermissions } from '../../lib/permissions';
 import { ptzApi, type PtzProbeResult } from '../../lib/ptzApi';
 import { useCameraModuleOptions } from '../../lib/useCameraModuleOptions';
@@ -15,10 +16,10 @@ import type { CameraConfig } from '../../types';
 
 const PTZ_PROTOCOL_LABEL = { onvif: 'ONVIF', isapi: 'Hikvision ISAPI' } as const;
 
-const STATUS_TONE: Record<CameraConfig['status'], 'green' | 'slate' | 'amber'> = {
-  faol: 'green',
-  nofaol: 'slate',
-  tamirda: 'amber',
+const STATUS_TONE: Record<CameraConfig['status'], Tone> = {
+  faol: 'success',
+  nofaol: 'neutral',
+  tamirda: 'warning',
 };
 
 const STATUS_LABEL: Record<CameraConfig['status'], string> = {
@@ -27,6 +28,9 @@ const STATUS_LABEL: Record<CameraConfig['status'], string> = {
   tamirda: "Ta'mirda",
 };
 
+/** Kamera tafsiloti — o'ngdan chiquvchi panel (Drawer): jonli video,
+ *  holat, PTZ, joylashuv va AI modullar. Nomi tarixiy (ilgari Modal edi),
+ *  import qiluvchilar uchun o'zgartirilmadi. */
 export default function CameraConfigDetailModal({
   camera,
   onClose,
@@ -70,31 +74,40 @@ export default function CameraConfigDetailModal({
     }
   }
 
+  const customModules = (camera?.excludedModuleCodes?.length ?? 0) > 0;
+  const zonePoints = camera?.restrictedZonePolygon?.length ?? 0;
+  const doorPoints = camera?.faceRoi?.length ?? 0;
+
   return (
-    <Modal open={!!camera} onClose={onClose} title={camera?.name} maxWidth="max-w-md">
+    <Drawer
+      open={!!camera}
+      onClose={onClose}
+      title={camera?.name}
+      subtitle={camera ? [camera.building, camera.zone].filter(Boolean).join(' · ') : undefined}
+      size="lg"
+    >
       {camera && (
-        <div className="space-y-4">
-          <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-xl bg-slate-900">
+        <div className="flex flex-col gap-6">
+          {/* Video maydoni mavzudan qat'i nazar qora — kadr shunday ko'rinadi. */}
+          <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-card bg-black">
             {camera.status === 'faol' && (
-              <LiveVideoPlayer
-                streamUrl={camera.streamUrl}
-                cameraId={camera.id}
-                showDetections={showDetections}
-              />
+              <LiveVideoPlayer streamUrl={camera.streamUrl} cameraId={camera.id} showDetections={showDetections} />
             )}
             {camera.status === 'faol' && camera.streamUrl && (
-              <button
-                type="button"
+              <Button
+                size="sm"
+                icon={showDetections ? EyeOff : Eye}
                 onClick={() => setShowDetections((v) => !v)}
-                className="absolute bottom-2 left-2 flex items-center gap-1 rounded-lg bg-black/50 px-2 py-1 text-[10px] font-semibold text-white hover:bg-black/70"
+                className="absolute bottom-2 left-2"
+                aria-pressed={showDetections}
               >
-                {showDetections ? <EyeOff size={12} /> : <Eye size={12} />}
-                {showDetections ? 'AI o\'chirish' : 'AI ko\'rsatkich'}
-              </button>
+                {showDetections ? "AI o'chirish" : "AI ko'rsatkich"}
+              </Button>
             )}
             {!camera.streamUrl && (
-              <div className="flex flex-col items-center gap-1.5 text-slate-500">
-                <span className="text-[11px] font-medium">
+              <div className="flex flex-col items-center gap-1.5 text-subtle">
+                <VideoOff size={20} aria-hidden="true" />
+                <span className="text-xs font-medium">
                   {camera.status === 'faol' ? 'Video oqim ulanmagan' : STATUS_LABEL[camera.status]}
                 </span>
               </div>
@@ -102,55 +115,94 @@ export default function CameraConfigDetailModal({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Badge tone={STATUS_TONE[camera.status]}>{STATUS_LABEL[camera.status]}</Badge>
-            {camera.isEntrance && (
-              <Badge tone="indigo">Kirish kamerasi</Badge>
+            <Badge tone={STATUS_TONE[camera.status]} dot>
+              {STATUS_LABEL[camera.status]}
+            </Badge>
+            {camera.status === 'faol' && camera.isReachable !== undefined && (
+              <Badge tone={camera.isReachable ? 'success' : 'danger'}>{camera.isReachable ? 'Ulangan' : "Javob yo'q"}</Badge>
             )}
-            {camera.isExit && (
-              <Badge tone="amber">Chiqish kamerasi</Badge>
-            )}
-            {camera.ptzEnabled && camera.ptzProtocol && (
-              <Badge tone="indigo">PTZ · {PTZ_PROTOCOL_LABEL[camera.ptzProtocol]}</Badge>
-            )}
+            {camera.isEntrance && <Badge tone="primary">Kirish kamerasi</Badge>}
+            {camera.isExit && <Badge tone="warning">Chiqish kamerasi</Badge>}
+            {camera.isPerimeter && <Badge tone="info">Perimetr kamerasi</Badge>}
+            {camera.ptzEnabled && camera.ptzProtocol && <Badge tone="primary">PTZ · {PTZ_PROTOCOL_LABEL[camera.ptzProtocol]}</Badge>}
           </div>
 
           {ptzAvailable && <PtzControls key={camera.id} cameraId={camera.id} defaultOpen={false} className="w-full" />}
 
+          <Section title="Ma'lumotlar">
+            <KeyValue
+              items={[
+                { label: 'IP manzil', value: <span className="font-mono text-[13px]">{camera.ip}</span> },
+                { label: 'Bino', value: camera.building || '—' },
+                {
+                  label: 'Qavat',
+                  value:
+                    camera.floor === null || camera.floor === undefined ? (
+                      <span className="text-warning">belgilanmagan</span>
+                    ) : (
+                      <span className="tabular-nums">{camera.floor}-qavat</span>
+                    ),
+                },
+                { label: 'Zona', value: camera.zone || '—' },
+                {
+                  label: 'Xona turi',
+                  value: camera.effectiveRoomType ? (
+                    <>
+                      {ROOM_TYPE_LABELS[camera.effectiveRoomType]}
+                      {camera.roomCode ? ` · ${camera.roomCode}` : ''}
+                    </>
+                  ) : (
+                    <span className="text-warning">belgilanmagan</span>
+                  ),
+                },
+                {
+                  label: 'Ruxsat / FPS',
+                  value: (
+                    <span className="tabular-nums">
+                      {camera.resolution} {camera.fps ? `/ ${camera.fps} fps` : ''}
+                    </span>
+                  ),
+                },
+                ...(zonePoints > 0 ? [{ label: 'Taqiqlangan zona', value: <span className="text-danger">{zonePoints} nuqta</span> }] : []),
+                ...(doorPoints > 0 ? [{ label: 'Eshik hududi', value: <span className="text-success">{doorPoints} nuqta</span> }] : []),
+              ]}
+            />
+          </Section>
+
+          <Section
+            title="AI modullar"
+            actions={
+              onEditModules ? (
+                <Button size="sm" icon={Cpu} onClick={onEditModules}>
+                  Sozlash
+                </Button>
+              ) : undefined
+            }
+          >
+            <p className="text-sm text-fg">{moduleSummary ?? 'Yuklanmoqda…'}</p>
+            {customModules && <p className="mt-1 text-xs font-medium text-warning">Maxsus sozlama — ba&apos;zi kriteriyalar o&apos;chirilgan</p>}
+          </Section>
+
           {canProbePtz && (
-            <div className="glass-deep space-y-2 px-3 py-2.5">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] text-slate-400">PTZ boshqaruvi</p>
-                  <p className="text-sm font-medium text-slate-800">
-                    {camera.ptzEnabled && camera.ptzProtocol
-                      ? `Yoqilgan — ${PTZ_PROTOCOL_LABEL[camera.ptzProtocol]}, port ${camera.onvifPort ?? 80}`
-                      : "O'chirilgan"}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void runProbe(camera.id)}
-                  disabled={probing}
-                  className="btn-glass flex shrink-0 items-center gap-1 text-xs disabled:opacity-60"
-                >
-                  {probing ? <Loader2 size={14} className="animate-spin" /> : <Gamepad2 size={14} />}
+            <Section
+              title="PTZ boshqaruvi"
+              description={
+                camera.ptzEnabled && camera.ptzProtocol
+                  ? `Yoqilgan — ${PTZ_PROTOCOL_LABEL[camera.ptzProtocol]}, port ${camera.onvifPort ?? 80}`
+                  : "O'chirilgan"
+              }
+              actions={
+                <Button size="sm" icon={Gamepad2} loading={probing} onClick={() => void runProbe(camera.id)}>
                   PTZ ni tekshirish
-                </button>
-              </div>
+                </Button>
+              }
+            >
               {probe && (
-                <div
-                  className={`rounded-lg px-2.5 py-2 text-xs font-semibold ${
-                    probe.success ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
-                  }`}
-                >
-                  <p className="flex items-center gap-1.5">
-                    {probe.success ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
-                    {probe.message}
-                  </p>
-                  <p className="mt-0.5 font-medium opacity-80">
+                <Notice tone={probe.success ? 'success' : 'danger'} title={probe.message}>
+                  <p>
                     {[
                       probe.reachable ? 'Ulanish bor' : "Ulanib bo'lmadi",
-                      probe.reachable ? (probe.authenticated ? 'login/parol to\'g\'ri' : "login/parol rad etildi") : null,
+                      probe.reachable ? (probe.authenticated ? "login/parol to'g'ri" : 'login/parol rad etildi') : null,
                       probe.success ? (probe.presetsSupported ? `${probe.presetCount ?? 0} ta preset` : "presetlar yo'q") : null,
                       probe.deviceInfo,
                     ]
@@ -158,68 +210,15 @@ export default function CameraConfigDetailModal({
                       .join(' · ')}
                   </p>
                   {probe.success && !camera.ptzEnabled && (
-                    <p className="mt-0.5 font-medium opacity-80">
-                      Yoqish uchun kamerani tahrirlab, «PTZ (buriladigan) kamera» belgisini qo&apos;ying.
-                    </p>
+                    <p className="mt-0.5">Yoqish uchun kamerani tahrirlab, «PTZ (buriladigan) kamera» belgisini qo&apos;ying.</p>
                   )}
-                </div>
+                </Notice>
               )}
-              {probeError && <p className="rounded-lg bg-red-50 px-2.5 py-2 text-xs font-semibold text-red-600">{probeError}</p>}
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div className="glass-deep px-3 py-2.5">
-              <p className="text-[11px] text-slate-400">IP manzil</p>
-              <p className="font-mono font-medium text-slate-800">{camera.ip}</p>
-            </div>
-            <div className="glass-deep px-3 py-2.5">
-              <p className="text-[11px] text-slate-400">Bino</p>
-              <p className="font-medium text-slate-800">{camera.building}</p>
-            </div>
-            <div className="glass-deep px-3 py-2.5">
-              <p className="text-[11px] text-slate-400">Zona</p>
-              <p className="font-medium text-slate-800">{camera.zone}</p>
-            </div>
-            <div className="glass-deep px-3 py-2.5">
-              <p className="text-[11px] text-slate-400">Ruxsat / FPS</p>
-              <p className="font-medium text-slate-800">
-                {camera.resolution} {camera.fps ? `/ ${camera.fps} fps` : ''}
-              </p>
-            </div>
-          </div>
-
-          <div className="glass-deep flex items-center justify-between gap-3 px-3 py-2.5">
-            <div>
-              <p className="text-[11px] text-slate-400">AI modullar</p>
-              <p className="text-sm font-medium text-slate-800">
-                {moduleSummary ?? 'Yuklanmoqda...'}
-              </p>
-              {(camera.excludedModuleCodes?.length ?? 0) > 0 && (
-                <p className="mt-0.5 text-[10px] text-amber-600">
-                  Maxsus sozlama — ba&apos;zi kriteriyalar o‘chirilgan
-                </p>
-              )}
-            </div>
-            {onEditModules && (
-              <button
-                type="button"
-                onClick={onEditModules}
-                className="btn-glass flex shrink-0 items-center gap-1 text-xs"
-              >
-                <Cpu size={14} />
-                Sozlash
-              </button>
-            )}
-          </div>
-
-          {camera.restrictedZonePolygon && camera.restrictedZonePolygon.length > 0 && (
-            <p className="text-xs text-red-600">
-              Taqiqlangan zona belgilangan ({camera.restrictedZonePolygon.length} nuqta)
-            </p>
+              {probeError && <Notice tone="danger">{probeError}</Notice>}
+            </Section>
           )}
         </div>
       )}
-    </Modal>
+    </Drawer>
   );
 }

@@ -58,7 +58,7 @@ class TestAttendance:
         insights = build_insights(healthy(staff_present=0, staff_rate=0.0, staff_reliable=False))
         assert insights[0].level == "critical"
         assert insights[0].title == "Kameralar birorta xodimni tanimagan"
-        assert insights[0].action_href == "/admin/presence"
+        assert insights[0].action_href == "/oqituvchilar"
 
     def test_late_share_threshold(self):
         assert "Kech qolish ko'p" in titles(healthy(staff_late_share=15.0))

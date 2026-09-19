@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BarChart3, Download, Loader2, Users } from 'lucide-react';
-import Modal from '../Modal';
+import { Button, ErrorState, Field, Modal, Select, Tabs, cn, focusRing } from '../../ui';
 import { api, type Page } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { config } from '../../lib/config';
@@ -38,37 +38,6 @@ const KIND_OPTIONS: { kind: ExportKind; title: string; description: string; icon
     icon: BarChart3,
   },
 ];
-
-function Segmented<T extends string>({
-  options,
-  value,
-  onChange,
-}: {
-  options: { key: T; label: string }[];
-  value: T;
-  onChange: (key: T) => void;
-}) {
-  return (
-    <div className="flex flex-wrap gap-1.5 rounded-xl bg-slate-100 p-1">
-      {options.map((o) => (
-        <button
-          key={o.key || 'all'}
-          type="button"
-          onClick={() => onChange(o.key)}
-          aria-pressed={value === o.key}
-          className={`flex-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors ${
-            value === o.key ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-const selectClass =
-  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-400 disabled:bg-slate-50 disabled:text-slate-400';
 
 /**
  * Yuklab olish oynasi: KIMLAR (xodim/talaba), QANDAY FAYL (ro'yxat/statistika)
@@ -197,14 +166,31 @@ export default function ExportPeopleModal({
   const empty = kind === 'people' && count === 0;
 
   return (
-    <Modal open={open} onClose={onClose} title="Excel faylni yuklab olish" maxWidth="max-w-xl">
-      <div className="flex flex-col gap-5">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Excel faylni yuklab olish"
+      size="lg"
+      footer={
+        <>
+          <Button onClick={onClose} disabled={downloading}>
+            Bekor qilish
+          </Button>
+          <Button variant="primary" icon={Download} onClick={download} loading={downloading} disabled={empty || !token}>
+            {downloading ? 'Tayyorlanmoqda…' : 'Yuklab olish'}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-5 pb-1">
         <div>
-          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Kimlar</p>
-          <Segmented
-            options={[
-              { key: 'xodim' as PersonType, label: PERSON_LABELS.xodim },
-              { key: 'talaba' as PersonType, label: PERSON_LABELS.talaba },
+          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Kimlar</p>
+          <Tabs
+            variant="segmented"
+            ariaLabel="Kimlar"
+            tabs={[
+              { id: 'xodim' as PersonType, label: PERSON_LABELS.xodim },
+              { id: 'talaba' as PersonType, label: PERSON_LABELS.talaba },
             ]}
             value={type}
             onChange={changeType}
@@ -212,7 +198,7 @@ export default function ExportPeopleModal({
         </div>
 
         <div>
-          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Fayl</p>
+          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Fayl</p>
           <div className="grid gap-2 sm:grid-cols-2">
             {KIND_OPTIONS.map((option) => {
               const Icon = option.icon;
@@ -223,20 +209,23 @@ export default function ExportPeopleModal({
                   type="button"
                   onClick={() => setKind(option.kind)}
                   aria-pressed={active}
-                  className={`flex items-start gap-3 rounded-2xl border p-3 text-left transition-colors ${
-                    active ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 bg-white hover:border-slate-300'
-                  }`}
+                  className={cn(
+                    'flex items-start gap-3 rounded-card border p-3 text-left transition-colors',
+                    active ? 'border-primary bg-primary-soft' : 'border-border bg-surface hover:border-border-strong',
+                    focusRing,
+                  )}
                 >
                   <span
-                    className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                      active ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'
-                    }`}
+                    className={cn(
+                      'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-control',
+                      active ? 'bg-primary text-primary-fg' : 'bg-surface-2 text-muted',
+                    )}
                   >
-                    <Icon size={16} />
+                    <Icon size={16} aria-hidden="true" />
                   </span>
                   <span className="min-w-0">
-                    <span className="block text-sm font-bold text-slate-900">{option.title}</span>
-                    <span className="mt-0.5 block text-xs leading-relaxed text-slate-500">{option.description}</span>
+                    <span className="block text-sm font-semibold text-fg">{option.title}</span>
+                    <span className="mt-0.5 block text-xs leading-relaxed text-muted">{option.description}</span>
                   </span>
                 </button>
               );
@@ -247,71 +236,66 @@ export default function ExportPeopleModal({
         {kind === 'people' ? (
           <>
             <div>
-              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Ro&apos;yxatdan o&apos;tish holati</p>
-              <Segmented options={STATUS_FILTERS} value={status} onChange={setStatus} />
+              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Ro&apos;yxatdan o&apos;tish holati</p>
+              <Tabs
+                variant="segmented"
+                ariaLabel="Ro'yxatdan o'tish holati"
+                tabs={STATUS_FILTERS.map((f) => ({ id: f.key, label: f.label }))}
+                value={status}
+                onChange={setStatus}
+              />
             </div>
 
-            <div className={`grid gap-3 ${type === 'talaba' ? 'sm:grid-cols-2' : ''}`}>
-              <label className="block">
-                <span className="mb-1 block text-xs font-semibold text-slate-500">Fakultet</span>
-                <select value={faculty} onChange={(e) => setFaculty(e.target.value)} className={selectClass}>
-                  <option value="">Barcha fakultetlar</option>
-                  {facultyOptions.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            <div className={cn('grid gap-3', type === 'talaba' && 'sm:grid-cols-2')}>
+              <Field label="Fakultet">
+                <Select value={faculty} onChange={setFaculty} placeholder="Barcha fakultetlar" options={facultyOptions} className="sm:w-full" />
+              </Field>
               {type === 'talaba' && (
-                <label className="block">
-                  <span className="mb-1 block text-xs font-semibold text-slate-500">Kurs</span>
-                  <select
-                    value={course ?? ''}
-                    onChange={(e) => setCourse(e.target.value ? Number(e.target.value) : null)}
-                    className={selectClass}
-                  >
-                    <option value="">Barcha kurslar</option>
-                    {courseOptions.map((row) => (
-                      <option key={row.course} value={row.courseNumber ?? ''}>
-                        {row.course} ({row.total.toLocaleString('ru-RU')})
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <Field label="Kurs">
+                  <Select
+                    value={course ? String(course) : ''}
+                    onChange={(value) => setCourse(value ? Number(value) : null)}
+                    placeholder="Barcha kurslar"
+                    options={courseOptions.map((row) => ({
+                      value: String(row.courseNumber),
+                      label: `${row.course} (${row.total.toLocaleString('ru-RU')})`,
+                    }))}
+                    className="sm:w-full"
+                  />
+                </Field>
               )}
             </div>
 
             {searchText && type === defaults.type && (
-              <label className="flex items-center gap-2 text-sm text-slate-600">
+              <label className="flex items-center gap-2 text-sm text-fg">
                 <input
                   type="checkbox"
                   checked={useSearch}
                   onChange={(e) => setUseSearch(e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                  className="h-4 w-4 rounded border-border-strong accent-primary"
                 />
                 Ekrandagi qidiruvni ham qo&apos;llash: «{searchText}»
               </label>
             )}
           </>
         ) : (
-          <p className="rounded-xl bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-500">
+          <p className="rounded-control bg-surface-2 px-3 py-2.5 text-xs leading-relaxed text-muted">
             Statistika barcha {who} bo&apos;yicha tuziladi:{' '}
-            {type === 'talaba'
-              ? 'umumiy, fakultetlar, kurslar va guruhlar kesimida.'
-              : 'umumiy, fakultetlar va kafedra/bo‘limlar kesimida.'}
+            {type === 'talaba' ? 'umumiy, fakultetlar, kurslar va guruhlar kesimida.' : 'umumiy, fakultetlar va kafedra/bo‘limlar kesimida.'}
           </p>
         )}
 
         <div
-          className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm ${
-            empty ? 'bg-amber-50 text-amber-800' : 'bg-indigo-50 text-indigo-900'
-          }`}
+          role="status"
+          className={cn(
+            'flex items-center justify-between gap-3 rounded-control px-3 py-2.5 text-sm',
+            empty ? 'bg-warning-soft text-fg' : 'bg-primary-soft text-fg',
+          )}
         >
           <span>
             {counting && kind === 'people' ? (
-              <span className="flex items-center gap-2">
-                <Loader2 size={14} className="animate-spin" /> Hisoblanmoqda...
+              <span className="flex items-center gap-2 text-muted">
+                <Loader2 size={14} className="animate-spin" aria-hidden="true" /> Hisoblanmoqda…
               </span>
             ) : count === null ? (
               "Sonini aniqlab bo'lmadi"
@@ -319,30 +303,14 @@ export default function ExportPeopleModal({
               'Tanlangan shartlarga mos odam yo‘q'
             ) : (
               <>
-                Faylga <span className="font-extrabold tabular-nums">{count.toLocaleString('ru-RU')}</span> ta {who}{' '}
-                tushadi
+                Faylga <span className="font-semibold tabular-nums">{count.toLocaleString('ru-RU')}</span> ta {who} tushadi
               </>
             )}
           </span>
-          <span className="shrink-0 text-xs text-slate-500">.xlsx</span>
+          <span className="shrink-0 text-xs text-muted">.xlsx</span>
         </div>
 
-        {error && <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">{error}</p>}
-
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="btn-glass">
-            Bekor qilish
-          </button>
-          <button
-            type="button"
-            onClick={download}
-            disabled={downloading || empty || !token}
-            className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-            {downloading ? 'Tayyorlanmoqda...' : 'Yuklab olish'}
-          </button>
-        </div>
+        {error && <ErrorState title="Yuklab bo'lmadi" message={error} />}
       </div>
     </Modal>
   );

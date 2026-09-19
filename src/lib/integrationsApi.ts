@@ -1,5 +1,6 @@
 import { api, buildQuery, type Page } from './apiClient';
 import { config } from './config';
+import type { Tone } from '../ui/tones';
 
 /* ── Turlar (camera-api/app/schemas/integrations.py bilan mos) ── */
 
@@ -181,20 +182,18 @@ export function formatDuration(seconds: number | null | undefined): string {
   return restMinutes ? `${hours} soat ${restMinutes} daq` : `${hours} soat`;
 }
 
-type Tone = 'green' | 'red' | 'amber' | 'slate' | 'indigo';
-
 export const RUN_STATUS_META: Record<SyncRunStatus, { label: string; tone: Tone }> = {
-  ishlamoqda: { label: 'Ishlamoqda', tone: 'indigo' },
-  muvaffaqiyatli: { label: 'Muvaffaqiyatli', tone: 'green' },
-  xato: { label: 'Xato', tone: 'red' },
+  ishlamoqda: { label: 'Ishlamoqda', tone: 'info' },
+  muvaffaqiyatli: { label: 'Muvaffaqiyatli', tone: 'success' },
+  xato: { label: 'Xato', tone: 'danger' },
 };
 
 export const DEVICE_STATUS_META: Record<DeviceStatus, { label: string; tone: Tone }> = {
-  onlayn: { label: 'Onlayn', tone: 'green' },
-  oflayn: { label: 'Oflayn', tone: 'amber' },
-  xato: { label: 'Xato', tone: 'red' },
-  kutilmoqda: { label: 'Kutilmoqda', tone: 'slate' },
-  ochirilgan: { label: "O'chirilgan", tone: 'slate' },
+  onlayn: { label: 'Onlayn', tone: 'success' },
+  oflayn: { label: 'Oflayn', tone: 'warning' },
+  xato: { label: 'Xato', tone: 'danger' },
+  kutilmoqda: { label: 'Kutilmoqda', tone: 'neutral' },
+  ochirilgan: { label: "O'chirilgan", tone: 'neutral' },
 };
 
 export const KIND_LABELS: Record<DeviceKind, string> = {
@@ -326,7 +325,7 @@ export function buildDevicePayload(form: DeviceForm, isEdit: boolean): Record<st
   return body;
 }
 
-/** Odamlar sahifasida shu raqam/ism bo'yicha qidirish havolasi. */
+/** Reestr (odamlar) sahifasida shu raqam/ism bo'yicha qidirish havolasi. */
 export function peopleSearchLink(value: string): string {
-  return `/admin/students-staff${buildQuery({ search: value })}`;
+  return `/reestr${buildQuery({ search: value })}`;
 }

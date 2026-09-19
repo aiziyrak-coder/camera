@@ -1,22 +1,39 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Copy, Loader2, UserSearch } from 'lucide-react';
-import EmptyState from '../ui/EmptyState';
-import ErrorState from '../ui/ErrorState';
-import { useToast } from '../ui/Toast';
+import { useNavigate } from 'react-router-dom';
+import { Copy, UserSearch } from 'lucide-react';
+import { DataTable, IconButton, Select, Toolbar, formatNumber, useToast, type DataTableColumn } from '../../ui';
+import { Notice } from '../settings/kit';
 import { useAuth } from '../../lib/auth';
 import { formatDateTime, integrationsApi, peopleSearchLink, type UnmatchedCredential } from '../../lib/integrationsApi';
-import { copyText } from './ApiKeyDialog';
+import { copyText } from './clipboard';
 
-const DAY_OPTIONS = [1, 7, 30, 90];
+const UNMATCHED_DAY_OPTIONS = [1, 7, 30, 90];
+
+/** Davr tanlovi — sahifaning `toolbar` joyida. */
+export function UnmatchedToolbar({ days, onChange }: { days: number; onChange: (days: number) => void }) {
+  return (
+    <Toolbar>
+      <Select
+        label="Davr:"
+        value={String(days)}
+        onChange={(v) => onChange(Number(v))}
+        options={UNMATCHED_DAY_OPTIONS.map((d) => ({ value: String(d), label: `Oxirgi ${d} kun` }))}
+      />
+    </Toolbar>
+  );
+}
+
+function credentialValue(item: UnmatchedCredential): string {
+  return item.cardNumber ?? item.employeeNo ?? '';
+}
 
 /** Turniketda ko'ringan, lekin hech kimga biriktirilmagan karta/xodim
- *  raqamlari. Admin raqamni nusxalab, odamlar sahifasida kerakli odamning
+ *  raqamlari. Admin raqamni nusxalab, reestrda kerakli odamning
  *  kartasiga yozadi — shundan keyin raqam bu ro'yxatdan chiqadi. */
-export default function UnmatchedPanel() {
+export default function UnmatchedPanel({ days = 7 }: { days?: number }) {
   const { token } = useAuth();
   const toast = useToast();
-  const [days, setDays] = useState(7);
+  const navigate = useNavigate();
   const [items, setItems] = useState<UnmatchedCredential[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -37,96 +54,88 @@ export default function UnmatchedPanel() {
     void load();
   }, [load]);
 
-  return (
-    <section className="glass-deep p-5">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900">
-            Biriktirilmagan kartalar
-            {loading && <Loader2 size={14} className="animate-spin text-slate-400" />}
-          </h3>
-          <p className="text-xs text-slate-500">
-            Raqamni nusxalang va odamlar sahifasida egasining “Karta raqami” maydoniga kiriting.
-          </p>
-        </div>
-        <select
-          value={days}
-          onChange={(e) => setDays(Number(e.target.value))}
-          aria-label="Davr"
-          className="rounded-xl border border-white/80 bg-white/60 px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-300"
-        >
-          {DAY_OPTIONS.map((d) => (
-            <option key={d} value={d}>
-              Oxirgi {d} kun
-            </option>
-          ))}
-        </select>
-      </div>
+  const columns: DataTableColumn<UnmatchedCredential>[] = [
+    {
+      key: 'card',
+      header: 'Karta raqami',
+      sortValue: (i) => i.cardNumber,
+      cell: (i) => <span className="font-mono text-xs text-fg">{i.cardNumber ?? '—'}</span>,
+    },
+    {
+      key: 'employeeNo',
+      header: 'Xodim raqami',
+      sortValue: (i) => i.employeeNo,
+      cell: (i) => <span className="font-mono text-xs text-fg">{i.employeeNo ?? '—'}</span>,
+    },
+    {
+      key: 'count',
+      header: "O'tishlar",
+      align: 'right',
+      sortValue: (i) => i.count,
+      sortFirst: 'desc',
+      cell: (i) => (
+        <span className="text-[13px]">
+          {formatNumber(i.count)}
+          {i.deniedCount > 0 && <span className="ml-1 text-danger">({formatNumber(i.deniedCount)} rad)</span>}
+        </span>
+      ),
+    },
+    {
+      key: 'lastSeen',
+      header: 'Oxirgi marta',
+      sortValue: (i) => i.lastSeen,
+      sortFirst: 'desc',
+      cell: (i) => <span className="whitespace-nowrap text-[13px] tabular-nums text-muted">{formatDateTime(i.lastSeen)}</span>,
+    },
+    {
+      key: 'device',
+      header: 'Qurilma',
+      hideOnMobile: true,
+      cell: (i) => <span className="text-[13px]">{i.lastDeviceName ?? '—'}</span>,
+    },
+    {
+      key: 'actions',
+      header: '',
+      mobileLabel: 'Amallar',
+      align: 'right',
+      cell: (i) => {
+        const value = credentialValue(i);
+        return (
+          <div onClick={(e) => e.stopPropagation()} className="flex justify-end gap-1">
+            <IconButton
+              icon={Copy}
+              label="Raqamni nusxalash"
+              size="sm"
+              onClick={async () => {
+                if (await copyText(value)) toast.info(`${value} nusxalandi`);
+              }}
+            />
+            <IconButton icon={UserSearch} label="Reestrda qidirish" size="sm" onClick={() => navigate(peopleSearchLink(value))} />
+          </div>
+        );
+      },
+    },
+  ];
 
-      {error ? (
-        <ErrorState message={error} onRetry={() => void load()} />
-      ) : items === null ? (
-        <div className="flex items-center justify-center py-10 text-slate-400">
-          <Loader2 size={20} className="animate-spin" />
-        </div>
-      ) : items.length === 0 ? (
-        <EmptyState compact title="Hammasi biriktirilgan" description="Bu davrda noma'lum karta yoki xodim raqami ko'rinmadi." />
-      ) : (
-        <div className="overflow-x-auto rounded-xl border border-white/70">
-          <table className="w-full min-w-[48rem] text-left text-sm">
-            <thead>
-              <tr className="bg-white/50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <th className="px-3 py-3">Karta raqami</th>
-                <th className="px-3 py-3">Xodim raqami</th>
-                <th className="px-3 py-3 text-right">O'tishlar</th>
-                <th className="px-3 py-3">Oxirgi marta</th>
-                <th className="px-3 py-3">Qurilma</th>
-                <th className="px-3 py-3 text-right">Amallar</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => {
-                const value = item.cardNumber ?? item.employeeNo ?? '';
-                return (
-                  <tr key={`${item.cardNumber}|${item.employeeNo}`} className="border-t border-white/60">
-                    <td className="px-3 py-2 font-mono text-xs text-slate-800">{item.cardNumber ?? '—'}</td>
-                    <td className="px-3 py-2 font-mono text-xs text-slate-800">{item.employeeNo ?? '—'}</td>
-                    <td className="px-3 py-2 text-right text-xs tabular-nums text-slate-700">
-                      {item.count}
-                      {item.deniedCount > 0 && <span className="ml-1 text-red-600">({item.deniedCount} rad)</span>}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-xs tabular-nums text-slate-600">{formatDateTime(item.lastSeen)}</td>
-                    <td className="px-3 py-2 text-xs text-slate-600">{item.lastDeviceName ?? '—'}</td>
-                    <td className="px-3 py-2">
-                      <div className="flex justify-end gap-1">
-                        <button
-                          type="button"
-                          title="Raqamni nusxalash"
-                          aria-label="Raqamni nusxalash"
-                          onClick={async () => {
-                            if (await copyText(value)) toast.info(`${value} nusxalandi`);
-                          }}
-                          className="rounded-lg p-1.5 text-slate-500 hover:bg-white/80 hover:text-indigo-600"
-                        >
-                          <Copy size={14} />
-                        </button>
-                        <Link
-                          to={peopleSearchLink(value)}
-                          title="Odamlar sahifasida qidirish"
-                          aria-label="Odamlar sahifasida qidirish"
-                          className="rounded-lg p-1.5 text-slate-500 hover:bg-white/80 hover:text-indigo-600"
-                        >
-                          <UserSearch size={14} />
-                        </Link>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
+  return (
+    <div className="flex flex-col gap-4">
+      <Notice tone="info">
+        Raqamni nusxalang va reestrda egasining “Karta raqami” maydoniga kiriting — shundan keyin u bu ro'yxatdan chiqadi.
+      </Notice>
+      <DataTable
+        columns={columns}
+        rows={items ?? []}
+        rowKey={(i) => `${i.cardNumber}|${i.employeeNo}`}
+        defaultSort={{ key: 'lastSeen', dir: 'desc' }}
+        loading={items === null || (loading && items.length === 0)}
+        error={error}
+        onRetry={() => void load()}
+        emptyTitle="Hammasi biriktirilgan"
+        emptyDescription="Bu davrda noma'lum karta yoki xodim raqami ko'rinmadi."
+        ariaLabel="Biriktirilmagan kartalar"
+        maxHeight="none"
+        footer={items && items.length > 0 ? <span className="text-[13px] tabular-nums text-muted">Jami: {formatNumber(items.length)} ta</span> : undefined}
+      />
+    </div>
   );
 }

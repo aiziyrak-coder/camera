@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
-import { FileSignature, Loader2 } from 'lucide-react';
-import Modal from '../Modal';
+import { useEffect, useState, type FormEvent } from 'react';
+import { FileSignature } from 'lucide-react';
+import { Avatar, Button, Field, Input, Modal } from '../../ui';
+import { ChoiceCards, Notice } from '../settings/kit';
 import { ApiError } from '../../lib/apiClient';
 import { recordConsent, type ConsentSource, type PrivacyPerson } from '../../lib/privacyApi';
 
@@ -12,9 +13,9 @@ interface ConsentRecordModalProps {
   onSaved: (person: PrivacyPerson) => void;
 }
 
-const SOURCES: { value: ConsentSource; label: string; hint: string }[] = [
-  { value: 'qogoz', label: "Qog'ozdagi yozma rozilik", hint: 'Imzolangan ariza muassasada saqlanadi' },
-  { value: 'admin', label: "Og'zaki / boshqa", hint: 'Administrator shaxsan qayd etdi' },
+const SOURCES: { value: ConsentSource; label: string; description: string }[] = [
+  { value: 'qogoz', label: "Qog'ozdagi yozma rozilik", description: 'Imzolangan ariza muassasada saqlanadi' },
+  { value: 'admin', label: "Og'zaki / boshqa", description: 'Administrator shaxsan qayd etdi' },
 ];
 
 /** Qog'ozda (yoki boshqa yo'l bilan) olingan rozilikni tizimga kiritish.
@@ -34,7 +35,7 @@ export default function ConsentRecordModal({ person, token, consentVersion, onCl
     }
   }, [person]);
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!person) return;
     setPending(true);
@@ -49,68 +50,44 @@ export default function ConsentRecordModal({ person, token, consentVersion, onCl
   }
 
   return (
-    <Modal open={!!person} onClose={onClose} title="Rozilikni qayd etish" maxWidth="max-w-md">
+    <Modal
+      open={!!person}
+      onClose={onClose}
+      title="Rozilikni qayd etish"
+      description={consentVersion ? `Rozilik matnining joriy versiyasi qayd etiladi: ${consentVersion}` : undefined}
+      size="md"
+      dismissible={!pending}
+      footer={
+        <>
+          <Button onClick={onClose} disabled={pending}>
+            Bekor qilish
+          </Button>
+          <Button type="submit" form="consent-record-form" variant="primary" icon={FileSignature} loading={pending}>
+            Saqlash
+          </Button>
+        </>
+      }
+    >
       {person && (
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div className="rounded-xl bg-white/60 p-3">
-            <p className="text-sm font-bold text-slate-900">{person.fullName}</p>
-            <p className="text-xs text-slate-500">{person.groupOrPosition}</p>
+        <form id="consent-record-form" onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div className="flex items-center gap-3 rounded-control border border-border bg-surface-2 p-3">
+            <Avatar name={person.fullName} size="sm" />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-fg">{person.fullName}</p>
+              <p className="truncate text-xs text-muted">{person.groupOrPosition}</p>
+            </div>
           </div>
 
           <fieldset className="flex flex-col gap-2">
-            <legend className="mb-1 text-xs font-semibold text-slate-500">Rozilik qanday olingan</legend>
-            {SOURCES.map((option) => (
-              <label
-                key={option.value}
-                className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors ${
-                  source === option.value ? 'border-indigo-300 bg-indigo-50/70' : 'border-white/80 bg-white/50 hover:bg-white/80'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="consent-source"
-                  value={option.value}
-                  checked={source === option.value}
-                  onChange={() => setSource(option.value)}
-                  className="mt-0.5 accent-indigo-600"
-                />
-                <span>
-                  <span className="block text-sm font-semibold text-slate-800">{option.label}</span>
-                  <span className="block text-xs text-slate-500">{option.hint}</span>
-                </span>
-              </label>
-            ))}
+            <legend className="mb-1.5 text-[13px] font-medium text-fg">Rozilik qanday olingan</legend>
+            <ChoiceCards name="consent-source" value={source} onChange={setSource} options={SOURCES} columns={1} />
           </fieldset>
 
-          <label>
-            <span className="mb-1 block text-xs font-semibold text-slate-500">Izoh (ixtiyoriy)</span>
-            <input
-              value={note}
-              onChange={(e) => setNote(e.target.value.slice(0, 500))}
-              placeholder="Masalan: ariza №125, 19.09.2026"
-              className="w-full rounded-xl border border-white/80 bg-white/70 px-3 py-2 text-sm outline-none focus:border-indigo-300"
-            />
-          </label>
+          <Field label="Izoh (ixtiyoriy)" hint="Audit jurnaliga yoziladi">
+            <Input value={note} onChange={(e) => setNote(e.target.value.slice(0, 500))} placeholder="Masalan: ariza №125, 19.09.2026" />
+          </Field>
 
-          {consentVersion && (
-            <p className="text-xs text-slate-400">Rozilik matnining joriy versiyasi qayd etiladi: {consentVersion}</p>
-          )}
-
-          {error && <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">{error}</p>}
-
-          <div className="flex justify-end gap-2">
-            <button type="button" onClick={onClose} disabled={pending} className="btn-glass">
-              Bekor qilish
-            </button>
-            <button
-              type="submit"
-              disabled={pending}
-              className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {pending ? <Loader2 size={14} className="animate-spin" /> : <FileSignature size={14} />}
-              Saqlash
-            </button>
-          </div>
+          {error && <Notice tone="danger">{error}</Notice>}
         </form>
       )}
     </Modal>

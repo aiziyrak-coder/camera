@@ -1,36 +1,36 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Building2, Camera as CameraIcon, Clock, Info, MapPin, ScanFace } from 'lucide-react';
-import ErrorState from '../ui/ErrorState';
-import { SkeletonBlock } from '../ui/Skeleton';
+import { Building2, Camera as CameraIcon, ChevronDown, Clock, ExternalLink, Info, MapPin, ScanFace } from 'lucide-react';
+import {
+  Avatar,
+  Badge,
+  ButtonLink,
+  Drawer,
+  ErrorState,
+  Skeleton,
+  SkeletonText,
+  StatusBadge,
+  cn,
+  focusRing,
+  formatNumber,
+  formatUzDate,
+} from '../../ui';
 import { api, isAbortError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
+import { situationPaths } from '../../lib/situationApi';
 import type { PersonDay, ReportPersonDetail } from '../../types';
 
-/** 3-daraja: bitta odam — rasmi, kafedrasi va davr kesimi.
+/** 3-daraja: bitta odam — rasmi, kafedrasi va davr kesimi (o'ng panelda).
  *
- * "Isbot" shu yerda ikki bosqichli: kunlar jadvali qaysi kunlari
+ * "Isbot" shu yerda ikki bosqichli: kunlar ro'yxati qaysi kunlari
  * kelgani va kamera uni necha marta ko'rganini ko'rsatadi; kunni
  * bosganda o'sha kunning TASHRIFLARI ochiladi — qaysi kamera, qaysi
- * bino, soat nechada va qancha vaqt. */
-const STATUS_LABEL: Record<string, string> = {
-  keldi: 'Keldi',
-  kech_keldi: 'Kechikdi',
-  kelmadi: 'Kelmadi',
-  dam_olish: 'Dam olish',
-};
+ * bino, soat nechada va qancha vaqt. To'liq tarix — /shaxs/:id. */
 
-const STATUS_TONE: Record<string, string> = {
-  keldi: 'bg-emerald-50 text-emerald-700',
-  kech_keldi: 'bg-amber-50 text-amber-700',
-  kelmadi: 'bg-rose-50 text-rose-700',
-  dam_olish: 'bg-slate-100 text-slate-500',
-};
-
-function Stat({ label, value, tone = 'text-slate-900' }: { label: string; value: string | number; tone?: string }) {
+function Stat({ label, value, tone }: { label: string; value: string | number; tone?: string }) {
   return (
-    <div className="rounded-xl bg-white/60 px-3 py-2">
-      <span className={`block text-lg font-extrabold tabular-nums ${tone}`}>{value}</span>
-      <span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+    <div className="rounded-control border border-border bg-surface-2/60 px-3 py-2">
+      <span className={cn('block text-lg font-semibold tabular-nums', tone ?? 'text-fg')}>{value}</span>
+      <span className="block truncate text-[11px] font-medium text-muted">{label}</span>
     </div>
   );
 }
@@ -55,12 +55,12 @@ function DayVisits({ personId, date }: { personId: string; date: string }) {
   }, [personId, date, token]);
 
   if (error) return <ErrorState message={error} />;
-  if (!day) return <SkeletonBlock className="h-24 rounded-xl" />;
+  if (!day) return <SkeletonText lines={2} />;
 
   if (day.visits.length === 0) {
     return (
-      <p className="flex items-center gap-1.5 rounded-xl bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
-        <Info size={12} />
+      <p className="flex items-center gap-1.5 text-xs text-muted">
+        <Info size={12} aria-hidden="true" />
         Bu kuni kamera bu odamni umuman ko&apos;rmagan — ya&apos;ni tasdiqlovchi kadr yo&apos;q.
       </p>
     );
@@ -71,24 +71,22 @@ function DayVisits({ personId, date }: { personId: string; date: string }) {
       {day.visits.map((visit, index) => (
         <li
           key={`${visit.camera}-${visit.firstSeen}-${index}`}
-          className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-white/70 px-3 py-2 text-[11px]"
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-control bg-surface-2 px-3 py-2 text-xs"
         >
-          <span className="flex items-center gap-1 font-bold text-slate-800">
-            <CameraIcon size={12} className="text-indigo-500" />
+          <span className="inline-flex items-center gap-1 font-semibold text-fg">
+            <CameraIcon size={12} className="text-primary" aria-hidden="true" />
             {visit.camera}
           </span>
-          <span className="flex items-center gap-1 text-slate-500">
-            <Building2 size={11} />
+          <span className="inline-flex items-center gap-1 text-muted">
+            <Building2 size={11} aria-hidden="true" />
             {visit.building || '—'} · {visit.zone}
           </span>
-          <span className="flex items-center gap-1 tabular-nums text-slate-600">
-            <Clock size={11} className="text-indigo-500" />
+          <span className="inline-flex items-center gap-1 tabular-nums text-fg">
+            <Clock size={11} className="text-muted" aria-hidden="true" />
             {visit.firstSeen}–{visit.lastSeen} ({visit.durationMinutes} daq)
           </span>
-          <span className="text-slate-400">{visit.sightings} marta ko&apos;rilgan</span>
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-500">
-            {visit.cameraRole}
-          </span>
+          <span className="text-muted">{visit.sightings} marta ko&apos;rilgan</span>
+          <Badge>{visit.cameraRole}</Badge>
         </li>
       ))}
     </ul>
@@ -96,135 +94,130 @@ function DayVisits({ personId, date }: { personId: string; date: string }) {
 }
 
 export default function PersonReport({
+  personId,
   person,
   loading,
   error,
   onRetry,
-  onBack,
-  backLabel,
+  onClose,
 }: {
+  /** Ochiq odam (URL'dagi `?odam=`). null — panel yopiq. */
+  personId: string | null;
   person: ReportPersonDetail | null;
   loading: boolean;
   error: string | null;
   onRetry: () => void;
-  onBack: () => void;
-  backLabel: string;
+  onClose: () => void;
 }) {
   const [openDay, setOpenDay] = useState<string | null>(null);
 
   useEffect(() => {
     // Boshqa odamga o'tilganda ochiq kun yopiladi.
     setOpenDay(null);
-  }, [person?.id]);
+  }, [personId]);
+
+  // Eski odamning ma'lumoti yangisi yuklanguncha ko'rinmasin.
+  const current = person && person.id === personId ? person : null;
 
   return (
-    <section className="glass p-4 sm:p-5">
-      <button
-        type="button"
-        onClick={onBack}
-        className="mb-4 flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-500 transition hover:bg-white hover:text-indigo-600"
-      >
-        <ArrowLeft size={14} />
-        {backLabel}
-      </button>
-
-      {error && <ErrorState message={error} onRetry={onRetry} />}
-
-      {loading && !person ? (
-        <SkeletonBlock className="h-64 rounded-2xl" />
-      ) : person ? (
-        <div className="space-y-4">
+    <Drawer
+      open={Boolean(personId)}
+      onClose={onClose}
+      size="lg"
+      title={current?.fullName ?? 'Shaxs kesimi'}
+      subtitle={current ? `${current.period.label} · ${current.type === 'talaba' ? 'Talaba' : 'Xodim'}` : undefined}
+      actions={
+        personId ? (
+          <ButtonLink to={situationPaths.person(personId)} size="sm" variant="ghost" iconRight={ExternalLink}>
+            Profil
+          </ButtonLink>
+        ) : undefined
+      }
+    >
+      {error && !current ? (
+        <ErrorState message={error} onRetry={onRetry} />
+      ) : loading && !current ? (
+        <div className="space-y-4" aria-busy="true" aria-label="Yuklanmoqda">
+          <div className="flex items-center gap-4">
+            <Skeleton className="h-20 w-20 rounded-card" />
+            <SkeletonText lines={3} className="flex-1" />
+          </div>
+          <Skeleton className="h-16 w-full" />
+          <SkeletonText lines={6} />
+        </div>
+      ) : current ? (
+        <div className="space-y-5">
           <div className="flex flex-wrap items-start gap-4">
-            {person.photoUrl ? (
-              <img
-                src={person.photoUrl}
-                alt={person.fullName}
-                className="h-24 w-24 rounded-2xl object-cover ring-2 ring-white"
-              />
-            ) : (
-              <span className="flex h-24 w-24 items-center justify-center rounded-2xl bg-indigo-50 text-xl font-extrabold text-indigo-600">
-                {person.initials}
-              </span>
-            )}
+            <Avatar name={current.fullName} src={current.photoUrl} size="xl" shape="square" />
             <div className="min-w-0 flex-1">
-              <h3 className="text-lg font-extrabold text-slate-900">{person.fullName}</h3>
-              <p className="text-xs text-slate-500">
-                {person.faculty} · {person.unit} · {person.type === 'talaba' ? 'Talaba' : 'Xodim'}
+              <p className="text-sm text-fg">
+                {current.faculty} · {current.unit}
               </p>
-              <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
-                <span className="flex items-center gap-1">
-                  <ScanFace size={12} className={person.biometricsStatus === 'tasdiqlangan' ? 'text-emerald-500' : 'text-rose-500'} />
-                  {person.biometricsStatus === 'tasdiqlangan' ? 'Yuzi tasdiqlangan' : "Yuzi ro'yxatda yo'q"}
-                  {person.biometricsConfirmedLabel ? ` · ${person.biometricsConfirmedLabel}` : ''}
+              <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+                <span className="inline-flex items-center gap-1">
+                  <ScanFace size={13} className={current.biometricsStatus === 'tasdiqlangan' ? 'text-success' : 'text-danger'} aria-hidden="true" />
+                  {current.biometricsStatus === 'tasdiqlangan' ? 'Yuzi tasdiqlangan' : "Yuzi ro'yxatda yo'q"}
+                  {current.biometricsConfirmedLabel ? ` · ${current.biometricsConfirmedLabel}` : ''}
                 </span>
-                {person.buildings.length > 0 && (
-                  <span className="flex items-center gap-1">
-                    <MapPin size={12} className="text-indigo-500" />
-                    {person.buildings.join(', ')}
+                {current.buildings.length > 0 && (
+                  <span className="inline-flex items-center gap-1">
+                    <MapPin size={13} aria-hidden="true" />
+                    {current.buildings.join(', ')}
                   </span>
                 )}
               </p>
-              {person.note && (
-                <p className="mt-2 rounded-xl bg-amber-50/80 px-3 py-2 text-[11px] text-amber-800">{person.note}</p>
-              )}
+              {current.note && <p className="mt-2 rounded-control bg-warning-soft px-3 py-2 text-xs text-fg">{current.note}</p>}
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
-            <Stat label="Keldi" value={person.presentDays} tone="text-emerald-600" />
-            <Stat label="Kechikdi" value={person.lateDays} tone="text-amber-600" />
-            <Stat label="Kelmadi" value={person.absentDays} tone="text-rose-600" />
-            <Stat label="Davrdagi kunlar" value={person.workingDays} />
-            <Stat label="Kameradagi ko'rinish" value={person.visits} />
-            <Stat label="Turli kamera" value={person.cameras} />
+          <div className="grid grid-cols-3 gap-2">
+            <Stat label="Keldi" value={formatNumber(current.presentDays)} tone="text-success" />
+            <Stat label="Kechikdi" value={formatNumber(current.lateDays)} tone="text-warning" />
+            <Stat label="Kelmadi" value={formatNumber(current.absentDays)} tone="text-danger" />
+            <Stat label="Davrdagi kunlar" value={formatNumber(current.workingDays)} />
+            <Stat label="Kamerada ko'rinish" value={formatNumber(current.visits)} />
+            <Stat label="Turli kamera" value={formatNumber(current.cameras)} />
           </div>
 
           <div>
-            <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">
-              Kunlar — kunni bosing, o&apos;sha kunning kamera isboti ochiladi
-            </p>
-            <div className="space-y-1.5">
-              {person.days.map((day) => {
+            <p className="mb-2 text-xs font-semibold text-muted">Kunlar — kunni bosing, o&apos;sha kunning kamera isboti ochiladi</p>
+            <ul className="divide-y divide-border overflow-hidden rounded-card border border-border">
+              {current.days.map((day) => {
                 const open = openDay === day.date;
                 return (
-                  <div key={day.date} className="rounded-xl border border-white/70 bg-white/50">
+                  <li key={day.date}>
                     <button
                       type="button"
                       onClick={() => setOpenDay(open ? null : day.date)}
-                      className="flex w-full flex-wrap items-center justify-between gap-2 px-3 py-2 text-left"
+                      aria-expanded={open}
+                      className={cn('flex w-full flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-surface-2', focusRing)}
                     >
-                      <span className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-                        <span className="tabular-nums">{day.date}</span>
-                        <span className="text-slate-400">{day.weekday}</span>
+                      <span className="flex items-center gap-2 text-[13px] font-medium text-fg">
+                        <ChevronDown size={14} className={cn('text-subtle transition-transform', open && 'rotate-180')} aria-hidden="true" />
+                        {formatUzDate(day.date, { year: false })}
+                        <span className="font-normal text-muted">{day.weekday}</span>
                       </span>
-                      <span className="flex flex-wrap items-center gap-2 text-[11px]">
-                        <span
-                          className={`rounded-full px-2 py-0.5 font-bold ${
-                            STATUS_TONE[day.status ?? ''] ?? 'bg-slate-100 text-slate-400'
-                          }`}
-                        >
-                          {STATUS_LABEL[day.status ?? ''] ?? 'Yozuv yo‘q'}
-                        </span>
-                        {day.checkIn && <span className="tabular-nums text-slate-600">{day.checkIn}</span>}
-                        {day.checkOut && <span className="tabular-nums text-slate-400">→ {day.checkOut}</span>}
-                        <span className="text-slate-500">
+                      <span className="flex flex-wrap items-center gap-2 text-xs">
+                        {day.status ? <StatusBadge status={day.status} time={day.checkIn} /> : <Badge>Yozuv yo&apos;q</Badge>}
+                        {day.checkOut && <span className="tabular-nums text-muted">→ {day.checkOut}</span>}
+                        <span className="text-muted">
                           {day.visits > 0 ? `${day.visits} ta ko'rinish` : "ko'rinish yo'q"}
                           {day.firstCamera ? ` · ${day.firstCamera}` : ''}
                         </span>
                       </span>
                     </button>
                     {open && (
-                      <div className="border-t border-white/70 px-3 py-2">
-                        <DayVisits personId={person.id} date={day.date} />
+                      <div className="border-t border-border bg-surface px-3 py-2.5">
+                        <DayVisits personId={current.id} date={day.date} />
                       </div>
                     )}
-                  </div>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
           </div>
         </div>
       ) : null}
-    </section>
+    </Drawer>
   );
 }

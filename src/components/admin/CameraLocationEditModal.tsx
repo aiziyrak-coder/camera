@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Loader2, MapPin } from 'lucide-react';
-import Modal from '../Modal';
-import { SelectField, TextField } from '../FormField';
+import { MapPin } from 'lucide-react';
+import { Notice } from '../settings/kit';
+import { Button, Field, Input, Modal, Select } from '../../ui';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { useBuildings } from '../../lib/useBuildings';
@@ -27,6 +27,11 @@ export interface CameraLocationTarget {
   roomCode?: string | null;
   faceDirection?: 'kirish' | 'chiqish' | null;
 }
+
+const FACE_DIRECTION_OPTIONS = [
+  { value: 'kirish', label: 'Binoga kirayotganlarning' },
+  { value: 'chiqish', label: 'Binodan chiqayotganlarning' },
+];
 
 /** Kameraning JOYLASHUVINI to'g'rilash: nomi, binosi, qavati, zonasi, kafedrasi.
  *
@@ -57,6 +62,7 @@ export default function CameraLocationEditModal({
   const [departments, setDepartments] = useState<Department[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ name?: string; zone?: string }>({});
   const { zones } = useCameraZones(building || undefined);
   // Monitoring devoridagi kamera obyektida xona turi yo'q — u yerdan
   // ochilganda bu maydonlar ko'rsatilmaydi va YUBORILMAYDI (aks holda
@@ -74,6 +80,7 @@ export default function CameraLocationEditModal({
     setRoomCode(camera.roomCode ?? '');
     setFaceDirection(camera.faceDirection ?? '');
     setError(null);
+    setFieldErrors({});
   }, [camera]);
 
   useEffect(() => {
@@ -98,17 +105,19 @@ export default function CameraLocationEditModal({
     .filter((item) => !building || item.buildingName === building || item.name === department)
     .map((item) => ({ value: item.name, label: item.name }));
 
+  // Joriy bino ro'yxatda bo'lmasa ham (eski/o'chirilgan) tanlovda ko'rinsin.
+  const buildingOptions = buildings.map((item) => ({ value: item.name, label: item.name }));
+  if (building && !buildingOptions.some((item) => item.value === building)) buildingOptions.unshift({ value: building, label: building });
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!camera) return;
-    if (name.trim().length < 2) {
-      setError('Kamera nomi kamida 2 belgi bo‘lishi kerak');
-      return;
-    }
-    if (!zone.trim()) {
-      setError('Zona (xona) nomini kiriting');
-      return;
-    }
+    const nextErrors = {
+      name: name.trim().length < 2 ? 'Kamera nomi kamida 2 belgi bo‘lishi kerak' : undefined,
+      zone: !zone.trim() ? 'Zona (xona) nomini kiriting' : undefined,
+    };
+    setFieldErrors(nextErrors);
+    if (nextErrors.name || nextErrors.zone) return;
     setSaving(true);
     setError(null);
     try {
@@ -147,138 +156,95 @@ export default function CameraLocationEditModal({
   }
 
   return (
-    <Modal open={!!camera} onClose={onClose} title="Kamera ma'lumotini to'g'rilash">
-      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-        <p className="glass-deep p-3 text-xs leading-relaxed text-slate-500">
-          Bu yerda faqat kameraning joylashuvi o&apos;zgaradi. Ulanish sozlamalari (IP, port, RTSP, login/parol)
-          o&apos;z holicha qoladi — ular bu so&apos;rovda umuman yuborilmaydi.
-        </p>
+    <Modal
+      open={!!camera}
+      onClose={onClose}
+      title="Kamera joylashuvi"
+      description={camera?.name}
+      size="md"
+      dismissible={!saving}
+      footer={
+        <>
+          <Button onClick={onClose} disabled={saving}>
+            Bekor qilish
+          </Button>
+          <Button type="submit" form="camera-location-form" variant="primary" icon={MapPin} loading={saving}>
+            Saqlash
+          </Button>
+        </>
+      }
+    >
+      <form id="camera-location-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+        <Notice tone="neutral">
+          Bu yerda faqat kameraning joylashuvi o&apos;zgaradi. Ulanish sozlamalari (IP, port, RTSP, login/parol) o&apos;z
+          holicha qoladi — ular bu so&apos;rovda umuman yuborilmaydi.
+        </Notice>
 
-        <TextField
-          label="Kamera nomi"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          placeholder="Masalan: 2-qavat kirish"
-        />
+        <Field label="Kamera nomi" required error={fieldErrors.name}>
+          <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Masalan: 2-qavat kirish" />
+        </Field>
 
-        <SelectField
-          label="Bino"
-          placeholder="Tanlang"
-          value={building}
-          onChange={(event) => setBuilding(event.target.value)}
-          options={buildings.map((item) => ({
-            value: item.name,
-            label: item.name,
-          }))}
-        />
+        <Field label="Bino">
+          <Select value={building} onChange={setBuilding} placeholder="Tanlang" options={buildingOptions} />
+        </Field>
 
-        <div className="grid grid-cols-2 gap-3">
-          <TextField
-            label="Qavat"
-            type="number"
-            min={-5}
-            max={50}
-            placeholder="Belgilanmagan"
-            value={floor}
-            onChange={(event) => setFloor(event.target.value)}
-          />
-          <div>
-            <TextField
-              label="Zona (xona)"
-              value={zone}
-              onChange={(event) => setZone(event.target.value)}
-              placeholder="Masalan: 205-xona"
-              list="camera-location-zones"
-            />
-            <datalist id="camera-location-zones">
-              {zones.map((item) => (
-                <option key={item.zone} value={item.zone}>
-                  {item.cameraCount} ta kamera
-                </option>
-              ))}
-            </datalist>
-          </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Qavat" hint="Bo'sh — qavat belgilanmagan">
+            <Input type="number" min={-5} max={50} placeholder="Belgilanmagan" value={floor} onChange={(event) => setFloor(event.target.value)} />
+          </Field>
+          <Field label="Zona (xona)" required error={fieldErrors.zone}>
+            <Input value={zone} onChange={(event) => setZone(event.target.value)} placeholder="Masalan: 205-xona" list="camera-location-zones" />
+          </Field>
+          <datalist id="camera-location-zones">
+            {zones.map((item) => (
+              <option key={item.zone} value={item.zone}>
+                {item.cameraCount} ta kamera
+              </option>
+            ))}
+          </datalist>
         </div>
 
-        <div>
-          <SelectField
-            label="Kafedra"
-            placeholder="Kafedrasiz"
-            value={department}
-            onChange={(event) => setDepartment(event.target.value)}
-            options={departmentOptions}
-          />
-          {departmentOptions.length === 0 && (
-            <p className="mt-1 text-[11px] text-slate-400">
-              Bu binoda kafedra yo&apos;q — &quot;Tashkiliy tuzilma&quot; sahifasida qo&apos;shiladi.
-            </p>
-          )}
-        </div>
+        <Field
+          label="Kafedra"
+          hint={departmentOptions.length === 0 ? "Bu binoda kafedra yo'q — «Tashkiliy tuzilma» sahifasida qo'shiladi." : undefined}
+        >
+          <Select value={department} onChange={setDepartment} placeholder="Kafedrasiz" options={departmentOptions} />
+        </Field>
 
         {roomKnown && (
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <SelectField
-                label="Xona turi"
-                placeholder={
-                  camera?.effectiveRoomType && !roomType
-                    ? 'Belgilanmagan (bayroqdan: kirish/perimetr)'
-                    : 'Belgilanmagan'
-                }
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label="Xona turi"
+              hint={roomType ? ROOM_TYPE_HINTS[roomType] : 'Turi belgilanmagan kamerada faqat xavfsizlik mezonlari ishlaydi'}
+            >
+              <Select
                 value={roomType}
-                onChange={(event) => setRoomType(event.target.value as RoomType | '')}
+                onChange={(value) => setRoomType(value as RoomType | '')}
+                placeholder={camera?.effectiveRoomType && !roomType ? 'Belgilanmagan (bayroqdan: kirish/perimetr)' : 'Belgilanmagan'}
                 options={ROOM_TYPE_OPTIONS}
               />
-              <p className="mt-1 text-[11px] text-slate-400">
-                {roomType
-                  ? ROOM_TYPE_HINTS[roomType]
-                  : 'Turi belgilanmagan kamerada faqat xavfsizlik mezonlari ishlaydi'}
-              </p>
-            </div>
-            <TextField
-              label="Xona raqami (dars jadvali)"
-              value={roomCode}
-              onChange={(event) => setRoomCode(event.target.value)}
-              placeholder="Masalan: 211"
-            />
+            </Field>
+            <Field label="Xona raqami (dars jadvali)">
+              <Input value={roomCode} onChange={(event) => setRoomCode(event.target.value)} placeholder="Masalan: 211" />
+            </Field>
           </div>
         )}
 
         {roomKnown && (roomType || camera?.effectiveRoomType) === 'kirish' && (
-          <div>
-            <SelectField
-              label="Kamera kimning yuzini ko'radi"
-              placeholder="Noma'lum (ikkala tomon)"
+          <Field
+            label="Kamera kimning yuzini ko'radi"
+            hint="Aniq belgilansa, kelish va ketish adashtirilmaydi: kirayotganlarni ko'radigan kamera kech kelganni istalgan soatda aniqlaydi, chiqayotganlarni ko'radigani esa hech kimni «kech keldi» deb yozmaydi."
+          >
+            <Select
               value={faceDirection}
-              onChange={(event) => setFaceDirection(event.target.value as 'kirish' | 'chiqish' | '')}
-              options={[
-                { value: 'kirish', label: 'Binoga kirayotganlarning' },
-                { value: 'chiqish', label: 'Binodan chiqayotganlarning' },
-              ]}
+              onChange={(value) => setFaceDirection(value as 'kirish' | 'chiqish' | '')}
+              placeholder="Noma'lum (ikkala tomon)"
+              options={FACE_DIRECTION_OPTIONS}
             />
-            <p className="mt-1 text-[11px] text-slate-400">
-              Aniq belgilansa, kelish va ketish adashtirilmaydi: kirayotganlarni ko&apos;radigan kamera kech
-              kelganni istalgan soatda aniqlaydi, chiqayotganlarni ko&apos;radigani esa hech kimni &quot;kech
-              keldi&quot; deb yozmaydi.
-            </p>
-          </div>
+          </Field>
         )}
 
-        {error && <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-600">{error}</p>}
-
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="btn-glass">
-            Bekor qilish
-          </button>
-          <button
-            type="submit"
-            disabled={saving}
-            className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <MapPin size={14} />}
-            Saqlash
-          </button>
-        </div>
+        {error && <Notice tone="danger">{error}</Notice>}
       </form>
     </Modal>
   );

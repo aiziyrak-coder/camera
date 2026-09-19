@@ -1,112 +1,163 @@
 import { Suspense } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
-import PublicLayout from './layouts/PublicLayout';
-import AdminLayout from './layouts/AdminLayout';
-import RequireAuth from './components/RequireAuth';
-import RequirePermission from './components/RequirePermission';
+import { Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
+import AppShell from './layouts/AppShell';
+import MinimalLayout from './layouts/MinimalLayout';
+import { RequireAuth, RequirePermission, RequireRole } from './layouts/guards';
+import { legacyRedirect } from './layouts/legacyRoutes';
+import { ALL_NAV_ITEMS } from './layouts/shell/navConfig';
 import LoginPage from './pages/admin/LoginPage';
 import ResetPasswordPage from './pages/admin/ResetPasswordPage';
-import { PageSkeleton } from './components/ui/Skeleton';
+import { useAuth } from './lib/auth';
+import { usePermissions } from './lib/permissions';
 import { lazyPage } from './lib/lazyPage';
+import { PageSkeleton, ThemeProvider } from './ui';
 
 // Har sahifa alohida JS bo'lagi sifatida faqat ochilganda yuklanadi.
-// Ilgari barcha sahifalar (grafik, PDF, video kutubxonalari bilan) bitta
-// ~1.7 MB faylda edi va login'dan keyingi birinchi ekran shuni kutardi.
 // lazyPage deploydan keyin eskirgan bo'lak so'ralsa sahifani bir marta
 // qayta yuklaydi.
-const MonitoringPage = lazyPage(() => import('./pages/public/MonitoringPage'));
 const EnrollmentPage = lazyPage(() => import('./pages/public/EnrollmentPage'));
-const DashboardPage = lazyPage(() => import('./pages/admin/DashboardPage'));
+
+// Yangi sahifalar (2-bosqichda to'ldiriladi).
+const SituationPage = lazyPage(() => import('./pages/situation/SituationPage'));
+const FacultiesPage = lazyPage(() => import('./pages/students/FacultiesPage'));
+const FacultyPage = lazyPage(() => import('./pages/students/FacultyPage'));
+const GroupPage = lazyPage(() => import('./pages/students/GroupPage'));
+const KafedrasPage = lazyPage(() => import('./pages/teachers/KafedrasPage'));
+const KafedraPage = lazyPage(() => import('./pages/teachers/KafedraPage'));
+const LessonsPage = lazyPage(() => import('./pages/lessons/LessonsPage'));
+const PersonPage = lazyPage(() => import('./pages/person/PersonPage'));
+const SystemPage = lazyPage(() => import('./pages/settings/SystemPage'));
+const StyleGuidePage = lazyPage(() => import('./pages/settings/StyleGuidePage'));
+
+// Mavjud sahifalar — yangi manzillarda, 2-bosqichda dizayn tizimiga ko'chiriladi.
+const EventsPage = lazyPage(() => import('./pages/admin/EventsPage'));
+const ReportsPage = lazyPage(() => import('./pages/admin/ReportsPage'));
+const VideoWallPage = lazyPage(() => import('./pages/admin/VideoWallPage'));
+const FloorPlansPage = lazyPage(() => import('./pages/admin/FloorPlansPage'));
 const StudentsStaffPage = lazyPage(() => import('./pages/admin/StudentsStaffPage'));
 const OrgStructurePage = lazyPage(() => import('./pages/admin/OrgStructurePage'));
 const CamerasZonesPage = lazyPage(() => import('./pages/admin/CamerasZonesPage'));
 const AIModulesPage = lazyPage(() => import('./pages/admin/AIModulesPage'));
-const UsersRolesPage = lazyPage(() => import('./pages/admin/UsersRolesPage'));
-const SystemLogPage = lazyPage(() => import('./pages/admin/SystemLogPage'));
-const ReportsPage = lazyPage(() => import('./pages/admin/ReportsPage'));
-const EventsPage = lazyPage(() => import('./pages/admin/EventsPage'));
-const AttendancePage = lazyPage(() => import('./pages/admin/AttendancePage'));
-const TeachingPage = lazyPage(() => import('./pages/admin/TeachingPage'));
-const PresencePage = lazyPage(() => import('./pages/admin/PresencePage'));
 const NotificationsPage = lazyPage(() => import('./pages/admin/NotificationsPage'));
 const IntegrationsPage = lazyPage(() => import('./pages/admin/IntegrationsPage'));
-const FloorPlansPage = lazyPage(() => import('./pages/admin/FloorPlansPage'));
-const VideoWallPage = lazyPage(() => import('./pages/admin/VideoWallPage'));
+const UsersRolesPage = lazyPage(() => import('./pages/admin/UsersRolesPage'));
 const PrivacyPage = lazyPage(() => import('./pages/admin/PrivacyPage'));
+
+/** Eski /admin/* havolalari (xatcho'p, e-mail, Telegram) — yangi manzilga. */
+function LegacyRedirect() {
+  const { pathname, search, hash } = useLocation();
+  return <Navigate to={legacyRedirect(pathname, search, hash)} replace />;
+}
+
+/** `/videodevor?view=<id>` — ikkinchi monitor uchun ochilgan eski havola:
+ *  menyusiz to'liq ekran sahifasiga. */
+function VideoWallRoute() {
+  const [params] = useSearchParams();
+  if (params.get('view')) return <Navigate to={`/videodevor/ekran?${params.toString()}`} replace />;
+  return <VideoWallPage />;
+}
+
+/** /sozlamalar — foydalanuvchiga ochiq birinchi sozlama bo'limiga. */
+function SettingsIndex() {
+  const { role } = useAuth();
+  const { can } = usePermissions();
+  const first = ALL_NAV_ITEMS.find((item) => item.to.startsWith('/sozlamalar/') && (!item.permission || can(item.permission, role)));
+  return <Navigate to={first?.to ?? '/'} replace />;
+}
+
+function Minimal() {
+  return <MinimalLayout variant="center" />;
+}
+
+function PublicPage() {
+  return <MinimalLayout variant="page" />;
+}
 
 export default function App() {
   return (
-    <Suspense fallback={<PageSkeleton />}>
-      <Routes>
-        <Route element={<PublicLayout />}>
-          {/* Monitoring devori endi tizimga kirishni talab qiladi. Auditda
-              aniqlangan: token'siz ham 107 ta kameraning jonli tasviri
-              ko'rinardi — koridorlar, xonalar, kirish joylari internetdan
-              kira olgan har kimga ochiq edi.
+    <ThemeProvider>
+      <Suspense fallback={<div className="p-6"><PageSkeleton /></div>}>
+        <Routes>
+          {/* Tizimga kirmasdan: kirish, parolni tiklash. */}
+          <Route element={<Minimal />}>
+            <Route path="/kirish" element={<LoginPage />} />
+            <Route path="/parolni-tiklash" element={<ResetPasswordPage />} />
+          </Route>
+          {/* Ro'yxatdan o'tish ATAYLAB ochiq: hali hisobi yo'q odam o'z yuzini yuboradi. */}
+          <Route element={<PublicPage />}>
+            <Route path="/royxatdan-otish" element={<EnrollmentPage />} />
+          </Route>
 
-              Ro'yxatdan o'tish sahifasi ATAYLAB ochiq qoladi: u aynan hali
-              hisobi yo'q odam o'z yuzini yuborishi uchun mo'ljallangan. */}
           <Route element={<RequireAuth />}>
-            <Route path="/" element={<MonitoringPage />} />
-          </Route>
-          <Route path="/royxatdan-otish" element={<EnrollmentPage />} />
-        </Route>
-
-        {/* Videodevor — ikkinchi monitor uchun menyusiz, to'liq ekran. */}
-        <Route element={<RequireAuth />}>
-          <Route element={<RequirePermission permission="viewLive" />}>
-            <Route path="/videodevor" element={<VideoWallPage standalone />} />
-          </Route>
-        </Route>
-
-        <Route path="/admin/login" element={<LoginPage />} />
-        <Route path="/admin/reset-password" element={<ResetPasswordPage />} />
-
-        <Route element={<RequireAuth />}>
-          <Route path="/admin" element={<AdminLayout />}>
-            <Route index element={<DashboardPage />} />
-            {/* Menyu bu bo'limlarni allaqachon yashiradi; bu yerdagi
-                himoya to'g'ridan-to'g'ri havola bilan kirilganda kerak.
-                Haqiqiy chegara baribir backendda. */}
-            <Route element={<RequirePermission permission="reviewEvents" />}>
-              <Route path="events" element={<EventsPage />} />
-            </Route>
-            <Route path="students-staff" element={<StudentsStaffPage />} />
-            <Route element={<RequirePermission permission="manageAttendance" />}>
-              <Route path="attendance" element={<AttendancePage />} />
-              <Route path="presence" element={<PresencePage />} />
-            </Route>
-            <Route element={<RequirePermission permission="manageLessons" />}>
-              <Route path="teaching" element={<TeachingPage />} />
-            </Route>
-            <Route path="org-structure" element={<OrgStructurePage />} />
-            <Route path="cameras" element={<CamerasZonesPage />} />
-            <Route path="ai-modules" element={<AIModulesPage />} />
-            <Route path="reports" element={<ReportsPage />} />
-            <Route element={<RequirePermission permission="manageRoles" />}>
-              <Route path="users-roles" element={<UsersRolesPage />} />
-            </Route>
-            <Route element={<RequirePermission permission="systemSettings" />}>
-              <Route path="system-log" element={<SystemLogPage />} />
-            </Route>
+            {/* Videodevor — ikkinchi monitor uchun menyusiz, to'liq ekran. */}
             <Route element={<RequirePermission permission="viewLive" />}>
-              <Route path="video-wall" element={<VideoWallPage />} />
-              <Route path="floor-plans" element={<FloorPlansPage />} />
+              <Route path="/videodevor/ekran" element={<VideoWallPage standalone />} />
             </Route>
-            <Route element={<RequirePermission permission="manageNotifications" />}>
-              <Route path="notifications" element={<NotificationsPage />} />
-            </Route>
-            <Route element={<RequirePermission permission="manageIntegrations" />}>
-              <Route path="integrations" element={<IntegrationsPage />} />
-            </Route>
-            <Route element={<RequirePermission permission="managePrivacy" />}>
-              <Route path="privacy" element={<PrivacyPage />} />
+
+            <Route element={<AppShell />}>
+              <Route path="/" element={<SituationPage />} />
+
+              <Route element={<RequirePermission permission="manageAttendance" />}>
+                <Route path="/talabalar" element={<FacultiesPage />} />
+                <Route path="/talabalar/fakultet/:facultyId" element={<FacultyPage />} />
+                <Route path="/talabalar/guruh/:groupName" element={<GroupPage />} />
+                <Route path="/oqituvchilar" element={<KafedrasPage />} />
+                <Route path="/oqituvchilar/kafedra/:departmentId" element={<KafedraPage />} />
+                <Route path="/shaxs/:personId" element={<PersonPage />} />
+              </Route>
+              <Route element={<RequirePermission permission="manageLessons" />}>
+                <Route path="/darslar" element={<LessonsPage />} />
+              </Route>
+
+              <Route element={<RequirePermission permission="viewLive" />}>
+                <Route path="/videodevor" element={<VideoWallRoute />} />
+                <Route path="/xarita" element={<FloorPlansPage />} />
+              </Route>
+              <Route element={<RequirePermission permission="reviewEvents" />}>
+                <Route path="/hodisalar" element={<EventsPage />} />
+              </Route>
+              <Route element={<RequirePermission permission="viewReports" />}>
+                <Route path="/hisobotlar" element={<ReportsPage />} />
+              </Route>
+              <Route element={<RequirePermission permission="registerPeople" />}>
+                <Route path="/reestr" element={<StudentsStaffPage />} />
+              </Route>
+              <Route path="/tuzilma" element={<OrgStructurePage />} />
+
+              <Route path="/sozlamalar" element={<SettingsIndex />} />
+              <Route element={<RequirePermission permission="editCameraLocation" />}>
+                <Route path="/sozlamalar/kameralar" element={<CamerasZonesPage />} />
+              </Route>
+              <Route element={<RequirePermission permission="configureAi" />}>
+                <Route path="/sozlamalar/ai" element={<AIModulesPage />} />
+              </Route>
+              <Route element={<RequirePermission permission="manageNotifications" />}>
+                <Route path="/sozlamalar/bildirishnomalar" element={<NotificationsPage />} />
+              </Route>
+              <Route element={<RequirePermission permission="manageIntegrations" />}>
+                <Route path="/sozlamalar/integratsiyalar" element={<IntegrationsPage />} />
+              </Route>
+              <Route element={<RequirePermission permission="manageRoles" />}>
+                <Route path="/sozlamalar/foydalanuvchilar" element={<UsersRolesPage />} />
+              </Route>
+              <Route element={<RequirePermission permission="managePrivacy" />}>
+                <Route path="/sozlamalar/maxfiylik" element={<PrivacyPage />} />
+              </Route>
+              <Route element={<RequirePermission permission="systemSettings" />}>
+                <Route path="/sozlamalar/tizim" element={<SystemPage />} />
+              </Route>
+              {/* Uslub qo'llanmasi — menyuda yo'q, faqat ko'rib chiqish uchun. */}
+              <Route element={<RequireRole roles={['super-admin']} />}>
+                <Route path="/sozlamalar/ui" element={<StyleGuidePage />} />
+              </Route>
             </Route>
           </Route>
-        </Route>
 
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Suspense>
+          <Route path="/admin/*" element={<LegacyRedirect />} />
+          <Route path="/admin" element={<LegacyRedirect />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
+    </ThemeProvider>
   );
 }

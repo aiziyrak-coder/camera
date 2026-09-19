@@ -1,35 +1,30 @@
 import { useState } from 'react';
-import { Eye, ListChecks, Loader2, LogIn } from 'lucide-react';
-import Badge from '../Badge';
-import EventDetailModal from '../admin/EventDetailModal';
-import { api } from '../../lib/apiClient';
+import { ListChecks } from 'lucide-react';
+import { ButtonLink, Card, CardHeader, EmptyState, ErrorState, Skeleton, StatusBadge, useToast } from '../../ui';
+import EventDrawer from '../events/EventDrawer';
+import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { useLiveEvents } from '../../lib/realtime';
 import { useServerPage } from '../../lib/useServerPage';
+import { relativeTime } from '../../lib/uzDate';
 import type { AIEvent } from '../../types';
-
-const SEVERITY_TONE: Record<AIEvent['severity'], 'green' | 'amber' | 'red'> = {
-  past: 'green',
-  "o'rta": 'amber',
-  yuqori: 'red',
-};
 
 const PAGE_SIZE = 6;
 
-/** O'ng panelning o'rta qismi — devorda ko'rsatiladigan hodisalar.
+/** Devorda ko'rsatiladigan hodisalar jurnali.
  *
  * Faqat operator TASDIQLAGAN hodisalar chiqadi (hal qilinganlari ham —
- * ular ham haqiqiy deb topilgan, ish jarayonida yopilgan xolos). Bu ataylab: modullarning
- * bir qismi hali ishonchli emas (o'lchangan holatlar — bo'sh xonadagi
- * "tartib buzilishi", 28 piksellik yuzda "uxlab qolish"), va devor
- * institutda ko'rsatiladigan joy. Tasdiqlanmagan signal shovqin bo'lishi
- * mumkin, tasdiqlangani esa odam ko'rib chiqqan dalil.
+ * ular ham haqiqiy deb topilgan, ish jarayonida yopilgan xolos). Bu ataylab:
+ * modullarning bir qismi hali ishonchli emas, devor esa institutda
+ * ko'rsatiladigan joy. Tasdiqlanmagan signal shovqin bo'lishi mumkin,
+ * tasdiqlangani esa odam ko'rib chiqqan dalil.
  *
- * To'liq oqim — tasdiqlanmaganlar ham — Hodisalar sahifasida qoladi:
- * operator aynan o'sha yerda ko'rib chiqadi va tasdiqlaydi. */
+ * To'liq oqim — tasdiqlanmaganlar ham — Hodisalar sahifasida qoladi. */
 export default function EventsLogPanel() {
   const { token } = useAuth();
+  const toast = useToast();
   const [selected, setSelected] = useState<AIEvent | null>(null);
+  const [busy, setBusy] = useState(false);
   const { items: events, page, loading, error, reload } = useServerPage<AIEvent>(
     '/api/events',
     { status: 'tasdiqlangan,hal_qilindi' },
@@ -40,72 +35,75 @@ export default function EventsLogPanel() {
     if (page === 1) reload();
   }, !!token);
 
-  // Bu yerdan ham tasdiqlash/rad etish mumkin: devorni kuzatib turgan
-  // operator hodisani ko'rib, o'sha zahoti hukm qila oladi.
-  async function review(id: string, status: 'tasdiqlangan' | 'rad_etilgan') {
+  // Bu yerdan ham qaror qilish mumkin: devorni kuzatib turgan operator
+  // hodisani ko'rib, o'sha zahoti hukm qila oladi. Oyna — Hodisalar
+  // sahifasidagi bilan AYNAN bir xil (EventDrawer).
+  async function review(event: AIEvent, status: 'tasdiqlangan' | 'rad_etilgan') {
+    setBusy(true);
     try {
-      await api.patch(`/api/events/${id}/review`, { status }, token);
+      await api.patch(`/api/events/${event.id}/review`, { status }, token);
+      toast.success(status === 'tasdiqlangan' ? 'Hodisa tasdiqlandi' : "Hodisa rad etildi (yolg'on signal)");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Tarmoq xatosi — server bilan bog'lanib bo'lmadi");
     } finally {
+      setBusy(false);
       setSelected(null);
       reload();
     }
   }
 
   return (
-    <div className="glass p-4">
-      <h3 className="mb-3 flex items-center gap-1.5 text-sm font-extrabold text-slate-900">
-        <ListChecks size={15} className="text-indigo-500" />
-        Hodisalar jurnali
-      </h3>
+    <Card>
+      <CardHeader
+        title="Hodisalar jurnali"
+        subtitle="Tasdiqlangan signallar"
+        icon={ListChecks}
+        className="mb-3"
+        actions={
+          <ButtonLink to="/hodisalar?korinish=jurnal" size="sm" variant="ghost">
+            Barchasi
+          </ButtonLink>
+        }
+      />
 
-      {!token ? (
-        <p className="flex items-center gap-1.5 rounded-lg bg-white/60 px-3 py-2.5 text-xs text-slate-500">
-          <LogIn size={13} />
-          Ko&apos;rish uchun tizimga kiring
-        </p>
-      ) : loading && events.length === 0 ? (
-        <div className="flex items-center justify-center py-6 text-slate-400">
-          <Loader2 size={16} className="animate-spin" />
+      {loading && events.length === 0 ? (
+        <div className="space-y-2" aria-busy="true" aria-label="Yuklanmoqda">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Skeleton key={index} className="h-12 w-full" />
+          ))}
         </div>
       ) : error ? (
-        <p className="text-[11px] font-medium text-red-600">{error}</p>
+        <ErrorState message={error} onRetry={reload} />
       ) : events.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-slate-300 px-3 py-6 text-center text-[11px] leading-relaxed text-slate-400">
-          Tasdiqlangan hodisa yo&apos;q.
-          <br />
-          Yangi signallar Hodisalar sahifasida ko&apos;rib chiqiladi.
-        </p>
+        <EmptyState
+          compact
+          icon={ListChecks}
+          title="Tasdiqlangan hodisa yo'q"
+          description="Yangi signallar Hodisalar sahifasida ko'rib chiqiladi."
+        />
       ) : (
-        <ul className="space-y-2">
-          {events.map((e) => (
-            <li key={e.id} className="rounded-lg bg-white/60 p-2.5 text-xs">
-              <div className="mb-0.5 flex items-center justify-between gap-2">
-                <span className="truncate font-semibold text-slate-800">{e.moduleName}</span>
-                <Badge tone={SEVERITY_TONE[e.severity]}>{e.confidence}%</Badge>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <p className="truncate text-slate-500">
-                  {e.cameraName} · {e.timestamp}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setSelected(e)}
-                  className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-indigo-600 transition-colors hover:bg-indigo-50"
-                >
-                  <Eye size={12} />
-                  Ko&apos;rish
-                </button>
-              </div>
+        <ul className="-mx-2 divide-y divide-border">
+          {events.map((event) => (
+            <li key={event.id}>
+              <button
+                type="button"
+                onClick={() => setSelected(event)}
+                className="flex w-full items-start gap-3 rounded-control px-2 py-2.5 text-left transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/40"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-medium text-fg">{event.moduleName}</span>
+                  <span className="block truncate text-xs text-muted">
+                    {event.cameraName} · {event.occurredAt ? relativeTime(event.occurredAt) : event.timestamp}
+                  </span>
+                </span>
+                <StatusBadge kind="event" status={event.status} />
+              </button>
             </li>
           ))}
         </ul>
       )}
 
-      {/* Hodisalar sahifasidagi bilan AYNAN bir xil oyna — dalil rasm,
-          kamera, vaqt va tasdiqlash tugmalari. Alohida nusxa yozish
-          ikkalasining vaqt o'tib bir-biridan farq qilishiga olib
-          kelardi. */}
-      <EventDetailModal event={selected} onClose={() => setSelected(null)} onReview={review} />
-    </div>
+      <EventDrawer event={selected} onClose={() => setSelected(null)} onReview={review} busy={busy} />
+    </Card>
   );
 }

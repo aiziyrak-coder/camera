@@ -64,6 +64,7 @@ from app.routers import (
     ptz,
     public,
     reports,
+    situation,
     students_staff,
     system,
     users,
@@ -282,6 +283,7 @@ app.include_router(ptz.router)
 app.include_router(floor_plans.router)
 app.include_router(metrics.router)
 app.include_router(privacy.router)
+app.include_router(situation.router)
 
 
 @app.get("/health")

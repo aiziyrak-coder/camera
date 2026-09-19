@@ -306,7 +306,7 @@ export default function PtzControls({
         onLostPointerCapture={pointerEnd}
         onContextMenu={(event) => event.preventDefault()}
         className={`flex touch-none select-none items-center justify-center rounded-lg transition-colors ${
-          pressed ? 'bg-indigo-500 text-white' : 'bg-white/10 text-white/85 hover:bg-white/20'
+          pressed ? 'bg-primary text-primary-fg' : 'bg-white/10 text-white/85 hover:bg-white/20'
         } ${extra}`}
       >
         {children}
@@ -316,7 +316,7 @@ export default function PtzControls({
 
   return (
     <div
-      className={`w-60 rounded-xl bg-slate-950/80 p-2.5 text-white shadow-xl ring-1 ring-white/10 backdrop-blur ${className}`}
+      className={`w-60 rounded-card bg-black/80 p-2.5 text-white shadow-xl ring-1 ring-white/10 backdrop-blur ${className}`}
       tabIndex={0}
       onKeyDown={(event) => {
         if (!globalKeyboard && !isTypingTarget(event.target)) handleKey(event, true);
@@ -333,7 +333,7 @@ export default function PtzControls({
         className="flex w-full items-center justify-between gap-2 text-xs font-bold"
       >
         <span className="flex items-center gap-1.5">
-          <Gamepad2 size={14} className="text-indigo-300" />
+          <Gamepad2 size={14} aria-hidden="true" className="text-primary" />
           PTZ boshqaruvi
         </span>
         {open ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
@@ -358,7 +358,7 @@ export default function PtzControls({
                       releaseAll();
                       queue.push({ kind: 'stop' });
                     }}
-                    className="flex aspect-square items-center justify-center rounded-lg bg-rose-500/80 text-white hover:bg-rose-500"
+                    className="flex aspect-square items-center justify-center rounded-lg bg-danger/80 text-danger-fg hover:bg-danger"
                   >
                     <Square size={12} className="fill-white" />
                   </button>
@@ -380,7 +380,7 @@ export default function PtzControls({
               step={5}
               value={Math.round(safeSpeed * 100)}
               onChange={(event) => setSpeed(Number(event.target.value) / 100)}
-              className="mt-1 w-full accent-indigo-400"
+              className="mt-1 w-full accent-primary"
             />
           </label>
 
@@ -399,7 +399,7 @@ export default function PtzControls({
                 <RefreshCw size={11} className={presetsLoading ? 'animate-spin' : ''} />
               </button>
             </div>
-            {presetsError && <p className="text-[10px] text-amber-300">{presetsError}</p>}
+            {presetsError && <p className="text-[10px] text-warning">{presetsError}</p>}
             {presets && presets.length === 0 && <p className="text-[10px] text-white/40">Saqlangan preset yo&apos;q</p>}
             {presets && presets.length > 0 && (
               <ul className="max-h-28 space-y-0.5 overflow-y-auto pr-0.5">
@@ -441,7 +441,7 @@ export default function PtzControls({
                 type="submit"
                 disabled={saving || !newPreset.trim()}
                 title="Kameraning hozirgi holatini preset sifatida saqlash"
-                className="flex items-center gap-1 rounded-md bg-indigo-500 px-2 py-1 text-[11px] font-semibold hover:bg-indigo-400 disabled:opacity-50"
+                className="flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-primary-fg hover:bg-primary/90 disabled:opacity-50"
               >
                 {saving ? <Loader2 size={11} className="animate-spin" /> : <Bookmark size={11} />}
                 Saqlash
@@ -449,7 +449,7 @@ export default function PtzControls({
             </form>
           </div>
 
-          {error && <p className="rounded-md bg-rose-500/20 px-2 py-1 text-[10px] font-medium text-rose-200">{error}</p>}
+          {error && <p className="rounded-md bg-danger/20 px-2 py-1 text-[10px] font-medium text-white">{error}</p>}
           <p className="text-[9px] leading-tight text-white/35">
             Bosib turing — harakat, qo&apos;yib yuboring — to&apos;xtaydi. Klaviatura: strelkalar, +/−.
           </p>

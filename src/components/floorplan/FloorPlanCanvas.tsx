@@ -39,7 +39,7 @@ type Gesture =
 const DRAG_THRESHOLD = 4;
 const BUTTON_ZOOM = 1.35;
 const CONTROL_BTN =
-  'flex h-9 w-9 items-center justify-center rounded-xl border border-white/90 bg-white/90 text-slate-700 shadow-sm transition-colors hover:bg-white hover:text-indigo-600';
+  'flex h-9 w-9 items-center justify-center rounded-control border border-border bg-surface text-fg shadow-card transition-colors hover:bg-surface-2 hover:text-primary';
 
 export default function FloorPlanCanvas({
   ref,
@@ -272,7 +272,7 @@ export default function FloorPlanCanvas({
   return (
     <div
       ref={containerRef}
-      className={`relative select-none overflow-hidden rounded-xl border border-white/80 bg-slate-100/80 ${
+      className={`relative select-none overflow-hidden rounded-card border border-border bg-surface-2 ${
         placing ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'
       } ${className}`}
       style={{ touchAction: 'none' }}
@@ -299,7 +299,7 @@ export default function FloorPlanCanvas({
 
       {(!imageUrl || imageFailed) && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="flex items-center gap-2 rounded-xl bg-white/90 px-3 py-2 text-xs font-semibold text-slate-500 shadow">
+          <div className="flex items-center gap-2 rounded-control bg-surface px-3 py-2 text-xs font-medium text-muted shadow-card">
             <ImageOff size={14} /> Reja rasmini yuklab bo'lmadi — markerlar baribir ko'rsatiladi
           </div>
         </div>
@@ -332,11 +332,11 @@ export default function FloorPlanCanvas({
           <Maximize size={15} />
         </button>
       </div>
-      <div data-canvas-control className="pointer-events-none absolute bottom-3 left-3 rounded-lg bg-white/80 px-2 py-1 text-[11px] font-semibold text-slate-500 shadow-sm">
+      <div data-canvas-control className="pointer-events-none absolute bottom-3 left-3 rounded-control bg-surface/90 px-2 py-1 text-[11px] font-medium tabular-nums text-muted shadow-card">
         {Math.round(viewport.scale * 100)}%
       </div>
       {placing && (
-        <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-lg">
+        <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-fg shadow-pop">
           Kamerani qo'yish uchun rejaga bosing
         </div>
       )}

@@ -1,81 +1,74 @@
 import { Clock, Fingerprint, ImageOff, ShieldAlert, UserX, Users } from 'lucide-react';
-import StatCard from '../StatCard';
-import {
-  daysUntil,
-  formatRetentionDays,
-  formatUzDate,
-  type PrivacyOverview,
-} from '../../lib/privacyApi';
-
-function count(value: number): string {
-  return value.toLocaleString('ru-RU');
-}
+import { Card, CardHeader, StatTile, formatNumber } from '../../ui';
+import { daysUntil, formatRetentionDays, formatUzDate, type PrivacyFilter, type PrivacyOverview } from '../../lib/privacyApi';
 
 /** Umumiy holat: kimda biometrika bor, kimda rozilik yo'q, nima qachon
- *  avtomatik o'chiriladi. */
-export function PrivacyKpiTiles({ overview }: { overview: PrivacyOverview }) {
+ *  avtomatik o'chiriladi. Muammo ko'rsatayotgan plitka bosilsa — shu
+ *  filtr bilan shaxslar ro'yxati ochiladi. */
+export function PrivacyKpiTiles({ overview, onFilter }: { overview: PrivacyOverview; onFilter?: (filter: PrivacyFilter | 'all') => void }) {
   const purgeIn = daysUntil(overview.nextBiometricPurgeAt);
-  const purgeSublabel =
+  const purgeHint =
     overview.inactiveWithBiometrics === 0
       ? "O'chirilishi kutilayotgan biometrika yo'q"
       : overview.biometricPurgeOverdue > 0
-        ? `${count(overview.biometricPurgeOverdue)} tasi keyingi tozalashda o'chadi`
+        ? `${formatNumber(overview.biometricPurgeOverdue)} tasi keyingi tozalashda o'chadi`
         : overview.nextBiometricPurgeAt
           ? `Eng yaqini: ${formatUzDate(overview.nextBiometricPurgeAt)}${purgeIn !== null && purgeIn > 0 ? ` (${purgeIn} kun)` : ''}`
           : "Avtomatik o'chirish o'chirilgan";
 
+  const click = (filter: PrivacyFilter | 'all') => (onFilter ? () => onFilter(filter) : undefined);
+
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      <StatCard
-        icon={<Users size={20} />}
-        value={count(overview.peopleTotal)}
+      <StatTile
+        icon={Users}
         label="Jami shaxslar"
-        sublabel={`Faol: ${count(overview.peopleActive)} · Faol emas: ${count(overview.peopleInactive)}`}
+        value={formatNumber(overview.peopleTotal)}
+        hint={`Faol: ${formatNumber(overview.peopleActive)} · Faol emas: ${formatNumber(overview.peopleInactive)}`}
+        tone="primary"
+        onClick={click('all')}
       />
-      <StatCard
-        icon={<Fingerprint size={20} />}
-        value={count(overview.withBiometrics)}
+      <StatTile
+        icon={Fingerprint}
         label="Biometrikasi saqlangan"
-        sublabel="Yuz rasmi yoki yuz shabloni bor"
-        tone="slate"
+        value={formatNumber(overview.withBiometrics)}
+        hint="Yuz rasmi yoki yuz shabloni bor"
+        tone="info"
+        onClick={click('with_biometrics')}
       />
-      <StatCard
-        icon={<ShieldAlert size={20} />}
-        value={count(overview.biometricsWithoutConsent)}
+      <StatTile
+        icon={ShieldAlert}
         label="Biometrika bor, rozilik yo'q"
-        sublabel={
+        value={formatNumber(overview.biometricsWithoutConsent)}
+        hint={
           overview.consentOutdated > 0
-            ? `Yana ${count(overview.consentOutdated)} tasining roziligi eski versiyada`
+            ? `Yana ${formatNumber(overview.consentOutdated)} tasining roziligi eski versiyada`
             : "Rozilikni qog'ozda olib, shu yerda qayd eting"
         }
-        tone={overview.biometricsWithoutConsent > 0 ? 'red' : 'green'}
+        tone={overview.biometricsWithoutConsent > 0 ? 'danger' : 'success'}
+        onClick={click('no_consent')}
       />
-      <StatCard
-        icon={<UserX size={20} />}
-        value={count(overview.inactiveWithBiometrics)}
+      <StatTile
+        icon={UserX}
         label="Faol emas, biometrikasi bor"
-        sublabel={purgeSublabel}
-        tone={overview.inactiveWithBiometrics > 0 ? 'amber' : 'green'}
+        value={formatNumber(overview.inactiveWithBiometrics)}
+        hint={purgeHint}
+        tone={overview.inactiveWithBiometrics > 0 ? 'warning' : 'success'}
+        onClick={click('inactive')}
       />
-      <StatCard
-        icon={<ImageOff size={20} />}
-        value={count(overview.snapshotCount)}
+      <StatTile
+        icon={ImageOff}
         label="Hodisa suratlari"
-        sublabel={
-          overview.oldestSnapshotAt ? `Eng eskisi: ${formatUzDate(overview.oldestSnapshotAt)}` : "Saqlangan surat yo'q"
-        }
-        tone="slate"
+        value={formatNumber(overview.snapshotCount)}
+        hint={overview.oldestSnapshotAt ? `Eng eskisi: ${formatUzDate(overview.oldestSnapshotAt)}` : "Saqlangan surat yo'q"}
+        tone="neutral"
       />
-      <StatCard
-        icon={<Clock size={20} />}
-        value={overview.consentVersion}
+      <StatTile
+        icon={Clock}
         label="Rozilik matni versiyasi"
-        sublabel={
-          overview.consentRequired
-            ? "Ro'yxatdan o'tishda rozilik majburiy"
-            : "Ro'yxatdan o'tishda rozilik ixtiyoriy"
-        }
-        tone={overview.consentRequired ? 'indigo' : 'amber'}
+        value={overview.consentVersion}
+        hint={overview.consentRequired ? "Ro'yxatdan o'tishda rozilik majburiy" : "Ro'yxatdan o'tishda rozilik ixtiyoriy"}
+        tone={overview.consentRequired ? 'primary' : 'warning'}
       />
     </div>
   );
@@ -96,44 +89,28 @@ export function RetentionSettingsCard({ overview }: { overview: PrivacyOverview 
       value: formatRetentionDays(r.snapshotRetentionDays, 'Hodisa bilan birga'),
       hint: "Surat o'chadi, hodisa yozuvi qoladi",
     },
-    {
-      label: 'Hodisalar',
-      value: formatRetentionDays(r.eventRetentionDays),
-      hint: "Hodisa jurnali (surati bilan birga o'chadi)",
-    },
-    {
-      label: 'Turniket qaydlari',
-      value: formatRetentionDays(r.accessEventRetentionDays),
-      hint: 'Karta bilan kirish-chiqish',
-    },
-    {
-      label: 'Bildirishnomalar jurnali',
-      value: formatRetentionDays(r.notificationLogRetentionDays),
-      hint: 'Yuborilgan Telegram / SMS xabarlari',
-    },
-    {
-      label: 'Audit jurnali',
-      value: formatRetentionDays(r.auditLogRetentionDays),
-      hint: 'Administratorlar amallari',
-    },
+    { label: 'Hodisalar', value: formatRetentionDays(r.eventRetentionDays), hint: "Hodisa jurnali (surati bilan birga o'chadi)" },
+    { label: 'Turniket qaydlari', value: formatRetentionDays(r.accessEventRetentionDays), hint: 'Karta bilan kirish-chiqish' },
+    { label: 'Bildirishnomalar jurnali', value: formatRetentionDays(r.notificationLogRetentionDays), hint: 'Yuborilgan Telegram / SMS xabarlari' },
+    { label: 'Audit jurnali', value: formatRetentionDays(r.auditLogRetentionDays), hint: 'Administratorlar amallari' },
   ];
 
   return (
-    <section className="glass p-6">
-      <h3 className="text-sm font-bold text-slate-700">Saqlash muddatlari</h3>
-      <p className="mb-4 text-xs text-slate-500">
-        Muddati o'tgan ma'lumotlar avtomatik tozalash jarayonida partiyalab o'chiriladi. Muddatlar server
-        sozlamalarida belgilanadi.
-      </p>
-      <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+    <Card>
+      <CardHeader
+        icon={Clock}
+        title="Saqlash muddatlari"
+        subtitle="Muddati o'tgan ma'lumotlar avtomatik tozalash jarayonida partiyalab o'chiriladi. Muddatlar server sozlamalarida belgilanadi."
+      />
+      <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {rows.map((row) => (
-          <div key={row.label} className="rounded-xl border border-white/70 bg-white/50 px-3 py-2.5">
-            <dt className="text-xs font-semibold text-slate-500">{row.label}</dt>
-            <dd className="text-base font-extrabold text-slate-900">{row.value}</dd>
-            <dd className="text-[11px] text-slate-400">{row.hint}</dd>
+          <div key={row.label} className="min-w-0 rounded-control border border-border bg-surface-2 px-3.5 py-3">
+            <dt className="text-xs font-medium text-muted">{row.label}</dt>
+            <dd className="mt-1 text-base font-semibold tabular-nums text-fg">{row.value}</dd>
+            <dd className="mt-0.5 text-xs text-muted">{row.hint}</dd>
           </div>
         ))}
       </dl>
-    </section>
+    </Card>
   );
 }

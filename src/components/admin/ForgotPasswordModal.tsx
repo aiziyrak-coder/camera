@@ -1,18 +1,11 @@
 import { useState, type FormEvent } from 'react';
-import { CheckCircle2, Loader2, Mail } from 'lucide-react';
-import Modal from '../Modal';
-import { TextField } from '../FormField';
+import { CheckCircle2, User } from 'lucide-react';
+import { Button, Field, Input, Modal } from '../../ui';
 import { required } from '../../lib/validation';
 import { ApiError, api } from '../../lib/apiClient';
 import { isBackendConfigured } from '../../lib/config';
 
-export default function ForgotPasswordModal({
-  open,
-  onClose,
-}: {
-  open: boolean;
-  onClose: () => void;
-}) {
+export default function ForgotPasswordModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [login, setLogin] = useState('');
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
@@ -54,58 +47,56 @@ export default function ForgotPasswordModal({
     setSent(true);
   }
 
-  return (
-    <Modal open={open} onClose={handleClose} title="Parolni tiklash" maxWidth="max-w-sm">
-      {sent ? (
-        <div className="flex flex-col items-center gap-3 py-2 text-center">
-          <CheckCircle2 size={32} className="text-emerald-500" />
-          <p className="text-sm font-semibold text-slate-800">
-            So'rov qabul qilindi
+  if (sent) {
+    return (
+      <Modal open={open} onClose={handleClose} size="sm" ariaLabel="Parolni tiklash" footer={<Button onClick={handleClose} data-autofocus>Yopish</Button>}>
+        <div className="flex flex-col items-center gap-3 pb-1 pt-4 text-center" role="status">
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-success-soft text-success">
+            <CheckCircle2 size={24} aria-hidden="true" />
+          </span>
+          <p className="text-base font-semibold text-fg">So&apos;rov qabul qilindi</p>
+          <p className="text-[13px] leading-relaxed text-muted">
+            Agar bunday hisob mavjud bo&apos;lsa va unga elektron pochta biriktirilgan bo&apos;lsa, parolni tiklash havolasi shu manzilga
+            yuborildi. Email topilmasa, tizim administratoriga murojaat qiling.
           </p>
-          <p className="text-xs text-slate-500">
-            Agar bunday hisob mavjud bo'lsa va unga elektron pochta biriktirilgan bo'lsa, parolni
-            tiklash havolasi shu manzilga yuborildi. Email topilmasa, tizim administratoriga
-            murojaat qiling.
-          </p>
-          <button onClick={handleClose} className="btn-glass mt-2">
-            Yopish
-          </button>
         </div>
-      ) : (
-        <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-          <p className="text-xs text-slate-500">
-            Hisobingizga bog'langan loginni kiriting — agar unga elektron pochta manzili
-            biriktirilgan bo'lsa, tiklash havolasi shu manzilga yuboriladi.
-          </p>
-          <div className="relative">
-            <Mail
-              size={16}
-              className="pointer-events-none absolute left-3 top-[34px] text-slate-400"
-            />
-            <TextField
-              label="Login"
-              placeholder="admin"
-              value={login}
-              onChange={(e) => setLogin(e.target.value)}
-              error={error}
-              className="pl-9"
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-1">
-            <button type="button" onClick={handleClose} className="btn-glass">
-              Bekor qilish
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {loading && <Loader2 size={14} className="animate-spin" />}
-              {loading ? 'Yuborilmoqda...' : 'Yuborish'}
-            </button>
-          </div>
-        </form>
-      )}
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={handleClose}
+      title="Parolni tiklash"
+      description="Hisobingizga bog'langan loginni kiriting — agar unga elektron pochta manzili biriktirilgan bo'lsa, tiklash havolasi shu manzilga yuboriladi."
+      size="sm"
+      dismissible={!loading}
+      footer={
+        <>
+          <Button onClick={handleClose} disabled={loading}>
+            Bekor qilish
+          </Button>
+          <Button type="submit" form="forgot-password-form" variant="primary" loading={loading}>
+            {loading ? 'Yuborilmoqda...' : 'Yuborish'}
+          </Button>
+        </>
+      }
+    >
+      <form id="forgot-password-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-4 pb-1">
+        <Field label="Login" error={error}>
+          <Input
+            icon={User}
+            placeholder="admin"
+            value={login}
+            onChange={(e) => setLogin(e.target.value)}
+            autoComplete="username"
+            autoCapitalize="none"
+            spellCheck={false}
+            data-autofocus
+          />
+        </Field>
+      </form>
     </Modal>
   );
 }

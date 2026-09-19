@@ -1,43 +1,43 @@
+import { EVENT_STATUS, SEVERITY, TONE_SOLID, type Tone } from '../ui';
 import type { AIEvent, EventStatus } from '../types';
 
-/** Hodisa muhimligi va holati — Hodisalar jurnali va uning paneli uchun
- *  yagona yorliqlar. "Past" muhimlik kulrang: yashil rang "yaxshi" deb
- *  o'qilardi, past muhimlikdagi signal esa yaxshi narsa emas. */
+/** Hodisa muhimligi va holati — yagona yorliqlar va ranglar.
+ *  Rang va nom manbai: src/ui/status.ts (`StatusBadge kind="event" | "severity"`);
+ *  bu yerda faqat matnli kontekstlar (toast, filtr, izoh) uchun qisqa kirish. */
 
 export const SEVERITY_LABEL: Record<AIEvent['severity'], string> = {
-  past: 'Past',
-  "o'rta": "O'rta",
-  yuqori: 'Yuqori',
+  past: SEVERITY.past.label,
+  "o'rta": SEVERITY["o'rta"].label,
+  yuqori: SEVERITY.yuqori.label,
 };
 
-export const SEVERITY_TONE: Record<AIEvent['severity'], 'slate' | 'amber' | 'red'> = {
-  past: 'slate',
-  "o'rta": 'amber',
-  yuqori: 'red',
+/** "Past" muhimlik kulrang: yashil "yaxshi" deb o'qilardi. */
+export const SEVERITY_TONE: Record<AIEvent['severity'], Tone> = {
+  past: SEVERITY.past.tone,
+  "o'rta": SEVERITY["o'rta"].tone,
+  yuqori: SEVERITY.yuqori.tone,
 };
 
 /** Qator/kartaning chap chizig'i. */
 export const SEVERITY_STRIPE: Record<AIEvent['severity'], string> = {
-  past: 'bg-slate-300',
-  "o'rta": 'bg-amber-400',
-  yuqori: 'bg-red-500',
+  past: TONE_SOLID[SEVERITY.past.tone],
+  "o'rta": TONE_SOLID[SEVERITY["o'rta"].tone],
+  yuqori: TONE_SOLID[SEVERITY.yuqori.tone],
 };
 
-/** app/services/event_status.py STATUS_LABELS bilan bir xil. */
+/** Holat nomlari — src/ui/status.ts EVENT_STATUS bilan bir xil. */
 export const STATUS_LABEL: Record<EventStatus, string> = {
-  yangi: "Ko'rilmagan",
-  jarayonda: 'Jarayonda',
-  tasdiqlangan: 'Tasdiqlangan',
-  rad_etilgan: 'Rad etilgan',
-  hal_qilindi: 'Hal qilindi',
+  yangi: EVENT_STATUS.yangi.label,
+  jarayonda: EVENT_STATUS.jarayonda.label,
+  tasdiqlangan: EVENT_STATUS.tasdiqlangan.label,
+  rad_etilgan: EVENT_STATUS.rad_etilgan.label,
+  hal_qilindi: EVENT_STATUS.hal_qilindi.label,
 };
 
-/** Tasdiqlangan — haqiqiy, hali yopilmagan hodisa (qizil); hal qilingani
- *  yashil: ish tugagan. Yolg'on signal kulrang. */
-export const STATUS_TONE: Record<EventStatus, 'amber' | 'green' | 'slate' | 'red' | 'indigo'> = {
-  yangi: 'amber',
-  jarayonda: 'indigo',
-  tasdiqlangan: 'red',
-  rad_etilgan: 'slate',
-  hal_qilindi: 'green',
+export const STATUS_TONE: Record<EventStatus, Tone> = {
+  yangi: EVENT_STATUS.yangi.tone,
+  jarayonda: EVENT_STATUS.jarayonda.tone,
+  tasdiqlangan: EVENT_STATUS.tasdiqlangan.tone,
+  rad_etilgan: EVENT_STATUS.rad_etilgan.tone,
+  hal_qilindi: EVENT_STATUS.hal_qilindi.tone,
 };

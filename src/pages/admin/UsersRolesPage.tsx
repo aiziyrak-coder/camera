@@ -1,20 +1,41 @@
-import { useState } from 'react';
-import { Check, Info, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react';
-import PageHeader from '../../components/PageHeader';
-import Badge from '../../components/Badge';
-import Pagination from '../../components/Pagination';
-import ConfirmDialog from '../../components/ConfirmDialog';
+import { useMemo, useState } from 'react';
+import { Check, KeyRound, Lock, Pencil, Plus, Trash2, UserPlus, Users, X } from 'lucide-react';
+import {
+  Avatar,
+  Badge,
+  Button,
+  ConfirmDialog,
+  DataTable,
+  IconButton,
+  Page,
+  useToast,
+  useUrlTab,
+  type DataTableColumn,
+  type TabItem,
+  type Tone,
+} from '../../ui';
 import AddUserModal from '../../components/admin/AddUserModal';
 import EditUserModal from '../../components/admin/EditUserModal';
+import { Notice, Switch, pagerFooter } from '../../components/settings/kit';
 import { api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
-import { useServerPage } from '../../lib/useServerPage';
+import { invalidateServerPageCache, useServerPage } from '../../lib/useServerPage';
 import { PERMISSION_LABELS, usePermissions, type PermissionKey } from '../../lib/permissions';
 import type { AdminUser } from '../../types';
 
 const PERMISSION_KEYS = Object.keys(PERMISSION_LABELS) as PermissionKey[];
+const PAGE_SIZE = 9;
+
+const ROLE_TONE: Record<AdminUser['role'], Tone> = {
+  'Super Admin': 'primary',
+  Admin: 'info',
+  "Kamera mas'uli": 'neutral',
+};
+
+type TabId = 'foydalanuvchilar' | 'huquqlar';
 
 export default function UsersRolesPage() {
+  const toast = useToast();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<AdminUser | null>(null);
   const [deleting, setDeleting] = useState<AdminUser | null>(null);
@@ -30,171 +51,269 @@ export default function UsersRolesPage() {
     loading,
     error,
     reload,
-  } = useServerPage<AdminUser>('/api/users', {}, 9);
+  } = useServerPage<AdminUser>('/api/users', {}, PAGE_SIZE);
 
   const canEdit = myRole === 'super-admin';
 
-  async function handleDelete() {
-    if (!deleting) return;
-    await api.del(`/api/users/${deleting.id}`, token);
-    setDeleting(null);
+  const tabs = useMemo<TabItem<TabId>[]>(
+    () => [
+      { id: 'foydalanuvchilar', label: 'Foydalanuvchilar', icon: Users, count: loading && users.length === 0 ? null : total },
+      { id: 'huquqlar', label: 'Huquqlar matritsasi', icon: KeyRound },
+    ],
+    [loading, users.length, total],
+  );
+  const [tab] = useUrlTab(tabs);
+
+  function refresh() {
+    invalidateServerPageCache('/api/users');
     reload();
   }
 
-  return (
-    <div className="space-y-4">
-      <section className="glass p-6">
-        <PageHeader
-          title="Foydalanuvchilar va Rollar"
-          subtitle="Foydalanuvchi rollari va huquqlari boshqaruvi"
-          action={
-            <button
-              onClick={() => setModalOpen(true)}
-              className="btn-glass flex items-center gap-1.5 !bg-indigo-600 !text-white hover:!bg-indigo-700"
-            >
-              <Plus size={14} />
-              Yangi foydalanuvchi qo'shish
-            </button>
-          }
-        />
+  async function handleDelete() {
+    if (!deleting) return;
+    // Xato bo'lsa ConfirmDialog o'zi ko'rsatadi va yopilmaydi.
+    await api.del(`/api/users/${deleting.id}`, token);
+    toast.success(`${deleting.name} o'chirildi`);
+    setDeleting(null);
+    refresh();
+  }
 
-        <h3 className="mb-3 text-sm font-bold text-slate-700">Faol foydalanuvchilar</h3>
-        {error && (
-          <p className="mb-3 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
-            {error}
-          </p>
-        )}
-        {loading && users.length === 0 ? (
-          <div className="flex items-center justify-center py-10 text-slate-400">
-            <Loader2 size={20} className="animate-spin" />
+  const userColumns: DataTableColumn<AdminUser>[] = [
+    {
+      key: 'name',
+      header: 'Foydalanuvchi',
+      sortValue: (u) => u.name,
+      cell: (u) => (
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar name={u.name} size="sm" />
+          <div className="min-w-0">
+            <p className="truncate font-medium text-fg">{u.name}</p>
+            <p className="truncate font-mono text-xs text-muted">{u.login}</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'role',
+      header: 'Rol',
+      sortValue: (u) => u.role,
+      cell: (u) => (
+        <Badge tone={ROLE_TONE[u.role] ?? 'neutral'} dot>
+          {u.role}
+        </Badge>
+      ),
+    },
+    {
+      key: 'contact',
+      header: 'Aloqa',
+      hideOnMobile: true,
+      cell: (u) =>
+        u.email || u.phone || u.telegramLinked ? (
+          <div className="min-w-0 text-[13px]">
+            {u.email && <p className="truncate text-fg">{u.email}</p>}
+            <p className="flex flex-wrap items-center gap-1.5 text-muted">
+              {u.phone && <span className="tabular-nums">{u.phone}</span>}
+              {u.telegramLinked && (
+                <Badge tone="success" size="sm">
+                  Telegram
+                </Badge>
+              )}
+            </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {users.map((u) => (
-              <div key={u.id} className="glass-deep flex items-center gap-3 p-4">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-600">
-                  {u.initials}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-slate-900">{u.name}</p>
-                  <p className="truncate text-xs text-slate-500">Oxirgi kirish: {u.lastLogin}</p>
-                </div>
-                <Badge tone={u.role === 'Super Admin' ? 'indigo' : 'slate'}>{u.role}</Badge>
-                <button
-                  onClick={() => setEditing(u)}
-                  title="Tahrirlash"
-                  className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/60 hover:text-indigo-600"
-                >
-                  <Pencil size={14} />
-                </button>
-                <button
-                  onClick={() => setDeleting(u)}
-                  title="O'chirish"
-                  className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/60 hover:text-red-600"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onChange={setPage} />
-      </section>
+          <span className="text-subtle">—</span>
+        ),
+    },
+    {
+      key: 'lastLogin',
+      header: 'Oxirgi kirish',
+      sortValue: (u) => u.lastLogin,
+      cell: (u) => <span className="whitespace-nowrap text-[13px] tabular-nums text-muted">{u.lastLogin}</span>,
+    },
+    {
+      key: 'actions',
+      header: '',
+      align: 'right',
+      width: '6rem',
+      mobileLabel: 'Amallar',
+      cell: (u) => (
+        <div onClick={(e) => e.stopPropagation()} className="flex justify-end gap-1">
+          <IconButton icon={Pencil} label={`${u.name} — tahrirlash`} size="sm" onClick={() => setEditing(u)} />
+          <IconButton icon={Trash2} label={`${u.name} — o'chirish`} size="sm" variant="danger" onClick={() => setDeleting(u)} />
+        </div>
+      ),
+    },
+  ];
 
-      <AddUserModal open={modalOpen} onClose={() => setModalOpen(false)} onAdd={() => reload()} />
-      <EditUserModal user={editing} onClose={() => setEditing(null)} onSave={() => reload()} />
+  const permissionKeys = PERMISSION_KEYS.filter((key) => matrix[key]);
+
+  const permissionColumns: DataTableColumn<PermissionKey>[] = [
+    {
+      key: 'permission',
+      header: 'Huquq / Ruxsat',
+      sortValue: (key) => PERMISSION_LABELS[key],
+      cell: (key) => <span className="font-medium text-fg">{PERMISSION_LABELS[key]}</span>,
+    },
+    {
+      key: 'superAdmin',
+      header: 'Super Admin',
+      align: 'center',
+      width: '9rem',
+      cell: (key) => <PermissionMark granted={matrix[key].superAdmin} locked label={`${PERMISSION_LABELS[key]} — Super Admin`} />,
+    },
+    {
+      key: 'admin',
+      header: 'Admin',
+      align: 'center',
+      width: '9rem',
+      cell: (key) => (
+        <PermissionMark
+          granted={matrix[key].admin}
+          label={`${PERMISSION_LABELS[key]} — Admin`}
+          onToggle={canEdit ? () => toggle(key, 'admin') : undefined}
+        />
+      ),
+    },
+    {
+      key: 'cameraSteward',
+      header: "Kamera mas'uli",
+      align: 'center',
+      width: '9rem',
+      cell: (key) => (
+        <PermissionMark
+          granted={matrix[key].cameraSteward}
+          label={`${PERMISSION_LABELS[key]} — Kamera mas'uli`}
+          onToggle={canEdit ? () => toggle(key, 'cameraSteward') : undefined}
+        />
+      ),
+    },
+  ];
+
+  return (
+    <Page
+      title="Foydalanuvchilar"
+      subtitle="Tizimga kiruvchi xodimlar, ularning rollari va rollar huquqlari."
+      breadcrumbs={[{ label: 'Sozlamalar' }, { label: 'Foydalanuvchilar' }]}
+      actions={
+        <Button variant="primary" icon={Plus} onClick={() => setModalOpen(true)}>
+          Foydalanuvchi qo&apos;shish
+        </Button>
+      }
+      tabs={tabs}
+    >
+      {tab === 'foydalanuvchilar' ? (
+        <DataTable
+          columns={userColumns}
+          rows={users}
+          rowKey={(u) => u.id}
+          onRowClick={(u) => setEditing(u)}
+          selectedKey={editing?.id ?? null}
+          loading={loading && users.length === 0}
+          loadingRows={PAGE_SIZE}
+          error={users.length === 0 ? error : null}
+          onRetry={reload}
+          emptyTitle="Foydalanuvchi yo'q"
+          emptyDescription="Tizimga kirishi kerak bo'lgan xodimni qo'shing va unga rol bering."
+          emptyAction={
+            <Button variant="primary" icon={UserPlus} onClick={() => setModalOpen(true)}>
+              Foydalanuvchi qo&apos;shish
+            </Button>
+          }
+          ariaLabel="Foydalanuvchilar"
+          footer={
+            error && users.length > 0 ? (
+              <Notice tone="danger" action={<Button size="sm" onClick={reload}>Qayta urinish</Button>}>
+                {error}
+              </Notice>
+            ) : (
+              pagerFooter({ page, totalPages, total, pageSize, onChange: setPage })
+            )
+          }
+        />
+      ) : (
+        <div className="flex flex-col gap-3">
+          {canEdit ? (
+            <Notice tone="info">
+              Bu yerdagi sozlamalar navigatsiya menyusi va eksport tugmalarini haqiqatda cheklaydi — &quot;Admin&quot;
+              sifatida kirsangiz, o&apos;chirilgan bo&apos;limlar menyuda ko&apos;rinmaydi. Super Admin huquqlari
+              o&apos;zgarmaydi.
+            </Notice>
+          ) : (
+            <Notice tone="neutral" icon={Lock}>
+              Faqat Super Admin tahrirlashi mumkin. Bu sozlamalar navigatsiya menyusi va eksport tugmalarini haqiqatda
+              cheklaydi.
+            </Notice>
+          )}
+          <DataTable
+            columns={permissionColumns}
+            rows={permissionKeys}
+            rowKey={(key) => key}
+            emptyTitle="Huquqlar yuklanmadi"
+            emptyDescription="Server huquqlar matritsasini qaytarmadi — sahifani yangilang."
+            maxHeight="none"
+            ariaLabel="Huquqlar matritsasi"
+          />
+        </div>
+      )}
+
+      <AddUserModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onAdd={(user) => {
+          toast.success(`${user.name} qo'shildi`);
+          refresh();
+        }}
+      />
+      <EditUserModal
+        user={editing}
+        onClose={() => setEditing(null)}
+        onSave={(user) => {
+          toast.success(`${user.name} — o'zgarishlar saqlandi`);
+          refresh();
+        }}
+      />
       <ConfirmDialog
         open={!!deleting}
         title="Foydalanuvchini o'chirish"
-        message={deleting ? `"${deleting.name}" (${deleting.login}) foydalanuvchisini o'chirishni tasdiqlaysizmi? Bu amalni ortga qaytarib bo'lmaydi.` : ''}
+        message={
+          deleting
+            ? `"${deleting.name}" (${deleting.login}) foydalanuvchisini o'chirishni tasdiqlaysizmi? Bu amalni ortga qaytarib bo'lmaydi.`
+            : ''
+        }
+        confirmLabel="O'chirish"
         onCancel={() => setDeleting(null)}
         onConfirm={handleDelete}
       />
-
-      <section className="glass p-6">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-sm font-bold text-slate-700">Huquqlar matritsasi</h3>
-          {!canEdit && (
-            <span className="flex items-center gap-1.5 text-xs text-slate-400">
-              <Info size={13} />
-              Faqat Super Admin tahrirlashi mumkin
-            </span>
-          )}
-        </div>
-        <div className="overflow-x-auto rounded-xl border border-white/70">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="bg-white/50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-3">Huquq / Ruxsat</th>
-                <th className="px-4 py-3 text-center">Super Admin</th>
-                <th className="px-4 py-3 text-center">Admin</th>
-                <th className="px-4 py-3 text-center">Kamera mas&apos;uli</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/60">
-              {/* Server bilmagan kalit (backend hali yangilanmagan) qator
-                  sifatida chiqmaydi — aks holda matrix[key] bo'sh va sahifa yiqiladi. */}
-              {PERMISSION_KEYS.filter((key) => matrix[key]).map((key) => (
-                <tr key={key} className="transition-colors hover:bg-white/40">
-                  <td className="px-4 py-3 font-medium text-slate-800">
-                    {PERMISSION_LABELS[key]}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <PermissionMark granted={matrix[key].superAdmin} locked />
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <PermissionMark
-                      granted={matrix[key].admin}
-                      onToggle={canEdit ? () => toggle(key, 'admin') : undefined}
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <PermissionMark
-                      granted={matrix[key].cameraSteward}
-                      onToggle={canEdit ? () => toggle(key, 'cameraSteward') : undefined}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="mt-3 text-[11px] text-slate-400">
-          Bu yerdagi sozlamalar navigatsiya menyusi va eksport tugmalarini haqiqatda
-          cheklaydi — "Admin" sifatida kirsangiz, o'chirilgan bo'limlar sidebar'da
-          ko'rinmaydi.
-        </p>
-      </section>
-    </div>
+    </Page>
   );
 }
 
 function PermissionMark({
   granted,
   locked,
+  label,
   onToggle,
 }: {
   granted: boolean;
   locked?: boolean;
+  label: string;
   onToggle?: () => void;
 }) {
-  const icon = granted ? (
-    <Check size={16} className="text-emerald-600" />
-  ) : (
-    <X size={16} className="text-red-400" />
-  );
-
-  if (!onToggle || locked) {
-    return <span className="mx-auto flex h-6 w-6 items-center justify-center">{icon}</span>;
+  if (onToggle && !locked) {
+    return (
+      <span className="inline-flex justify-center">
+        <Switch checked={granted} onChange={onToggle} label={label} />
+      </span>
+    );
   }
-
   return (
-    <button
-      onClick={onToggle}
-      title="Bosib o'zgartiring"
-      className="mx-auto flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-white/60"
+    <span
+      role="img"
+      aria-label={`${label}: ${granted ? 'ruxsat bor' : "ruxsat yo'q"}`}
+      title={locked ? "Super Admin huquqlari o'zgarmaydi" : undefined}
+      className={`inline-flex h-6 w-6 items-center justify-center rounded-full ${granted ? 'bg-success-soft text-success' : 'bg-surface-2 text-subtle'}`}
     >
-      {icon}
-    </button>
+      {granted ? <Check size={14} aria-hidden="true" /> : <X size={14} aria-hidden="true" />}
+    </span>
   );
 }

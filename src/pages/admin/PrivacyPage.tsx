@@ -1,15 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Loader2, ShieldCheck } from 'lucide-react';
-import PageHeader from '../../components/PageHeader';
-import Pagination from '../../components/Pagination';
-import ConfirmDialog from '../../components/ConfirmDialog';
-import SearchInput from '../../components/ui/SearchInput';
-import SegmentedControl from '../../components/ui/SegmentedControl';
-import ErrorState from '../../components/ui/ErrorState';
-import EmptyState from '../../components/ui/EmptyState';
-import { useToast } from '../../components/ui/Toast';
+import { ShieldCheck, Users } from 'lucide-react';
+import { ConfirmDialog, ErrorState, Page, SearchInput, Select, SkeletonCard, SkeletonTiles, Toolbar, useToast, useUrlTab, type TabItem } from '../../ui';
+import { pagerFooter } from '../../components/settings/kit';
 import ConsentRecordModal from '../../components/privacy/ConsentRecordModal';
-import PrivacyPeopleTable, { type PrivacyAction } from '../../components/privacy/PrivacyPeopleTable';
+import PrivacyPeopleTable, { PrivacyPersonDrawer, type PrivacyAction } from '../../components/privacy/PrivacyPeopleTable';
 import { PrivacyKpiTiles, RetentionSettingsCard } from '../../components/privacy/PrivacyOverviewPanel';
 import TypedConfirmDialog from '../../components/privacy/TypedConfirmDialog';
 import { ApiError, isAbortError } from '../../lib/apiClient';
@@ -32,13 +26,17 @@ import {
 import { invalidateServerPageCache, useServerPage } from '../../lib/useServerPage';
 
 type FilterValue = 'all' | PrivacyFilter;
+type TabId = 'umumiy' | 'shaxslar';
 
-const FILTER_OPTIONS: { value: FilterValue; label: string }[] = [
-  { value: 'all', label: 'Barchasi' },
-  { value: 'no_consent', label: PRIVACY_FILTER_LABELS.no_consent },
-  { value: 'inactive', label: PRIVACY_FILTER_LABELS.inactive },
-  { value: 'with_biometrics', label: PRIVACY_FILTER_LABELS.with_biometrics },
+const TABS: readonly TabItem<TabId>[] = [
+  { id: 'umumiy', label: 'Umumiy holat', icon: ShieldCheck },
+  { id: 'shaxslar', label: 'Shaxslar', icon: Users },
 ];
+
+const FILTER_OPTIONS = (Object.keys(PRIVACY_FILTER_LABELS) as PrivacyFilter[]).map((value) => ({
+  value,
+  label: PRIVACY_FILTER_LABELS[value],
+}));
 
 /** Biometrikani o'chiradigan, qaytarib bo'lmaydigan amallar. */
 type DangerousAction = { kind: 'erase' | 'withdraw'; person: PrivacyPerson };
@@ -50,6 +48,7 @@ function errorMessage(err: unknown, fallback: string): string {
 export default function PrivacyPage() {
   const { token } = useAuth();
   const toast = useToast();
+  const [tab, setTab] = useUrlTab(TABS);
 
   const [overview, setOverview] = useState<PrivacyOverview | null>(null);
   const [overviewError, setOverviewError] = useState<string | null>(null);
@@ -61,10 +60,11 @@ export default function PrivacyPage() {
     PRIVACY_PEOPLE_SEARCH_PATH,
     { filter: filter === 'all' ? undefined : filter, search: search.trim() || undefined },
     15,
-    { post: true },
+    { post: true, enabled: tab === 'shaxslar' },
   );
 
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<PrivacyPerson | null>(null);
   const [consentFor, setConsentFor] = useState<PrivacyPerson | null>(null);
   const [deactivating, setDeactivating] = useState<PrivacyPerson | null>(null);
   const [dangerous, setDangerous] = useState<DangerousAction | null>(null);
@@ -92,6 +92,11 @@ export default function PrivacyPage() {
     setOverviewNonce((n) => n + 1);
   }, [reloadPeople]);
 
+  /** Drawer ochiq bo'lsa — yangilangan yozuvni ko'rsatadi. */
+  function updateViewing(updated: PrivacyPerson) {
+    setViewing((current) => (current?.id === updated.id ? updated : current));
+  }
+
   async function runRowAction(person: PrivacyPerson, fn: () => Promise<void>) {
     setBusyId(person.id);
     try {
@@ -117,8 +122,9 @@ export default function PrivacyPage() {
         break;
       case 'activate':
         void runRowAction(person, async () => {
-          await setPersonActive(token, person.id, true);
+          const updated = await setPersonActive(token, person.id, true);
           toast.success(`${person.fullName} qayta faollashtirildi`);
+          updateViewing(updated);
           refresh();
         });
         break;
@@ -134,8 +140,9 @@ export default function PrivacyPage() {
 
   async function confirmDeactivate() {
     if (!deactivating) return;
-    await setPersonActive(token, deactivating.id, false);
+    const updated = await setPersonActive(token, deactivating.id, false);
     toast.success(`${deactivating.fullName} faolsizlantirildi — kameralar uni endi tanimaydi`);
+    updateViewing(updated);
     setDeactivating(null);
     refresh();
   }
@@ -150,75 +157,90 @@ export default function PrivacyPage() {
         : `${person.fullName}: rozilik qaytarib olindi, biometrika o'chirildi`;
     if (result.photoDeleted) toast.success(base);
     else toast.error(`${base}, lekin yuz rasmini ombordan o'chirib bo'lmadi — administratorga xabar bering`);
+    updateViewing(result.person);
     setDangerous(null);
     refresh();
   }
 
+  function openFiltered(next: FilterValue) {
+    setFilter(next);
+    setSearch('');
+    setTab('shaxslar');
+  }
+
   const retentionDays = overview?.retention.biometricRetentionDaysAfterInactive ?? 0;
+  const activeFilters = (filter === 'all' ? 0 : 1) + (search.trim() ? 1 : 0);
+
+  const toolbar =
+    tab === 'shaxslar' ? (
+      <Toolbar
+        activeCount={activeFilters}
+        onReset={() => {
+          setFilter('all');
+          setSearch('');
+        }}
+      >
+        <SearchInput value={search} onChange={setSearch} placeholder="F.I.Sh., JSHSHIR yoki HEMIS ID" ariaLabel="Shaxslarni qidirish" />
+        <Select
+          value={filter === 'all' ? '' : filter}
+          onChange={(value) => setFilter((value || 'all') as FilterValue)}
+          options={FILTER_OPTIONS}
+          placeholder="Barcha shaxslar"
+          ariaLabel="Shaxslar filtri"
+          highlightActive
+        />
+      </Toolbar>
+    ) : undefined;
 
   return (
-    <div className="space-y-4">
-      <section className="glass p-6">
-        <PageHeader
-          title="Maxfiylik"
-          subtitle="Biometrik ma'lumotlarga rozilik, saqlash muddati va shaxsiy ma'lumotlar so'rovlari"
-        />
-        {overviewError ? (
+    <Page
+      title="Maxfiylik"
+      subtitle="Biometrik ma'lumotlarga rozilik, saqlash muddati va shaxsiy ma'lumotlar so'rovlari"
+      breadcrumbs={[{ label: 'Sozlamalar' }, { label: 'Maxfiylik' }]}
+      tabs={TABS}
+      toolbar={toolbar}
+    >
+      {tab === 'umumiy' &&
+        (overviewError ? (
           <ErrorState message={overviewError} onRetry={() => setOverviewNonce((n) => n + 1)} />
         ) : overview ? (
-          <PrivacyKpiTiles overview={overview} />
+          <>
+            <PrivacyKpiTiles overview={overview} onFilter={openFiltered} />
+            <RetentionSettingsCard overview={overview} />
+          </>
         ) : (
-          <div className="flex items-center justify-center py-10 text-slate-400">
-            <Loader2 size={20} className="animate-spin" />
-          </div>
-        )}
-      </section>
+          <>
+            <SkeletonTiles count={6} />
+            <SkeletonCard lines={3} />
+          </>
+        ))}
 
-      {overview && <RetentionSettingsCard overview={overview} />}
-
-      <section className="glass p-6">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <SegmentedControl
-            options={FILTER_OPTIONS}
-            value={filter}
-            onChange={setFilter}
-            ariaLabel="Shaxslar filtri"
-            size="sm"
-          />
-          <SearchInput
-            value={search}
-            onChange={setSearch}
-            placeholder="F.I.Sh., JSHSHIR yoki HEMIS ID"
-            ariaLabel="Shaxslarni qidirish"
-          />
-        </div>
-
-        {people.error && <ErrorState message={people.error} onRetry={people.reload} />}
-        {people.loading && people.items.length === 0 ? (
-          <div className="flex items-center justify-center py-10 text-slate-400">
-            <Loader2 size={20} className="animate-spin" />
-          </div>
-        ) : people.items.length === 0 && !people.error ? (
-          <EmptyState
-            icon={<ShieldCheck size={22} />}
-            title="Hech kim topilmadi"
-            description={
-              filter === 'no_consent'
-                ? 'Biometrikasi saqlangan har bir shaxsning roziligi qayd etilgan.'
-                : "Filtr yoki qidiruvni o'zgartirib ko'ring."
-            }
-          />
-        ) : (
-          <PrivacyPeopleTable people={people.items} busyId={busyId} onAction={handleAction} />
-        )}
-        <Pagination
-          page={people.page}
-          totalPages={people.totalPages}
-          total={people.total}
-          pageSize={people.pageSize}
-          onChange={people.setPage}
+      {tab === 'shaxslar' && (
+        <PrivacyPeopleTable
+          people={people.items}
+          busyId={busyId}
+          onAction={handleAction}
+          onOpen={setViewing}
+          selectedId={viewing?.id ?? null}
+          loading={people.loading && people.items.length === 0}
+          error={people.error}
+          onRetry={people.reload}
+          emptyDescription={
+            filter === 'no_consent' && !search.trim()
+              ? 'Biometrikasi saqlangan har bir shaxsning roziligi qayd etilgan.'
+              : "Filtr yoki qidiruvni o'zgartirib ko'ring."
+          }
+          footer={pagerFooter({
+            page: people.page,
+            totalPages: people.totalPages,
+            total: people.total,
+            pageSize: people.pageSize,
+            onChange: people.setPage,
+          })}
         />
-      </section>
+      )}
+
+      <PrivacyPersonDrawer person={viewing} busy={busyId === viewing?.id} onClose={() => setViewing(null)} onAction={handleAction} />
 
       <ConsentRecordModal
         person={consentFor}
@@ -227,6 +249,7 @@ export default function PrivacyPage() {
         onClose={() => setConsentFor(null)}
         onSaved={(updated) => {
           setConsentFor(null);
+          updateViewing(updated);
           toast.success(`${updated.fullName}: rozilik qayd etildi`);
           refresh();
         }}
@@ -241,7 +264,7 @@ export default function PrivacyPage() {
               (deactivating.hasBiometrics && retentionDays > 0
                 ? `, yuz ma'lumotlari esa ${retentionDays} kundan keyin avtomatik o'chiriladi.`
                 : '.') +
-              " Davomat tarixi saqlanib qoladi."
+              ' Davomat tarixi saqlanib qoladi.'
             : ''
         }
         confirmLabel="Faolsizlantirish"
@@ -264,6 +287,6 @@ export default function PrivacyPage() {
         onCancel={() => setDangerous(null)}
         onConfirm={confirmDangerous}
       />
-    </div>
+    </Page>
   );
 }

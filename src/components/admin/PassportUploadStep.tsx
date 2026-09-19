@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { AlertTriangle, FileText, Loader2, Upload } from 'lucide-react';
+import { Button, cn, focusRing } from '../../ui';
 
 const MAX_SIZE_MB = 10;
 
@@ -65,46 +66,49 @@ export default function PassportUploadStep({ onLoaded }: PassportUploadStepProps
 
       {preview ? (
         <div className="flex flex-col items-center gap-3">
-          <img
-            src={preview.url}
-            alt="Pasport sahifasi"
-            className="max-h-64 rounded-xl border border-white/80 object-contain shadow-btn"
-          />
-          <p className="flex items-center gap-1.5 text-xs text-slate-500">
-            <FileText size={13} />
+          <img src={preview.url} alt="Pasport sahifasi" className="max-h-64 rounded-card border border-border object-contain shadow-card" />
+          <p className="flex items-center gap-1.5 text-xs text-muted">
+            <FileText size={13} aria-hidden="true" />
             {preview.name}
           </p>
-          <button type="button" onClick={() => inputRef.current?.click()} className="btn-glass text-xs">
+          <Button size="sm" onClick={() => inputRef.current?.click()}>
             Boshqa fayl tanlash
-          </button>
+          </Button>
         </div>
       ) : (
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            const file = e.dataTransfer.files?.[0];
+            if (file && !loading) handleFile(file);
+          }}
           disabled={loading}
-          className="flex min-h-[180px] w-full max-w-sm flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/50 text-sm font-semibold text-indigo-500 transition-colors hover:bg-indigo-50"
+          className={cn(
+            'flex min-h-[180px] w-full max-w-sm flex-col items-center justify-center gap-2 rounded-card border-2 border-dashed border-primary/30 bg-primary-soft/50 text-sm font-semibold text-primary transition-colors hover:bg-primary-soft disabled:cursor-wait',
+            focusRing,
+          )}
         >
           {loading ? (
             <>
-              <Loader2 size={22} className="animate-spin" />
+              <Loader2 size={22} className="animate-spin" aria-hidden="true" />
               PDF o'qilmoqda...
             </>
           ) : (
             <>
-              <Upload size={22} />
+              <Upload size={22} aria-hidden="true" />
               Pasport nusxasini yuklang (PDF)
-              <span className="text-xs font-normal text-indigo-400">
-                Bosing yoki faylni bu yerga tashlang
-              </span>
+              <span className="text-xs font-normal text-muted">Bosing yoki faylni bu yerga tashlang</span>
             </>
           )}
         </button>
       )}
 
       {error && (
-        <p className="flex items-center gap-1.5 text-xs font-medium text-red-500">
-          <AlertTriangle size={13} />
+        <p role="alert" className="flex items-center gap-1.5 text-xs font-medium text-danger">
+          <AlertTriangle size={13} className="shrink-0" aria-hidden="true" />
           {error}
         </p>
       )}

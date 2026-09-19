@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import { Download, FileUp, Loader2 } from 'lucide-react';
-import Modal from '../Modal';
+import { CheckCheck, Download, ScanSearch } from 'lucide-react';
+import { CsvDropzone } from './CameraImportModal';
+import { Notice } from '../settings/kit';
+import { Button, Modal } from '../../ui';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { downloadBlob } from '../../lib/download';
@@ -93,92 +95,89 @@ export default function CameraRolesImportModal({
   const canSave = result !== null && !result.applied && result.changes.length > 0;
 
   return (
-    <Modal open={open} onClose={handleClose} title="Kamera rollari (xona turi va raqami)" maxWidth="max-w-2xl">
-      <div className="flex flex-col gap-4 text-xs">
-        <ol className="list-decimal space-y-1 pl-4 text-slate-600">
+    <Modal
+      open={open}
+      onClose={handleClose}
+      title="Xona turlari (CSV)"
+      description="Kameralarning xona turi va raqamini ommaviy belgilash."
+      size="lg"
+      dismissible={!busy}
+      footer={
+        <>
+          <Button onClick={handleClose} disabled={busy}>
+            Yopish
+          </Button>
+          <Button icon={ScanSearch} onClick={() => send(false)} disabled={!file || busy} loading={busy && !canSave}>
+            Tekshirish
+          </Button>
+          <Button variant="primary" icon={CheckCheck} onClick={() => send(true)} disabled={!canSave || busy} loading={busy && canSave}>
+            Saqlash
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4 text-[13px]">
+        <ol className="list-decimal space-y-1.5 pl-5 text-fg">
           <li>Shablonni yuklab oling — unda barcha kameralar bor.</li>
           <li>
-            Excel&apos;da <span className="font-mono">xona_turi</span> ({Object.keys(ROOM_TYPE_LABELS).join(', ')}) va{' '}
-            <span className="font-mono">xona_raqami</span> ni to&apos;ldiring. Kirish kameralarida{' '}
-            <span className="font-mono">yuz_yonalishi</span>: «kirish» — kamera kirayotganlarning yuzini ko&apos;radi,
-            «chiqish» — chiqayotganlarnikini. Bo&apos;sh katak — o&apos;zgarmaydi, «-» — belgini olib tashlaydi.
+            Excel&apos;da <span className="font-mono text-xs">xona_turi</span> ({Object.keys(ROOM_TYPE_LABELS).join(', ')}) va{' '}
+            <span className="font-mono text-xs">xona_raqami</span> ni to&apos;ldiring. Kirish kameralarida{' '}
+            <span className="font-mono text-xs">yuz_yonalishi</span>: «kirish» — kamera kirayotganlarning yuzini
+            ko&apos;radi, «chiqish» — chiqayotganlarnikini. Bo&apos;sh katak — o&apos;zgarmaydi, «-» — belgini olib tashlaydi.
           </li>
           <li>Faylni yuklab «Tekshirish», keyin «Saqlash».</li>
         </ol>
-        <p className="rounded-xl bg-indigo-50 px-3 py-2 text-indigo-800">
-          Xona turi AI modullarini yo&apos;naltiradi: kunlik davomat faqat kirishda, uyqu faqat auditoriyada, oq
-          xalat va niqob faqat laboratoriyada. Turi belgilanmagan kamerada faqat xavfsizlik mezonlari ishlaydi.
-        </p>
+        <Notice tone="info">
+          Xona turi AI modullarini yo&apos;naltiradi: kunlik davomat faqat kirishda, uyqu faqat auditoriyada, oq xalat va
+          niqob faqat laboratoriyada. Turi belgilanmagan kamerada faqat xavfsizlik mezonlari ishlaydi.
+        </Notice>
 
-        <button type="button" onClick={downloadTemplate} className="btn-glass flex w-fit items-center gap-1.5">
-          <Download size={14} />
+        <Button icon={Download} onClick={downloadTemplate} className="w-fit">
           Shablonni yuklab olish
-        </button>
+        </Button>
 
-        <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed border-slate-300 px-4 py-5">
-          <FileUp size={22} className="text-indigo-500" />
-          <span className="text-sm font-medium text-slate-700">{file ? file.name : "To'ldirilgan CSV faylni tanlang"}</span>
-          <input
-            type="file"
-            accept=".csv,text/csv"
-            className="hidden"
-            onChange={(e) => {
-              setFile(e.target.files?.[0] ?? null);
-              setResult(null);
-            }}
-          />
-        </label>
+        <CsvDropzone
+          file={file}
+          placeholder="To'ldirilgan CSV faylni tanlang"
+          onChange={(next) => {
+            setFile(next);
+            setResult(null);
+          }}
+        />
 
-        {error && <p className="rounded-xl bg-red-50 px-3 py-2 font-semibold text-red-600">{error}</p>}
+        {error && <Notice tone="danger">{error}</Notice>}
 
         {result && (
           <div className="flex flex-col gap-2">
-            <p
-              className={`rounded-xl px-3 py-2 font-semibold ${result.applied ? 'bg-emerald-50 text-emerald-700' : 'bg-indigo-50 text-indigo-700'}`}
-            >
+            <Notice tone={result.applied ? 'success' : 'info'}>
               {result.rows} qator o&apos;qildi, {result.changes.length} ta o&apos;zgarish
               {result.applied ? ' saqlandi.' : ' — hali saqlanmagan.'}
-            </p>
+            </Notice>
             {result.errors.length > 0 && (
-              <ul className="max-h-28 space-y-1 overflow-y-auto rounded-xl bg-red-50 px-3 py-2 text-red-600">
-                {result.errors.map((err) => (
-                  <li key={`${err.row}-${err.message}`}>
-                    Qator {err.row}: {err.message}
-                  </li>
-                ))}
-              </ul>
+              <Notice tone="danger" title={`${result.errors.length} ta qatorda xato`}>
+                <ul className="max-h-28 space-y-1 overflow-y-auto">
+                  {result.errors.map((err) => (
+                    <li key={`${err.row}-${err.message}`}>
+                      Qator {err.row}: {err.message}
+                    </li>
+                  ))}
+                </ul>
+              </Notice>
             )}
             {result.changes.length > 0 && (
-              <ul className="max-h-56 divide-y divide-slate-100 overflow-y-auto rounded-xl bg-white/60 px-3">
+              <ul className="max-h-56 divide-y divide-border overflow-y-auto rounded-control border border-border bg-surface-2 px-3">
                 {result.changes.map((change) => (
-                  <li key={`${change.cameraId}-${change.field}`} className="flex flex-wrap gap-x-2 py-1">
-                    <span className="font-medium text-slate-900">{change.cameraName}</span>
-                    <span className="text-slate-500">{FIELD_LABELS[change.field]}:</span>
-                    <span className="text-slate-400 line-through">{show(change.field, change.old)}</span>
-                    <span className="text-slate-700">→ {show(change.field, change.new)}</span>
+                  <li key={`${change.cameraId}-${change.field}`} className="flex flex-wrap gap-x-2 py-1.5">
+                    <span className="font-medium text-fg">{change.cameraName}</span>
+                    <span className="text-muted">{FIELD_LABELS[change.field]}:</span>
+                    <span className="text-subtle line-through">{show(change.field, change.old)}</span>
+                    <span className="text-fg">→ {show(change.field, change.new)}</span>
                   </li>
                 ))}
               </ul>
             )}
           </div>
         )}
-
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={handleClose} className="btn-glass">
-            Yopish
-          </button>
-          <button type="button" onClick={() => send(false)} disabled={!file || busy} className="btn-glass disabled:opacity-50">
-            {busy && !canSave ? <Loader2 size={14} className="animate-spin" /> : 'Tekshirish'}
-          </button>
-          <button
-            type="button"
-            onClick={() => send(true)}
-            disabled={!canSave || busy}
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-          >
-            {busy && canSave ? <Loader2 size={14} className="animate-spin" /> : 'Saqlash'}
-          </button>
-        </div>
       </div>
     </Modal>
   );

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Building2, Circle, Expand, MapPin, Minimize2, Sparkles, VideoOff } from 'lucide-react';
+import { Building2, Expand, MapPin, Minimize2, Sparkles, VideoOff } from 'lucide-react';
+import { cn } from '../../ui';
 import LiveVideoPlayer from '../LiveVideoPlayer';
 import PtzControls from '../ptz/PtzControls';
 import { usePtzAvailability } from '../ptz/usePtzAvailability';
@@ -55,13 +56,13 @@ export default function MainCameraView({
     <div
       className={
         fullscreen
-          ? 'fixed inset-4 z-[60] flex items-center justify-center overflow-hidden rounded-2xl bg-slate-900'
-          : `relative flex items-center justify-center overflow-hidden rounded-2xl bg-slate-900 transition-all ${className}`
+          ? 'fixed inset-4 z-[60] flex items-center justify-center overflow-hidden rounded-card bg-black shadow-pop'
+          : cn('relative flex items-center justify-center overflow-hidden rounded-card bg-black', className)
       }
     >
       {!camera && (
         <div className="flex flex-col items-center gap-1.5 text-white/40">
-          <VideoOff size={28} />
+          <VideoOff size={28} aria-hidden="true" />
           <span className="text-sm font-medium">Kamera tanlanmagan</span>
         </div>
       )}
@@ -73,21 +74,21 @@ export default function MainCameraView({
       {camera && (
         <>
           {isLive && camera.hasVideo === false ? (
-            <span className="absolute left-3 top-3 z-10 rounded-full bg-amber-500/90 px-3 py-1 text-xs font-bold text-white">
+            <span className="absolute left-3 top-3 z-10 rounded-full bg-warning px-3 py-1 text-xs font-semibold text-warning-fg">
               TASVIRSIZ — kamera javob beryapti, lekin video kelmayapti
             </span>
           ) : isLive ? (
             <>
-              <span className="absolute left-3 top-3 z-10 flex items-center gap-1 rounded-full bg-emerald-500/90 px-2.5 py-1 text-xs font-bold text-white">
-                <Circle size={7} className="fill-white" />
+              <span className="absolute left-3 top-3 z-10 flex items-center gap-1.5 rounded-full bg-success px-2.5 py-1 text-xs font-semibold text-success-fg">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current motion-reduce:animate-none" aria-hidden="true" />
                 JONLI
               </span>
-              <span className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-full bg-red-500/90 px-2.5 py-1 text-xs font-bold text-white">
+              <span className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-full bg-danger px-2.5 py-1 text-xs font-semibold text-danger-fg">
                 REC
               </span>
             </>
           ) : (
-            <span className="absolute left-3 top-3 z-10 rounded-full bg-slate-700 px-3 py-1 text-xs font-bold text-slate-300">
+            <span className="absolute left-3 top-3 z-10 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold text-white/80">
               OFLAYN
             </span>
           )}
@@ -98,7 +99,7 @@ export default function MainCameraView({
 
           {isLive && analysis && (
             <div className="absolute bottom-12 left-3 right-3 z-10 flex items-start gap-1.5 rounded-lg bg-black/65 px-2.5 py-1.5 text-[11px] font-medium text-white">
-              <Sparkles size={12} className="mt-0.5 shrink-0 text-amber-300" />
+              <Sparkles size={12} aria-hidden="true" className="mt-0.5 shrink-0 text-warning" />
               <span>
                 Fon AI: {formatSecondsAgo(analysis.secondsAgo)}
                 {analysis.faceCount > 0 ? ` · ${analysis.faceCount} yuz` : ''}
@@ -118,10 +119,11 @@ export default function MainCameraView({
           )}
 
           <button
+            type="button"
             onClick={() => setFullscreen((v) => !v)}
             className="absolute bottom-3 right-3 z-10 flex items-center gap-1 rounded-lg bg-black/50 px-2 py-1 text-xs font-semibold text-white transition-colors hover:bg-black/70"
           >
-            {fullscreen ? <Minimize2 size={13} /> : <Expand size={13} />}
+            {fullscreen ? <Minimize2 size={13} aria-hidden="true" /> : <Expand size={13} aria-hidden="true" />}
             {fullscreen ? "Yig'ish" : "To'liq ekran"}
           </button>
         </>
@@ -130,11 +132,11 @@ export default function MainCameraView({
       {camera && (
         <div className="absolute left-3 top-11 z-10 flex flex-col gap-1 text-[11px] text-white/80">
           <span className="flex items-center gap-1 rounded-lg bg-black/45 px-2 py-1">
-            <Building2 size={11} />
+            <Building2 size={11} aria-hidden="true" />
             {camera.building}
           </span>
           <span className="flex items-center gap-1 rounded-lg bg-black/45 px-2 py-1">
-            <MapPin size={11} />
+            <MapPin size={11} aria-hidden="true" />
             {camera.zone}
           </span>
         </div>

@@ -98,12 +98,12 @@ export default function CameraThumbnail({
   );
 
   return (
-    <div ref={holder} className={`relative overflow-hidden bg-slate-900 ${className}`}>
+    <div ref={holder} className={`relative overflow-hidden bg-neutral-900 ${className}`}>
       {src ? (
         <img src={src} alt={alt} className="h-full w-full object-cover" />
       ) : (
         <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-white/35">
-          {state === 'empty' ? <VideoOff size={18} /> : <Loader2 size={18} className="animate-spin" />}
+          {state === 'empty' ? <VideoOff size={18} aria-hidden="true" /> : <Loader2 size={18} aria-hidden="true" className="animate-spin" />}
           <span className="text-[10px] font-medium">
             {state === 'empty' ? "Kadr yo'q" : "Yuklanmoqda"}
           </span>

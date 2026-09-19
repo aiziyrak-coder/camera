@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { MessageSquare, Send } from 'lucide-react';
-import Modal from '../Modal';
-import { TextField, SelectField } from '../FormField';
+import { Check, MessageSquare, Send } from 'lucide-react';
+import { Button, Field, Input, Modal, Select, cn, focusRing } from '../../ui';
+import { Checkbox, ChoiceCards, Notice } from '../settings/kit';
 import RecipientChipsInput from './RecipientChipsInput';
 import { ApiError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
@@ -41,6 +41,11 @@ const EMPTY: FormState = {
   minSeverity: '',
 };
 
+const CHANNEL_OPTIONS = [
+  { value: 'telegram' as const, label: 'Telegram', description: "Shaxsiy chat, guruh yoki kanal", icon: Send },
+  { value: 'sms' as const, label: 'SMS', description: 'Eskiz.uz orqali telefon raqamiga', icon: MessageSquare },
+];
+
 function toForm(rule: NotificationRule | null): FormState {
   if (!rule) return EMPTY;
   return {
@@ -56,6 +61,8 @@ function toForm(rule: NotificationRule | null): FormState {
 }
 
 type Errors = Partial<Record<'name' | 'recipients' | 'kinds' | 'form', string>>;
+
+const legendClass = 'mb-2 text-[13px] font-medium text-fg';
 
 /** Qoida yaratish/tahrirlash. `rule` = null — yangi qoida. */
 export default function NotificationRuleModal({
@@ -126,9 +133,7 @@ export default function NotificationRuleModal({
     };
     setSaving(true);
     try {
-      const saved = rule
-        ? await notificationsApi.updateRule(rule.id, body, token)
-        : await notificationsApi.createRule(body, token);
+      const saved = rule ? await notificationsApi.updateRule(rule.id, body, token) : await notificationsApi.createRule(body, token);
       onSaved(saved);
       onClose();
     } catch (err) {
@@ -139,128 +144,116 @@ export default function NotificationRuleModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={rule ? 'Qoidani tahrirlash' : 'Yangi bildirishnoma qoidasi'} maxWidth="max-w-2xl">
-      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-        {errors.form && (
-          <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">{errors.form}</p>
-        )}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto]">
-          <TextField
-            label="Qoida nomi"
-            placeholder="Masalan: Navbatchi operatorlar"
-            value={form.name}
-            onChange={(e) => set('name', e.target.value)}
-            error={errors.name}
-            maxLength={120}
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={rule ? 'Qoidani tahrirlash' : 'Yangi bildirishnoma qoidasi'}
+      description="Kim, qaysi kanal orqali va qanday signallar haqida xabar oladi."
+      size="lg"
+      dismissible={!saving}
+      footer={
+        <>
+          <Button onClick={onClose} disabled={saving}>
+            Bekor qilish
+          </Button>
+          <Button type="submit" form="notification-rule-form" variant="primary" loading={saving}>
+            Saqlash
+          </Button>
+        </>
+      }
+    >
+      <form id="notification-rule-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
+          <Field label="Qoida nomi" required error={errors.name}>
+            <Input placeholder="Masalan: Navbatchi operatorlar" value={form.name} onChange={(e) => set('name', e.target.value)} maxLength={120} />
+          </Field>
+          <Checkbox
+            label="Yoqilgan"
+            checked={form.enabled}
+            onChange={(e) => set('enabled', e.target.checked)}
+            className="rounded-control border border-border px-3 py-2 sm:mb-0"
           />
-          <label className="flex items-center gap-2.5 self-end rounded-xl bg-white/40 px-3 py-2.5 text-sm">
-            <input
-              type="checkbox"
-              checked={form.enabled}
-              onChange={(e) => set('enabled', e.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-            />
-            <span className="text-slate-700">Yoqilgan</span>
-          </label>
         </div>
-
-        <div>
-          <p className="mb-1.5 text-xs font-semibold text-slate-600">Kanal</p>
-          <div className="inline-flex rounded-xl bg-white/50 p-1" role="radiogroup" aria-label="Kanal">
-            {(
-              [
-                { value: 'telegram', label: 'Telegram', icon: Send },
-                { value: 'sms', label: 'SMS', icon: MessageSquare },
-              ] as const
-            ).map(({ value, label, icon: Icon }) => (
-              <button
-                key={value}
-                type="button"
-                role="radio"
-                aria-checked={form.channel === value}
-                onClick={() => changeChannel(value)}
-                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors ${
-                  form.channel === value ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-white/70'
-                }`}
-              >
-                <Icon size={14} />
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <RecipientChipsInput
-          channel={form.channel}
-          value={form.recipients}
-          onChange={(next) => set('recipients', next)}
-          error={errors.recipients}
-        />
 
         <fieldset>
-          <legend className="mb-1.5 text-xs font-semibold text-slate-600">Signal turlari</legend>
-          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+          <legend className={legendClass}>Kanal</legend>
+          <ChoiceCards name="notification-channel" value={form.channel} onChange={changeChannel} options={CHANNEL_OPTIONS} />
+        </fieldset>
+
+        <RecipientChipsInput channel={form.channel} value={form.recipients} onChange={(next) => set('recipients', next)} error={errors.recipients} />
+
+        <fieldset>
+          <legend className={legendClass}>
+            Signal turlari
+            <span className="ml-0.5 text-danger" aria-hidden="true">
+              *
+            </span>
+          </legend>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {KIND_OPTIONS.map((kind) => (
-              <label key={kind.value} className="flex items-start gap-2.5 rounded-xl bg-white/40 px-3 py-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={form.kinds.includes(kind.value)}
-                  onChange={() => set('kinds', toggle(form.kinds, kind.value))}
-                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                />
-                <span>
-                  <span className="font-semibold text-slate-700">{kind.label}</span>
-                  <span className="block text-[11px] text-slate-400">{kind.hint}</span>
-                </span>
-              </label>
+              <Checkbox
+                key={kind.value}
+                label={kind.label}
+                description={kind.hint}
+                checked={form.kinds.includes(kind.value)}
+                onChange={() => set('kinds', toggle(form.kinds, kind.value))}
+                className={cn(
+                  'rounded-control border px-3 py-2.5 transition-colors',
+                  form.kinds.includes(kind.value) ? 'border-primary/40 bg-primary-soft/50' : 'border-border hover:border-border-strong',
+                )}
+              />
             ))}
           </div>
-          {errors.kinds && <p className="mt-1 text-xs font-medium text-red-500">{errors.kinds}</p>}
+          {errors.kinds && (
+            <p role="alert" className="mt-1.5 text-xs font-medium text-danger">
+              {errors.kinds}
+            </p>
+          )}
         </fieldset>
 
         {eventKindsSelected && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <SelectField
-              label="Eng kam og'irlik darajasi"
-              value={form.minSeverity}
-              onChange={(e) => set('minSeverity', e.target.value as EventSeverity | '')}
-              options={SEVERITY_OPTIONS}
-              placeholder="Cheklov yo'q"
-            />
-            <div>
-              <p className="mb-1.5 text-xs font-semibold text-slate-600">
+            <Field label="Eng kam og'irlik darajasi" hint="Faqat AI hodisalari uchun">
+              <Select
+                value={form.minSeverity}
+                onChange={(v) => set('minSeverity', v as EventSeverity | '')}
+                options={SEVERITY_OPTIONS}
+                placeholder="Cheklov yo'q"
+              />
+            </Field>
+            <fieldset className="min-w-0">
+              <legend className={legendClass}>
                 AI modullari{' '}
-                <span className="font-normal text-slate-400">
-                  ({form.moduleCodes.length ? `${form.moduleCodes.length} ta tanlangan` : 'hammasi'})
-                </span>
-              </p>
-              <div className="max-h-40 space-y-0.5 overflow-y-auto rounded-xl bg-white/40 p-2">
-                {sortedModules.length === 0 && <p className="px-1 text-xs text-slate-400">Modullar yuklanmoqda...</p>}
+                <span className="font-normal text-muted">({form.moduleCodes.length ? `${form.moduleCodes.length} ta tanlangan` : 'hammasi'})</span>
+              </legend>
+              <div className="max-h-44 space-y-0.5 overflow-y-auto rounded-control border border-border bg-surface-2 p-1.5">
+                {sortedModules.length === 0 && <p className="px-1.5 py-1 text-xs text-muted">Modullar yuklanmoqda...</p>}
                 {sortedModules.map((m) => (
-                  <label key={m.code} className="flex items-center gap-2 rounded-lg px-1.5 py-1 text-xs hover:bg-white/60">
+                  <label
+                    key={m.code}
+                    className="flex cursor-pointer items-center gap-2 rounded-[6px] px-1.5 py-1 text-[13px] hover:bg-surface"
+                  >
                     <input
                       type="checkbox"
                       checked={form.moduleCodes.includes(m.code)}
                       onChange={() => set('moduleCodes', toggle(form.moduleCodes, m.code))}
-                      className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                      className={cn('h-3.5 w-3.5 shrink-0 rounded accent-primary', focusRing)}
                     />
-                    <span className="font-mono text-[10px] text-slate-400">#{m.code}</span>
-                    <span className="truncate text-slate-700">{m.name}</span>
+                    <span className="font-mono text-[11px] text-subtle">#{m.code}</span>
+                    <span className="truncate text-fg">{m.name}</span>
                   </label>
                 ))}
               </div>
-            </div>
+            </fieldset>
           </div>
         )}
 
         {buildingFilterApplies && buildings.length > 0 && (
-          <div>
-            <p className="mb-1.5 text-xs font-semibold text-slate-600">
+          <fieldset>
+            <legend className={legendClass}>
               Binolar{' '}
-              <span className="font-normal text-slate-400">
-                ({form.buildingIds.length ? `${form.buildingIds.length} ta tanlangan` : 'hammasi'})
-              </span>
-            </p>
+              <span className="font-normal text-muted">({form.buildingIds.length ? `${form.buildingIds.length} ta tanlangan` : 'hammasi'})</span>
+            </legend>
             <div className="flex flex-wrap gap-1.5">
               {buildings.map((b) => {
                 const active = form.buildingIds.includes(b.id);
@@ -270,30 +263,22 @@ export default function NotificationRuleModal({
                     type="button"
                     aria-pressed={active}
                     onClick={() => set('buildingIds', toggle(form.buildingIds, b.id))}
-                    className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
-                      active ? 'bg-indigo-600 text-white' : 'bg-white/60 text-slate-600 hover:bg-white'
-                    }`}
+                    className={cn(
+                      'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-colors',
+                      active ? 'border-primary bg-primary-soft text-primary' : 'border-border bg-surface text-muted hover:border-border-strong hover:text-fg',
+                      focusRing,
+                    )}
                   >
+                    {active && <Check size={13} aria-hidden="true" />}
                     {b.name}
                   </button>
                 );
               })}
             </div>
-          </div>
+          </fieldset>
         )}
 
-        <div className="flex justify-end gap-2 pt-1">
-          <button type="button" onClick={onClose} className="btn-glass">
-            Bekor qilish
-          </button>
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {saving ? 'Saqlanmoqda...' : 'Saqlash'}
-          </button>
-        </div>
+        {errors.form && <Notice tone="danger">{errors.form}</Notice>}
       </form>
     </Modal>
   );

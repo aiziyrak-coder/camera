@@ -1,0 +1,38 @@
+import { describe, expect, it } from 'vitest';
+import type { GroupStat, Lesson } from '../../lib/situationApi';
+import { clockLabel, lessonSlots, lowestGroups, mergeArrivals, peakHour, share, teacherOnTimeRate, type ArrivalItem } from './situationUtils';
+
+const counts = { total: 20, enrolled: 20, present: 10, late: 1, absent: 5, dayOff: 0, notYet: 5, noData: 0, rate: 50 };
+const group = (name: string, over: Partial<GroupStat> = {}): GroupStat => ({ ...counts, name, facultyId: null, faculty: null, course: 1, curator: null, ...over });
+const arrival = (id: string, photo: string | null = null): ArrivalItem => ({ id, fullName: id, photoUrl: photo, initials: '', type: 'talaba', unit: '', faculty: null, time: '08:00', status: 'keldi' });
+const lesson = (id: string, startsAt: string, state: Lesson['state'], teacherStatus: Lesson['teacherStatus']): Lesson =>
+  ({ id, startsAt, endsAt: null, state, teacherStatus, groupName: 'G', subject: 'S' }) as Lesson;
+
+describe('situationUtils', () => {
+  it('lowestGroups skips good and unsettled groups', () => {
+    const res = lowestGroups([group('A', { rate: 90 }), group('B', { rate: 40 }), group('C', { rate: 20, notYet: 19, present: 1, absent: 0 }), group('D', { rate: 60 })]);
+    expect(res.map((g) => g.name)).toEqual(['B', 'D']);
+  });
+  it('mergeArrivals prefers server copy and dedupes', () => {
+    const res = mergeArrivals([arrival('x'), arrival('y')], [arrival('y', 'p.jpg'), arrival('z')]);
+    expect(res.map((a) => a.id)).toEqual(['x', 'y', 'z']);
+    expect(res[1].photoUrl).toBe('p.jpg');
+  });
+  it('teacherOnTimeRate ignores unknown', () => {
+    expect(teacherOnTimeRate({ scheduled: 10, onTime: 3, late: 1, absent: 0, unknown: 6 })).toBe(75);
+    expect(teacherOnTimeRate({ scheduled: 2, onTime: 0, late: 0, absent: 0, unknown: 2 })).toBeNull();
+  });
+  it('lessonSlots groups by start and marks state', () => {
+    const slots = lessonSlots([lesson('1', '10:10', 'upcoming', 'kutilmoqda'), lesson('2', '08:30', 'finished', 'kechikdi'), lesson('3', '08:30', 'ongoing', 'oz_vaqtida')]);
+    expect(slots.map((s) => [s.start, s.state, s.total])).toEqual([['08:30', 'ongoing', 2], ['10:10', 'upcoming', 1]]);
+    expect(slots[0].late).toBe(1);
+  });
+  it('helpers', () => {
+    expect(peakHour([{ hour: 8, students: 5, staff: 1 }, { hour: 9, students: 2, staff: 0 }])).toEqual({ hour: 8, total: 6 });
+    expect(peakHour([{ hour: 8, students: 0, staff: 0 }])).toBeNull();
+    expect(share(1, 3)).toBe(33.3);
+    expect(share(1, 0)).toBeNull();
+    expect(clockLabel('2026-09-19T08:12:00+05:00')).toBe('08:12');
+    expect(clockLabel('8:05')).toBe('08:05');
+  });
+});

@@ -2,6 +2,7 @@ import type { jsPDF as JsPdf } from 'jspdf';
 import type { AttendancePopulation, ReportAnalytics, ReportInsight } from '../types';
 import { findChartSvg, svgToPng } from './svgToPng';
 import { UZ_WEEKDAYS_SHORT } from './uzDate';
+import { branding } from './branding';
 
 /**
  * Rasmiy PDF hisobot — sahifadagi tahlil bilan bir xil tuzilma.
@@ -18,18 +19,19 @@ type Rgb = [number, number, number];
 const MARGIN = 44;
 const BOTTOM = 56;
 const FONT = 'NotoSans';
-const INK: Rgb = [15, 23, 42];
-const MUTED: Rgb = [100, 116, 139];
-const LINE: Rgb = [226, 232, 240];
-const ACCENT: Rgb = [79, 70, 229];
-const HEADER_BG: Rgb = [238, 242, 255];
-const ZEBRA: Rgb = [248, 250, 252];
+const INK: Rgb = [17, 24, 39];
+const MUTED: Rgb = [99, 107, 121];
+const LINE: Rgb = [226, 229, 235];
+// Dizayn tizimi tokenlari bilan bir xil (src/index.css: --c-primary va h.k.).
+const ACCENT: Rgb = [37, 99, 235];
+const HEADER_BG: Rgb = [235, 241, 254];
+const ZEBRA: Rgb = [247, 248, 250];
 
 const LEVEL_COLOR: Record<ReportInsight['level'], Rgb> = {
   critical: [220, 38, 38],
-  warning: [217, 119, 6],
-  info: [79, 70, 229],
-  ok: [5, 150, 105],
+  warning: [180, 83, 9],
+  info: [14, 116, 144],
+  ok: [21, 128, 61],
 };
 const LEVEL_LABEL: Record<ReportInsight['level'], string> = {
   critical: 'Shoshilinch',
@@ -248,7 +250,7 @@ export async function exportAnalyticsPdf(
   doc.setFillColor(...ACCENT);
   doc.rect(0, 0, w.width, 6, 'F');
   w.y = MARGIN;
-  w.text("FARG'ONA JSSTI — SITUATSION MARKAZ", { size: 9, bold: true, color: ACCENT, gap: 2 });
+  w.text(`${branding.orgName} — ${branding.systemName}`.toLocaleUpperCase('uz'), { size: 9, bold: true, color: ACCENT, gap: 2 });
   w.text(opts.title ?? 'Tahliliy hisobot', { size: 20, bold: true, gap: 2 });
   w.text(`Davr: ${a.period.label}   ·   Solishtirish: ${a.previousPeriod.label}`, { size: 10, color: MUTED, gap: 1 });
   w.text(

@@ -1,6 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import Modal from '../Modal';
-import { TextField } from '../FormField';
+import { useEffect, useId, useState, type FormEvent } from 'react';
+import { Button, ErrorState, Field, Input, Modal } from '../../ui';
 import { required, numberRange } from '../../lib/validation';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
@@ -16,10 +15,15 @@ export default function AddFacultyModal({
   onAdd: (faculty: Faculty) => void;
 }) {
   const { token } = useAuth();
+  const formId = useId();
   const [name, setName] = useState('');
   const [courseCount, setCourseCount] = useState('6');
   const [errors, setErrors] = useState<{ name?: string; courseCount?: string; form?: string }>({});
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (open) setErrors({});
+  }, [open]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -32,11 +36,7 @@ export default function AddFacultyModal({
 
     setSubmitting(true);
     try {
-      const faculty = await api.post<Faculty>(
-        '/api/faculties',
-        { name: name.trim(), courseCount: Number(courseCount) },
-        token,
-      );
+      const faculty = await api.post<Faculty>('/api/faculties', { name: name.trim(), courseCount: Number(courseCount) }, token);
       onAdd(faculty);
       setName('');
       setCourseCount('6');
@@ -50,41 +50,31 @@ export default function AddFacultyModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Yangi fakultet qo'shish" maxWidth="max-w-sm">
-      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-        {errors.form && (
-          <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
-            {errors.form}
-          </p>
-        )}
-        <TextField
-          label="Fakultet nomi"
-          placeholder="Stomatologiya"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          error={errors.name}
-        />
-        <TextField
-          label="Kurslar soni"
-          type="number"
-          min={1}
-          max={8}
-          value={courseCount}
-          onChange={(e) => setCourseCount(e.target.value)}
-          error={errors.courseCount}
-        />
-        <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} className="btn-glass">
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="sm"
+      dismissible={!submitting}
+      title="Yangi fakultet qo'shish"
+      footer={
+        <>
+          <Button onClick={onClose} disabled={submitting}>
             Bekor qilish
-          </button>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {submitting ? 'Qo\'shilmoqda...' : "Qo'shish"}
-          </button>
-        </div>
+          </Button>
+          <Button type="submit" form={formId} variant="primary" loading={submitting}>
+            Qo&apos;shish
+          </Button>
+        </>
+      }
+    >
+      <form id={formId} onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+        {errors.form && <ErrorState title="Saqlab bo'lmadi" message={errors.form} />}
+        <Field label="Fakultet nomi" required error={errors.name}>
+          <Input placeholder="Stomatologiya" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+        </Field>
+        <Field label="Kurslar soni" required error={errors.courseCount}>
+          <Input type="number" min={1} max={8} value={courseCount} onChange={(e) => setCourseCount(e.target.value)} />
+        </Field>
       </form>
     </Modal>
   );

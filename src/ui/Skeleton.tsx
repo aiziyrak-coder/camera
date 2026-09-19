@@ -1,0 +1,72 @@
+import { cn } from './cn';
+
+/** Yuklanish joy egallovchisi — spinner o'rniga shakl: sahifa sakramaydi. */
+export function Skeleton({ className }: { className?: string }) {
+  return <div className={cn('animate-pulse rounded-control bg-surface-3 motion-reduce:animate-none', className)} aria-hidden="true" />;
+}
+
+export function SkeletonText({ lines = 3, className }: { lines?: number; className?: string }) {
+  return (
+    <div className={cn('space-y-2', className)} aria-hidden="true">
+      {Array.from({ length: lines }).map((_, i) => (
+        <Skeleton key={i} className={cn('h-3', i === lines - 1 ? 'w-2/3' : 'w-full')} />
+      ))}
+    </div>
+  );
+}
+
+/** StatTile'lar qatori shaklida. */
+export function SkeletonTiles({ count = 4, className }: { count?: number; className?: string }) {
+  return (
+    <div className={cn('grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4', className)} aria-busy="true" aria-label="Yuklanmoqda">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="rounded-card border border-border bg-surface p-4">
+          <Skeleton className="h-3 w-1/2" />
+          <Skeleton className="mt-3 h-7 w-1/3" />
+          <Skeleton className="mt-3 h-2 w-full" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function SkeletonCard({ className, lines = 4 }: { className?: string; lines?: number }) {
+  return (
+    <div className={cn('rounded-card border border-border bg-surface p-5', className)} aria-busy="true" aria-label="Yuklanmoqda">
+      <Skeleton className="h-4 w-40" />
+      <SkeletonText lines={lines} className="mt-4" />
+    </div>
+  );
+}
+
+export function SkeletonTable({ rows = 6, columns = 5, className }: { rows?: number; columns?: number; className?: string }) {
+  const grid = { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` };
+  return (
+    <div className={cn('overflow-hidden rounded-card border border-border bg-surface', className)} aria-busy="true" aria-label="Yuklanmoqda">
+      <div className="grid gap-4 border-b border-border bg-surface-2 px-4 py-3" style={grid}>
+        {Array.from({ length: columns }).map((_, i) => (
+          <Skeleton key={i} className="h-3 w-2/3" />
+        ))}
+      </div>
+      {Array.from({ length: rows }).map((_, r) => (
+        <div key={r} className="grid gap-4 border-b border-border px-4 py-3.5 last:border-b-0" style={grid}>
+          {Array.from({ length: columns }).map((_, c) => (
+            <Skeleton key={c} className={cn('h-3.5', c === 0 ? 'w-5/6' : 'w-1/2')} />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Sahifa bo'lagi yuklanayotganda (Suspense) — sarlavha + plitkalar + jadval. */
+export function PageSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Sahifa yuklanmoqda">
+      <Skeleton className="h-7 w-56" />
+      <Skeleton className="mt-2 h-4 w-80 max-w-full" />
+      <SkeletonTiles className="mt-6" />
+      <SkeletonTable className="mt-6" />
+    </div>
+  );
+}

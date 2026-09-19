@@ -1,6 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import Modal from '../Modal';
-import { TextField, SelectField } from '../FormField';
+import { useEffect, useId, useState, type FormEvent } from 'react';
+import { Button, ErrorState, Field, Input, Modal, Select } from '../../ui';
 import { required, numberRange } from '../../lib/validation';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
@@ -18,11 +17,16 @@ export default function AddGroupModal({
   onAdd: (group: StudentGroup) => void;
 }) {
   const { token } = useAuth();
+  const formId = useId();
   const [name, setName] = useState('');
   const [facultyId, setFacultyId] = useState('');
   const [course, setCourse] = useState('1');
   const [errors, setErrors] = useState<{ name?: string; faculty?: string; course?: string; form?: string }>({});
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (open) setErrors({});
+  }, [open]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -36,11 +40,7 @@ export default function AddGroupModal({
 
     setSubmitting(true);
     try {
-      const group = await api.post<StudentGroup>(
-        '/api/student-groups',
-        { name: name.trim(), facultyId, course: Number(course) },
-        token,
-      );
+      const group = await api.post<StudentGroup>('/api/student-groups', { name: name.trim(), facultyId, course: Number(course) }, token);
       onAdd(group);
       setName('');
       setFacultyId('');
@@ -55,49 +55,40 @@ export default function AddGroupModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Yangi guruh qo'shish" maxWidth="max-w-sm">
-      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-        {errors.form && (
-          <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
-            {errors.form}
-          </p>
-        )}
-        <TextField
-          label="Guruh nomi"
-          placeholder="207-guruh"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          error={errors.name}
-        />
-        <SelectField
-          label="Fakultet"
-          placeholder="Tanlang"
-          value={facultyId}
-          onChange={(e) => setFacultyId(e.target.value)}
-          error={errors.faculty}
-          options={faculties.map((f) => ({ value: f.id, label: f.name }))}
-        />
-        <TextField
-          label="Kurs"
-          type="number"
-          min={1}
-          max={6}
-          value={course}
-          onChange={(e) => setCourse(e.target.value)}
-          error={errors.course}
-        />
-        <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} className="btn-glass">
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="sm"
+      dismissible={!submitting}
+      title="Yangi guruh qo'shish"
+      footer={
+        <>
+          <Button onClick={onClose} disabled={submitting}>
             Bekor qilish
-          </button>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {submitting ? 'Qo\'shilmoqda...' : "Qo'shish"}
-          </button>
-        </div>
+          </Button>
+          <Button type="submit" form={formId} variant="primary" loading={submitting}>
+            Qo&apos;shish
+          </Button>
+        </>
+      }
+    >
+      <form id={formId} onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+        {errors.form && <ErrorState title="Saqlab bo'lmadi" message={errors.form} />}
+        <Field label="Guruh nomi" required error={errors.name}>
+          <Input placeholder="DI-2301" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+        </Field>
+        <Field label="Fakultet" required error={errors.faculty}>
+          <Select
+            value={facultyId}
+            onChange={setFacultyId}
+            placeholder="Tanlang"
+            options={faculties.map((f) => ({ value: f.id, label: f.name }))}
+            className="sm:w-full"
+          />
+        </Field>
+        <Field label="Kurs" required error={errors.course}>
+          <Input type="number" min={1} max={6} value={course} onChange={(e) => setCourse(e.target.value)} />
+        </Field>
       </form>
     </Modal>
   );

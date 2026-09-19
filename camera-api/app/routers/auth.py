@@ -122,7 +122,7 @@ async def forgot_password(
     await log_action(db, request, str(user.id), "Parolni tiklashni so'radi", "Autentifikatsiya")
     await db.commit()
 
-    reset_link = f"{settings.frontend_base_url}/admin/reset-password?token={raw_token}"
+    reset_link = f"{settings.frontend_base_url}/parolni-tiklash?token={raw_token}"
     if user.email:
         send_password_reset_email(user.email, user.full_name, reset_link)
     else:

@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
-import { Loader2, MapPin } from 'lucide-react';
-import Modal from '../Modal';
-import { SelectField, TextField } from '../FormField';
+import { useEffect, useState, type FormEvent } from 'react';
+import { MapPin } from 'lucide-react';
+import { Checkbox, Notice } from '../settings/kit';
+import { Button, Field, Input, Modal, Select } from '../../ui';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { useBuildings } from '../../lib/useBuildings';
@@ -43,7 +43,8 @@ export default function CameraLocationModal({
 
   const nothingToDo = !building && !zone && !clearFloor && floor.trim() === '';
 
-  async function handleSave() {
+  async function handleSave(event?: FormEvent) {
+    event?.preventDefault();
     if (nothingToDo) return;
     setSaving(true);
     setError(null);
@@ -69,76 +70,66 @@ export default function CameraLocationModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={`Joylashuvni belgilash — ${cameraIds.length} ta kamera`}>
-      <div className="space-y-4">
-        <p className="glass-deep p-3 text-xs leading-relaxed text-slate-500">
-          Bo&apos;sh qoldirilgan maydon o&apos;zgarmaydi. Qavat monitoring markazidagi bino
-          kesimi uchun ishlatiladi: qavati belgilanmagan kameralar &laquo;Qavat
-          belgilanmagan&raquo; guruhida to&apos;planadi.
-        </p>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Joylashuvni belgilash"
+      description={`${cameraIds.length} ta tanlangan kamera`}
+      size="md"
+      dismissible={!saving}
+      footer={
+        <>
+          <Button onClick={onClose} disabled={saving}>
+            Bekor qilish
+          </Button>
+          <Button type="submit" form="camera-bulk-location-form" variant="primary" icon={MapPin} loading={saving} disabled={nothingToDo}>
+            Saqlash
+          </Button>
+        </>
+      }
+    >
+      <form id="camera-bulk-location-form" onSubmit={handleSave} noValidate className="flex flex-col gap-4">
+        <Notice tone="neutral">
+          Bo&apos;sh qoldirilgan maydon o&apos;zgarmaydi. Qavat monitoring markazidagi bino kesimi uchun ishlatiladi:
+          qavati belgilanmagan kameralar «Qavat belgilanmagan» guruhida to&apos;planadi.
+        </Notice>
 
-        <SelectField
-          label="Bino"
-          placeholder="O'zgartirilmasin"
-          value={building}
-          onChange={(e) => setBuilding(e.target.value)}
-          options={buildings.map((b) => ({ value: b.name, label: b.name }))}
+        <Field label="Bino">
+          <Select value={building} onChange={setBuilding} placeholder="O'zgartirilmasin" options={buildings.map((b) => ({ value: b.name, label: b.name }))} />
+        </Field>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Qavat">
+            <Input
+              type="number"
+              min={-5}
+              max={50}
+              placeholder="O'zgartirilmasin"
+              value={floor}
+              onChange={(e) => {
+                setFloor(e.target.value);
+                if (e.target.value) setClearFloor(false);
+              }}
+              disabled={clearFloor}
+            />
+          </Field>
+          <Field label="Zona (xona nomi)">
+            <Input placeholder="O'zgartirilmasin" value={zone} onChange={(e) => setZone(e.target.value)} />
+          </Field>
+        </div>
+
+        <Checkbox
+          checked={clearFloor}
+          onChange={(e) => {
+            setClearFloor(e.target.checked);
+            if (e.target.checked) setFloor('');
+          }}
+          label="Qavat belgisini olib tashlash"
+          description="Tanlangan kameralar «Qavat belgilanmagan» guruhiga o'tadi."
         />
 
-        <div className="grid grid-cols-2 gap-3">
-          <TextField
-            label="Qavat"
-            type="number"
-            min={-5}
-            max={50}
-            placeholder="O'zgartirilmasin"
-            value={floor}
-            onChange={(e) => {
-              setFloor(e.target.value);
-              if (e.target.value) setClearFloor(false);
-            }}
-            disabled={clearFloor}
-          />
-          <TextField
-            label="Zona (xona nomi)"
-            placeholder="O'zgartirilmasin"
-            value={zone}
-            onChange={(e) => setZone(e.target.value)}
-          />
-        </div>
-
-        <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-          <input
-            type="checkbox"
-            checked={clearFloor}
-            onChange={(e) => {
-              setClearFloor(e.target.checked);
-              if (e.target.checked) setFloor('');
-            }}
-            className="h-4 w-4 rounded border-slate-300"
-          />
-          Qavat belgisini olib tashlash
-        </label>
-
-        {error && (
-          <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-600">{error}</p>
-        )}
-
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="btn-glass">
-            Bekor qilish
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || nothingToDo}
-            className="btn-glass flex items-center gap-1.5 !bg-indigo-600 !text-white hover:!bg-indigo-700 disabled:opacity-50"
-          >
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <MapPin size={14} />}
-            Saqlash
-          </button>
-        </div>
-      </div>
+        {error && <Notice tone="danger">{error}</Notice>}
+      </form>
     </Modal>
   );
 }

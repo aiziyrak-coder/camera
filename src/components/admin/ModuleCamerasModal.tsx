@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Loader2, Video } from 'lucide-react';
-import Modal from '../Modal';
-import Badge from '../Badge';
+import { CheckSquare, Square, Video, VideoOff } from 'lucide-react';
+import { Badge, Button, ButtonLink, EmptyState, ErrorState, Modal, SearchInput, Skeleton, cn, type Tone } from '../../ui';
+import { Checkbox, Notice } from '../settings/kit';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import type { AIModule, ModuleCameraAssignments } from '../../types';
 
-const STATUS_LABEL = { faol: 'Faol', nofaol: 'Nofaol', tamirda: "Ta'mirda" } as const;
+const STATUS_META: Record<string, { label: string; tone: Tone }> = {
+  faol: { label: 'Faol', tone: 'success' },
+  nofaol: { label: 'Nofaol', tone: 'neutral' },
+  tamirda: { label: "Ta'mirda", tone: 'warning' },
+};
 
+/** Bitta AI modulini qaysi kameralarda ishlashini belgilash (forma — Modal). */
 export default function ModuleCamerasModal({
   open,
   module,
@@ -24,29 +29,33 @@ export default function ModuleCamerasModal({
   const [pending, setPending] = useState<Map<string, boolean>>(new Map());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
 
   const load = useCallback(async () => {
     if (!module || !token) return;
     setLoading(true);
+    setLoadError(null);
     setError(null);
     try {
-      const res = await api.get<ModuleCameraAssignments>(
-        `/api/cameras/by-module/${module.code}/assignments`,
-        token,
-      );
+      const res = await api.get<ModuleCameraAssignments>(`/api/cameras/by-module/${module.code}/assignments`, token);
       setData(res);
       setPending(new Map());
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Yuklab bo‘lmadi');
+      setData(null);
+      setLoadError(err instanceof ApiError ? err.message : 'Yuklab bo‘lmadi');
     } finally {
       setLoading(false);
     }
   }, [module, token]);
 
   useEffect(() => {
-    if (open && module) load();
+    if (open && module) {
+      setFilter('');
+      setData(null);
+      void load();
+    }
   }, [open, module, load]);
 
   function isEnabled(cameraId: string, original: boolean): boolean {
@@ -81,15 +90,8 @@ export default function ModuleCamerasModal({
     setSaving(true);
     setError(null);
     try {
-      const assignments = Array.from(pending.entries()).map(([cameraId, enabled]) => ({
-        cameraId,
-        enabled,
-      }));
-      await api.patch<ModuleCameraAssignments>(
-        `/api/cameras/by-module/${module.code}/assignments`,
-        { assignments },
-        token,
-      );
+      const assignments = Array.from(pending.entries()).map(([cameraId, enabled]) => ({ cameraId, enabled }));
+      await api.patch<ModuleCameraAssignments>(`/api/cameras/by-module/${module.code}/assignments`, { assignments }, token);
       onSaved?.();
       onClose();
     } catch (err) {
@@ -99,130 +101,124 @@ export default function ModuleCamerasModal({
     }
   }
 
-  const cameras = (data?.cameras ?? []).filter((c) => {
+  const allCameras = data?.cameras ?? [];
+  const cameras = allCameras.filter((c) => {
     if (!filter.trim()) return true;
     const q = filter.toLowerCase();
-    return (
-      c.cameraName.toLowerCase().includes(q) ||
-      c.building.toLowerCase().includes(q) ||
-      c.zone.toLowerCase().includes(q)
-    );
+    return c.cameraName.toLowerCase().includes(q) || c.building.toLowerCase().includes(q) || c.zone.toLowerCase().includes(q);
   });
 
-  const enabledCount = data
-    ? data.cameras.filter((c) => isEnabled(c.cameraId, c.enabled)).length
-    : 0;
+  const enabledCount = allCameras.filter((c) => isEnabled(c.cameraId, c.enabled)).length;
+
+  let body;
+  if (loading) {
+    body = (
+      <div className="divide-y divide-border rounded-control border border-border" aria-busy="true" aria-label="Yuklanmoqda">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="flex items-center gap-3 px-3 py-3">
+            <Skeleton className="h-4 w-4" />
+            <Skeleton className="h-3.5 w-1/3" />
+            <Skeleton className="ml-auto h-3.5 w-16" />
+          </div>
+        ))}
+      </div>
+    );
+  } else if (loadError) {
+    body = <ErrorState message={loadError} onRetry={() => void load()} />;
+  } else if (allCameras.length === 0) {
+    body = (
+      <EmptyState
+        icon={VideoOff}
+        compact
+        title="Hali kamera qo'shilmagan"
+        description="Modulni biriktirish uchun avval kamera qo'shing."
+        action={
+          <ButtonLink to="/sozlamalar/kameralar" size="sm" onClick={onClose}>
+            Kameralar sahifasi
+          </ButtonLink>
+        }
+      />
+    );
+  } else {
+    body = (
+      <>
+        <p className="text-[13px] font-medium tabular-nums text-fg">
+          {enabledCount} / {allCameras.length} kamera yoqilgan
+          {pending.size > 0 && <span className="text-primary"> · {pending.size} ta o‘zgarish</span>}
+        </p>
+        <div className="max-h-80 overflow-y-auto rounded-control border border-border">
+          {cameras.length === 0 ? (
+            <EmptyState compact bordered={false} title="Kamera topilmadi" description="Qidiruv so'zini o'zgartiring." />
+          ) : (
+            <ul className="divide-y divide-border">
+              {cameras.map((c) => {
+                const on = isEnabled(c.cameraId, c.enabled);
+                const changed = pending.has(c.cameraId);
+                const status = STATUS_META[c.status] ?? { label: c.status, tone: 'neutral' as Tone };
+                return (
+                  <li key={c.cameraId} className={cn('transition-colors hover:bg-surface-2', changed && 'bg-primary-soft/40')}>
+                    <label className="flex cursor-pointer items-center gap-3 px-3 py-2.5">
+                      <Checkbox checked={on} onChange={() => toggle(c.cameraId, c.enabled)} aria-label={`${c.cameraName} — ${on ? "o'chirish" : 'yoqish'}`} />
+                      <Video size={15} className="shrink-0 text-subtle" aria-hidden="true" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-fg">{c.cameraName}</span>
+                        <span className="block truncate text-xs text-muted">
+                          {c.building} · {c.zone}
+                        </span>
+                      </span>
+                      <Badge tone={status.tone} dot>
+                        {status.label}
+                      </Badge>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </>
+    );
+  }
 
   return (
     <Modal
-      open={open}
+      open={open && !!module}
       onClose={onClose}
-      title={module ? `#${module.code} — ${module.name}` : ''}
-      maxWidth="max-w-2xl"
+      title={module ? `№${module.code} — ${module.name}` : ''}
+      description="Qaysi kameralarda bu AI kriteriyasi ishlashi kerakligini belgilang. O‘chirilgan kamera bu modulni hisoblamaydi — tezroq aylanish va kamroq yuk."
+      size="lg"
+      dismissible={!saving}
+      footer={
+        <>
+          <Button onClick={onClose} disabled={saving}>
+            Bekor qilish
+          </Button>
+          <Button variant="primary" onClick={handleSave} loading={saving} disabled={loading || !!loadError}>
+            {pending.size ? 'Saqlash' : 'Yopish'}
+          </Button>
+        </>
+      }
     >
-      {module && (
-        <div className="space-y-4">
-          <p className="text-xs text-slate-500">
-            Qaysi kameralarda bu AI kriteriyasi ishlashi kerakligini belgilang. O‘chirilgan kamera bu modulni
-            hisoblamaydi — tezroq aylanish va kamroq yuk.
-          </p>
-
+      <div className="flex flex-col gap-3">
+        {!loadError && allCameras.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
-            <input
-              type="search"
-              placeholder="Kamera, bino yoki zona bo‘yicha qidirish..."
+            <SearchInput
               value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              className="min-w-[200px] flex-1 rounded-lg border border-white/80 bg-white/60 px-3 py-1.5 text-sm"
+              onChange={setFilter}
+              placeholder="Kamera, bino yoki zona bo‘yicha qidirish…"
+              className="flex-1 sm:max-w-none"
             />
-            <button type="button" onClick={() => setAll(true)} className="btn-glass text-xs">
+            <Button size="sm" variant="ghost" icon={CheckSquare} onClick={() => setAll(true)} disabled={loading}>
               Hammasini yoqish
-            </button>
-            <button type="button" onClick={() => setAll(false)} className="btn-glass text-xs">
+            </Button>
+            <Button size="sm" variant="ghost" icon={Square} onClick={() => setAll(false)} disabled={loading}>
               Hammasini o‘chirish
-            </button>
+            </Button>
           </div>
-
-          {loading ? (
-            <div className="flex justify-center py-10 text-slate-400">
-              <Loader2 size={20} className="animate-spin" />
-            </div>
-          ) : (
-            <>
-              <p className="text-xs font-semibold text-indigo-600">
-                {enabledCount} / {data?.cameras.length ?? 0} kamera yoqilgan
-                {pending.size > 0 ? ` · ${pending.size} ta o‘zgarish` : ''}
-              </p>
-              <div className="max-h-80 overflow-y-auto rounded-xl border border-white/70">
-                <table className="w-full text-left text-sm">
-                  <thead className="sticky top-0 bg-white/90 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-3 py-2 w-10" />
-                      <th className="px-3 py-2">Kamera</th>
-                      <th className="px-3 py-2">Bino / Zona</th>
-                      <th className="px-3 py-2">Holat</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/60">
-                    {cameras.map((c) => {
-                      const on = isEnabled(c.cameraId, c.enabled);
-                      return (
-                        <tr key={c.cameraId} className="hover:bg-white/40">
-                          <td className="px-3 py-2">
-                            <input
-                              type="checkbox"
-                              checked={on}
-                              onChange={() => toggle(c.cameraId, c.enabled)}
-                              className="h-4 w-4 rounded border-slate-300 text-indigo-600"
-                            />
-                          </td>
-                          <td className="px-3 py-2 font-medium text-slate-800">
-                            <span className="flex items-center gap-1.5">
-                              <Video size={14} className="text-slate-400" />
-                              {c.cameraName}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-xs text-slate-500">
-                            {c.building} · {c.zone}
-                          </td>
-                          <td className="px-3 py-2">
-                            <Badge tone={c.status === 'faol' ? 'green' : c.status === 'tamirda' ? 'amber' : 'slate'}>
-                              {STATUS_LABEL[c.status]}
-                            </Badge>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                {cameras.length === 0 && (
-                  <p className="p-6 text-center text-sm text-slate-400">Kamera topilmadi</p>
-                )}
-              </div>
-            </>
-          )}
-
-          {error && (
-            <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
-              {error}
-            </p>
-          )}
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={onClose} className="btn-glass">
-              Bekor qilish
-            </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving || loading}
-              className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-            >
-              {saving ? 'Saqlanmoqda...' : pending.size ? 'Saqlash' : 'Yopish'}
-            </button>
-          </div>
-        </div>
-      )}
+        )}
+        {body}
+        {error && <Notice tone="danger">{error}</Notice>}
+      </div>
     </Modal>
   );
 }

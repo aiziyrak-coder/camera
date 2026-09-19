@@ -77,7 +77,7 @@ def build_insights(i: InsightInputs) -> list[InsightOut]:
                     "emas, yuzni tanish ishlamaganini bildiradi."
                 ),
                 action_label="Davomat kameralari tashxisi",
-                action_href="/admin/presence",
+                action_href="/oqituvchilar",
             )
         )
     elif (
@@ -97,7 +97,7 @@ def build_insights(i: InsightInputs) -> list[InsightOut]:
                     f"({_num(drop)} foiz punkt kam)."
                 ),
                 action_label="Davomat kalendari",
-                action_href="/admin/attendance",
+                action_href="/talabalar",
             )
         )
 
@@ -111,7 +111,7 @@ def build_insights(i: InsightInputs) -> list[InsightOut]:
                     f"{settings.attendance_ai_late_cutoff} dan keyin kelgan."
                 ),
                 action_label="Davomat kalendari",
-                action_href="/admin/attendance",
+                action_href="/talabalar",
             )
         )
 
@@ -130,7 +130,7 @@ def build_insights(i: InsightInputs) -> list[InsightOut]:
                     f"navbatda turibdi.{age}"
                 ),
                 action_label="Hodisalar jurnali",
-                action_href="/admin/events",
+                action_href="/hodisalar",
             )
         )
 
@@ -149,7 +149,7 @@ def build_insights(i: InsightInputs) -> list[InsightOut]:
                     "hodisalar ko'pligini emas, kameraning ko'rish maydonidagi muammoni bildiradi."
                 ),
                 action_label="Kameralar",
-                action_href="/admin/cameras",
+                action_href="/sozlamalar/kameralar",
             )
         )
 
@@ -163,7 +163,7 @@ def build_insights(i: InsightInputs) -> list[InsightOut]:
                     "tasdiqlangan. Chegarasini oshirish yoki kamerani tekshirish kerak."
                 ),
                 action_label="AI modullar",
-                action_href="/admin/ai-modules",
+                action_href="/sozlamalar/ai",
             )
         )
 
@@ -177,7 +177,7 @@ def build_insights(i: InsightInputs) -> list[InsightOut]:
                     "joylar kuzatilmayapti."
                 ),
                 action_label="Kameralar",
-                action_href="/admin/cameras",
+                action_href="/sozlamalar/kameralar",
             )
         )
 
@@ -195,7 +195,7 @@ def build_insights(i: InsightInputs) -> list[InsightOut]:
                     "tanimaydi, shuning uchun talabalar davomati foizi butun institutni aks ettirmaydi."
                 ),
                 action_label="Talabalar va Xodimlar",
-                action_href="/admin/students-staff",
+                action_href="/reestr",
             )
         )
 
@@ -209,7 +209,7 @@ def build_insights(i: InsightInputs) -> list[InsightOut]:
                     "ularni alohida ko'rib chiqish kerak."
                 ),
                 action_label="Hodisalar jurnali",
-                action_href="/admin/events",
+                action_href="/hodisalar",
             )
         )
 

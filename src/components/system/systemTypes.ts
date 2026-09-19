@@ -1,0 +1,141 @@
+/** /api/system/* javoblari (camera-api/app/schemas/system.py) — sahifaga kerakli qismi. */
+
+export interface ResourceAlert {
+  metric: string;
+  level: 'warning' | 'critical';
+  message: string;
+}
+
+export interface SystemResources {
+  cpu: number;
+  ram: number;
+  disk: number;
+  ffmpegProcessCount: number;
+  streamReaderCount: number;
+  alerts: ResourceAlert[];
+}
+
+export interface ConcurrencySlot {
+  max: number;
+  inUse: number;
+  waiting?: number;
+}
+
+export interface SweepStatus {
+  name: string;
+  tier: string;
+  intervalSeconds: number;
+  runs: number;
+  failures: number;
+  running: boolean;
+  lastFinishedAt: string | null;
+  lastDurationSeconds: number;
+  lastResult: number;
+  lastError: string | null;
+  lagging: boolean;
+  paused?: boolean;
+}
+
+export interface SystemAiStatus {
+  schedulerEnabled: boolean;
+  schedulerPollSeconds?: number;
+  /** Doimiy kuzatuvdagi kirish/chiqish kameralari. */
+  entranceWatchers?: number;
+  globalSweepConcurrency: number;
+  faceInferenceConcurrency?: number;
+  objectInferenceConcurrency?: number;
+  criticalModules?: string[];
+  standardModules?: string[];
+  gpu: {
+    cudaAvailable: boolean;
+    onnxProviders?: string[];
+    faceGpuEnabled?: boolean;
+    faceGpuActive: boolean;
+    objectGpuEnabled?: boolean;
+    objectGpuActive: boolean;
+    recommendation: string;
+  };
+  lastTick: {
+    finishedAt?: string | null;
+    durationSeconds: number;
+    modulesRan: number;
+    criticalRan: number;
+    standardRan: number;
+    skippedOverlap: boolean;
+  };
+  sweeps?: SweepStatus[];
+  sweepSlots: ConcurrencySlot;
+  faceInferenceGate: ConcurrencySlot & { waiting: number };
+  embeddingSweepCacheTtlSeconds?: number;
+}
+
+export interface StreamShard {
+  index: number;
+  apiUrl?: string;
+  reachable: boolean;
+  pathCount: number;
+  assignedCameras: number;
+  error?: string | null;
+}
+
+export interface SystemStreamStatus {
+  shardingEnabled: boolean;
+  shardCount: number;
+  faolCameras: number;
+  registeredStreams: number;
+  shards: StreamShard[];
+  recommendation: string;
+}
+
+export interface SystemCameraNetwork {
+  faolCameras: number;
+  reachableCameras: number;
+  offlineCameras: number;
+  linkLocalIpCount: number;
+  chronicOfflineCount: number;
+  offlineAlertMinutes?: number;
+  healthIntervalSeconds?: number;
+  recentOfflineAlerts24h: number;
+  lastSweep: {
+    finishedAt?: string | null;
+    durationSeconds: number;
+    reachable: number;
+    faolChecked: number;
+    skippedOverlap: boolean;
+  };
+  recommendation: string;
+}
+
+/** Amal jurnali ustunlari (src/types AuditLogEntry bilan bir xil). */
+export type AuditStatus = 'muvaffaqiyatli' | 'xatolik' | 'ogohlantirish';
+
+/** Foizli resurs → ohang: >80 xavf, >60 diqqat. */
+export function resourceTone(value: number): 'success' | 'warning' | 'danger' {
+  if (value > 80) return 'danger';
+  if (value > 60) return 'warning';
+  return 'success';
+}
+
+/** Fon vazifasi nomlari (texnik) → o'qiladigan nom. Noma'lumi o'zicha qoladi. */
+const SWEEP_LABELS: Record<string, string> = {
+  entrance_exit_attendance: 'Kirish/chiqish davomati',
+  unified_face: 'Yuz tanish (umumiy)',
+  attendance: 'Davomat',
+  vision_sleep: 'Darsda uxlash',
+  fire: "Yong'in / tutun",
+  zone_entry: 'Taqiqlangan zona',
+  fight: 'Mushtlashuv',
+  teacher_punctuality: "O'qituvchi punktualligi",
+  disorder: 'Tartibsizlik',
+  dress_code: 'Kiyinish qoidasi',
+  ppe: 'Himoya vositalari',
+  smoking: 'Chekish',
+  lesson_quality: 'Dars sifati',
+  lesson_attendance: 'Dars davomatini yakunlash',
+  absence_marking: '"Kelmadi" belgilash',
+  module_suppression: 'Shovqinli signallarni cheklash',
+};
+
+export function sweepLabel(name: string): string {
+  return SWEEP_LABELS[name] ?? name.replace(/_/g, ' ');
+}

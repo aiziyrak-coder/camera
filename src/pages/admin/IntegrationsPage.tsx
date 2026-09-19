@@ -1,58 +1,61 @@
 import { useState } from 'react';
-import PageHeader from '../../components/PageHeader';
-import SegmentedControl from '../../components/ui/SegmentedControl';
-import HemisPanel from '../../components/integrations/HemisPanel';
+import { CreditCard, DoorOpen, GraduationCap, ListChecks, Plus } from 'lucide-react';
+import { Button, Page, useUrlTab, type TabItem } from '../../ui';
+import HemisPanel, { HemisActions } from '../../components/integrations/HemisPanel';
 import DevicesPanel from '../../components/integrations/DevicesPanel';
-import AccessEventsPanel from '../../components/integrations/AccessEventsPanel';
-import UnmatchedPanel from '../../components/integrations/UnmatchedPanel';
-import { usePersistedState } from '../../lib/usePersistedState';
+import AccessEventsPanel, { AccessEventsToolbar, type AccessEventFilters } from '../../components/integrations/AccessEventsPanel';
+import UnmatchedPanel, { UnmatchedToolbar } from '../../components/integrations/UnmatchedPanel';
+import { useHemisSync } from '../../components/integrations/useHemisSync';
+import { useApiResource } from '../../lib/useApiResource';
 import type { AccessDevice } from '../../lib/integrationsApi';
 
-type Tab = 'hemis' | 'turniket';
-type AccessView = 'jurnal' | 'biriktirilmagan';
+type Tab = 'hemis' | 'turniket' | 'jurnal' | 'biriktirilmagan';
+
+const TABS: readonly TabItem<Tab>[] = [
+  { id: 'hemis', label: 'HEMIS', icon: GraduationCap },
+  { id: 'turniket', label: 'Turniketlar', icon: DoorOpen },
+  { id: 'jurnal', label: 'Kirish jurnali', icon: ListChecks },
+  { id: 'biriktirilmagan', label: 'Biriktirilmagan kartalar', icon: CreditCard },
+];
 
 export default function IntegrationsPage() {
-  const [tab, setTab] = usePersistedState<Tab>('integrations.tab', 'hemis');
-  const [view, setView] = useState<AccessView>('jurnal');
+  const [tab] = useUrlTab(TABS);
+  const hemis = useHemisSync();
+  const [addingDevice, setAddingDevice] = useState(false);
   const [devices, setDevices] = useState<AccessDevice[]>([]);
+  const [eventFilters, setEventFilters] = useState<AccessEventFilters>({ search: '', deviceId: '', granted: '', matched: '', from: '', to: '' });
+  const [unmatchedDays, setUnmatchedDays] = useState(7);
+  // Jurnal filtri uchun qurilmalar ro'yxati (Turniketlar tabi ochilmagan bo'lsa ham).
+  const deviceList = useApiResource<AccessDevice[]>(tab === 'jurnal' && devices.length === 0 ? '/api/access/devices' : null);
+  const filterDevices = devices.length ? devices : (deviceList.data ?? []);
+
+  let actions = null;
+  if (tab === 'hemis') actions = <HemisActions hemis={hemis} />;
+  else if (tab === 'turniket') {
+    actions = (
+      <Button variant="primary" icon={Plus} onClick={() => setAddingDevice(true)}>
+        Qurilma qo'shish
+      </Button>
+    );
+  }
+
+  let toolbar = null;
+  if (tab === 'jurnal') toolbar = <AccessEventsToolbar filters={eventFilters} onChange={setEventFilters} devices={filterDevices} />;
+  else if (tab === 'biriktirilmagan') toolbar = <UnmatchedToolbar days={unmatchedDays} onChange={setUnmatchedDays} />;
 
   return (
-    <div className="space-y-4">
-      <section className="glass p-6">
-        <PageHeader
-          title="Integratsiyalar"
-          subtitle="HEMIS bilan talaba va xodimlar ro'yxatini sinxronlash, turniketlardan davomat"
-          action={
-            <SegmentedControl<Tab>
-              ariaLabel="Integratsiya"
-              value={tab}
-              onChange={setTab}
-              options={[
-                { value: 'hemis', label: 'HEMIS' },
-                { value: 'turniket', label: 'Turniketlar' },
-              ]}
-            />
-          }
-        />
-        {tab === 'hemis' ? (
-          <HemisPanel />
-        ) : (
-          <div className="space-y-4">
-            <DevicesPanel onDevicesChange={setDevices} />
-            <SegmentedControl<AccessView>
-              ariaLabel="Turniket ma'lumotlari"
-              size="sm"
-              value={view}
-              onChange={setView}
-              options={[
-                { value: 'jurnal', label: 'Hodisalar jurnali' },
-                { value: 'biriktirilmagan', label: 'Biriktirilmagan kartalar' },
-              ]}
-            />
-            {view === 'jurnal' ? <AccessEventsPanel devices={devices} /> : <UnmatchedPanel />}
-          </div>
-        )}
-      </section>
-    </div>
+    <Page
+      title="Integratsiyalar"
+      subtitle="HEMIS bilan talaba va xodimlar ro'yxatini sinxronlash, turniketlardan davomat"
+      breadcrumbs={[{ label: 'Sozlamalar' }, { label: 'Integratsiyalar' }]}
+      actions={actions}
+      tabs={TABS}
+      toolbar={toolbar}
+    >
+      {tab === 'hemis' && <HemisPanel hemis={hemis} />}
+      {tab === 'turniket' && <DevicesPanel onDevicesChange={setDevices} adding={addingDevice} onAddingChange={setAddingDevice} />}
+      {tab === 'jurnal' && <AccessEventsPanel filters={eventFilters} />}
+      {tab === 'biriktirilmagan' && <UnmatchedPanel days={unmatchedDays} />}
+    </Page>
   );
 }

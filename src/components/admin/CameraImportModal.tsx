@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
-import { FileUp, Loader2 } from 'lucide-react';
-import Modal from '../Modal';
+import { FileUp } from 'lucide-react';
+import { Notice } from '../settings/kit';
+import { Button, Modal, cn } from '../../ui';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 
@@ -9,6 +10,24 @@ interface ImportResult {
   skipped: number;
   skippedRecorders: number;
   errors: { row: number; message: string }[];
+}
+
+/** Fayl tanlash maydoni (butun maydon bosiladi, klaviatura bilan ham). */
+export function CsvDropzone({ file, placeholder, onChange }: { file: File | null; placeholder: string; onChange: (file: File | null) => void }) {
+  return (
+    <label
+      className={cn(
+        'flex cursor-pointer flex-col items-center gap-2 rounded-card border border-dashed px-4 py-6 text-center transition-colors hover:border-primary/60 hover:bg-primary-soft/40',
+        'has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-primary/40',
+        file ? 'border-primary/50 bg-primary-soft/40' : 'border-border-strong bg-surface-2',
+      )}
+    >
+      <FileUp size={22} className="text-primary" aria-hidden="true" />
+      <span className="text-sm font-medium text-fg">{file ? file.name : placeholder}</span>
+      {file && <span className="text-xs text-muted">Boshqa fayl tanlash uchun bosing</span>}
+      <input type="file" accept=".csv,text/csv" className="sr-only" onChange={(e) => onChange(e.target.files?.[0] ?? null)} />
+    </label>
+  );
 }
 
 export default function CameraImportModal({
@@ -53,43 +72,46 @@ export default function CameraImportModal({
   }
 
   return (
-    <Modal open={open} onClose={handleClose} title="SADP'dan kameralarni import qilish" maxWidth="max-w-md">
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <p className="text-xs text-slate-500">
-          Hikvision SADP dasturidagi <span className="font-semibold">Export</span> tugmasi bilan olingan
-          CSV fayl. Faqat <span className="font-mono">Active</span> holatdagi qurilmalar qo&apos;shiladi,
-          NVR/DVR qurilmalar avtomatik o&apos;tkazib yuboriladi. Qo&apos;shilgan kameralar
-          &quot;Tasniflanmagan&quot; xona bilan, nofaol holatda qo&apos;shiladi — bino/xonasini keyin
-          har birida qo&apos;lda belgilashingiz kerak bo&apos;ladi.
-        </p>
+    <Modal
+      open={open}
+      onClose={handleClose}
+      title="SADP'dan kameralarni import qilish"
+      description="Hikvision SADP dasturidan eksport qilingan CSV fayl."
+      size="md"
+      dismissible={!uploading}
+      footer={
+        <>
+          <Button onClick={handleClose} disabled={uploading}>
+            Yopish
+          </Button>
+          <Button type="submit" form="camera-import-form" variant="primary" icon={FileUp} loading={uploading} disabled={!file}>
+            Import qilish
+          </Button>
+        </>
+      }
+    >
+      <form id="camera-import-form" onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <Notice tone="info">
+          SADP dasturidagi <span className="font-semibold">Export</span> tugmasi bilan olingan CSV fayl. Faqat{' '}
+          <span className="font-mono">Active</span> holatdagi qurilmalar qo&apos;shiladi, NVR/DVR qurilmalar avtomatik
+          o&apos;tkazib yuboriladi. Qo&apos;shilgan kameralar «Tasniflanmagan» xona bilan, nofaol holatda qo&apos;shiladi —
+          bino/xonasini keyin har birida qo&apos;lda belgilashingiz kerak bo&apos;ladi.
+        </Notice>
 
-        <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed border-slate-300 px-4 py-6">
-          <FileUp size={22} className="text-indigo-500" />
-          <span className="text-sm font-medium text-slate-700">
-            {file ? file.name : 'SADP CSV fayl tanlang'}
-          </span>
-          <input
-            type="file"
-            accept=".csv,text/csv"
-            className="hidden"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
-        </label>
+        <CsvDropzone file={file} placeholder="SADP CSV fayl tanlang" onChange={setFile} />
 
-        {error && (
-          <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-600">
-            {error}
-          </p>
-        )}
+        {error && <Notice tone="danger">{error}</Notice>}
 
         {result && (
-          <div className="rounded-xl bg-emerald-50 px-3 py-2 text-xs">
-            <p className="font-semibold text-emerald-700">
-              {result.imported} ta qo&apos;shildi, {result.skipped} ta o&apos;tkazib yuborildi
-              {result.skippedRecorders > 0 && `, ${result.skippedRecorders} ta recorder (NVR/DVR) o'tkazib yuborildi`}
-            </p>
+          <Notice
+            tone={result.errors.length > 0 ? 'warning' : 'success'}
+            title={
+              `${result.imported} ta qo'shildi, ${result.skipped} ta o'tkazib yuborildi` +
+              (result.skippedRecorders > 0 ? `, ${result.skippedRecorders} ta recorder (NVR/DVR) o'tkazib yuborildi` : '')
+            }
+          >
             {result.errors.length > 0 && (
-              <ul className="mt-2 max-h-32 space-y-1 overflow-y-auto text-red-600">
+              <ul className="mt-1 max-h-32 space-y-1 overflow-y-auto text-danger">
                 {result.errors.map((err) => (
                   <li key={`${err.row}-${err.message}`}>
                     Qator {err.row}: {err.message}
@@ -97,28 +119,8 @@ export default function CameraImportModal({
                 ))}
               </ul>
             )}
-          </div>
+          </Notice>
         )}
-
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={handleClose} className="btn-glass">
-            Yopish
-          </button>
-          <button
-            type="submit"
-            disabled={!file || uploading}
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-          >
-            {uploading ? (
-              <span className="flex items-center gap-1.5">
-                <Loader2 size={14} className="animate-spin" />
-                Yuklanmoqda...
-              </span>
-            ) : (
-              'Import qilish'
-            )}
-          </button>
-        </div>
       </form>
     </Modal>
   );

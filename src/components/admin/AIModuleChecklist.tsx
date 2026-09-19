@@ -1,9 +1,16 @@
+import { useId } from 'react';
 import { AlertCircle, Ban } from 'lucide-react';
+import { cn, focusRing } from '../../ui';
+import { Checkbox } from '../settings/kit';
 import { AI_MODULE_GROUP_LABELS } from '../../lib/aiModuleGroups';
 import type { AIModuleGroup, CameraModuleOption } from '../../types';
 
 const GROUPS = Object.keys(AI_MODULE_GROUP_LABELS) as AIModuleGroup[];
 
+const linkButton = cn('rounded px-1.5 py-0.5 text-xs font-medium transition-colors', focusRing);
+
+/** Kamera uchun AI modullari ro'yxati (toifalar bo'yicha). `excluded` —
+ *  o'chirilgan kodlar; aniqlash logikasi yo'q modullar tanlanmaydi. */
 export default function AIModuleChecklist({
   modules,
   excluded,
@@ -17,6 +24,7 @@ export default function AIModuleChecklist({
   onToggleGroup?: (group: AIModuleGroup, enable: boolean) => void;
   readOnly?: boolean;
 }) {
+  const idPrefix = useId();
   const byGroup = GROUPS.map((group) => ({
     group,
     label: AI_MODULE_GROUP_LABELS[group],
@@ -29,81 +37,74 @@ export default function AIModuleChecklist({
         const runnable = items.filter((m) => m.hasDetector);
         const enabledInGroup = runnable.filter((m) => !excluded.has(m.code)).length;
         return (
-          <div key={group}>
+          <div key={group} role="group" aria-labelledby={`${idPrefix}-${group}`} className="min-w-0">
             <div className="mb-1.5 flex items-center justify-between gap-2">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                {label}
+              <p id={`${idPrefix}-${group}`} className="min-w-0 truncate text-[13px] font-semibold uppercase tracking-wide text-muted">
+                {group}. {label}
               </p>
-              {!readOnly && onToggleGroup && runnable.length > 0 && (
-                <div className="flex gap-1 text-[10px] font-semibold">
-                  <button
-                    type="button"
-                    onClick={() => onToggleGroup(group, true)}
-                    className="rounded px-1.5 py-0.5 text-indigo-600 hover:bg-indigo-50"
-                  >
-                    Hammasi
-                  </button>
-                  <span className="text-slate-300">|</span>
-                  <button
-                    type="button"
-                    onClick={() => onToggleGroup(group, false)}
-                    className="rounded px-1.5 py-0.5 text-slate-500 hover:bg-slate-100"
-                  >
-                    Hech biri
-                  </button>
-                </div>
-              )}
-              <span className="text-[10px] font-medium text-slate-400">
-                {enabledInGroup}/{runnable.length}
-              </span>
+              <div className="flex shrink-0 items-center gap-1">
+                {!readOnly && onToggleGroup && runnable.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => onToggleGroup(group, true)}
+                      className={cn(linkButton, 'text-primary hover:bg-primary-soft')}
+                    >
+                      Hammasi
+                    </button>
+                    <span className="text-subtle" aria-hidden="true">
+                      |
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onToggleGroup(group, false)}
+                      className={cn(linkButton, 'text-muted hover:bg-surface-2 hover:text-fg')}
+                    >
+                      Hech biri
+                    </button>
+                  </>
+                )}
+                <span className="ml-1 text-xs font-medium tabular-nums text-muted">
+                  {enabledInGroup}/{runnable.length}
+                </span>
+              </div>
             </div>
             <div className="space-y-0.5">
               {items.map((m) => {
-                const checked = !excluded.has(m.code);
+                const checked = !excluded.has(m.code) && m.hasDetector;
                 const disabled = readOnly || !m.hasDetector;
                 const globallyOff = !m.active;
-                return (
-                  <label
-                    key={m.code}
-                    className={`flex items-start gap-2.5 rounded-lg px-2 py-1.5 text-sm transition-colors ${
-                      disabled
-                        ? 'cursor-not-allowed opacity-60'
-                        : 'cursor-pointer hover:bg-white/60'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked && m.hasDetector}
-                      disabled={disabled}
-                      onChange={() => onToggle(m.code)}
-                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-40"
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span
-                        className={
-                          checked && m.hasDetector
-                            ? 'text-slate-700'
-                            : 'text-slate-400'
-                        }
-                      >
-                        #{m.code} {m.name}
-                      </span>
-                      <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                        {globallyOff && (
-                          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-600">
-                            <Ban size={10} />
-                            Global o‘chirilgan
-                          </span>
-                        )}
-                        {!m.hasDetector && (
-                          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-slate-400">
-                            <AlertCircle size={10} />
-                            Aniqlash yo‘q
-                          </span>
-                        )}
-                      </span>
+                const flags =
+                  globallyOff || !m.hasDetector ? (
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      {globallyOff && (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-warning">
+                          <Ban size={11} aria-hidden="true" />
+                          Global o‘chirilgan
+                        </span>
+                      )}
+                      {!m.hasDetector && (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-muted">
+                          <AlertCircle size={11} aria-hidden="true" />
+                          Aniqlash yo‘q
+                        </span>
+                      )}
                     </span>
-                  </label>
+                  ) : undefined;
+                return (
+                  <Checkbox
+                    key={m.code}
+                    checked={checked}
+                    disabled={disabled}
+                    onChange={() => onToggle(m.code)}
+                    label={
+                      <span className={cn('font-normal', checked ? 'text-fg' : 'text-muted')}>
+                        <span className="font-mono text-xs text-muted">#{m.code}</span> {m.name}
+                      </span>
+                    }
+                    description={flags}
+                    className={cn('rounded-control px-2 py-1.5 transition-colors', !disabled && 'hover:bg-surface-2')}
+                  />
                 );
               })}
             </div>

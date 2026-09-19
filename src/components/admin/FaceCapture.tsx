@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Camera, Check, RotateCcw } from 'lucide-react';
+import { Button } from '../../ui';
 
 const OVAL_WIDTH_RATIO = 0.42;
 const OVAL_HEIGHT_RATIO = 0.62;
@@ -17,6 +18,8 @@ export default function FaceCapture({ onConfirm }: FaceCaptureProps) {
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [captured, setCaptured] = useState<string | null>(null);
+  // "Qayta urinish" kamerani qaytadan ishga tushirishi uchun.
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -76,7 +79,7 @@ export default function FaceCapture({ onConfirm }: FaceCaptureProps) {
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };
-  }, [captured]);
+  }, [captured, attempt]);
 
   async function handleCapture() {
     const video = videoRef.current;
@@ -110,20 +113,20 @@ export default function FaceCapture({ onConfirm }: FaceCaptureProps) {
 
   if (error) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-xl bg-red-50 p-6 text-center">
-        <AlertTriangle size={24} className="text-red-500" />
-        <p className="text-sm font-semibold text-red-600">{error}</p>
-        <p className="text-xs text-red-400">
-          Brauzer sozlamalaridan kamera ruxsatini bering va qayta urinib ko'ring
-        </p>
-        <button
-          type="button"
-          onClick={() => setError(null)}
-          className="btn-glass flex items-center gap-1.5"
+      <div role="alert" className="flex flex-col items-center gap-3 rounded-card border border-danger/25 bg-danger-soft p-6 text-center">
+        <AlertTriangle size={24} className="text-danger" aria-hidden="true" />
+        <p className="text-sm font-semibold text-fg">{error}</p>
+        <p className="text-xs text-muted">Brauzer sozlamalaridan kamera ruxsatini bering va qayta urinib ko&apos;ring</p>
+        <Button
+          size="sm"
+          icon={RotateCcw}
+          onClick={() => {
+            setError(null);
+            setAttempt((n) => n + 1);
+          }}
         >
-          <RotateCcw size={14} />
           Qayta urinish
-        </button>
+        </Button>
       </div>
     );
   }
@@ -131,24 +134,14 @@ export default function FaceCapture({ onConfirm }: FaceCaptureProps) {
   if (captured) {
     return (
       <div className="flex flex-col items-center gap-4">
-        <img
-          src={captured}
-          alt="Suratga olingan yuz"
-          className="h-56 w-44 rounded-2xl border border-white/80 object-cover shadow-btn"
-        />
-        <div className="flex gap-2">
-          <button type="button" onClick={handleRetake} className="btn-glass flex items-center gap-1.5">
-            <RotateCcw size={14} />
+        <img src={captured} alt="Suratga olingan yuz" className="h-56 w-44 rounded-card border border-border object-cover shadow-card" />
+        <div className="flex flex-wrap justify-center gap-2">
+          <Button icon={RotateCcw} onClick={handleRetake}>
             Qayta suratga olish
-          </button>
-          <button
-            type="button"
-            onClick={() => onConfirm(captured)}
-            className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700"
-          >
-            <Check size={14} />
+          </Button>
+          <Button variant="primary" icon={Check} onClick={() => onConfirm(captured)}>
             Tasdiqlash
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -156,11 +149,11 @@ export default function FaceCapture({ onConfirm }: FaceCaptureProps) {
 
   return (
     <div className="flex flex-col items-center gap-4">
-      <div className="relative aspect-[4/3] w-full max-w-sm overflow-hidden rounded-2xl bg-slate-900">
+      <div className="relative aspect-[4/3] w-full max-w-sm overflow-hidden rounded-card bg-black">
         <video ref={videoRef} muted playsInline className="h-full w-full object-cover" />
         {ready && (
           <div
-            className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[50%] border-2 border-dashed border-emerald-400/90"
+            className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[50%] border-2 border-dashed border-success"
             style={{ width: `${OVAL_WIDTH_RATIO * 100}%`, height: `${OVAL_HEIGHT_RATIO * 100}%` }}
           />
         )}
@@ -170,18 +163,12 @@ export default function FaceCapture({ onConfirm }: FaceCaptureProps) {
           </div>
         )}
       </div>
-      <p className="text-center text-xs text-slate-500">
+      <p className="text-center text-xs text-muted">
         Yuzingizni oval ichiga joylashtiring va yorug' joyda turing, so'ng suratga oling
       </p>
-      <button
-        type="button"
-        onClick={handleCapture}
-        disabled={!ready}
-        className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        <Camera size={16} />
+      <Button variant="primary" icon={Camera} onClick={handleCapture} disabled={!ready}>
         Yuzni suratga olish
-      </button>
+      </Button>
     </div>
   );
 }

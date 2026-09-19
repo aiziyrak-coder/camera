@@ -1,26 +1,181 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ------------------------------------------------------------------
+ * Dizayn tokenlari. Qiymatlar "R G B" — Tailwind `bg-primary/10` kabi
+ * shaffoflikni shu orqali quradi (tailwind.config.js).
+ *
+ * Yorug' mavzu — standart. Qorong'i mavzu `data-theme="dark"` bilan
+ * yoqiladi (taqdimot rejimi va foydalanuvchi tanlovi). Selektorlar
+ * ATAYLAB faqat :root'ga bog'lanmagan: istalgan element ichida mavzuni
+ * almashtirish mumkin (masalan /sozlamalar/ui uslub qo'llanmasida).
+ * ------------------------------------------------------------------ */
 @layer base {
+  :root,
+  [data-theme='light'] {
+    color-scheme: light;
+
+    --c-bg: 245 246 248;
+    --c-surface: 255 255 255;
+    --c-surface-2: 243 244 247;
+    --c-surface-3: 232 235 240;
+    --c-border: 226 229 235;
+    --c-border-strong: 205 210 219;
+
+    --c-fg: 17 24 39;
+    --c-muted: 99 107 121;
+    --c-subtle: 148 155 168;
+
+    --c-primary: 37 99 235;
+    --c-primary-fg: 255 255 255;
+    --c-primary-soft: 235 241 254;
+
+    --c-success: 21 128 61;
+    --c-success-fg: 255 255 255;
+    --c-success-soft: 231 246 236;
+
+    --c-warning: 180 83 9;
+    --c-warning-fg: 255 255 255;
+    --c-warning-soft: 254 243 226;
+
+    --c-danger: 220 38 38;
+    --c-danger-fg: 255 255 255;
+    --c-danger-soft: 254 236 236;
+
+    --c-info: 14 116 144;
+    --c-info-fg: 255 255 255;
+    --c-info-soft: 228 245 249;
+
+    /* Grafik seriyalari (kategoriyalar) — src/ui/chartTheme.ts o'qiydi. */
+    --c-chart-1: 37 99 235;
+    --c-chart-2: 13 148 136;
+    --c-chart-3: 124 58 237;
+    --c-chart-4: 217 119 6;
+    --c-chart-5: 219 39 119;
+    --c-chart-6: 100 116 139;
+
+    --shadow-card: 0 1px 2px 0 rgb(16 24 40 / 0.04), 0 1px 3px 0 rgb(16 24 40 / 0.04);
+    --shadow-pop: 0 16px 40px -12px rgb(16 24 40 / 0.22), 0 4px 10px -4px rgb(16 24 40 / 0.08);
+  }
+
+  [data-theme='dark'] {
+    color-scheme: dark;
+
+    --c-bg: 10 13 20;
+    --c-surface: 17 22 32;
+    --c-surface-2: 24 30 43;
+    --c-surface-3: 33 41 57;
+    --c-border: 37 45 61;
+    --c-border-strong: 56 66 86;
+
+    --c-fg: 229 233 240;
+    --c-muted: 146 155 171;
+    --c-subtle: 103 113 131;
+
+    --c-primary: 77 124 255;
+    --c-primary-fg: 255 255 255;
+    --c-primary-soft: 26 38 72;
+
+    --c-success: 52 199 123;
+    --c-success-fg: 6 20 13;
+    --c-success-soft: 17 45 33;
+
+    --c-warning: 245 172 55;
+    --c-warning-fg: 24 16 4;
+    --c-warning-soft: 52 38 15;
+
+    --c-danger: 248 104 104;
+    --c-danger-fg: 24 6 6;
+    --c-danger-soft: 58 24 28;
+
+    --c-info: 48 190 222;
+    --c-info-fg: 4 16 20;
+    --c-info-soft: 14 43 54;
+
+    --c-chart-1: 96 140 255;
+    --c-chart-2: 45 212 191;
+    --c-chart-3: 167 139 250;
+    --c-chart-4: 251 191 36;
+    --c-chart-5: 244 114 182;
+    --c-chart-6: 148 163 184;
+
+    --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.35);
+    --shadow-pop: 0 20px 48px -12px rgb(0 0 0 / 0.7), 0 4px 12px -4px rgb(0 0 0 / 0.5);
+  }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+    font-feature-settings: 'cv11', 'ss01';
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Taqdimot rejimi (devor ekrani): hamma narsa rem'da — bitta joydan kattalashadi. */
+  html[data-presentation='true'] {
+    font-size: 112.5%;
+  }
+
   body {
-    @apply bg-canvas text-ink font-sans antialiased transition-colors duration-200;
+    @apply bg-bg font-sans text-fg antialiased;
+  }
+
+  [data-theme] {
+    color: rgb(var(--c-fg));
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--c-primary) / 0.7);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: rgb(var(--c-primary) / 0.2);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--c-border-strong)) transparent;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
 
+@layer utilities {
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------
+ * ESKI sinflar — hali yangi dizayn tizimiga ko'chirilmagan sahifalar
+ * uchun (2-bosqichda o'chiriladi). Ular ATAYLAB doim yorug' ko'rinadi:
+ * ichidagi matnlar qattiq `text-slate-*` bilan yozilgan, qorong'i
+ * mavzuda ham o'qilishi uchun. Yangi kodda ishlatmang — src/ui.
+ * ------------------------------------------------------------------ */
 @layer components {
   .glass {
-    @apply rounded-card border border-white/[.82] bg-white/[.52] shadow-glass backdrop-blur-xl;
+    @apply rounded-card border border-slate-200/80 bg-white text-slate-900 shadow-card;
   }
 
   .glass-deep {
-    @apply rounded-xl border border-white/70 bg-white/70 backdrop-blur-xl;
+    @apply rounded-control border border-slate-200/80 bg-white text-slate-900;
   }
 
   .btn-glass {
-    @apply rounded-xl border border-white/[.88] bg-white/60 px-3 py-2 text-[12.5px] font-semibold text-slate-700 shadow-btn transition-colors hover:bg-white/80;
+    @apply rounded-control border border-slate-200 bg-white px-3 py-2 text-[12.5px] font-semibold text-slate-700 shadow-btn transition-colors hover:bg-slate-50;
   }
 
   .btn-shimmer {
@@ -29,14 +184,6 @@
   }
 
   .glass-btn-danger {
-    @apply rounded-xl border border-red-200/80 bg-red-50/70 px-3 py-2.5 text-sm font-semibold text-red-600 backdrop-blur-xl transition-colors hover:bg-red-100/80;
-  }
-
-  .nav-item {
-    @apply flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left text-sm font-medium text-slate-500 transition-colors hover:bg-white/60;
-  }
-
-  .nav-item-active {
-    @apply border-white/80 bg-white/70 text-indigo-600 shadow-btn;
+    @apply rounded-control border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100;
   }
 }

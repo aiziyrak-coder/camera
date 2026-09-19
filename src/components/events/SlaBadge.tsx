@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AlarmClock, Clock } from 'lucide-react';
+import { Badge, type Tone } from '../../ui';
 import { isOpenStatus, slaInfo } from '../../lib/eventWorkflow';
 import type { AIEvent } from '../../types';
 
@@ -17,11 +18,11 @@ function useNow(enabled: boolean): Date {
   return now;
 }
 
-const TONE = {
-  ok: 'bg-slate-100 text-slate-600',
-  soon: 'bg-amber-100 text-amber-800',
-  overdue: 'bg-red-100 text-red-700',
-} as const;
+const TONE: Record<'ok' | 'soon' | 'overdue', Tone> = {
+  ok: 'neutral',
+  soon: 'warning',
+  overdue: 'danger',
+};
 
 /** Hal qilish muddati (SLA): qolgan vaqt yoki "Muddati o'tgan". Qaror
  *  qilingan hodisada hech narsa ko'rsatilmaydi. */
@@ -32,12 +33,13 @@ export default function SlaBadge({ event, className = '' }: { event: Pick<AIEven
   if (info.state === 'none') return null;
   const Icon = info.state === 'overdue' ? AlarmClock : Clock;
   return (
-    <span
-      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold ${TONE[info.state]} ${className}`}
+    <Badge
+      tone={TONE[info.state]}
+      icon={Icon}
+      className={className}
       title={event.dueAt ? `Hal qilish muddati: ${event.dueAt.slice(0, 16).replace('T', ' ')}` : undefined}
     >
-      <Icon size={11} aria-hidden="true" />
       {info.label}
-    </span>
+    </Badge>
   );
 }

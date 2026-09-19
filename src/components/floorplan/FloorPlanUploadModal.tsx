@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { ImageUp, Loader2 } from 'lucide-react';
-import Modal from '../Modal';
+import { ImageUp } from 'lucide-react';
+import { Button, Field, Input, Modal } from '../../ui';
 import { ApiError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import {
@@ -106,68 +106,52 @@ export default function FloorPlanUploadModal({
   }
 
   return (
-    <Modal open={open} onClose={saving ? () => {} : onClose} title={plan ? 'Qavat rejasini tahrirlash' : 'Qavat rejasini yuklash'}>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <p className="text-xs text-slate-500">
-          {building.name}
-          {plan ? `, ${plan.floor}-qavat` : ''}. Chizma PNG, JPEG yoki WebP (15 MB gacha). Kameralar joylashuvi
-          nisbiy saqlanadi — rasm almashtirilsa ham o'z joyida qoladi.
-        </p>
+    <Modal
+      open={open}
+      onClose={saving ? () => {} : onClose}
+      dismissible={!saving}
+      title={plan ? 'Qavat rejasini tahrirlash' : 'Qavat rejasini yuklash'}
+      description={`${building.name}${plan ? `, ${plan.floor}-qavat` : ''}. Chizma PNG, JPEG yoki WebP (15 MB gacha). Kameralar joylashuvi nisbiy saqlanadi — rasm almashtirilsa ham o'z joyida qoladi.`}
+      footer={
+        <>
+          <Button onClick={onClose} disabled={saving}>
+            Bekor qilish
+          </Button>
+          <Button type="submit" form="floorplan-upload-form" variant="primary" loading={saving}>
+            {saving ? 'Saqlanmoqda…' : 'Saqlash'}
+          </Button>
+        </>
+      }
+    >
+      <form id="floorplan-upload-form" onSubmit={handleSubmit} className="space-y-4 pb-1">
         {!plan && (
-          <label className="block text-xs font-semibold text-slate-600">
-            Qavat
-            <input
-              type="number"
-              min={-10}
-              max={building.floors || 200}
-              value={floorValue}
-              onChange={(e) => setFloorValue(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-white/80 bg-white/80 px-3 py-2 text-sm outline-none focus:border-indigo-300"
-              required
-            />
-          </label>
+          <Field label="Qavat" required>
+            <Input type="number" min={-10} max={building.floors || 200} value={floorValue} onChange={(e) => setFloorValue(e.target.value)} required />
+          </Field>
         )}
-        <label className="block text-xs font-semibold text-slate-600">
-          Nomi {!plan && <span className="font-normal text-slate-400">(ixtiyoriy)</span>}
-          <input
+        <Field label={plan ? 'Nomi' : 'Nomi (ixtiyoriy)'}>
+          <Input
             type="text"
             value={name}
             maxLength={200}
             onChange={(e) => setName(e.target.value)}
             placeholder={`${building.name}, ${floorValue || '?'}-qavat`}
-            className="mt-1 w-full rounded-xl border border-white/80 bg-white/80 px-3 py-2 text-sm outline-none focus:border-indigo-300"
           />
-        </label>
-        <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-white/50 px-4 py-6 text-center text-xs text-slate-500 transition-colors hover:border-indigo-300 hover:bg-indigo-50/40">
+        </Field>
+        <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-card border-2 border-dashed border-border-strong bg-surface-2 px-4 py-6 text-center text-[13px] text-muted transition-colors hover:border-primary/50 hover:bg-primary-soft focus-within:ring-[3px] focus-within:ring-primary/40">
           {preview ? (
-            <img src={preview} alt="Tanlangan reja" className="max-h-48 rounded-lg object-contain shadow-sm" />
+            <img src={preview} alt="Tanlangan reja" className="max-h-48 rounded-control object-contain shadow-card" />
           ) : (
-            <ImageUp size={26} className="text-slate-400" />
+            <ImageUp size={26} aria-hidden="true" className="text-subtle" />
           )}
-          <span className="font-semibold text-slate-700">
-            {file ? file.name : plan ? 'Rasmni almashtirish (ixtiyoriy)' : 'Rasm tanlang'}
-          </span>
-          <input
-            type="file"
-            accept={PLAN_ACCEPT}
-            className="sr-only"
-            onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
-          />
+          <span className="font-medium text-fg">{file ? file.name : plan ? 'Rasmni almashtirish (ixtiyoriy)' : 'Rasm tanlang'}</span>
+          <input type="file" accept={PLAN_ACCEPT} className="sr-only" onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
         </label>
-        {error && <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">{error}</p>}
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} disabled={saving} className="btn-glass">
-            Bekor qilish
-          </button>
-          <button
-            type="submit"
-            disabled={saving}
-            className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:opacity-70"
-          >
-            {saving && <Loader2 size={14} className="animate-spin" />}
-            {saving ? 'Saqlanmoqda...' : 'Saqlash'}
-          </button>
-        </div>
+        {error && (
+          <p role="alert" className="rounded-control bg-danger-soft px-3 py-2.5 text-[13px] font-medium text-danger">
+            {error}
+          </p>
+        )}
       </form>
     </Modal>
   );

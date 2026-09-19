@@ -1,51 +1,59 @@
+import { Link } from 'react-router-dom';
 import { Radio } from 'lucide-react';
-import Badge from '../Badge';
-import type { LiveAttendanceMessage } from '../../lib/realtime';
+import { Avatar, Badge, Card, CardHeader, StatusBadge, StatusDot, cn, focusRing } from '../../ui';
+
+export interface ArrivalItem {
+  personId: string;
+  fullName: string | null;
+  photoUrl?: string | null;
+  unit?: string | null;
+  status: string;
+  checkIn: string | null;
+}
 
 /**
- * Hozirgina kamera orqali davomatga yozilganlar — WebSocket orqali keladi
- * (app/jobs/attendance_ai.py _announce_attendance). Ilgari yozuv bazada
- * bo'lsa ham sahifa qayta yuklanguncha ko'rinmasdi va "davomat kechikyapti"
- * degan taassurot qolardi.
+ * Hozirgina kamera orqali davomatga yozilganlar. Dastlab serverdagi oxirgi
+ * kelishlar, keyin WebSocket (attendance_recorded) orqali jonli qo'shiladi —
+ * sahifani yangilash shart emas.
  */
-export default function LiveArrivals({
+export function LiveArrivals({
   items,
-  onOpen,
+  linkFor,
+  live,
+  className,
 }: {
-  items: LiveAttendanceMessage[];
-  onOpen: (personId: string) => void;
+  items: ArrivalItem[];
+  linkFor: (personId: string) => string;
+  /** Jonli ulanish faol (bugungi sana). */
+  live: boolean;
+  className?: string;
 }) {
   return (
-    <div className="mb-4 rounded-2xl bg-white/60 p-3">
-      <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-600">
-        <Radio size={14} className="text-emerald-600" aria-hidden />
-        Jonli: hozirgina kelganlar
-      </div>
+    <Card className={cn('flex flex-col', className)}>
+      <CardHeader
+        title="Hozirgina kelganlar"
+        subtitle={live ? "Kamera tanishi bilan shu yerda" : "Shu kunning oxirgi kelishlari"}
+        icon={Radio}
+        actions={live ? <Badge tone="success" className="gap-2"><StatusDot tone="success" pulse />Jonli</Badge> : undefined}
+      />
       {items.length === 0 ? (
-        <p className="text-xs text-slate-500">
-          Sahifa ochiq turganda kamera tanigan har bir odam shu yerda darhol ko'rinadi.
-        </p>
+        <p className="rounded-control bg-surface-2 px-3 py-3 text-[13px] text-muted">Hali hech kim qayd etilmagan.</p>
       ) : (
-        <ul className="divide-y divide-slate-100" aria-live="polite">
+        <ul className="-mx-2 flex flex-col" aria-live="polite">
           {items.map((item) => (
-            <li key={`${item.personId}-${item.date}`}>
-              <button
-                type="button"
-                onClick={() => onOpen(item.personId)}
-                className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-left text-sm hover:text-indigo-600"
-              >
-                <span className="font-medium text-slate-900">{item.fullName ?? "Noma'lum"}</span>
-                <span className="text-xs text-slate-500">{item.group ?? ''}</span>
-                <Badge tone={item.status === 'kech_keldi' ? 'amber' : 'green'}>
-                  {item.status === 'kech_keldi' ? 'Kech keldi' : 'Keldi'}
-                  {item.checkIn ? ` · ${item.checkIn}` : ''}
-                </Badge>
-                {item.camera && <span className="ml-auto text-xs text-slate-400">{item.camera}</span>}
-              </button>
+            <li key={`${item.personId}-${item.checkIn}`} className="animate-fade-in">
+              <Link to={linkFor(item.personId)} className={cn('flex items-center gap-3 rounded-control px-2 py-2 hover:bg-surface-2', focusRing)}>
+                <Avatar name={item.fullName ?? '?'} src={item.photoUrl} size="sm" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-medium text-fg">{item.fullName ?? "Noma'lum"}</span>
+                  {item.unit && <span className="block truncate text-xs text-muted">{item.unit}</span>}
+                </span>
+                <StatusBadge status={item.status} time={item.checkIn} />
+              </Link>
             </li>
           ))}
         </ul>
       )}
-    </div>
+    </Card>
   );
 }

@@ -1,8 +1,7 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useId, useMemo, useState, type FormEvent } from 'react';
 import { Camera, Loader2 } from 'lucide-react';
-import Modal from '../Modal';
+import { Avatar, Button, ErrorState, Field, Input, Modal, Select } from '../../ui';
 import FaceCapture from './FaceCapture';
-import { TextField, SelectField } from '../FormField';
 import { required } from '../../lib/validation';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
@@ -61,6 +60,7 @@ export default function EditStudentStaffModal({
 }) {
   const { token } = useAuth();
   const { faculties } = useFaculties();
+  const formId = useId();
   const [form, setForm] = useState<FormState | null>(record ? toForm(record) : null);
   const [original, setOriginal] = useState<FormState | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -185,104 +185,115 @@ export default function EditStudentStaffModal({
     }
   }
 
+  const facultyOptions = useMemo(() => {
+    const options = faculties.map((f) => ({ value: f.name, label: f.name }));
+    if (form?.faculty && !options.some((o) => o.value === form.faculty)) options.unshift({ value: form.faculty, label: form.faculty });
+    return options;
+  }, [faculties, form?.faculty]);
+
   const isStudent = form?.type === 'talaba';
+  const identityLocked = loadingDetail || !original;
 
   return (
-    <Modal open={!!record} onClose={onClose} title="Ma'lumotlarni tahrirlash" maxWidth="max-w-lg">
+    <Modal
+      open={!!record}
+      onClose={onClose}
+      title="Ma'lumotlarni tahrirlash"
+      description={record ? record.fullName : undefined}
+      size="md"
+      dismissible={!saving}
+      footer={
+        <>
+          <Button onClick={onClose} disabled={saving}>
+            Bekor qilish
+          </Button>
+          <Button type="submit" form={formId} variant="primary" loading={saving} disabled={loadingDetail}>
+            Saqlash
+          </Button>
+        </>
+      }
+    >
       {form && record && (
-        <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-          {errors.form && (
-            <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">{errors.form}</p>
-          )}
-          <TextField
-            label="F.I.Sh."
-            value={form.fullName}
-            onChange={(e) => set('fullName', e.target.value)}
-            error={errors.fullName}
-          />
+        <form id={formId} onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+          {errors.form && <ErrorState title="Xatolik" message={errors.form} />}
+          <Field label="F.I.Sh." required error={errors.fullName}>
+            <Input value={form.fullName} onChange={(e) => set('fullName', e.target.value)} />
+          </Field>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <SelectField
-              label="Turi"
-              value={form.type}
-              onChange={(e) => set('type', e.target.value as FormState['type'])}
-              options={[
-                { value: 'talaba', label: 'Talaba' },
-                { value: 'xodim', label: 'Xodim' },
-              ]}
-            />
-            <SelectField
-              label="Fakultet"
-              value={form.faculty}
-              onChange={(e) => set('faculty', e.target.value)}
-              error={errors.faculty}
-              options={faculties.map((f) => ({ value: f.name, label: f.name }))}
-            />
+            <Field label="Turi">
+              <Select
+                value={form.type}
+                onChange={(value) => set('type', value as FormState['type'])}
+                options={[
+                  { value: 'talaba', label: 'Talaba' },
+                  { value: 'xodim', label: 'Xodim' },
+                ]}
+                className="sm:w-full"
+              />
+            </Field>
+            <Field label="Fakultet" required error={errors.faculty}>
+              <Select
+                value={form.faculty}
+                onChange={(value) => set('faculty', value)}
+                placeholder="Tanlang"
+                options={facultyOptions}
+                className="sm:w-full"
+              />
+            </Field>
           </div>
 
           {isStudent ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <SelectField
-                label="Kurs"
-                value={form.course}
-                onChange={(e) => set('course', e.target.value)}
-                error={errors.course}
-                placeholder="Kursni tanlang"
-                options={COURSE_OPTIONS}
-              />
-              <TextField
-                label="Guruh"
-                value={form.group}
-                placeholder="masalan DI-1625"
-                onChange={(e) => set('group', e.target.value)}
-                error={errors.group}
-              />
+              <Field label="Kurs" required error={errors.course}>
+                <Select value={form.course} onChange={(value) => set('course', value)} placeholder="Kursni tanlang" options={COURSE_OPTIONS} className="sm:w-full" />
+              </Field>
+              <Field label="Guruh" error={errors.group}>
+                <Input value={form.group} placeholder="masalan DI-1625" onChange={(e) => set('group', e.target.value)} />
+              </Field>
             </div>
           ) : (
-            <TextField
-              label="Lavozim"
-              value={form.position}
-              onChange={(e) => set('position', e.target.value)}
-              error={errors.position}
-            />
+            <Field label="Lavozim / kafedra" required error={errors.position}>
+              <Input value={form.position} onChange={(e) => set('position', e.target.value)} />
+            </Field>
           )}
 
-          <fieldset className="flex flex-col gap-3 rounded-xl border border-white/80 bg-white/40 p-3">
-            <legend className="px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <fieldset className="flex min-w-0 flex-col gap-3 rounded-card border border-border bg-surface-2/60 p-3.5">
+            <legend className="flex items-center px-1 text-xs font-semibold uppercase tracking-wide text-muted">
               Shaxsni tasdiqlovchi ma&apos;lumot
-              {loadingDetail && <Loader2 size={12} className="ml-1.5 inline animate-spin" />}
+              {loadingDetail && <Loader2 size={12} className="ml-1.5 animate-spin" aria-label="Yuklanmoqda" />}
             </legend>
-            <TextField
-              label="JSHSHIR"
-              inputMode="numeric"
-              autoComplete="off"
-              maxLength={20}
-              value={form.pinfl}
-              disabled={loadingDetail || !original}
-              onChange={(e) => set('pinfl', e.target.value)}
-              error={errors.pinfl}
-            />
-            <div className="grid grid-cols-[6rem_1fr] gap-3">
-              <TextField
-                label="Seriya"
-                autoComplete="off"
-                maxLength={2}
-                value={form.passportSeries}
-                disabled={loadingDetail || !original}
-                onChange={(e) => set('passportSeries', e.target.value.toUpperCase())}
-                error={errors.passportSeries}
-              />
-              <TextField
-                label="Pasport raqami"
+            <Field label="JSHSHIR" error={errors.pinfl}>
+              <Input
                 inputMode="numeric"
                 autoComplete="off"
-                maxLength={7}
-                value={form.passportNumber}
-                disabled={loadingDetail || !original}
-                onChange={(e) => set('passportNumber', e.target.value)}
-                error={errors.passportNumber}
+                maxLength={20}
+                value={form.pinfl}
+                disabled={identityLocked}
+                onChange={(e) => set('pinfl', e.target.value)}
               />
+            </Field>
+            <div className="grid grid-cols-[6rem_1fr] gap-3">
+              <Field label="Seriya" error={errors.passportSeries}>
+                <Input
+                  autoComplete="off"
+                  maxLength={2}
+                  value={form.passportSeries}
+                  disabled={identityLocked}
+                  onChange={(e) => set('passportSeries', e.target.value.toUpperCase())}
+                />
+              </Field>
+              <Field label="Pasport raqami" error={errors.passportNumber}>
+                <Input
+                  inputMode="numeric"
+                  autoComplete="off"
+                  maxLength={7}
+                  value={form.passportNumber}
+                  disabled={identityLocked}
+                  onChange={(e) => set('passportNumber', e.target.value)}
+                />
+              </Field>
             </div>
-            <p className="text-[11px] text-slate-400">Bo‘sh qoldirilsa, maydon o‘chiriladi.</p>
+            <p className="text-xs text-muted">Bo‘sh qoldirilsa, maydon o‘chiriladi.</p>
           </fieldset>
 
           <ParentNotifyFields
@@ -295,65 +306,46 @@ export default function EditStudentStaffModal({
             }}
             onChange={(next) => setForm((f) => (f ? { ...f, ...next } : f))}
             errors={{ parentPhone: errors.parentPhone, cardNumber: errors.cardNumber }}
-            disabled={loadingDetail || !original}
+            disabled={identityLocked}
             personId={record.type === 'talaba' ? record.id : undefined}
             telegramLinked={parentTelegramLinked}
             onTelegramUnlinked={() => setParentTelegramLinked(false)}
           />
 
-          <div className="rounded-xl border border-white/80 bg-white/40 p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-xs font-semibold text-slate-700">Yuz rasmi</p>
-                <p className="text-[11px] text-slate-500">
-                  {newFace
-                    ? 'Yangi rasm olindi — "Saqlash" bosilganda almashtiriladi'
-                    : record.biometricsStatus === 'tasdiqlangan'
-                      ? `Tasdiqlangan${record.confirmedLabel ? ` · ${record.confirmedLabel}` : ''}`
-                      : 'Yuzi hali tasdiqlanmagan — davomatda tanilmaydi'}
-                </p>
+          <div className="rounded-card border border-border bg-surface-2/60 p-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <Avatar name={record.fullName} src={newFace ?? record.biometricPhotoUrl} size="md" status={newFace || record.biometricsStatus === 'tasdiqlangan' ? 'success' : null} />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-fg">Yuz rasmi</p>
+                  <p className="text-xs text-muted">
+                    {newFace
+                      ? 'Yangi rasm olindi — "Saqlash" bosilganda almashtiriladi'
+                      : record.biometricsStatus === 'tasdiqlangan'
+                        ? `Tasdiqlangan${record.confirmedLabel ? ` · ${record.confirmedLabel}` : ''}`
+                        : 'Yuzi hali tasdiqlanmagan — davomatda tanilmaydi'}
+                  </p>
+                </div>
               </div>
               {!capturing && (
-                <button
-                  type="button"
-                  onClick={() => setCapturing(true)}
-                  className="btn-glass flex items-center gap-1.5 !py-1.5 text-xs"
-                >
-                  <Camera size={13} />
+                <Button size="sm" icon={Camera} onClick={() => setCapturing(true)}>
                   {newFace || record.biometricsStatus === 'tasdiqlangan' ? 'Yuzni yangilash' : 'Yuzni olish'}
-                </button>
+                </Button>
               )}
             </div>
             {capturing && (
-              <div className="mt-3">
+              <div className="mt-3 flex flex-col items-center gap-2">
                 <FaceCapture
                   onConfirm={(dataUrl) => {
                     setNewFace(dataUrl);
                     setCapturing(false);
                   }}
                 />
-                <button
-                  type="button"
-                  onClick={() => setCapturing(false)}
-                  className="mt-2 text-xs font-semibold text-slate-500 hover:underline"
-                >
+                <Button size="sm" variant="ghost" onClick={() => setCapturing(false)}>
                   Bekor qilish
-                </button>
+                </Button>
               </div>
             )}
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={onClose} className="btn-glass">
-              Bekor qilish
-            </button>
-            <button
-              type="submit"
-              disabled={saving || loadingDetail}
-              className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {saving ? 'Saqlanmoqda...' : 'Saqlash'}
-            </button>
           </div>
         </form>
       )}

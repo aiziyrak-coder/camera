@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import Modal from '../Modal';
-import { SelectField } from '../FormField';
+import { Button, Field, Modal, Select } from '../../ui';
+import { Checkbox, Notice } from '../settings/kit';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import type { AIModule } from '../../types';
@@ -18,6 +18,12 @@ function toForm(m: AIModule): FormState {
     active: m.active,
   };
 }
+
+const SENSITIVITY_OPTIONS = [
+  { value: 'past', label: 'Past' },
+  { value: "o'rta", label: "O'rta" },
+  { value: 'yuqori', label: 'Yuqori' },
+];
 
 export default function AiModuleModal({
   open,
@@ -68,79 +74,72 @@ export default function AiModuleModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Modulni sozlash" maxWidth="max-w-md">
+    <Modal
+      open={open && !!module}
+      onClose={onClose}
+      title="Modulni sozlash"
+      description={module ? `№${module.code} — ${module.name}` : undefined}
+      size="md"
+      dismissible={!saving}
+      footer={
+        <>
+          <Button onClick={onClose} disabled={saving}>
+            Bekor qilish
+          </Button>
+          <Button type="submit" form="ai-module-form" variant="primary" loading={saving}>
+            Saqlash
+          </Button>
+        </>
+      }
+    >
       {form && module && (
-        <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-          <div className="glass-deep space-y-1 p-4">
-            <p className="text-sm font-bold text-slate-900">{module.name}</p>
-            <p className="text-xs text-slate-500">{module.description}</p>
-            <p className="text-[11px] text-slate-400">{module.method}</p>
+        <form id="ai-module-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+          <div className="rounded-control border border-border bg-surface-2 px-3 py-2.5">
+            <p className="text-[13px] leading-5 text-fg">{module.description}</p>
+            {module.method && <p className="mt-1 text-xs text-muted">{module.method}</p>}
           </div>
 
-          {error && (
-            <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
-              {error}
-            </p>
-          )}
-
-          <div>
-            <label className="mb-1.5 flex items-center justify-between text-xs font-semibold text-slate-600">
-              <span>Threshold</span>
-              <span className="font-mono text-indigo-600">{form.threshold}%</span>
-            </label>
+          <Field
+            label={
+              <span className="inline-flex items-center gap-2">
+                Ishonch chegarasi (threshold)
+                <span className="rounded-full bg-primary-soft px-2 py-0.5 font-mono text-xs text-primary">{form.threshold}%</span>
+              </span>
+            }
+            hint="Model ishonchi shu qiymatdan past bo'lgan signallar e'tiborga olinmaydi."
+          >
             <input
               type="range"
               min={0}
               max={100}
               value={form.threshold}
               onChange={(e) => set('threshold', e.target.value)}
-              className="w-full accent-indigo-600"
+              className="h-2 w-full cursor-pointer accent-primary"
             />
-          </div>
+          </Field>
 
-          <SelectField
-            label="Sezgirlik"
-            value={form.sensitivity}
-            onChange={(e) => set('sensitivity', e.target.value as AIModule['sensitivity'])}
-            options={[
-              { value: 'past', label: 'Past' },
-              { value: "o'rta", label: "O'rta" },
-              { value: 'yuqori', label: 'Yuqori' },
-            ]}
+          <Field label="Sezgirlik">
+            <Select
+              value={form.sensitivity}
+              onChange={(v) => set('sensitivity', v as AIModule['sensitivity'])}
+              options={SENSITIVITY_OPTIONS}
+              className="sm:w-full"
+            />
+          </Field>
+
+          <Checkbox
+            label="Modul faol"
+            description={
+              module.hasDetector
+                ? 'O‘chirilgan modul hech bir kamerada hisoblanmaydi.'
+                : "Bu modul uchun hali aniqlash logikasi yozilmagan — faollashtirib bo'lmaydi."
+            }
+            checked={form.active}
+            disabled={!module.hasDetector}
+            onChange={(e) => set('active', e.target.checked)}
           />
 
-          <label
-            className={`flex items-center gap-2 text-sm font-medium text-slate-600 ${
-              !module.hasDetector ? 'opacity-50' : ''
-            }`}
-          >
-            <input
-              type="checkbox"
-              checked={form.active}
-              disabled={!module.hasDetector}
-              onChange={(e) => set('active', e.target.checked)}
-              className="rounded border-slate-300"
-            />
-            Modul faol
-          </label>
-          {!module.hasDetector && (
-            <p className="text-[11px] text-slate-400">
-              Bu modul uchun hali aniqlash logikasi yozilmagan — faollashtirib bo'lmaydi.
-            </p>
-          )}
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={onClose} className="btn-glass">
-              Bekor qilish
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {saving ? 'Saqlanmoqda...' : 'Saqlash'}
-            </button>
-          </div>
+          {error && <Notice tone="danger">{error}</Notice>}
         </form>
       )}
     </Modal>

@@ -65,13 +65,13 @@ export default function CameraMarker({
           />
         )}
         {editing && selected && (
-          <line x1={C} y1={C} x2={handle.x} y2={handle.y} stroke="#4f46e5" strokeWidth={1.5} strokeDasharray="3 3" />
+          <line x1={C} y1={C} x2={handle.x} y2={handle.y} stroke="rgb(var(--c-primary))" strokeWidth={1.5} strokeDasharray="3 3" />
         )}
       </svg>
 
       {(marker.pulsing || hasEvents) && (
         <span
-          className={`pointer-events-none absolute rounded-full bg-red-500/40 ${marker.pulsing ? 'animate-ping' : 'animate-pulse'}`}
+          className={`pointer-events-none absolute rounded-full bg-danger/40 ${marker.pulsing ? 'animate-ping' : 'animate-pulse'}`}
           style={{ left: C - 18, top: C - 18, width: 36, height: 36 }}
         />
       )}
@@ -85,14 +85,14 @@ export default function CameraMarker({
           if (e.detail === 0) onKeyboardActivate();
         }}
         aria-label={`${marker.name} — ${MARKER_TONE_LABEL[marker.tone]}${hasEvents ? `, ${marker.openEvents} ta ochiq signal` : ''}`}
-        className={`pointer-events-auto absolute flex items-center justify-center rounded-full border-2 border-white text-white shadow-md outline-none transition-transform focus-visible:ring-4 focus-visible:ring-indigo-300 ${
-          selected ? 'scale-110 ring-4 ring-indigo-400/70' : ''
+        className={`pointer-events-auto absolute flex items-center justify-center rounded-full border-2 border-white text-white shadow-md outline-none transition-transform focus-visible:ring-4 focus-visible:ring-primary/50 ${
+          selected ? 'scale-110 ring-4 ring-primary/60' : ''
         } ${editing ? 'cursor-move' : 'cursor-pointer'}`}
         style={{ left: C - 14, top: C - 14, width: 28, height: 28, backgroundColor: color, touchAction: 'none' }}
       >
         <CameraIcon size={14} strokeWidth={2.4} />
         {hasEvents && (
-          <span className="absolute -right-2 -top-2 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-red-600 px-1 text-[10px] font-bold leading-none text-white">
+          <span className="absolute -right-2 -top-2 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-danger px-1 text-[10px] font-bold leading-none text-white">
             {marker.openEvents > 99 ? '99+' : marker.openEvents}
           </span>
         )}
@@ -102,7 +102,7 @@ export default function CameraMarker({
         <span
           data-rotate-id={marker.id}
           title="Yo'nalishni burish uchun sudrang"
-          className="pointer-events-auto absolute flex h-6 w-6 cursor-grab items-center justify-center rounded-full border-2 border-white bg-indigo-600 text-white shadow-md active:cursor-grabbing"
+          className="pointer-events-auto absolute flex h-6 w-6 cursor-grab items-center justify-center rounded-full border-2 border-white bg-primary text-primary-fg shadow-md active:cursor-grabbing"
           style={{ left: handle.x - 12, top: handle.y - 12, touchAction: 'none' }}
         >
           <RotateCw size={12} />
@@ -110,16 +110,16 @@ export default function CameraMarker({
       )}
 
       <div
-        className="pointer-events-none absolute left-1/2 hidden w-max max-w-[16rem] -translate-x-1/2 rounded-lg bg-slate-900/90 px-2.5 py-1.5 text-[11px] leading-tight text-white shadow-lg group-hover:block"
+        className="pointer-events-none absolute left-1/2 hidden w-max max-w-[16rem] -translate-x-1/2 rounded-control bg-black/85 px-2.5 py-1.5 text-[11px] leading-tight text-white shadow-lg group-hover:block"
         style={{ bottom: C + 20 }}
       >
         <p className="truncate font-semibold">{marker.name}</p>
-        <p className="truncate text-slate-300">{marker.zone}</p>
+        <p className="truncate text-white/70">{marker.zone}</p>
         <p className="mt-0.5 flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
           {MARKER_TONE_LABEL[marker.tone]}
-          {marker.ptzEnabled && <span className="text-slate-300">· PTZ</span>}
-          {hasEvents && <span className="font-semibold text-red-300">· {marker.openEvents} ta signal</span>}
+          {marker.ptzEnabled && <span className="text-white/70">· PTZ</span>}
+          {hasEvents && <span className="font-semibold text-danger">· {marker.openEvents} ta signal</span>}
         </p>
       </div>
     </div>

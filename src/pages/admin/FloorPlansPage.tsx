@@ -1,12 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Building2, ImageUp, Layers, Loader2, Map as MapIcon, Pencil, Trash2 } from 'lucide-react';
-import PageHeader from '../../components/PageHeader';
-import ConfirmDialog from '../../components/ConfirmDialog';
-import EmptyState from '../../components/ui/EmptyState';
-import ErrorState from '../../components/ui/ErrorState';
-import { SkeletonBlock } from '../../components/ui/Skeleton';
-import { useToast } from '../../components/ui/Toast';
+import { Building2, ImageUp, Loader2, Map as MapIcon, Pencil, Trash2 } from 'lucide-react';
+import { Button, ConfirmDialog, EmptyState, ErrorState, Page, Select, Skeleton, Tabs, Toolbar, useToast } from '../../ui';
 import FloorPlanCanvas, { type CanvasMarker, type FloorPlanCanvasHandle } from '../../components/floorplan/FloorPlanCanvas';
 import FloorPlanCameraList from '../../components/floorplan/FloorPlanCameraList';
 import FloorPlanEditPanel from '../../components/floorplan/FloorPlanEditPanel';
@@ -327,99 +322,57 @@ export default function FloorPlansPage() {
   }
 
   // --- Ko'rinish ----------------------------------------------------------
-  const header = (
-    <PageHeader
-      title="Qavat rejalari"
-      subtitle="Bino qavatlari chizmasida kameralar joylashuvi va jonli holati"
-      action={
-        canEdit && building ? (
-          <div className="flex flex-wrap gap-2">
-            {plan && !editing && (
-              <button type="button" onClick={startEditing} className="btn-glass flex items-center gap-1.5" disabled={camerasLoading && cameras.length === 0}>
-                <Pencil size={14} /> Kameralarni joylashtirish
-              </button>
-            )}
-            {!editing && (
-              <button
-                type="button"
-                onClick={() => setUploadOpen(true)}
-                className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-[12.5px] font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700"
-              >
-                <ImageUp size={14} /> {plan ? 'Rejani tahrirlash' : 'Reja yuklash'}
-              </button>
-            )}
-            {plan && !editing && (
-              <button type="button" onClick={() => setConfirmDelete(true)} className="glass-btn-danger flex items-center gap-1.5 !py-2 text-[12.5px]">
-                <Trash2 size={14} /> O'chirish
-              </button>
-            )}
-          </div>
-        ) : null
-      }
-    />
-  );
+  const actions =
+    canEdit && building && !editing ? (
+      <>
+        {plan && (
+          <Button icon={Pencil} onClick={startEditing} disabled={camerasLoading && cameras.length === 0}>
+            Kameralarni joylashtirish
+          </Button>
+        )}
+        <Button variant="primary" icon={ImageUp} onClick={() => setUploadOpen(true)}>
+          {plan ? 'Rejani tahrirlash' : 'Reja yuklash'}
+        </Button>
+        {plan && <Button variant="ghost" icon={Trash2} className="text-danger hover:text-danger" onClick={() => setConfirmDelete(true)}>O&apos;chirish</Button>}
+      </>
+    ) : null;
 
-  const selectors = (
-    <div className="glass flex flex-wrap items-center gap-3 px-4 py-3">
-      <label className="flex items-center gap-2 text-xs font-semibold text-slate-500">
-        <Building2 size={14} />
-        <select
-          value={buildingId}
-          onChange={(e) => selectLocation(e.target.value, null)}
-          className="max-w-[16rem] rounded-lg border border-white/80 bg-white/70 px-2.5 py-1.5 text-sm font-medium text-slate-700 outline-none focus:border-indigo-300"
-          aria-label="Bino"
-        >
-          {buildings.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-              {plans.some((p) => p.buildingId === b.id) ? '' : ' (reja yo\'q)'}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div className="flex min-w-0 flex-1 items-center gap-2">
-        <Layers size={14} className="shrink-0 text-slate-400" />
-        <div role="tablist" aria-label="Qavat" className="flex min-w-0 flex-wrap gap-1 rounded-xl bg-white/50 p-1">
-          {floorOptions.map((n) => {
-            const active = n === floor;
-            const has = buildingPlans.some((p) => p.floor === n);
-            return (
-              <button
-                key={n}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => selectLocation(buildingId, n)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-                  active ? 'bg-indigo-600 text-white shadow-btn' : has ? 'text-slate-700 hover:bg-white/80' : 'text-slate-400 hover:bg-white/80'
-                }`}
-                title={has ? undefined : 'Bu qavat uchun reja yuklanmagan'}
-              >
-                {n}-qavat
-              </button>
-            );
-          })}
-          {floorOptions.length === 0 && <span className="px-2 py-1.5 text-xs text-slate-400">Qavatlar soni kiritilmagan</span>}
-        </div>
-      </div>
-      {plan && (
-        <span className="text-xs text-slate-500">
-          {plan.placedCount}/{plan.cameraCount} kamera rejada
-          {camerasLoading && <Loader2 size={12} className="ml-1.5 inline animate-spin" />}
-        </span>
+  const floorTabs = floorOptions.map((n) => ({ id: String(n), label: `${n}-qavat` }));
+
+  const selectors = buildings.length > 0 && (
+    <Toolbar
+      end={
+        plan ? (
+          <span className="flex items-center gap-1.5 text-[13px] tabular-nums text-muted">
+            {plan.placedCount}/{plan.cameraCount} kamera rejada
+            {camerasLoading && <Loader2 size={13} aria-hidden="true" className="animate-spin" />}
+          </span>
+        ) : undefined
+      }
+    >
+      <Select
+        label="Bino"
+        value={buildingId}
+        onChange={(value) => selectLocation(value, null)}
+        options={buildings.map((b) => ({ value: b.id, label: `${b.name}${plans.some((p) => p.buildingId === b.id) ? '' : " (reja yo'q)"}` }))}
+      />
+      {floorTabs.length > 0 ? (
+        <Tabs variant="segmented" ariaLabel="Qavat" tabs={floorTabs} value={String(floor)} onChange={(id) => selectLocation(buildingId, Number(id))} />
+      ) : (
+        <span className="text-[13px] text-muted">Qavatlar soni kiritilmagan</span>
       )}
-    </div>
+    </Toolbar>
   );
 
   let body: ReactNode;
   if (plansError) {
     body = <ErrorState message={plansError} onRetry={reloadPlans} />;
   } else if ((plansLoading && plans.length === 0) || (buildingsLoading && buildings.length === 0)) {
-    body = <SkeletonBlock className="h-[480px] rounded-xl" />;
+    body = <Skeleton className="h-[480px] rounded-card" />;
   } else if (buildings.length === 0) {
     body = (
       <EmptyState
-        icon={<Building2 size={18} />}
+        icon={Building2}
         title="Binolar yo'q"
         description="Avval tashkiliy tuzilma sahifasida bino qo'shing."
       />
@@ -427,7 +380,7 @@ export default function FloorPlansPage() {
   } else if (!plan) {
     body = (
       <EmptyState
-        icon={<MapIcon size={18} />}
+        icon={MapIcon}
         title={`${building?.name ?? 'Bino'}, ${floor}-qavat uchun reja yuklanmagan`}
         description={
           canEdit
@@ -436,13 +389,9 @@ export default function FloorPlansPage() {
         }
         action={
           canEdit ? (
-            <button
-              type="button"
-              onClick={() => setUploadOpen(true)}
-              className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-btn hover:bg-indigo-700"
-            >
-              <ImageUp size={14} /> Reja yuklash
-            </button>
+            <Button variant="primary" icon={ImageUp} onClick={() => setUploadOpen(true)}>
+              Reja yuklash
+            </Button>
           ) : undefined
         }
       />
@@ -471,10 +420,10 @@ export default function FloorPlansPage() {
             }}
             onMarkerRotate={rotateCamera}
             onPlaceAt={(point) => placingId && placeCamera(placingId, point)}
-            className="h-[calc(100vh-17rem)] min-h-[420px]"
+            className="h-[calc(100vh-19rem)] min-h-[420px]"
           />
         </div>
-        <aside className="flex min-h-0 flex-col gap-3 lg:h-[calc(100vh-17rem)] lg:min-h-[420px]">
+        <aside className="flex min-h-0 flex-col gap-3 lg:h-[calc(100vh-19rem)] lg:min-h-[420px]">
           {editing ? (
             <FloorPlanEditPanel
               unplaced={unplaced}
@@ -510,9 +459,12 @@ export default function FloorPlansPage() {
   }
 
   return (
-    <div className="space-y-4">
-      {header}
-      {selectors}
+    <Page
+      title="Qavat xaritasi"
+      subtitle="Bino qavatlari chizmasida kameralar joylashuvi va jonli holati"
+      actions={actions}
+      toolbar={selectors || undefined}
+    >
       {body}
 
       {building && uploadOpen && (
@@ -540,6 +492,7 @@ export default function FloorPlansPage() {
             ? `${plan.name} o'chiriladi va shu qavatdagi ${plan.placedCount} ta kameraning rejadagi joyi tozalanadi. Kameralarning o'zi o'chirilmaydi.`
             : ''
         }
+        confirmLabel="O'chirish"
         onCancel={() => setConfirmDelete(false)}
         onConfirm={handleDelete}
       />
@@ -555,6 +508,6 @@ export default function FloorPlansPage() {
           onClose={() => setDrawerId(null)}
         />
       )}
-    </div>
+    </Page>
   );
 }

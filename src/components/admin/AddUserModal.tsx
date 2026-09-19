@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
-import Modal from '../Modal';
-import { TextField, SelectField } from '../FormField';
+import { Button, Field, Input, Modal, Select } from '../../ui';
+import { Notice } from '../settings/kit';
 import { required, minLength } from '../../lib/validation';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
@@ -16,6 +16,12 @@ interface FormErrors {
   confirmPassword?: string;
   form?: string;
 }
+
+const ROLE_OPTIONS = [
+  { value: 'Super Admin', label: 'Super Admin' },
+  { value: 'Admin', label: 'Admin' },
+  { value: "Kamera mas'uli", label: "Kamera mas'uli" },
+];
 
 export default function AddUserModal({
   open,
@@ -51,13 +57,12 @@ export default function AddUserModal({
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const next: FormErrors = {
-      name: required(name, "F.I.Sh. kiritilishi shart") ?? minLength(name, 5),
+      name: required(name, 'F.I.Sh. kiritilishi shart') ?? minLength(name, 5),
       login: required(login, 'Login kiritilishi shart') ?? minLength(login, 3),
       role: role ? undefined : 'Rolni tanlang',
       phone: phone.trim() && !normalizeUzPhone(phone) ? "Telefon raqami noto'g'ri (+998 90 123 45 67)" : undefined,
       password: required(password, 'Parol kiritilishi shart') ?? minLength(password, 8),
-      confirmPassword:
-        confirmPassword !== password ? 'Parollar mos kelmadi' : undefined,
+      confirmPassword: confirmPassword !== password ? 'Parollar mos kelmadi' : undefined,
     };
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;
@@ -88,91 +93,56 @@ export default function AddUserModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Yangi foydalanuvchi qo'shish" maxWidth="max-w-sm">
-      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-        {errors.form && (
-          <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
-            {errors.form}
-          </p>
-        )}
-        <TextField
-          label="F.I.Sh."
-          placeholder="Alimov Jamshid"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          error={errors.name}
-        />
-        <TextField
-          label="Login"
-          placeholder="a.alimov"
-          value={login}
-          onChange={(e) => setLogin(e.target.value)}
-          error={errors.login}
-          autoComplete="off"
-        />
-        <TextField
-          label="Email (ixtiyoriy)"
-          type="email"
-          placeholder="a.alimov@fjsti.uz"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          autoComplete="off"
-        />
-        <TextField
-          label="Telefon (ixtiyoriy — SMS bildirishnomalar uchun)"
-          type="tel"
-          placeholder="+998 90 123 45 67"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-          error={errors.phone}
-          autoComplete="off"
-        />
-        <SelectField
-          label="Rol"
-          placeholder="Tanlang"
-          value={role}
-          onChange={(e) => setRole(e.target.value as AdminUser['role'])}
-          error={errors.role}
-          options={[
-            { value: 'Super Admin', label: 'Super Admin' },
-            { value: 'Admin', label: 'Admin' },
-            { value: "Kamera mas'uli", label: "Kamera mas'uli" },
-          ]}
-        />
-        <TextField
-          label="Parol"
-          type="password"
-          placeholder="Kamida 8 belgi"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          error={errors.password}
-          autoComplete="new-password"
-        />
-        <TextField
-          label="Parolni tasdiqlang"
-          type="password"
-          placeholder="Parolni qayta kiriting"
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          error={errors.confirmPassword}
-          autoComplete="new-password"
-        />
-        <p className="text-[11px] text-slate-400">
-          Rolning huquqlarini "Huquqlar matritsasi" bo'limida sozlash mumkin. Parol backendda
-          bcrypt bilan xesh (hash) qilinib saqlanadi.
-        </p>
-        <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} className="btn-glass">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Yangi foydalanuvchi"
+      description="Xodim shu login va parol bilan tizimga kiradi."
+      size="md"
+      dismissible={!submitting}
+      footer={
+        <>
+          <Button onClick={onClose} disabled={submitting}>
             Bekor qilish
-          </button>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {submitting ? 'Qo\'shilmoqda...' : "Qo'shish"}
-          </button>
+          </Button>
+          <Button type="submit" form="add-user-form" variant="primary" loading={submitting}>
+            Qo&apos;shish
+          </Button>
+        </>
+      }
+    >
+      <form id="add-user-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="F.I.Sh." required error={errors.name} className="sm:col-span-2">
+            <Input placeholder="Alimov Jamshid" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+          </Field>
+          <Field label="Login" required error={errors.login}>
+            <Input placeholder="a.alimov" value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="off" />
+          </Field>
+          <Field label="Rol" required error={errors.role} hint="Huquqlarni “Huquqlar matritsasi” bo'limida sozlash mumkin.">
+            <Select value={role} onChange={(v) => setRole(v as AdminUser['role'])} options={ROLE_OPTIONS} placeholder="Tanlang" className="sm:w-full" />
+          </Field>
+          <Field label="Email" hint="Ixtiyoriy">
+            <Input type="email" placeholder="a.alimov@fjsti.uz" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />
+          </Field>
+          <Field label="Telefon" error={errors.phone} hint="Ixtiyoriy — SMS bildirishnomalar uchun">
+            <Input type="tel" placeholder="+998 90 123 45 67" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="off" />
+          </Field>
+          <Field label="Parol" required error={errors.password} hint="Kamida 8 belgi">
+            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+          </Field>
+          <Field label="Parolni tasdiqlang" required error={errors.confirmPassword}>
+            <Input
+              type="password"
+              placeholder="Parolni qayta kiriting"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              autoComplete="new-password"
+            />
+          </Field>
         </div>
+        <Notice tone="neutral">Parol serverda bcrypt bilan xesh (hash) qilinib saqlanadi — uni hech kim, jumladan administrator ham ko&apos;ra olmaydi.</Notice>
+        {errors.form && <Notice tone="danger">{errors.form}</Notice>}
       </form>
     </Modal>
   );

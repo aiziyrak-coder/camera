@@ -1,29 +1,29 @@
-import { CheckCircle2, CircleSlash, Loader2, MessageSquare, Send, Users } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { MessageSquare, Radio, Send, Users, type LucideIcon } from 'lucide-react';
+import { Badge, Button, Card, CardHeader, ErrorState, Skeleton, cn } from '../../ui';
 import type { NotificationStatus } from '../../lib/notificationsApi';
 
-function Row({ ok, icon, title, detail }: { ok: boolean; icon: ReactNode; title: string; detail: ReactNode }) {
+function Row({ ok, icon: Icon, title, detail }: { ok: boolean; icon: LucideIcon; title: string; detail: ReactNode }) {
   return (
-    <div className="flex items-start gap-3 rounded-xl bg-white/40 px-3 py-2.5">
-      <div
-        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-          ok ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'
-        }`}
+    <li className="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
+      <span
+        className={cn(
+          'flex h-9 w-9 shrink-0 items-center justify-center rounded-control',
+          ok ? 'bg-success-soft text-success' : 'bg-surface-2 text-muted',
+        )}
       >
-        {icon}
-      </div>
+        <Icon size={16} aria-hidden="true" />
+      </span>
       <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
-          {title}
-          {ok ? (
-            <CheckCircle2 size={14} className="text-emerald-500" aria-label="Sozlangan" />
-          ) : (
-            <CircleSlash size={14} className="text-slate-400" aria-label="Sozlanmagan" />
-          )}
-        </p>
-        <p className="text-xs text-slate-500">{detail}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm font-medium text-fg">{title}</p>
+          <Badge tone={ok ? 'success' : 'neutral'} dot>
+            {ok ? 'Sozlangan' : 'Sozlanmagan'}
+          </Badge>
+        </div>
+        <div className="mt-0.5 text-[13px] text-muted">{detail}</div>
       </div>
-    </div>
+    </li>
   );
 }
 
@@ -33,66 +33,96 @@ export default function NotificationStatusCard({
   status,
   loading,
   onTest,
+  error,
+  onRetry,
 }: {
   status: NotificationStatus | null;
   loading: boolean;
   onTest: () => void;
+  error?: string | null;
+  onRetry?: () => void;
 }) {
-  return (
-    <section className="glass p-5">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="text-sm font-bold text-slate-700">Kanallar holati</h3>
-        <button type="button" onClick={onTest} disabled={!status} className="btn-glass flex items-center gap-1.5 text-xs">
-          <Send size={13} />
-          Sinov xabari
-        </button>
+  let body: ReactNode;
+  if (loading && !status) {
+    body = (
+      <div className="space-y-4" aria-busy="true" aria-label="Yuklanmoqda">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="flex items-start gap-3">
+            <Skeleton className="h-9 w-9 shrink-0" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-3.5 w-1/3" />
+              <Skeleton className="h-3 w-2/3" />
+            </div>
+          </div>
+        ))}
       </div>
-      {loading && !status ? (
-        <div className="flex justify-center py-6 text-slate-400">
-          <Loader2 size={18} className="animate-spin" />
-        </div>
-      ) : status ? (
-        <div className="space-y-2">
-          <Row
-            ok={status.telegramConfigured}
-            icon={<Send size={15} />}
-            title="Telegram bot"
-            detail={
-              status.telegramConfigured
-                ? `${status.telegramBotUsername ? `@${status.telegramBotUsername}` : 'Bot nomi aniqlanmadi'}${
-                    status.telegramPollingEnabled ? " · /start buyruqlari qabul qilinadi" : ' · polling o\'chiq'
-                  }`
-                : "Sozlanmagan — .env faylida TELEGRAM_BOT_TOKEN ni kiriting"
-            }
-          />
-          <Row
-            ok={status.smsConfigured}
-            icon={<MessageSquare size={15} />}
-            title="SMS (Eskiz.uz)"
-            detail={
-              status.smsConfigured
-                ? `Yuboruvchi: ${status.smsSender ?? '—'}`
-                : 'Sozlanmagan — SMS_PROVIDER=eskiz, ESKIZ_EMAIL va ESKIZ_PASSWORD'
-            }
-          />
-          <Row
-            ok={status.parentArrivalEnabled || status.parentAbsenceEnabled}
-            icon={<Users size={15} />}
-            title="Ota-onalarga xabar"
-            detail={
+    );
+  } else if (status) {
+    body = (
+      <ul className="divide-y divide-border">
+        <Row
+          ok={status.telegramConfigured}
+          icon={Send}
+          title="Telegram bot"
+          detail={
+            status.telegramConfigured ? (
               <>
-                Kelganda: <b>{status.parentArrivalEnabled ? 'yoqilgan' : "o'chiq"}</b> · Kelmaganda:{' '}
-                <b>{status.parentAbsenceEnabled ? 'yoqilgan' : "o'chiq"}</b>
-                <span className="block text-[11px] text-slate-400">
-                  Har bir talaba uchun alohida yoqiladi (Talabalar va Xodimlar → tahrirlash).
-                </span>
+                {status.telegramBotUsername ? <span className="font-mono">@{status.telegramBotUsername}</span> : 'Bot nomi aniqlanmadi'}
+                {status.telegramPollingEnabled ? ' · /start buyruqlari qabul qilinadi' : " · polling o'chiq"}
               </>
-            }
-          />
-        </div>
-      ) : (
-        <p className="text-xs text-slate-400">Holatni yuklab bo'lmadi.</p>
-      )}
-    </section>
+            ) : (
+              <>
+                .env faylida <code className="font-mono">TELEGRAM_BOT_TOKEN</code> ni kiriting
+              </>
+            )
+          }
+        />
+        <Row
+          ok={status.smsConfigured}
+          icon={MessageSquare}
+          title="SMS (Eskiz.uz)"
+          detail={
+            status.smsConfigured ? (
+              `Yuboruvchi: ${status.smsSender ?? '—'}`
+            ) : (
+              <>
+                <code className="font-mono">SMS_PROVIDER=eskiz</code>, <code className="font-mono">ESKIZ_EMAIL</code> va{' '}
+                <code className="font-mono">ESKIZ_PASSWORD</code>
+              </>
+            )
+          }
+        />
+        <Row
+          ok={status.parentArrivalEnabled || status.parentAbsenceEnabled}
+          icon={Users}
+          title="Ota-onalarga xabar"
+          detail={
+            <>
+              Kelganda: <b className="font-medium text-fg">{status.parentArrivalEnabled ? 'yoqilgan' : "o'chiq"}</b> · Kelmaganda:{' '}
+              <b className="font-medium text-fg">{status.parentAbsenceEnabled ? 'yoqilgan' : "o'chiq"}</b>
+              <span className="mt-0.5 block text-xs text-subtle">Har bir talaba uchun alohida yoqiladi (Reestr → tahrirlash).</span>
+            </>
+          }
+        />
+      </ul>
+    );
+  } else {
+    body = <ErrorState message={error ?? "Holatni yuklab bo'lmadi."} onRetry={onRetry} />;
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        icon={Radio}
+        title="Kanallar holati"
+        subtitle="Server .env faylidan — faqat o'qiladi"
+        actions={
+          <Button size="sm" icon={Send} onClick={onTest} disabled={!status}>
+            Sinov xabari
+          </Button>
+        }
+      />
+      {body}
+    </Card>
   );
 }

@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { CheckCircle2, Gamepad2, Loader2, Wifi, XCircle } from 'lucide-react';
-import Modal from '../Modal';
-import { TextField, SelectField } from '../FormField';
+import { Gamepad2, Wifi } from 'lucide-react';
 import { forgetPtzAvailability } from '../ptz/usePtzAvailability';
+import { Checkbox, Notice } from '../settings/kit';
+import { Button, Field, Input, Modal, Select } from '../../ui';
 import { required, ipAddress, numberRange } from '../../lib/validation';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
@@ -69,6 +69,29 @@ interface ConnectionTestResult {
 
 type TestState = 'idle' | 'testing' | 'success' | 'failed';
 
+const RESOLUTION_OPTIONS = [
+  { value: '720p', label: '720p' },
+  { value: '1080p', label: '1080p' },
+  { value: '4K', label: '4K' },
+];
+
+const STATUS_OPTIONS = [
+  { value: 'faol', label: 'Faol' },
+  { value: 'nofaol', label: 'Nofaol' },
+  { value: 'tamirda', label: "Ta'mirda" },
+];
+
+const PTZ_PROTOCOL_OPTIONS = [
+  { value: 'onvif', label: 'ONVIF' },
+  { value: 'isapi', label: 'Hikvision ISAPI' },
+];
+
+const PTZ_KEYS: Array<keyof FormState> = ['ptzEnabled', 'ptzProtocol', 'onvifPort'];
+
+function SubHeading({ children }: { children: string }) {
+  return <h3 className="text-[13px] font-semibold uppercase tracking-wide text-muted">{children}</h3>;
+}
+
 export default function AddCameraModal({
   open,
   camera,
@@ -103,8 +126,6 @@ export default function AddCameraModal({
     }
   }, [open, camera]);
 
-  const PTZ_KEYS: Array<keyof FormState> = ['ptzEnabled', 'ptzProtocol', 'onvifPort'];
-
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
     // PTZ maydonlari RTSP ulanishiga ta'sir qilmaydi — ulanish tekshiruvini
@@ -123,7 +144,7 @@ export default function AddCameraModal({
   async function runPtzProbe() {
     const ipError = required(form.ip, 'IP manzil kiritilishi shart') ?? ipAddress(form.ip);
     const portError =
-      form.onvifPort.trim() === '' ? undefined : numberRange(form.onvifPort, 1, 65535, "1 dan 65535 gacha port kiriting");
+      form.onvifPort.trim() === '' ? undefined : numberRange(form.onvifPort, 1, 65535, '1 dan 65535 gacha port kiriting');
     if (ipError || portError) {
       setErrors((prev) => ({ ...prev, ip: ipError, onvifPort: portError }));
       return;
@@ -171,19 +192,11 @@ export default function AddCameraModal({
       building: form.building ? undefined : 'Binoni tanlang',
       zone: required(form.zone, 'Zona nomi kiritilishi shart'),
       fps: numberRange(form.fps, 1, 60, "1 dan 60 gacha bo'lgan qiymat kiriting"),
-      floor:
-        form.floor.trim() === ''
-          ? undefined
-          : numberRange(form.floor, -5, 50, "-5 dan 50 gacha qavat raqamini kiriting"),
+      floor: form.floor.trim() === '' ? undefined : numberRange(form.floor, -5, 50, '-5 dan 50 gacha qavat raqamini kiriting'),
       port: numberRange(form.port, 1, 65535, "1 dan 65535 gacha bo'lgan port kiriting"),
-      onvifPort:
-        form.onvifPort.trim() === ''
-          ? undefined
-          : numberRange(form.onvifPort, 1, 65535, "1 dan 65535 gacha port kiriting"),
+      onvifPort: form.onvifPort.trim() === '' ? undefined : numberRange(form.onvifPort, 1, 65535, '1 dan 65535 gacha port kiriting'),
       ptzProtocol:
-        form.ptzEnabled && !form.ptzProtocol
-          ? "Protokolni tanlang yoki «PTZ ni tekshirish» bilan aniqlang"
-          : undefined,
+        form.ptzEnabled && !form.ptzProtocol ? 'Protokolni tanlang yoki «PTZ ni tekshirish» bilan aniqlang' : undefined,
     };
     setErrors(next);
     return !Object.values(next).some(Boolean);
@@ -260,89 +273,83 @@ export default function AddCameraModal({
   }
 
   const canSave = isEdit || testState === 'success';
+  const existingZone = zones.find((z) => z.zone === form.zone.trim());
 
   return (
     <Modal
       open={open}
       onClose={onClose}
       title={isEdit ? 'Kamerani sozlash' : "Yangi kamera qo'shish"}
-      maxWidth="max-w-md"
+      description={isEdit ? camera?.name : 'Saqlashdan oldin ulanishni tekshiring.'}
+      size="lg"
+      dismissible={!saving}
+      footer={
+        <>
+          <Button onClick={onClose} disabled={saving}>
+            Bekor qilish
+          </Button>
+          <Button
+            type="submit"
+            form="camera-form"
+            variant="primary"
+            loading={saving}
+            disabled={!canSave}
+            title={canSave ? undefined : 'Avval «Ulanishni tekshirish» muvaffaqiyatli bo‘lishi kerak'}
+          >
+            Saqlash
+          </Button>
+        </>
+      }
     >
-      <form onSubmit={handleSave} noValidate className="flex flex-col gap-4">
-        {errors.form && (
-          <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
-            {errors.form}
-          </p>
-        )}
-        <TextField
-          label="Kamera nomi"
-          placeholder="Kirish eshigi kamerasi"
-          value={form.name}
-          onChange={(e) => set('name', e.target.value)}
-          error={errors.name}
-        />
-        <div className="grid grid-cols-2 gap-3">
-          <TextField
-            label="IP manzil"
-            placeholder="192.168.1.101"
-            value={form.ip}
-            onChange={(e) => set('ip', e.target.value)}
-            error={errors.ip}
-          />
-          <TextField
-            label="RTSP port"
-            type="number"
-            min={1}
-            max={65535}
-            value={form.port}
-            onChange={(e) => set('port', e.target.value)}
-            error={errors.port}
-          />
-        </div>
-        <TextField
-          label="RTSP yo'l (ixtiyoriy)"
-          placeholder="/stream1"
-          value={form.rtspPath}
-          onChange={(e) => set('rtspPath', e.target.value)}
-        />
-        <div className="grid grid-cols-2 gap-3">
-          <TextField
-            label="RTSP login (ixtiyoriy)"
-            value={form.rtspUsername}
-            onChange={(e) => set('rtspUsername', e.target.value)}
-            autoComplete="off"
-          />
-          <TextField
-            label="RTSP parol (ixtiyoriy)"
-            type="password"
-            value={form.rtspPassword}
-            onChange={(e) => set('rtspPassword', e.target.value)}
-            autoComplete="new-password"
-          />
-        </div>
-        {isEdit && (
-          <p className="-mt-2 text-[11px] text-slate-400">
-            Login/parol bo'sh qoldirilsa, avval saqlangan qiymat o'zgarishsiz qoladi.
-          </p>
-        )}
-        <div className="grid grid-cols-2 gap-3">
-          <SelectField
-            label="Bino"
-            placeholder="Tanlang"
-            value={form.building}
-            onChange={(e) => set('building', e.target.value)}
-            error={errors.building}
-            options={buildings.map((b) => ({ value: b.name, label: b.name }))}
-          />
-          <div>
-            <TextField
+      <form id="camera-form" onSubmit={handleSave} noValidate className="flex flex-col gap-5">
+        {errors.form && <Notice tone="danger">{errors.form}</Notice>}
+
+        <section className="flex flex-col gap-4">
+          <SubHeading>Ulanish</SubHeading>
+          <Field label="Kamera nomi" required error={errors.name}>
+            <Input placeholder="Kirish eshigi kamerasi" value={form.name} onChange={(e) => set('name', e.target.value)} />
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-[1fr_9rem]">
+            <Field label="IP manzil" required error={errors.ip}>
+              <Input placeholder="192.168.1.101" className="font-mono" value={form.ip} onChange={(e) => set('ip', e.target.value)} />
+            </Field>
+            <Field label="RTSP port" error={errors.port}>
+              <Input type="number" min={1} max={65535} value={form.port} onChange={(e) => set('port', e.target.value)} />
+            </Field>
+          </div>
+          <Field label="RTSP yo'l" hint="Ixtiyoriy">
+            <Input placeholder="/stream1" className="font-mono" value={form.rtspPath} onChange={(e) => set('rtspPath', e.target.value)} />
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="RTSP login" hint={isEdit ? "Bo'sh qoldirilsa, saqlangan login o'zgarmaydi" : 'Ixtiyoriy'}>
+              <Input value={form.rtspUsername} onChange={(e) => set('rtspUsername', e.target.value)} autoComplete="off" />
+            </Field>
+            <Field label="RTSP parol" hint={isEdit ? "Bo'sh qoldirilsa, saqlangan parol o'zgarmaydi" : 'Ixtiyoriy'}>
+              <Input type="password" value={form.rtspPassword} onChange={(e) => set('rtspPassword', e.target.value)} autoComplete="new-password" />
+            </Field>
+          </div>
+        </section>
+
+        <section className="flex flex-col gap-4">
+          <SubHeading>Joylashuv</SubHeading>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Bino" required error={errors.building}>
+              <Select
+                value={form.building}
+                onChange={(value) => set('building', value)}
+                placeholder="Tanlang"
+                options={buildings.map((b) => ({ value: b.name, label: b.name }))}
+               
+              />
+            </Field>
+            <Field
               label="Zona"
-              placeholder="A-Zona (Kirish)"
-              value={form.zone}
-              onChange={(e) => set('zone', e.target.value)}
+              required
               error={errors.zone}
-              list="camera-zone-options"
-            />
+              hint={existingZone ? `Bu xonada allaqachon ${existingZone.cameraCount} ta kamera bor — yangisi qo'shiladi` : undefined}
+            >
+              <Input placeholder="A-Zona (Kirish)" value={form.zone} onChange={(e) => set('zone', e.target.value)} list="camera-zone-options" />
+            </Field>
             <datalist id="camera-zone-options">
               {zones.map((z) => (
                 <option key={z.zone} value={z.zone}>
@@ -350,234 +357,133 @@ export default function AddCameraModal({
                 </option>
               ))}
             </datalist>
-            {(() => {
-              const existing = zones.find((z) => z.zone === form.zone.trim());
-              return existing ? (
-                <p className="mt-1 text-[11px] text-slate-400">
-                  Bu xonada allaqachon {existing.cameraCount} ta kamera bor — yangisi qo'shiladi
-                </p>
-              ) : null;
-            })()}
           </div>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <TextField
-              label="Qavat"
-              type="number"
-              min={-5}
-              max={50}
-              placeholder="Masalan: 3"
-              value={form.floor}
-              onChange={(e) => set('floor', e.target.value)}
-              error={errors.floor}
-            />
-            <p className="mt-1 text-[11px] text-slate-400">
-              Monitoring markazi kameralarni shu bo&apos;yicha qavatlarga ajratadi. Bo&apos;sh
-              qoldirilsa &laquo;Qavat belgilanmagan&raquo; guruhida qoladi.
-            </p>
+          <Field
+            label="Qavat"
+            error={errors.floor}
+            hint="Monitoring markazi kameralarni shu bo'yicha qavatlarga ajratadi. Bo'sh qoldirilsa «Qavat belgilanmagan» guruhida qoladi."
+          >
+            <Input type="number" min={-5} max={50} placeholder="Masalan: 3" value={form.floor} onChange={(e) => set('floor', e.target.value)} className="sm:max-w-[12rem]" />
+          </Field>
+        </section>
+
+        <section className="flex flex-col gap-4">
+          <SubHeading>Video va holat</SubHeading>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field label="Ruxsat">
+              <Select value={form.resolution} onChange={(value) => set('resolution', value)} options={RESOLUTION_OPTIONS} />
+            </Field>
+            <Field label="FPS" error={errors.fps}>
+              <Input type="number" min={1} max={60} value={form.fps} onChange={(e) => set('fps', e.target.value)} />
+            </Field>
+            <Field label="Holat">
+              <Select
+                value={form.status}
+                onChange={(value) => set('status', value as CameraConfig['status'])}
+                options={STATUS_OPTIONS}
+               
+              />
+            </Field>
           </div>
-          <SelectField
-            label="Ruxsat"
-            value={form.resolution}
-            onChange={(e) => set('resolution', e.target.value)}
-            options={[
-              { value: '720p', label: '720p' },
-              { value: '1080p', label: '1080p' },
-              { value: '4K', label: '4K' },
-            ]}
-          />
-          <TextField
-            label="FPS"
-            type="number"
-            min={1}
-            max={60}
-            value={form.fps}
-            onChange={(e) => set('fps', e.target.value)}
-            error={errors.fps}
-          />
-        </div>
-        <SelectField
-          label="Holat"
-          value={form.status}
-          onChange={(e) => set('status', e.target.value as CameraConfig['status'])}
-          options={[
-            { value: 'faol', label: 'Faol' },
-            { value: 'nofaol', label: 'Nofaol' },
-            { value: 'tamirda', label: "Ta'mirda" },
-          ]}
-        />
-        <label className="flex items-center gap-2.5 rounded-xl bg-white/40 px-3 py-2.5 text-sm">
-          <input
-            type="checkbox"
+        </section>
+
+        <fieldset className="flex flex-col gap-3">
+          <legend className="mb-3 text-[13px] font-semibold uppercase tracking-wide text-muted">Kamera roli</legend>
+          <Checkbox
             checked={form.isEntrance}
             onChange={(e) => set('isEntrance', e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+            label="Kirish/koridor kamerasi"
+            description="Davomat uchun bir necha kadr tekshiriladi — tez o'tib ketuvchini ushlash ehtimolini oshiradi."
           />
-          <span className="text-slate-700">
-            Kirish/koridor kamerasi
-            <span className="ml-1.5 text-[11px] text-slate-400">
-              (davomat uchun bir necha kadr tekshiriladi — tez o'tib ketuvchini ushlash ehtimolini oshiradi)
-            </span>
-          </span>
-        </label>
-        <label className="flex items-center gap-2.5 rounded-xl bg-white/40 px-3 py-2.5 text-sm">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={form.isPerimeter}
             onChange={(e) => set('isPerimeter', e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+            label="Hovli / perimetr kamerasi"
+            description="Transport AI faqat shu kameralarda ishlaydi — bino oldi, avtoturargoh."
           />
-          <span className="text-slate-700">
-            Hovli / perimetr kamerasi
-            <span className="ml-1.5 text-[11px] text-slate-400">
-              (transport AI faqat shu kameralarda ishlaydi — bino oldi, avtoturargoh)
-            </span>
-          </span>
-        </label>
-        <label className="flex items-center gap-2.5 rounded-xl bg-white/40 px-3 py-2.5 text-sm">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={form.isExit}
             onChange={(e) => set('isExit', e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+            label="Chiqish kamerasi"
+            description="Faqat shu kamerada ko'rinish «ketdi» deb belgilanadi — boshqa ichki kameralar davomatni tasdiqlaydi, lekin ketishni belgilamaydi."
           />
-          <span className="text-slate-700">
-            Chiqish kamerasi
-            <span className="ml-1.5 text-[11px] text-slate-400">
-              (faqat shu kamerada ko'rinish "ketdi" deb belgilanadi — boshqa ichki kameralar davomatni
-              tasdiqlaydi, lekin ketishni belgilamaydi)
-            </span>
-          </span>
-        </label>
+        </fieldset>
 
-        <fieldset className="space-y-3 rounded-xl bg-white/40 px-3 py-3">
+        <fieldset className="flex flex-col gap-4 rounded-card border border-border bg-surface-2 p-4">
           <legend className="sr-only">PTZ boshqaruvi</legend>
-          <label className="flex items-center gap-2.5 text-sm">
-            <input
-              type="checkbox"
-              checked={form.ptzEnabled}
-              onChange={(e) => set('ptzEnabled', e.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-            />
-            <span className="flex items-center gap-1.5 text-slate-700">
-              <Gamepad2 size={15} className="text-indigo-500" />
-              PTZ (buriladigan) kamera
-              <span className="text-[11px] text-slate-400">— operator uni monitoringdan boshqaradi</span>
-            </span>
-          </label>
-          <div className="grid grid-cols-2 gap-3">
-            <SelectField
-              label="PTZ protokoli"
-              placeholder="Aniqlanmagan"
-              value={form.ptzProtocol}
-              onChange={(e) => set('ptzProtocol', e.target.value as FormState['ptzProtocol'])}
-              error={errors.ptzProtocol}
-              options={[
-                { value: 'onvif', label: 'ONVIF' },
-                { value: 'isapi', label: 'Hikvision ISAPI' },
-              ]}
-            />
-            <TextField
-              label="HTTP (ONVIF) port"
-              type="number"
-              min={1}
-              max={65535}
-              placeholder="80"
-              value={form.onvifPort}
-              onChange={(e) => set('onvifPort', e.target.value)}
-              error={errors.onvifPort}
-            />
+          <Checkbox
+            checked={form.ptzEnabled}
+            onChange={(e) => set('ptzEnabled', e.target.checked)}
+            label={
+              <span className="inline-flex items-center gap-1.5">
+                <Gamepad2 size={15} className="text-primary" aria-hidden="true" />
+                PTZ (buriladigan) kamera
+              </span>
+            }
+            description="Operator uni monitoringdan boshqaradi."
+          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="PTZ protokoli" error={errors.ptzProtocol}>
+              <Select
+                value={form.ptzProtocol}
+                onChange={(value) => set('ptzProtocol', value as FormState['ptzProtocol'])}
+                placeholder="Aniqlanmagan"
+                options={PTZ_PROTOCOL_OPTIONS}
+               
+              />
+            </Field>
+            <Field label="HTTP (ONVIF) port" error={errors.onvifPort}>
+              <Input type="number" min={1} max={65535} placeholder="80" value={form.onvifPort} onChange={(e) => set('onvifPort', e.target.value)} />
+            </Field>
           </div>
-          <div>
-            <button
-              type="button"
-              onClick={runPtzProbe}
-              disabled={ptzProbeState === 'testing'}
-              className="btn-glass flex w-full items-center justify-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {ptzProbeState === 'testing' ? <Loader2 size={14} className="animate-spin" /> : <Gamepad2 size={14} />}
-              {ptzProbeState === 'testing' ? 'PTZ tekshirilmoqda...' : 'PTZ ni tekshirish'}
-            </button>
+          <div className="flex flex-col gap-2">
+            <Button icon={Gamepad2} onClick={runPtzProbe} loading={ptzProbeState === 'testing'} fullWidth>
+              {ptzProbeState === 'testing' ? 'PTZ tekshirilmoqda…' : 'PTZ ni tekshirish'}
+            </Button>
             {ptzProbe && (
-              <div
-                className={`mt-2 rounded-xl px-3 py-2 text-xs font-semibold ${
-                  ptzProbe.success ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
-                }`}
+              <Notice
+                tone={ptzProbe.success ? 'success' : 'danger'}
+                title={`${ptzProbe.message}${ptzProbe.latencyMs != null ? ` (${ptzProbe.latencyMs} ms)` : ''}`}
+                action={
+                  ptzProbe.success && !form.ptzEnabled ? (
+                    <Button size="sm" variant="primary" onClick={() => set('ptzEnabled', true)}>
+                      PTZ boshqaruvini yoqish
+                    </Button>
+                  ) : undefined
+                }
               >
-                <p className="flex items-center gap-1.5">
-                  {ptzProbe.success ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
-                  {ptzProbe.message}
-                  {ptzProbe.latencyMs != null ? ` (${ptzProbe.latencyMs} ms)` : ''}
-                </p>
-                {ptzProbe.deviceInfo && <p className="mt-0.5 font-medium opacity-80">Qurilma: {ptzProbe.deviceInfo}</p>}
-                {ptzProbe.success && !ptzProbe.presetsSupported && (
-                  <p className="mt-0.5 font-medium opacity-80">Presetlar qo&apos;llab-quvvatlanmaydi</p>
+                {(ptzProbe.deviceInfo || (ptzProbe.success && !ptzProbe.presetsSupported)) && (
+                  <>
+                    {ptzProbe.deviceInfo && <p>Qurilma: {ptzProbe.deviceInfo}</p>}
+                    {ptzProbe.success && !ptzProbe.presetsSupported && <p>Presetlar qo&apos;llab-quvvatlanmaydi</p>}
+                  </>
                 )}
-                {ptzProbe.success && !form.ptzEnabled && (
-                  <button
-                    type="button"
-                    onClick={() => set('ptzEnabled', true)}
-                    className="mt-1.5 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700"
-                  >
-                    PTZ boshqaruvini yoqish
-                  </button>
-                )}
-              </div>
+              </Notice>
             )}
-            <p className="mt-1.5 text-[11px] text-slate-400">
+            <p className="text-xs text-muted">
               Login/parol — RTSP bilan bir xil. Protokol tanlanmasa, avval ONVIF, keyin Hikvision ISAPI sinaladi.
             </p>
           </div>
         </fieldset>
 
         {!isEdit && (
-          <div>
-            <button
-              type="button"
-              onClick={runConnectionTest}
-              disabled={testState === 'testing'}
-              className="btn-glass flex w-full items-center justify-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {testState === 'testing' ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <Wifi size={14} />
-              )}
-              {testState === 'testing' ? 'Ulanish tekshirilmoqda...' : 'Ulanishni tekshirish'}
-            </button>
-
+          <div className="flex flex-col gap-2">
+            <Button icon={Wifi} onClick={runConnectionTest} loading={testState === 'testing'} fullWidth>
+              {testState === 'testing' ? 'Ulanish tekshirilmoqda…' : 'Ulanishni tekshirish'}
+            </Button>
             {testState === 'success' && testResult && (
-              <p className="mt-2 flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-600">
-                <CheckCircle2 size={14} />
+              <Notice tone="success">
                 {testResult.message}
                 {testResult.latencyMs != null ? ` (${testResult.latencyMs} ms)` : ''}
-              </p>
+              </Notice>
             )}
-            {testState === 'failed' && testResult && (
-              <p className="mt-2 flex items-center gap-1.5 rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-600">
-                <XCircle size={14} />
-                {testResult.message}
-              </p>
-            )}
-            <p className="mt-1.5 text-[11px] text-slate-400">
-              Haqiqiy tekshiruv: TCP portga ulanish va imkon bo'lsa RTSP oqimini ffprobe orqali tasdiqlash.
+            {testState === 'failed' && testResult && <Notice tone="danger">{testResult.message}</Notice>}
+            <p className="text-xs text-muted">
+              Haqiqiy tekshiruv: TCP portga ulanish va imkon bo&apos;lsa RTSP oqimini ffprobe orqali tasdiqlash. Saqlash
+              faqat muvaffaqiyatli tekshiruvdan keyin ochiladi.
             </p>
           </div>
         )}
-
-        <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} className="btn-glass">
-            Bekor qilish
-          </button>
-          <button
-            type="submit"
-            disabled={!canSave || saving}
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {saving ? 'Saqlanmoqda...' : 'Saqlash'}
-          </button>
-        </div>
       </form>
     </Modal>
   );

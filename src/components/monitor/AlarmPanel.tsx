@@ -1,19 +1,19 @@
 import { useCallback } from 'react';
-import { AlertTriangle, Loader2, LogIn, Siren } from 'lucide-react';
+import { AlertTriangle, ShieldCheck, Siren } from 'lucide-react';
+import { Card, CardHeader, EmptyState, ErrorState, Skeleton, StatusBadge } from '../../ui';
 import { api, type Page } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { useLiveEvents } from '../../lib/realtime';
-import { STATUS_LABEL } from '../../lib/eventLabels';
 import { useServerPage } from '../../lib/useServerPage';
+import { relativeTime } from '../../lib/uzDate';
 import type { AIEvent, CameraFeed } from '../../types';
 
 const PAGE_SIZE = 5;
 
-/** O'ng panelning pastki qismi — eng yuqori muhimlikdagi (severity=yuqori)
- * hodisalarni "signal" sifatida ko'rsatadi. Kamerani bosish uni asosiy
- * ko'rinishga o'tkazadi — avval joriy yuklangan `cameras` ro'yxatidan
- * qidiradi, topilmasa (masalan sahifalash tufayli hozir ro'yxatda yo'q)
- * ochiq public qidiruv orqali bitta martalik so'rov bilan topadi. */
+/** Eng yuqori muhimlikdagi (severity=yuqori) hodisalar — "signal".
+ * Kamerani bosish uni asosiy ko'rinishga o'tkazadi: avval joriy yuklangan
+ * `cameras` ro'yxatidan qidiradi, topilmasa (sahifalash tufayli hozir
+ * ro'yxatda yo'q) ochiq qidiruv orqali bitta so'rov bilan topadi. */
 export default function AlarmPanel({
   cameras,
   onSelectCamera,
@@ -56,63 +56,55 @@ export default function AlarmPanel({
         );
         if (res.items[0]) onSelectCamera(res.items[0]);
       } catch {
-        /* kamera topilmadi — jim o'tkazib yuboriladi, ro'yxat hali ham foydali ma'lumot beradi */
+        /* kamera topilmadi — jim o'tkazib yuboriladi, ro'yxat baribir foydali */
       }
     },
     [cameras, onSelectCamera],
   );
 
   return (
-    <div className="glass p-4">
-      <h3 className="mb-3 flex items-center gap-1.5 text-sm font-extrabold text-slate-900">
-        <Siren size={15} className="text-red-500" />
-        Alarm
-      </h3>
+    <Card>
+      <CardHeader title="Signallar" subtitle="Yuqori muhimlik — kamerani ochish uchun bosing" icon={Siren} className="mb-3" />
 
-      {!token ? (
-        <p className="flex items-center gap-1.5 rounded-lg bg-white/60 px-3 py-2.5 text-xs text-slate-500">
-          <LogIn size={13} />
-          Ko'rish uchun tizimga kiring
-        </p>
-      ) : loading && events.length === 0 ? (
-        <div className="flex items-center justify-center py-6 text-slate-400">
-          <Loader2 size={16} className="animate-spin" />
+      {loading && events.length === 0 ? (
+        <div className="space-y-2" aria-busy="true" aria-label="Yuklanmoqda">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Skeleton key={index} className="h-14 w-full" />
+          ))}
         </div>
       ) : error ? (
-        <p className="text-[11px] font-medium text-red-600">{error}</p>
+        <ErrorState message={error} onRetry={reload} />
       ) : events.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-slate-300 py-6 text-center text-[11px] text-slate-400">
-          Faol signal yo'q
-        </p>
+        <EmptyState compact icon={ShieldCheck} title="Faol signal yo'q" />
       ) : (
-        <ul className="space-y-2">
+        <ul className="space-y-1.5">
           {events.map((e) => (
             <li key={e.id}>
               <button
                 type="button"
                 onClick={() => handleClick(e)}
-                className="flex w-full items-start gap-2 rounded-lg bg-red-50/80 p-2.5 text-left text-xs transition-colors hover:bg-red-100/80"
+                className="flex w-full items-start gap-2.5 rounded-control border border-danger/20 bg-danger-soft px-2.5 py-2 text-left transition-colors hover:border-danger/40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/40"
               >
-                <AlertTriangle size={14} className="mt-0.5 shrink-0 text-red-500" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-semibold text-red-700">{e.cameraName}</p>
-                  <p className="truncate text-red-600/80">
-                    {e.moduleName} · {e.timestamp}
-                  </p>
+                <AlertTriangle size={15} aria-hidden="true" className="mt-0.5 shrink-0 text-danger" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-semibold text-fg">{e.cameraName}</span>
+                  <span className="block truncate text-xs text-muted">
+                    {e.moduleName} · {e.occurredAt ? relativeTime(e.occurredAt) : e.timestamp}
+                  </span>
                   {/* Ish jarayonidagi holat: kimdir shug'ullanyaptimi yoki yopilganmi. */}
-                  {e.status !== 'yangi' && (
-                    <p className="truncate text-[10px] font-semibold text-red-700/70">
-                      {STATUS_LABEL[e.status]}
-                      {e.assignedToName ? ` · ${e.assignedToName}` : ''}
-                    </p>
+                  {(e.status !== 'yangi' || e.overdue) && (
+                    <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                      {e.status !== 'yangi' && <StatusBadge kind="event" status={e.status} />}
+                      {e.assignedToName && <span className="text-xs text-muted">{e.assignedToName}</span>}
+                      {e.overdue && <span className="text-[11px] font-semibold uppercase text-danger">Muddati o&apos;tgan</span>}
+                    </span>
                   )}
-                  {e.overdue && <p className="text-[10px] font-bold uppercase text-red-700">Muddati o&apos;tgan</p>}
-                </div>
+                </span>
               </button>
             </li>
           ))}
         </ul>
       )}
-    </div>
+    </Card>
   );
 }

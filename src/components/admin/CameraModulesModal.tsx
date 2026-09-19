@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Sparkles } from 'lucide-react';
-import Modal from '../Modal';
+import { Sparkles } from 'lucide-react';
 import AIModuleChecklist from './AIModuleChecklist';
+import { Notice } from '../settings/kit';
+import { Button, Modal, SkeletonText } from '../../ui';
 import { ApiError, api } from '../../lib/apiClient';
 import {
   countEnabledModulesOnCamera,
@@ -83,74 +84,60 @@ export default function CameraModulesModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={camera ? `AI modullar — ${camera.name}` : ''} maxWidth="max-w-xl">
+    <Modal
+      open={open && !!camera}
+      onClose={onClose}
+      title="AI modullar"
+      description={camera?.name}
+      size="lg"
+      dismissible={!saving}
+      footer={
+        <>
+          <Button onClick={onClose} disabled={saving}>
+            Bekor qilish
+          </Button>
+          <Button variant="primary" onClick={handleSave} loading={saving} disabled={modulesLoading}>
+            Saqlash
+          </Button>
+        </>
+      }
+    >
       {camera && (
-        <div className="space-y-4">
-          <div className="glass-deep space-y-2 p-3 text-xs text-slate-500">
-            <p>
-              Belgilangan modullar shu kamerada ishlaydi. Belgini olib tashlasangiz, AI kriteriyasi shu kameraga
-              tegishli bo‘lmaydi — server yuki kamayadi.
-            </p>
-            {stats && (
-              <p className="font-semibold text-indigo-600">
-                {stats.enabled} / {stats.runnable} ishlaydigan modul yoqilgan
-                {excluded.size > 0 ? ` · ${excluded.size} ta maxsus o‘chirilgan` : ' · standart (hammasi)'}
-              </p>
-            )}
-          </div>
+        <div className="flex flex-col gap-4">
+          <Notice
+            tone={excluded.size > 0 ? 'warning' : 'info'}
+            title={
+              stats
+                ? `${stats.enabled} / ${stats.runnable} ishlaydigan modul yoqilgan` +
+                  (excluded.size > 0 ? ` · ${excluded.size} ta maxsus o‘chirilgan` : ' · standart (hammasi)')
+                : undefined
+            }
+          >
+            Belgilangan modullar shu kamerada ishlaydi. Belgini olib tashlasangiz, AI kriteriyasi shu kameraga tegishli
+            bo‘lmaydi — server yuki kamayadi.
+          </Notice>
 
           <div>
-            <p className="mb-1.5 flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-slate-400">
-              <Sparkles size={12} />
+            <p className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-muted">
+              <Sparkles size={13} aria-hidden="true" />
               Shablonlar
             </p>
             <div className="flex flex-wrap gap-1.5">
               {MODULE_PRESETS.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  title={p.description}
-                  onClick={() => applyPreset(p.id)}
-                  className="rounded-lg bg-white/70 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-700"
-                >
+                <Button key={p.id} size="sm" variant="secondary" title={p.description} onClick={() => applyPreset(p.id)}>
                   {p.label}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
 
           {modulesLoading ? (
-            <div className="flex items-center justify-center py-8 text-slate-400">
-              <Loader2 size={18} className="animate-spin" />
-            </div>
+            <SkeletonText lines={6} />
           ) : (
-            <AIModuleChecklist
-              modules={modules}
-              excluded={excluded}
-              onToggle={toggle}
-              onToggleGroup={handleToggleGroup}
-            />
+            <AIModuleChecklist modules={modules} excluded={excluded} onToggle={toggle} onToggleGroup={handleToggleGroup} />
           )}
 
-          {error && (
-            <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
-              {error}
-            </p>
-          )}
-
-          <div className="flex justify-end gap-2 border-t border-white/60 pt-3">
-            <button type="button" onClick={onClose} className="btn-glass">
-              Bekor qilish
-            </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving || modulesLoading}
-              className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {saving ? 'Saqlanmoqda...' : 'Saqlash'}
-            </button>
-          </div>
+          {error && <Notice tone="danger">{error}</Notice>}
         </div>
       )}
     </Modal>

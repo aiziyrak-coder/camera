@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { ArrowLeft, Clock, Loader2, Search } from 'lucide-react';
-import Modal from '../Modal';
+import { ArrowLeft, Clock, Loader2, Search, SearchX } from 'lucide-react';
+import { Avatar, Badge, Button, EmptyState, ErrorState, Input, Modal, cn, focusRing, type Tone } from '../../ui';
 import { ApiError, api, type Page } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import type { BiometricsConfirmation, StudentStaffRecord } from '../../types';
@@ -15,10 +15,10 @@ const STATUS_LABEL: Record<StudentStaffRecord['biometricsStatus'], string> = {
   yoq: 'Tasdiqlanmagan',
 };
 
-const STATUS_DOT: Record<StudentStaffRecord['biometricsStatus'], string> = {
-  tasdiqlangan: 'bg-emerald-500',
-  kutilmoqda: 'bg-amber-500',
-  yoq: 'bg-slate-300',
+const STATUS_TONE: Record<StudentStaffRecord['biometricsStatus'], Tone> = {
+  tasdiqlangan: 'success',
+  kutilmoqda: 'warning',
+  yoq: 'neutral',
 };
 
 function describePerson(p: StudentStaffRecord): string {
@@ -186,77 +186,64 @@ export default function BiometricsTimeLookupModal({
   const showEmpty = !searching && searchedFor === trimmed && trimmed.length >= MIN_QUERY_LENGTH && suggestions.length === 0;
 
   return (
-    <Modal open={open} onClose={onClose} title="Yuz tasdiqlangan vaqtni aniqlash" maxWidth="max-w-xl">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Yuz tasdiqlangan vaqtni aniqlash"
+      description={result ? undefined : "Odam ro'yxatdan o'tish sahifasida yuzini qaysi kuni, soat nechida tasdiqlagani."}
+      size="lg"
+      initialFocusRef={inputRef}
+    >
       {!result && (
-        <div className="flex flex-col gap-3">
-          <p className="text-xs leading-relaxed text-slate-500">
-            Ism, familiya yoki JSHSHIR yozing. Variantdan tanlang yoki Enter bosing — odam ro&apos;yxatdan o&apos;tish
-            sahifasida yuzini qaysi kuni, soat nechida tasdiqlagani ko&apos;rsatiladi.
-          </p>
+        <div className="flex flex-col gap-3 pb-2">
+          <Input
+            ref={inputRef}
+            icon={Search}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder="Ism, familiya yoki JSHSHIR — masalan: Karimova Dilnoza"
+            aria-label="Ism, familiya yoki JSHSHIR"
+            aria-autocomplete="list"
+            aria-controls="biometrics-lookup-suggestions"
+            autoComplete="off"
+            size="lg"
+            trailing={searching || loadingResult ? <Loader2 size={16} className="mr-1.5 animate-spin text-primary" aria-label="Qidirilmoqda" /> : undefined}
+          />
 
-          <div className="relative">
-            <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              ref={inputRef}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={onKeyDown}
-              placeholder="Masalan: Karimova Dilnoza"
-              aria-label="Ism, familiya yoki JSHSHIR"
-              aria-autocomplete="list"
-              aria-controls="biometrics-lookup-suggestions"
-              autoComplete="off"
-              className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-9 text-sm text-slate-900 outline-none transition-colors focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-            />
-            {(searching || loadingResult) && (
-              <Loader2 size={16} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-indigo-500" />
-            )}
-          </div>
-
-          {error && <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">{error}</p>}
+          {error && <ErrorState title="Xatolik" message={error} />}
 
           {suggestions.length > 0 && (
-            <ul
-              id="biometrics-lookup-suggestions"
-              role="listbox"
-              className="max-h-80 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1.5"
-            >
+            <ul id="biometrics-lookup-suggestions" role="listbox" className="max-h-80 overflow-y-auto rounded-card border border-border bg-surface p-1.5">
               {suggestions.map((person, index) => (
                 <li key={person.id} role="option" aria-selected={index === highlight}>
                   <button
                     type="button"
                     onMouseEnter={() => setHighlight(index)}
                     onClick={() => void choose(person)}
-                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
-                      index === highlight ? 'bg-indigo-50' : 'hover:bg-slate-50'
-                    }`}
+                    className={cn(
+                      'flex w-full items-center gap-3 rounded-control px-3 py-2.5 text-left transition-colors',
+                      index === highlight ? 'bg-primary-soft' : 'hover:bg-surface-2',
+                      focusRing,
+                    )}
                   >
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700">
-                      {person.initials}
-                    </span>
+                    <Avatar name={person.fullName} src={person.biometricPhotoUrl} size="md" />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold text-slate-900">{person.fullName}</span>
-                      <span className="block truncate text-xs text-slate-500">{describePerson(person)}</span>
+                      <span className="block truncate text-sm font-medium text-fg">{person.fullName}</span>
+                      <span className="block truncate text-xs text-muted">{describePerson(person)}</span>
                     </span>
-                    <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-semibold text-slate-500">
-                      <span className={`h-2 w-2 rounded-full ${STATUS_DOT[person.biometricsStatus]}`} />
+                    <Badge tone={STATUS_TONE[person.biometricsStatus]} dot className="hidden sm:inline-flex">
                       {STATUS_LABEL[person.biometricsStatus]}
-                    </span>
+                    </Badge>
                   </button>
                 </li>
               ))}
             </ul>
           )}
 
-          {suggestions.length > 1 && (
-            <p className="text-[11px] text-slate-400">↑ ↓ — tanlash · Enter — aniqlash</p>
-          )}
+          {suggestions.length > 1 && <p className="text-xs text-subtle">↑ ↓ — tanlash · Enter — aniqlash</p>}
 
-          {showEmpty && (
-            <p className="rounded-xl bg-slate-50 px-3 py-3 text-center text-sm text-slate-500">
-              &laquo;{trimmed}&raquo; bo&apos;yicha hech kim topilmadi
-            </p>
-          )}
+          {showEmpty && <EmptyState icon={SearchX} compact title={`«${trimmed}» bo'yicha hech kim topilmadi`} description="Familiyani yoki JSHSHIRni tekshiring." />}
         </div>
       )}
 
@@ -267,64 +254,49 @@ export default function BiometricsTimeLookupModal({
 
 function ConfirmationCard({ result, onBack }: { result: BiometricsConfirmation; onBack: () => void }) {
   return (
-    <div className="flex flex-col gap-4">
-      <button
-        type="button"
-        onClick={onBack}
-        className="flex w-fit items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800"
-      >
-        <ArrowLeft size={14} />
+    <div className="flex flex-col gap-4 pb-2">
+      <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack} className="-ml-2 w-fit">
         Boshqa odamni aniqlash
-      </button>
+      </Button>
 
       <div className="flex items-center gap-3">
-        {result.biometricPhotoUrl ? (
-          <img
-            src={result.biometricPhotoUrl}
-            alt={result.fullName}
-            className="h-16 w-16 shrink-0 rounded-2xl object-cover ring-2 ring-white"
-          />
-        ) : (
-          <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-indigo-100 text-lg font-bold text-indigo-700">
-            {result.initials}
-          </span>
-        )}
+        <Avatar name={result.fullName} src={result.biometricPhotoUrl} size="lg" shape="square" />
         <div className="min-w-0">
-          <p className="text-base font-extrabold text-slate-900">{result.fullName}</p>
-          <p className="text-xs text-slate-500">{describePerson(result)}</p>
+          <p className="text-base font-semibold text-fg">{result.fullName}</p>
+          <p className="text-xs text-muted">{describePerson(result)}</p>
         </div>
       </div>
 
       {result.confirmedTime && result.confirmedAt ? (
-        <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-5">
-          <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-emerald-700">
-            <Clock size={13} />
+        <div className="rounded-card border border-success/25 bg-success-soft p-5">
+          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-success">
+            <Clock size={13} aria-hidden="true" />
             Yuzini tasdiqlagan vaqti
           </p>
-          <p className="mt-2 text-4xl font-extrabold tabular-nums tracking-tight text-slate-900">{result.confirmedTime}</p>
-          <p className="mt-1 text-sm font-semibold text-slate-700">
+          <p className="mt-2 text-4xl font-semibold tabular-nums tracking-tight text-fg">{result.confirmedTime}</p>
+          <p className="mt-1 text-sm font-medium text-fg">
             {result.confirmedDate}, {result.confirmedWeekday}
           </p>
-          <p className="mt-1 text-xs text-slate-500">Toshkent vaqti (UTC+5) · {timeAgo(result.confirmedAt)}</p>
+          <p className="mt-1 text-xs text-muted">Toshkent vaqti (UTC+5) · {timeAgo(result.confirmedAt)}</p>
         </div>
       ) : result.source === 'nomalum' ? (
-        <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800">
+        <div className="rounded-card border border-warning/25 bg-warning-soft p-4 text-sm text-fg">
           Yuzi tasdiqlangan, lekin aniq vaqtni aniqlab bo&apos;lmadi: yuz rasmi omborda topilmadi.
         </div>
       ) : (
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <p className="text-sm font-bold text-slate-800">Hali yuzini tasdiqlamagan</p>
-          <p className="mt-1 text-xs text-slate-500">
-            Holati: {STATUS_LABEL[result.biometricsStatus]}. Odam https://cam.fermi.uz/royxatdan-otish sahifasida
-            JSHSHIR bilan kirib, yuzini tasdiqlashi kerak.
+        <div className="rounded-card border border-border bg-surface-2 p-4">
+          <p className="text-sm font-semibold text-fg">Hali yuzini tasdiqlamagan</p>
+          <p className="mt-1 text-xs text-muted">
+            Holati: {STATUS_LABEL[result.biometricsStatus]}. Odam https://cam.fermi.uz/royxatdan-otish sahifasida JSHSHIR bilan kirib, yuzini
+            tasdiqlashi kerak.
           </p>
         </div>
       )}
 
       {result.source === 'rasm' && (
-        <p className="text-[11px] leading-relaxed text-slate-400">
-          Bu odam tasdiqlash vaqtini yozish funksiyasi qo&apos;shilishidan oldin tasdiqlagan — vaqt uning yuz rasmi
-          saqlangan paytdan tiklandi. Rasm tasdiqlash so&apos;rovining o&apos;zida saqlanadi, shuning uchun vaqt aniq.
+        <p className="text-xs leading-relaxed text-muted">
+          Bu odam tasdiqlash vaqtini yozish funksiyasi qo&apos;shilishidan oldin tasdiqlagan — vaqt uning yuz rasmi saqlangan paytdan tiklandi.
+          Rasm tasdiqlash so&apos;rovining o&apos;zida saqlanadi, shuning uchun vaqt aniq.
         </p>
       )}
     </div>

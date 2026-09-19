@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { Link2, Loader2, Unlink } from 'lucide-react';
+import { CheckCircle2, Link2, RefreshCw, Unlink, UserRound } from 'lucide-react';
+import { Button, Card, CardHeader, ErrorState, SkeletonText } from '../../ui';
+import { Notice } from '../settings/kit';
 import TelegramLinkBox from './TelegramLinkBox';
 import { ApiError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
@@ -10,7 +12,7 @@ import { formatUzPhone, notificationsApi, type MyNotifications, type TelegramLin
  *  muddati o'tgan hodisa) uchun o'z hisobini botga bog'lash. */
 export default function MyTelegramCard() {
   const { token } = useAuth();
-  const { data, loading, reload } = useApiResource<MyNotifications>('/api/notifications/me');
+  const { data, loading, error: loadError, reload } = useApiResource<MyNotifications>('/api/notifications/me');
   const [link, setLink] = useState<TelegramLink | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,66 +43,58 @@ export default function MyTelegramCard() {
     }
   }
 
-  return (
-    <section className="glass p-5">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="text-sm font-bold text-slate-700">Mening Telegramim</h3>
-        {data && !loading && (
-          <button type="button" onClick={reload} className="text-[11px] font-semibold text-indigo-600 hover:underline">
-            Yangilash
-          </button>
-        )}
-      </div>
-      {loading && !data ? (
-        <div className="flex justify-center py-6 text-slate-400">
-          <Loader2 size={18} className="animate-spin" />
-        </div>
-      ) : data ? (
-        <div className="space-y-3">
-          <p className="text-xs text-slate-500">
-            Sizga tayinlangan va muddati o'tgan hodisalar haqida shaxsiy xabar keladi. Telegram bog'lanmagan bo'lsa —
-            SMS ({data.phone ? formatUzPhone(data.phone) : 'telefon raqami kiritilmagan'}).
-          </p>
-          {data.telegramLinked ? (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-emerald-50 px-3 py-2.5">
-              <span className="text-xs font-semibold text-emerald-700">Telegram bog'langan</span>
-              <button
-                type="button"
-                onClick={unlink}
-                disabled={busy}
-                className="flex items-center gap-1 rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-red-600 shadow-sm hover:bg-red-50 disabled:opacity-60"
-              >
-                <Unlink size={13} />
+  let body;
+  if (loading && !data) {
+    body = <SkeletonText lines={3} />;
+  } else if (data) {
+    body = (
+      <div className="flex flex-col gap-3">
+        <p className="text-[13px] text-muted">
+          Sizga tayinlangan va muddati o'tgan hodisalar haqida shaxsiy xabar keladi. Telegram bog'lanmagan bo'lsa — SMS (
+          {data.phone ? <span className="tabular-nums text-fg">{formatUzPhone(data.phone)}</span> : 'telefon raqami kiritilmagan'}).
+        </p>
+        {data.telegramLinked ? (
+          <Notice
+            tone="success"
+            icon={CheckCircle2}
+            action={
+              <Button size="sm" variant="ghost" icon={Unlink} onClick={() => void unlink()} loading={busy} className="text-danger hover:text-danger">
                 Uzish
-              </button>
-            </div>
-          ) : !data.telegramBotConfigured ? (
-            <p className="rounded-xl bg-slate-50 px-3 py-2.5 text-xs text-slate-500">
-              Telegram bot hali sozlanmagan — administratorga murojaat qiling.
-            </p>
-          ) : link ? (
-            <>
-              <TelegramLinkBox link={link} />
-              <button type="button" onClick={reload} className="btn-glass w-full text-xs">
-                Bog'ladim — holatni tekshirish
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={createLink}
-              disabled={busy}
-              className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-sky-600 px-3 py-2 text-sm font-semibold text-white shadow-btn hover:bg-sky-700 disabled:opacity-60"
-            >
-              {busy ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />}
-              Telegramni bog'lash
-            </button>
-          )}
-          {error && <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-600">{error}</p>}
-        </div>
-      ) : (
-        <p className="text-xs text-slate-400">Ma'lumotni yuklab bo'lmadi.</p>
-      )}
-    </section>
+              </Button>
+            }
+          >
+            <span className="font-medium">Telegram bog'langan</span>
+          </Notice>
+        ) : !data.telegramBotConfigured ? (
+          <Notice tone="neutral">Telegram bot hali sozlanmagan — administratorga murojaat qiling.</Notice>
+        ) : link ? (
+          <>
+            <TelegramLinkBox link={link} />
+            <Button icon={RefreshCw} onClick={reload} fullWidth>
+              Bog'ladim — holatni tekshirish
+            </Button>
+          </>
+        ) : (
+          <Button variant="primary" icon={Link2} onClick={() => void createLink()} loading={busy} fullWidth>
+            Telegramni bog'lash
+          </Button>
+        )}
+        {error && <Notice tone="danger">{error}</Notice>}
+      </div>
+    );
+  } else {
+    body = <ErrorState message={loadError ?? "Ma'lumotni yuklab bo'lmadi."} onRetry={reload} />;
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        icon={UserRound}
+        title="Mening Telegramim"
+        subtitle="Shaxsiy bildirishnomalar uchun"
+        actions={data && !loading ? <Button size="sm" variant="ghost" icon={RefreshCw} onClick={reload}>Yangilash</Button> : undefined}
+      />
+      {body}
+    </Card>
   );
 }

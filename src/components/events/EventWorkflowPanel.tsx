@@ -1,9 +1,9 @@
-import { useState } from 'react';
-import { CheckCircle2, CircleDot, Loader2, RotateCcw, ShieldAlert, UserCheck, X } from 'lucide-react';
+import { useId, useState } from 'react';
+import { CheckCircle2, CircleDot, RotateCcw, ShieldAlert, UserCheck, X } from 'lucide-react';
+import { Button, Select, useToast, type ButtonVariant } from '../../ui';
 import ResolveDialog from './ResolveDialog';
 import SlaBadge from './SlaBadge';
 import { useAssignees } from './useAssignees';
-import { useToast } from '../ui/Toast';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { STATUS_LABEL } from '../../lib/eventLabels';
@@ -22,10 +22,10 @@ const ACTION_ICON: Record<EventStatus, typeof CircleDot> = {
   hal_qilindi: CheckCircle2,
 };
 
-const VARIANT_CLASS: Record<StatusAction['variant'], string> = {
-  primary: 'bg-indigo-600 text-white shadow-btn hover:bg-indigo-700',
-  success: 'bg-emerald-600 text-white shadow-btn hover:bg-emerald-700',
-  neutral: 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+const VARIANT: Record<StatusAction['variant'], ButtonVariant> = {
+  primary: 'primary',
+  success: 'soft',
+  neutral: 'secondary',
 };
 
 function formatLocal(iso: string | null | undefined): string | null {
@@ -34,15 +34,10 @@ function formatLocal(iso: string | null | undefined): string | null {
 
 /** Ish jarayoni bloki: mas'ul (tayinlash), muddat, holat amallari va yechim.
  *  Har amaldan keyin server qaytargan yangi hodisa `onChanged` ga beriladi. */
-export default function EventWorkflowPanel({
-  event,
-  onChanged,
-}: {
-  event: AIEvent;
-  onChanged: (updated: AIEvent) => void;
-}) {
+export default function EventWorkflowPanel({ event, onChanged }: { event: AIEvent; onChanged: (updated: AIEvent) => void }) {
   const { token } = useAuth();
   const toast = useToast();
+  const selectId = useId();
   const assignable = canAssign(event);
   const { assignees, error: assigneesError } = useAssignees(assignable);
   const [pending, setPending] = useState<string | null>(null);
@@ -86,83 +81,68 @@ export default function EventWorkflowPanel({
       : assignees;
 
   return (
-    <section className="space-y-3 rounded-2xl border border-slate-100 bg-white/70 p-3">
+    <section className="space-y-3 rounded-card border border-border bg-surface-2/60 p-3.5" aria-labelledby={`${selectId}-title`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h4 className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Ish jarayoni</h4>
+        <h3 id={`${selectId}-title`} className="text-xs font-semibold uppercase tracking-wide text-muted">
+          Ish jarayoni
+        </h3>
         <SlaBadge event={event} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <label htmlFor={`assignee-${event.id}`} className="text-xs font-semibold text-slate-500">
+        <label htmlFor={selectId} className="text-[13px] font-medium text-muted">
           Mas&apos;ul
         </label>
         {assignable ? (
           <>
-            <select
-              id={`assignee-${event.id}`}
+            <Select
+              id={selectId}
+              size="sm"
               value={event.assignedToId ?? ''}
               disabled={pending !== null}
-              onChange={(e) => assign(e.target.value || null)}
-              className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-700 outline-none focus:border-indigo-300 disabled:opacity-60"
-            >
-              <option value="">— Tayinlanmagan —</option>
-              {options.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.fullName}
-                  {a.role ? ` (${a.role})` : ''}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => assign('me')}
-              disabled={pending !== null}
-              className="flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
-            >
-              {pending === 'assign' ? <Loader2 size={13} className="animate-spin" /> : <UserCheck size={13} />}
+              onChange={(value) => assign(value || null)}
+              placeholder="— Tayinlanmagan —"
+              options={options.map((a) => ({ value: a.id, label: `${a.fullName}${a.role ? ` (${a.role})` : ''}` }))}
+              className="min-w-0 flex-1 sm:w-auto"
+            />
+            <Button size="sm" variant="soft" icon={UserCheck} loading={pending === 'assign'} disabled={pending !== null} onClick={() => assign('me')}>
               Menga
-            </button>
+            </Button>
           </>
         ) : (
-          <span className="text-sm font-medium text-slate-700">{event.assignedToName ?? '—'}</span>
+          <span className="text-sm font-medium text-fg">{event.assignedToName ?? '—'}</span>
         )}
       </div>
-      {assigneesError && assignable && (
-        <p className="text-[11px] text-red-600">Foydalanuvchilar ro&apos;yxatini yuklab bo&apos;lmadi</p>
-      )}
-      {event.assignedAt && event.assignedToName && (
-        <p className="text-[11px] text-slate-400">Tayinlangan: {formatLocal(event.assignedAt)}</p>
-      )}
+      {assigneesError && assignable && <p className="text-xs text-danger">Foydalanuvchilar ro&apos;yxatini yuklab bo&apos;lmadi</p>}
+      {event.assignedAt && event.assignedToName && <p className="text-xs text-muted">Tayinlangan: {formatLocal(event.assignedAt)}</p>}
 
       {event.status === 'hal_qilindi' && event.resolutionNote && (
-        <div className="rounded-xl bg-emerald-50 px-3 py-2">
-          <p className="text-[11px] font-semibold text-emerald-700">
+        <div className="rounded-control bg-success-soft px-3 py-2">
+          <p className="text-xs font-semibold text-success">
             Yechim · {event.resolvedBy ?? ''}
             {event.resolvedAt ? ` · ${formatLocal(event.resolvedAt)}` : ''}
           </p>
-          <p className="whitespace-pre-line text-sm text-emerald-900">{event.resolutionNote}</p>
+          <p className="whitespace-pre-line text-sm text-fg">{event.resolutionNote}</p>
         </div>
       )}
 
       <div className="flex flex-wrap gap-2">
-        {actions.map((action) => {
-          const Icon = ACTION_ICON[action.target];
-          return (
-            <button
-              key={action.target}
-              type="button"
-              disabled={pending !== null}
-              onClick={() => {
-                if (action.needsNote) setResolving(true);
-                else changeStatus(action.target).catch(() => undefined);
-              }}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 ${VARIANT_CLASS[action.variant]}`}
-            >
-              {pending === action.target ? <Loader2 size={13} className="animate-spin" /> : <Icon size={13} />}
-              {action.label}
-            </button>
-          );
-        })}
+        {actions.map((action) => (
+          <Button
+            key={action.target}
+            size="sm"
+            variant={VARIANT[action.variant]}
+            icon={ACTION_ICON[action.target]}
+            loading={pending === action.target}
+            disabled={pending !== null}
+            onClick={() => {
+              if (action.needsNote) setResolving(true);
+              else changeStatus(action.target).catch(() => undefined);
+            }}
+          >
+            {action.label}
+          </Button>
+        ))}
       </div>
 
       <ResolveDialog

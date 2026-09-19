@@ -1,20 +1,20 @@
 import { useState } from 'react';
-import { FileText, Loader2, Sparkles } from 'lucide-react';
+import { FileText, Sparkles } from 'lucide-react';
+import { Button, Card, CardHeader, Tabs } from '../../ui';
 import { ApiError, api, buildQuery } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { resolvePreset, type FixedPreset } from '../../lib/reportPeriods';
 import type { ReportAnalytics } from '../../types';
 
-const PERIODS: { label: string; preset: FixedPreset }[] = [
-  { label: 'Bugun', preset: 'today' },
-  { label: 'Hafta', preset: 'last7' },
-  { label: 'Oy', preset: 'month' },
+const PERIODS: { id: FixedPreset; label: string }[] = [
+  { id: 'today', label: 'Bugun' },
+  { id: 'last7', label: 'Hafta' },
+  { id: 'month', label: 'Oy' },
 ];
 
-/** O'ng panelning yuqori qismi — tanlangan davr tahlilini bir tugma bilan
- * rasmiy PDF qilib yuklab olish. Ilgari har bosish arxivga yangi yozuv
- * qo'shardi; endi PDF to'g'ridan-to'g'ri jonli tahlildan tayyorlanadi,
- * arxivga saqlash esa «Hisobotlar» sahifasida ataylab bajariladi. */
+/** Tanlangan davr tahlilini bir tugma bilan rasmiy PDF qilib yuklab olish.
+ * PDF to'g'ridan-to'g'ri jonli tahlildan tayyorlanadi (arxivga yozilmaydi);
+ * arxivga saqlash «Hisobotlar» sahifasida ataylab bajariladi. */
 export default function ReportPanel() {
   const { token, userName } = useAuth();
   const [preset, setPreset] = useState<FixedPreset>('today');
@@ -51,44 +51,29 @@ export default function ReportPanel() {
     }
   }
 
-  const current = PERIODS.find((p) => p.preset === preset);
+  const current = PERIODS.find((p) => p.id === preset);
 
   return (
-    <div className="glass p-4">
-      <h3 className="mb-3 flex items-center gap-1.5 text-sm font-extrabold text-slate-900">
-        <FileText size={15} className="text-indigo-500" />
-        Hisobot
-      </h3>
-
-      <div className="mb-3 grid grid-cols-3 gap-1.5">
-        {PERIODS.map((p) => (
-          <button
-            key={p.preset}
-            type="button"
-            onClick={() => setPreset(p.preset)}
-            aria-pressed={preset === p.preset}
-            className={`rounded-lg px-2 py-1.5 text-[11px] font-semibold transition-colors ${
-              preset === p.preset ? 'bg-indigo-600 text-white' : 'bg-white/60 text-slate-600 hover:bg-white/90'
-            }`}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
-
-      <button
-        type="button"
-        onClick={handleDownload}
-        disabled={generating}
-        className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-70"
-      >
-        {generating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-        {generating ? 'Tayyorlanmoqda...' : `${current?.label ?? ''} — PDF hisobot`}
-      </button>
-
-      {error && <p className="mt-2 text-[11px] font-medium text-red-600">{error}</p>}
-
-      {lastLabel && !error && <p className="mt-2 truncate text-[11px] text-slate-500">Oxirgi: {lastLabel}</p>}
-    </div>
+    <Card>
+      <CardHeader title="Hisobot" icon={FileText} subtitle="Davr tahlili — PDF" className="mb-3" />
+      <Tabs
+        variant="segmented"
+        size="sm"
+        ariaLabel="Hisobot davri"
+        tabs={PERIODS}
+        value={preset}
+        onChange={setPreset}
+        className="w-full [&>button]:flex-1 [&>button]:justify-center"
+      />
+      <Button variant="primary" icon={Sparkles} fullWidth loading={generating} onClick={handleDownload} className="mt-3">
+        {generating ? 'Tayyorlanmoqda…' : `${current?.label ?? ''} — PDF hisobot`}
+      </Button>
+      {error && (
+        <p role="alert" className="mt-2 text-xs font-medium text-danger">
+          {error}
+        </p>
+      )}
+      {lastLabel && !error && <p className="mt-2 truncate text-xs text-muted">Oxirgi: {lastLabel}</p>}
+    </Card>
   );
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Check, Copy, ExternalLink } from 'lucide-react';
+import { Button, buttonClasses, controlBase } from '../../ui';
 import type { TelegramLink } from '../../lib/notificationsApi';
 
 /** Bir martalik bog'lash havolasi: ochish yoki nusxalab yuborish.
@@ -19,39 +20,25 @@ export default function TelegramLinkBox({ link, hint }: { link: TelegramLink; hi
   }
 
   return (
-    <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-3">
-      <p className="mb-2 text-[11px] font-semibold text-sky-800">
-        {hint ?? "Havolani oching va Telegram'da «Start» tugmasini bosing."}
-      </p>
-      <div className="flex items-center gap-2">
+    <div className="rounded-card border border-info/25 bg-info-soft p-3">
+      <p className="mb-2 text-xs font-medium text-fg">{hint ?? "Havolani oching va Telegram'da «Start» tugmasini bosing."}</p>
+      <div className="flex flex-wrap items-center gap-2">
         <input
           readOnly
           value={link.deepLink}
           onFocus={(e) => e.currentTarget.select()}
           aria-label="Bog'lash havolasi"
-          className="min-w-0 flex-1 rounded-lg border border-white/80 bg-white px-2.5 py-1.5 font-mono text-xs text-slate-700 outline-none"
+          className={`${controlBase} h-8 min-w-0 flex-1 basis-40 px-2.5 font-mono text-xs`}
         />
-        <button
-          type="button"
-          onClick={copy}
-          className="flex shrink-0 items-center gap-1 rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-sky-700 shadow-sm hover:bg-sky-100"
-        >
-          {copied ? <Check size={13} /> : <Copy size={13} />}
+        <Button size="sm" icon={copied ? Check : Copy} onClick={copy} aria-live="polite">
           {copied ? 'Nusxalandi' : 'Nusxalash'}
-        </button>
-        <a
-          href={link.deepLink}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="flex shrink-0 items-center gap-1 rounded-lg bg-sky-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-sky-700"
-        >
-          <ExternalLink size={13} />
+        </Button>
+        <a href={link.deepLink} target="_blank" rel="noreferrer noopener" className={buttonClasses({ variant: 'primary', size: 'sm' })}>
+          <ExternalLink size={15} aria-hidden="true" />
           Ochish
         </a>
       </div>
-      <p className="mt-2 text-[10px] text-sky-700/80">
-        Bot: @{link.botUsername}. Havola bir martalik — ishlatilgach yangisini yarating.
-      </p>
+      <p className="mt-2 text-[11px] text-muted">Bot: @{link.botUsername}. Havola bir martalik — ishlatilgach yangisini yarating.</p>
     </div>
   );
 }

@@ -1,9 +1,11 @@
 import { useState, type FormEvent } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { AlertCircle, Eye, EyeOff, Loader2, Lock, ShieldCheck, User } from 'lucide-react';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { AlertCircle, Eye, EyeOff, Lock, User } from 'lucide-react';
 import { useAuth, DEMO_CREDENTIALS, type DemoRole } from '../../lib/auth';
 import { isBackendConfigured } from '../../lib/config';
 import ForgotPasswordModal from '../../components/admin/ForgotPasswordModal';
+import { homeForRole } from '../../layouts/shell/navConfig';
+import { Button, Card, Field, IconButton, Input, Tabs, cn, focusRing } from '../../ui';
 
 interface FieldErrors {
   login?: string;
@@ -13,12 +15,20 @@ interface FieldErrors {
 
 function validateLogin(login: string): string | undefined {
   if (!login.trim()) return 'Login kiritilishi shart';
-  if (login.trim().length < 3) return 'Login kamida 3 belgidan iborat bo\'lishi kerak';
+  if (login.trim().length < 3) return "Login kamida 3 belgidan iborat bo'lishi kerak";
 }
 
 function validatePassword(password: string): string | undefined {
   if (!password) return 'Parol kiritilishi shart';
-  if (password.length < 6) return 'Parol kamida 6 belgidan iborat bo\'lishi kerak';
+  if (password.length < 6) return "Parol kamida 6 belgidan iborat bo'lishi kerak";
+}
+
+/** Kirishdan keyin qaytish manzili: faqat ichki yo'l ("//evil.com" emas). */
+function safeReturnPath(from: unknown): string | null {
+  if (typeof from !== 'string') return null;
+  if (!from.startsWith('/') || from.startsWith('//')) return null;
+  if (from.startsWith('/kirish') || from.startsWith('/parolni-tiklash')) return null;
+  return from;
 }
 
 export default function LoginPage() {
@@ -30,12 +40,14 @@ export default function LoginPage() {
   const [role, setRole] = useState<DemoRole>('super-admin');
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
-  const [remember, setRemember] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [touched, setTouched] = useState<{ login?: boolean; password?: boolean }>({});
   const [loading, setLoading] = useState(false);
   const [forgotOpen, setForgotOpen] = useState(false);
+
+  // Allaqachon kirgan foydalanuvchi /kirish'ni ochsa — o'z bosh sahifasiga.
+  if (auth.role && !loading) return <Navigate to={homeForRole(auth.role)} replace />;
 
   function handleBlur(field: 'login' | 'password') {
     setTouched((t) => ({ ...t, [field]: true }));
@@ -63,11 +75,11 @@ export default function LoginPage() {
     const result = await auth.authenticate(role, login, password);
     if (result.ok) {
       // Haqiqiy rol backend javobidan olinadi (yoki demo rejimida tekshirilgan
-      // hisobdan) — yuqoridagi tugma faqat qaysi demo login/parolni ko'rsatish
+      // hisobdan) — rol tanlagich faqat qaysi demo login/parolni ko'rsatish
       // uchun, xavfsizlik chegarasi emas.
       auth.login(result.role, result.userName, result.token);
-      const from = (location.state as { from?: string } | null)?.from;
-      navigate(from && from.startsWith('/admin') ? from : '/admin', { replace: true });
+      const from = safeReturnPath((location.state as { from?: string } | null)?.from);
+      navigate(from ?? homeForRole(result.role), { replace: true });
       return;
     }
     setLoading(false);
@@ -75,163 +87,92 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-canvas p-4">
-      <div className="glass w-full max-w-md p-8">
-        <div className="mb-6 text-center">
-          <h1 className="text-[15px] font-extrabold leading-tight text-slate-900">
-            Farg'ona jamoat salomatligi tibbiyot instituti
-          </h1>
-          <p className="mt-1 text-xs text-slate-500">
-            Situatsion Markaz — Boshqaruv Paneliga Kirish
-          </p>
-        </div>
+    <>
+      <Card padding="lg" className="shadow-pop">
+        <h1 className="text-lg font-semibold text-fg">Tizimga kirish</h1>
+        <p className="mt-1 text-[13px] text-muted">Hisobingiz login va parolini kiriting.</p>
 
         {/* Rol tanlash faqat DEMO rejimida (backendsiz) ma'noli — qaysi demo
             hisobni ko'rsatishni tanlaydi. Haqiqiy tizimda rolni server
             hisobning o'zidan aniqlaydi. */}
         {!isBackendConfigured && (
-          <div className="mb-6 grid grid-cols-2 gap-2 rounded-xl border border-white/80 bg-white/40 p-1">
-            <button
-              type="button"
-              onClick={() => setRole('super-admin')}
-              className={`rounded-lg py-2 text-sm font-semibold transition-colors ${
-                role === 'super-admin'
-                  ? 'bg-white text-indigo-600 shadow-btn'
-                  : 'text-slate-500'
-              }`}
-            >
-              Super Admin
-            </button>
-            <button
-              type="button"
-              onClick={() => setRole('admin')}
-              className={`rounded-lg py-2 text-sm font-semibold transition-colors ${
-                role === 'admin'
-                  ? 'bg-white text-indigo-600 shadow-btn'
-                  : 'text-slate-500'
-              }`}
-            >
-              Admin
-            </button>
-          </div>
+          <Tabs
+            variant="segmented"
+            ariaLabel="Demo hisob"
+            className="mt-5 w-full [&>button]:flex-1 [&>button]:justify-center"
+            tabs={[
+              { id: 'super-admin', label: 'Super Admin' },
+              { id: 'admin', label: 'Admin' },
+            ]}
+            value={role}
+            onChange={(value) => setRole(value as DemoRole)}
+          />
         )}
 
-        <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+        <form onSubmit={handleSubmit} noValidate className="mt-5 flex flex-col gap-4">
           {errors.form && (
-            <div className="flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-600">
-              <AlertCircle size={14} />
+            <div role="alert" className="flex items-start gap-2 rounded-control bg-danger-soft px-3 py-2.5 text-[13px] font-medium text-danger">
+              <AlertCircle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
               {errors.form}
             </div>
           )}
 
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold text-slate-600">
-              Login
-            </label>
-            <div className="relative">
-              <User
-                size={16}
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-              />
-              <input
-                type="text"
-                placeholder={isBackendConfigured ? 'Loginingiz' : 'admin'}
-                autoComplete="username"
-                value={login}
-                onChange={(e) => setLogin(e.target.value)}
-                onBlur={() => handleBlur('login')}
-                aria-invalid={touched.login && !!errors.login}
-                className={`w-full rounded-xl border bg-white/60 py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 ${
-                  touched.login && errors.login
-                    ? 'border-red-300 focus:border-red-400'
-                    : 'border-white/80 focus:border-indigo-300'
-                }`}
-              />
-            </div>
-            {touched.login && errors.login && (
-              <p className="mt-1 text-xs font-medium text-red-500">{errors.login}</p>
-            )}
-          </div>
+          <Field label="Login" error={touched.login ? errors.login : undefined}>
+            <Input
+              icon={User}
+              size="lg"
+              type="text"
+              placeholder={isBackendConfigured ? 'Loginingiz' : 'admin'}
+              autoComplete="username"
+              autoFocus
+              value={login}
+              onChange={(e) => setLogin(e.target.value)}
+              onBlur={() => handleBlur('login')}
+            />
+          </Field>
 
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold text-slate-600">
-              Parol
-            </label>
-            <div className="relative">
-              <Lock
-                size={16}
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-              />
-              <input
-                type={showPassword ? 'text' : 'password'}
-                placeholder="••••••••"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onBlur={() => handleBlur('password')}
-                aria-invalid={touched.password && !!errors.password}
-                className={`w-full rounded-xl border bg-white/60 py-2.5 pl-9 pr-9 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 ${
-                  touched.password && errors.password
-                    ? 'border-red-300 focus:border-red-400'
-                    : 'border-white/80 focus:border-indigo-300'
-                }`}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-              >
-                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-            {touched.password && errors.password && (
-              <p className="mt-1 text-xs font-medium text-red-500">{errors.password}</p>
-            )}
-          </div>
+          <Field label="Parol" error={touched.password ? errors.password : undefined}>
+            <Input
+              icon={Lock}
+              size="lg"
+              type={showPassword ? 'text' : 'password'}
+              placeholder="••••••••"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onBlur={() => handleBlur('password')}
+              trailing={
+                <IconButton
+                  icon={showPassword ? EyeOff : Eye}
+                  label={showPassword ? 'Parolni yashirish' : "Parolni ko'rsatish"}
+                  size="sm"
+                  pressed={showPassword}
+                  onClick={() => setShowPassword((v) => !v)}
+                />
+              }
+            />
+          </Field>
 
-          <div className="flex items-center justify-between text-xs">
-            <label className="flex items-center gap-2 text-slate-600">
-              <input
-                type="checkbox"
-                checked={remember}
-                onChange={(e) => setRemember(e.target.checked)}
-                className="rounded border-slate-300"
-              />
-              Eslab qolish
-            </label>
-            <button
-              type="button"
-              onClick={() => setForgotOpen(true)}
-              className="font-semibold text-indigo-600 hover:underline"
-            >
+          <div className="-mt-1 flex justify-end">
+            <button type="button" onClick={() => setForgotOpen(true)} className={cn('rounded text-[13px] font-medium text-primary hover:underline', focusRing)}>
               Parolni unutdingizmi?
             </button>
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="flex items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {loading && <Loader2 size={16} className="animate-spin" />}
-            {loading ? 'Tekshirilmoqda...' : 'Tizimga kirish'}
-          </button>
+          <Button type="submit" variant="primary" size="lg" fullWidth loading={loading}>
+            {loading ? 'Tekshirilmoqda…' : 'Kirish'}
+          </Button>
 
           {/* Production'da bu yozuv Super Admin parolini hammaga ko'rsatardi. */}
           {!isBackendConfigured && (
-            <p className="text-center text-[11px] text-slate-400">
+            <p className="text-center text-xs text-subtle">
               Demo: {DEMO_CREDENTIALS[role].login} / {DEMO_CREDENTIALS[role].password}
             </p>
           )}
         </form>
-
-        <p className="mt-6 flex items-center justify-center gap-1.5 text-xs text-slate-400">
-          <ShieldCheck size={14} />
-          256-bit SSL shifrlash bilan himoyalangan
-        </p>
-      </div>
+      </Card>
 
       <ForgotPasswordModal open={forgotOpen} onClose={() => setForgotOpen(false)} />
-    </div>
+    </>
   );
 }

@@ -1,26 +1,31 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Loader2, PlugZap, RefreshCw } from 'lucide-react';
-import Badge from '../Badge';
-import Pagination from '../Pagination';
-import EmptyState from '../ui/EmptyState';
-import ErrorState from '../ui/ErrorState';
-import { useToast } from '../ui/Toast';
-import { ApiError, type Page } from '../../lib/apiClient';
-import { useAuth } from '../../lib/auth';
+import { useState } from 'react';
+import { PlugZap, RefreshCw } from 'lucide-react';
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  DataTable,
+  Drawer,
+  ErrorState,
+  KeyValue,
+  ProgressBar,
+  Section,
+  SkeletonCard,
+  formatNumber,
+  type DataTableColumn,
+} from '../../ui';
+import { Notice, pagerFooter } from '../settings/kit';
 import {
   RUN_STATUS_META,
   formatDateTime,
   formatDuration,
-  integrationsApi,
-  progressPercent,
   statsRows,
   statsSummary,
-  type HemisStatus,
-  type HemisTestResult,
   type SyncRun,
 } from '../../lib/integrationsApi';
+import type { HemisSync } from './useHemisSync';
 
-const POLL_MS = 2000;
 const ENTITY_TEST_LABELS: Record<string, string> = {
   students: 'Talabalar',
   employees: 'Xodimlar',
@@ -28,336 +33,274 @@ const ENTITY_TEST_LABELS: Record<string, string> = {
   departments: "Bo'linmalar",
 };
 
-function errorText(err: unknown): string {
-  return err instanceof ApiError || err instanceof Error ? err.message : "So'rov bajarilmadi";
+/** Sahifa sarlavhasidagi HEMIS tugmalari (o'ng yuqorida). */
+export function HemisActions({ hemis }: { hemis: HemisSync }) {
+  const configured = Boolean(hemis.status?.configured);
+  return (
+    <>
+      <Button icon={PlugZap} loading={hemis.testing} disabled={!configured} onClick={() => void hemis.test()}>
+        Ulanishni tekshirish
+      </Button>
+      <Button
+        variant="primary"
+        icon={RefreshCw}
+        loading={hemis.starting || Boolean(hemis.running)}
+        disabled={!configured}
+        onClick={() => void hemis.sync()}
+      >
+        Hozir sinxronlash
+      </Button>
+    </>
+  );
 }
 
-export default function HemisPanel() {
-  const { token } = useAuth();
-  const toast = useToast();
-  const [status, setStatus] = useState<HemisStatus | null>(null);
-  const [statusError, setStatusError] = useState<string | null>(null);
-  const [runs, setRuns] = useState<Page<SyncRun> | null>(null);
-  const [runsPage, setRunsPage] = useState(1);
-  const [activeRun, setActiveRun] = useState<SyncRun | null>(null);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<HemisTestResult | null>(null);
-  const [starting, setStarting] = useState(false);
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const pollTimer = useRef<number | null>(null);
+const RUN_COLUMNS: DataTableColumn<SyncRun>[] = [
+  {
+    key: 'startedAt',
+    header: 'Boshlandi',
+    cell: (r) => <span className="whitespace-nowrap tabular-nums">{formatDateTime(r.startedAt)}</span>,
+  },
+  {
+    key: 'status',
+    header: 'Holat',
+    cell: (r) => (
+      <Badge tone={RUN_STATUS_META[r.status].tone} dot>
+        {RUN_STATUS_META[r.status].label}
+      </Badge>
+    ),
+  },
+  {
+    key: 'duration',
+    header: 'Davomiyligi',
+    cell: (r) => <span className="whitespace-nowrap text-[13px] tabular-nums text-muted">{formatDuration(r.durationSeconds)}</span>,
+  },
+  { key: 'triggeredBy', header: 'Kim', hideOnMobile: true, cell: (r) => <span className="text-[13px] text-muted">{r.triggeredBy}</span> },
+  {
+    key: 'result',
+    header: 'Natija',
+    cell: (r) =>
+      r.status === 'xato' && r.error ? (
+        <span className="line-clamp-2 text-[13px] text-danger">{r.error}</span>
+      ) : (
+        <span className="text-[13px] text-muted">{statsSummary(r.stats)}</span>
+      ),
+  },
+];
 
-  const loadStatus = useCallback(async () => {
-    try {
-      const next = await integrationsApi.hemisStatus(token);
-      setStatus(next);
-      setStatusError(null);
-      if (next.running) setActiveRun(next.running);
-    } catch (err) {
-      setStatusError(errorText(err));
-    }
-  }, [token]);
+const NUM_COLUMNS = [
+  { key: 'fetched', label: 'Olindi', className: '' },
+  { key: 'created', label: 'Yangi', className: 'text-success' },
+  { key: 'updated', label: 'Yangilandi', className: 'text-info' },
+  { key: 'unchanged', label: "O'zgarmadi", className: '' },
+  { key: 'deactivated', label: 'Faolsizlantirildi', className: 'text-warning' },
+  { key: 'skipped', label: "O'tkazildi", className: '' },
+  { key: 'errors', label: 'Xato', className: 'text-danger' },
+] as const;
 
-  const loadRuns = useCallback(async () => {
-    try {
-      setRuns(await integrationsApi.runs(runsPage, token));
-    } catch {
-      /* tarix yuklanmasa ham asosiy holat ko'rinaveradi */
-    }
-  }, [runsPage, token]);
-
-  useEffect(() => {
-    void loadStatus();
-  }, [loadStatus]);
-
-  useEffect(() => {
-    void loadRuns();
-  }, [loadRuns]);
-
-  // Ishlayotgan sinxronlash jarayonini kuzatish.
-  const activeRunId = activeRun?.status === 'ishlamoqda' ? activeRun.id : null;
-  useEffect(() => {
-    if (!activeRunId) return;
-    let cancelled = false;
-    const tick = async () => {
-      try {
-        const run = await integrationsApi.run(activeRunId, token);
-        if (cancelled) return;
-        setActiveRun(run);
-        if (run.status !== 'ishlamoqda') {
-          if (run.status === 'muvaffaqiyatli') toast.success(`HEMIS sinxronlandi. ${statsSummary(run.stats)}`);
-          else toast.error(`HEMIS sinxronlash xato bilan tugadi: ${run.error ?? ''}`);
-          void loadStatus();
-          void loadRuns();
-          return;
-        }
-      } catch {
-        /* vaqtinchalik tarmoq xatosi — keyingi urinishda */
-      }
-      if (!cancelled) pollTimer.current = window.setTimeout(tick, POLL_MS);
-    };
-    pollTimer.current = window.setTimeout(tick, POLL_MS);
-    return () => {
-      cancelled = true;
-      if (pollTimer.current) window.clearTimeout(pollTimer.current);
-    };
-  }, [activeRunId, token, toast, loadStatus, loadRuns]);
-
-  async function handleTest() {
-    setTesting(true);
-    setTestResult(null);
-    try {
-      setTestResult(await integrationsApi.hemisTest(token));
-    } catch (err) {
-      toast.error(errorText(err));
-    } finally {
-      setTesting(false);
-    }
-  }
-
-  async function handleSync() {
-    setStarting(true);
-    try {
-      const { runId } = await integrationsApi.hemisSync(token);
-      setActiveRun(await integrationsApi.run(runId, token));
-      toast.info('HEMIS sinxronlash boshlandi');
-      void loadRuns();
-    } catch (err) {
-      toast.error(errorText(err));
-      if (err instanceof ApiError && err.status === 409) void loadStatus();
-    } finally {
-      setStarting(false);
-    }
-  }
-
-  if (statusError && !status) return <ErrorState message={statusError} onRetry={() => void loadStatus()} />;
-  if (!status) {
-    return (
-      <div className="flex items-center justify-center py-12 text-slate-400">
-        <Loader2 size={20} className="animate-spin" />
-      </div>
-    );
-  }
-
-  const running = activeRun?.status === 'ishlamoqda' ? activeRun : null;
-  const percent = progressPercent(running?.stats?.progress);
-
+function RunDetails({ run }: { run: SyncRun }) {
+  const rows = statsRows(run.stats);
+  const meta = RUN_STATUS_META[run.status];
   return (
-    <div className="space-y-4">
-      <section className="glass-deep p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0 space-y-1">
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold text-slate-900">HEMIS ulanishi</h3>
-              {status.configured ? <Badge tone="green">Sozlangan</Badge> : <Badge tone="amber">Sozlanmagan</Badge>}
-            </div>
-            <p className="break-all text-xs text-slate-500">{status.baseUrl ?? 'Manzil kiritilmagan'}</p>
-            <p className="text-xs text-slate-500">
-              Avtomatik sinxronlash:{' '}
-              <span className="font-semibold text-slate-700">
-                {status.syncIntervalHours > 0 ? `har ${status.syncIntervalHours} soatda` : "o'chiq (faqat qo'lda)"}
-              </span>
-              {' · '}HEMIS'da yo'qlarni faolsizlantirish:{' '}
-              <span className="font-semibold text-slate-700">{status.deactivateMissing ? 'yoqilgan' : "o'chiq"}</span>
-            </p>
-            <p className="text-xs text-slate-500">
-              Oxirgi muvaffaqiyatli sinxronlash:{' '}
-              <span className="font-semibold text-slate-700">{formatDateTime(status.lastSuccessAt)}</span>
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => void handleTest()}
-              disabled={!status.configured || testing}
-              className="btn-glass flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {testing ? <Loader2 size={14} className="animate-spin" /> : <PlugZap size={14} />}
-              Ulanishni tekshirish
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleSync()}
-              disabled={!status.configured || starting || Boolean(running)}
-              className="btn-glass flex items-center gap-1.5 !bg-indigo-600 !text-white hover:!bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {starting || running ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-              Hozir sinxronlash
-            </button>
-          </div>
-        </div>
-
-        {!status.configured && (
-          <p className="mt-4 rounded-xl bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
-            Serverdagi <code className="font-mono">.env</code> faylida <code className="font-mono">HEMIS_BASE_URL</code>{' '}
-            (masalan <code className="font-mono">https://student.universitet.uz/rest</code>) va{' '}
-            <code className="font-mono">HEMIS_API_TOKEN</code> (HEMIS admin panelidagi API token) ni kiriting va
-            xizmatni qayta ishga tushiring. Token xavfsizlik uchun faqat serverda saqlanadi.
-          </p>
-        )}
-
-        {testResult && (
-          <div
-            className={`mt-4 rounded-xl px-3 py-2.5 text-xs ${
-              testResult.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'
-            }`}
-          >
-            <p className="mb-1 flex items-center gap-1.5 font-semibold">
-              {testResult.ok ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
-              {testResult.ok ? 'Ulanish ishlayapti' : testResult.error ?? 'Ayrim ro\'yxatlarni olib bo\'lmadi'}
-            </p>
-            <ul className="grid grid-cols-2 gap-x-4 gap-y-0.5 sm:grid-cols-4">
-              {Object.entries(testResult.entities).map(([key, entity]) => (
-                <li key={key}>
-                  {ENTITY_TEST_LABELS[key] ?? key}:{' '}
-                  <span className="font-semibold">
-                    {entity.ok ? (entity.total ?? 0).toLocaleString('ru-RU') : entity.error ?? 'xato'}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {running && (
-          <div className="mt-4 space-y-1.5" aria-live="polite">
-            <div className="flex justify-between text-xs text-slate-600">
-              <span>{running.stats?.progress?.stage ?? 'Boshlanmoqda'}</span>
-              {percent !== null && (
-                <span className="tabular-nums">
-                  {running.stats?.progress?.done}/{running.stats?.progress?.total}
-                </span>
-              )}
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-slate-200/70">
-              <div
-                className={`h-full rounded-full bg-indigo-500 transition-all ${percent === null ? 'w-1/3 animate-pulse' : ''}`}
-                style={percent === null ? undefined : { width: `${percent}%` }}
-              />
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section className="glass-deep p-5">
-        <h3 className="mb-3 text-sm font-bold text-slate-900">Sinxronlash tarixi</h3>
-        {!runs || runs.items.length === 0 ? (
-          <EmptyState compact title="Hali sinxronlash bo'lmagan" description="“Hozir sinxronlash” tugmasini bosing." />
-        ) : (
-          <>
-            <div className="overflow-x-auto rounded-xl border border-white/70">
-              <table className="w-full min-w-[48rem] text-left text-sm">
-                <thead>
-                  <tr className="bg-white/50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    <th className="w-8 px-3 py-3" />
-                    <th className="px-3 py-3">Boshlandi</th>
-                    <th className="px-3 py-3">Davomiyligi</th>
-                    <th className="px-3 py-3">Kim</th>
-                    <th className="px-3 py-3">Holat</th>
-                    <th className="px-3 py-3">Natija</th>
+    <div className="flex flex-col gap-5">
+      <KeyValue
+        items={[
+          { label: 'Holat', value: <Badge tone={meta.tone} dot>{meta.label}</Badge> },
+          { label: 'Boshlandi', value: <span className="tabular-nums">{formatDateTime(run.startedAt)}</span> },
+          { label: 'Tugadi', value: <span className="tabular-nums">{formatDateTime(run.finishedAt)}</span> },
+          { label: 'Davomiyligi', value: formatDuration(run.durationSeconds) },
+          { label: 'Kim ishga tushirdi', value: run.triggeredBy },
+        ]}
+      />
+      {run.status === 'xato' && run.error && <Notice tone="danger" title="Xato">{run.error}</Notice>}
+      <Section title="Bo'limlar bo'yicha">
+        {rows.length > 0 ? (
+          <div className="overflow-x-auto rounded-card border border-border">
+            <table className="w-full min-w-[34rem] border-separate border-spacing-0 text-[13px]">
+              <thead>
+                <tr>
+                  <th scope="col" className="border-b border-border bg-surface-2 px-3 py-2 text-left text-xs font-semibold text-muted">
+                    Bo'lim
+                  </th>
+                  {NUM_COLUMNS.map((c) => (
+                    <th key={c.key} scope="col" className="border-b border-border bg-surface-2 px-3 py-2 text-right text-xs font-semibold text-muted">
+                      {c.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="tabular-nums">
+                {rows.map((row) => (
+                  <tr key={row.key}>
+                    <td className="border-b border-border px-3 py-2 font-medium text-fg">{row.label}</td>
+                    {NUM_COLUMNS.map((c) => (
+                      <td key={c.key} className={`border-b border-border px-3 py-2 text-right ${row[c.key] ? c.className || 'text-fg' : 'text-subtle'}`}>
+                        {formatNumber(row[c.key])}
+                      </td>
+                    ))}
                   </tr>
-                </thead>
-                <tbody>
-                  {runs.items.map((run) => {
-                    const open = expanded === run.id;
-                    const meta = RUN_STATUS_META[run.status];
-                    return (
-                      <RunRow key={run.id} run={run} open={open} tone={meta.tone} label={meta.label}
-                        onToggle={() => setExpanded(open ? null : run.id)} />
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <Pagination page={runs.page} totalPages={runs.totalPages} total={runs.total} pageSize={runs.pageSize}
-              onChange={setRunsPage} />
-          </>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-[13px] text-muted">Statistika yo'q.</p>
         )}
-      </section>
+      </Section>
+      {run.stats?.messages && run.stats.messages.length > 0 && (
+        <Section title="Izohlar" description="O'tkazilgan yozuvlar sababi">
+          <ul className="max-h-64 list-disc space-y-1 overflow-y-auto rounded-control border border-border bg-surface-2 py-2 pl-7 pr-3 text-[13px] text-fg">
+            {run.stats.messages.map((message, index) => (
+              <li key={index}>{message}</li>
+            ))}
+          </ul>
+        </Section>
+      )}
     </div>
   );
 }
 
-function RunRow({
-  run,
-  open,
-  tone,
-  label,
-  onToggle,
-}: {
-  run: SyncRun;
-  open: boolean;
-  tone: 'green' | 'red' | 'amber' | 'slate' | 'indigo';
-  label: string;
-  onToggle: () => void;
-}) {
-  const rows = statsRows(run.stats);
-  return (
-    <>
-      <tr className="cursor-pointer border-t border-white/60 hover:bg-white/40" onClick={onToggle}>
-        <td className="px-3 py-2 text-slate-400">{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</td>
-        <td className="whitespace-nowrap px-3 py-2 tabular-nums">{formatDateTime(run.startedAt)}</td>
-        <td className="whitespace-nowrap px-3 py-2 tabular-nums text-slate-600">{formatDuration(run.durationSeconds)}</td>
-        <td className="px-3 py-2 text-slate-600">{run.triggeredBy}</td>
-        <td className="px-3 py-2">
-          <Badge tone={tone}>{label}</Badge>
-        </td>
-        <td className="px-3 py-2 text-xs text-slate-600">
-          {run.status === 'xato' && run.error ? (
-            <span className="text-red-600">{run.error}</span>
-          ) : (
-            statsSummary(run.stats)
-          )}
-        </td>
-      </tr>
-      {open && (
-        <tr className="bg-white/30">
-          <td />
-          <td colSpan={5} className="px-3 py-3">
-            {rows.length > 0 ? (
-              <table className="w-full max-w-3xl text-xs">
-                <thead>
-                  <tr className="text-left text-slate-500">
-                    <th className="py-1 pr-3 font-semibold">Bo'lim</th>
-                    <th className="py-1 pr-3 text-right font-semibold">Olindi</th>
-                    <th className="py-1 pr-3 text-right font-semibold">Yangi</th>
-                    <th className="py-1 pr-3 text-right font-semibold">Yangilandi</th>
-                    <th className="py-1 pr-3 text-right font-semibold">O'zgarmadi</th>
-                    <th className="py-1 pr-3 text-right font-semibold">Faolsizlantirildi</th>
-                    <th className="py-1 pr-3 text-right font-semibold">O'tkazildi</th>
-                    <th className="py-1 text-right font-semibold">Xato</th>
-                  </tr>
-                </thead>
-                <tbody className="tabular-nums">
-                  {rows.map((row) => (
-                    <tr key={row.key} className="border-t border-white/60">
-                      <td className="py-1 pr-3 font-semibold text-slate-700">{row.label}</td>
-                      <td className="py-1 pr-3 text-right">{row.fetched}</td>
-                      <td className="py-1 pr-3 text-right text-emerald-700">{row.created}</td>
-                      <td className="py-1 pr-3 text-right text-indigo-700">{row.updated}</td>
-                      <td className="py-1 pr-3 text-right">{row.unchanged}</td>
-                      <td className="py-1 pr-3 text-right text-amber-700">{row.deactivated}</td>
-                      <td className="py-1 pr-3 text-right">{row.skipped}</td>
-                      <td className="py-1 text-right text-red-600">{row.errors}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+/** HEMIS ulanishi holati, sinov natijasi, jarayon va sinxronlash tarixi. */
+export default function HemisPanel({ hemis }: { hemis: HemisSync }) {
+  const [openRunId, setOpenRunId] = useState<string | null>(null);
+  const { status, statusError, running, percent, testResult, runs } = hemis;
+  const openRun = runs?.items.find((r) => r.id === openRunId) ?? null;
+
+  let connection;
+  if (statusError && !status) {
+    connection = (
+      <Card>
+        <ErrorState variant="block" message={statusError} onRetry={() => void hemis.loadStatus()} />
+      </Card>
+    );
+  } else if (!status) {
+    connection = <SkeletonCard lines={3} />;
+  } else {
+    connection = (
+      <Card>
+        <CardHeader
+          icon={PlugZap}
+          title={
+            <span className="flex flex-wrap items-center gap-2">
+              HEMIS ulanishi
+              {status.configured ? (
+                <Badge tone="success" dot>
+                  Sozlangan
+                </Badge>
+              ) : (
+                <Badge tone="warning" dot>
+                  Sozlanmagan
+                </Badge>
+              )}
+            </span>
+          }
+          subtitle={<span className="break-all font-mono text-xs">{status.baseUrl ?? 'Manzil kiritilmagan'}</span>}
+        />
+        <KeyValue
+          layout="stacked"
+          columns={3}
+          items={[
+            {
+              label: 'Avtomatik sinxronlash',
+              value: status.syncIntervalHours > 0 ? `Har ${status.syncIntervalHours} soatda` : "O'chiq (faqat qo'lda)",
+            },
+            { label: "HEMIS'da yo'qlarni faolsizlantirish", value: status.deactivateMissing ? 'Yoqilgan' : "O'chiq" },
+            { label: 'Oxirgi muvaffaqiyatli sinxronlash', value: <span className="tabular-nums">{formatDateTime(status.lastSuccessAt)}</span> },
+          ]}
+        />
+
+        {!status.configured && (
+          <Notice tone="warning" className="mt-4" title="HEMIS sozlanmagan">
+            Serverdagi <code className="font-mono">.env</code> faylida <code className="font-mono">HEMIS_BASE_URL</code> (masalan{' '}
+            <code className="font-mono">https://student.universitet.uz/rest</code>) va <code className="font-mono">HEMIS_API_TOKEN</code>{' '}
+            (HEMIS admin panelidagi API token) ni kiriting va xizmatni qayta ishga tushiring. Token xavfsizlik uchun faqat serverda
+            saqlanadi.
+          </Notice>
+        )}
+
+        {testResult && (
+          <Notice
+            tone={testResult.ok ? 'success' : 'danger'}
+            className="mt-4"
+            title={testResult.ok ? 'Ulanish ishlayapti' : (testResult.error ?? "Ayrim ro'yxatlarni olib bo'lmadi")}
+            action={
+              <Button size="sm" variant="ghost" onClick={hemis.clearTestResult}>
+                Yopish
+              </Button>
+            }
+          >
+            <ul className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5 sm:grid-cols-4">
+              {Object.entries(testResult.entities).map(([key, entity]) => (
+                <li key={key}>
+                  {ENTITY_TEST_LABELS[key] ?? key}:{' '}
+                  <span className={entity.ok ? 'font-semibold tabular-nums' : 'font-semibold text-danger'}>
+                    {entity.ok ? formatNumber(entity.total ?? 0) : (entity.error ?? 'xato')}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </Notice>
+        )}
+
+        {running && (
+          <div className="mt-4 rounded-control border border-border bg-surface-2 px-3 py-3" aria-live="polite">
+            <div className="mb-2 flex justify-between gap-3 text-xs">
+              <span className="font-medium text-fg">{running.stats?.progress?.stage ?? 'Boshlanmoqda'}</span>
+              {percent !== null && (
+                <span className="tabular-nums text-muted">
+                  {formatNumber(running.stats?.progress?.done ?? 0)} / {formatNumber(running.stats?.progress?.total ?? 0)} · {percent}%
+                </span>
+              )}
+            </div>
+            {percent !== null ? (
+              <ProgressBar value={percent} tone="primary" size="md" ariaLabel="Sinxronlash jarayoni" />
             ) : (
-              <p className="text-xs text-slate-500">Statistika yo'q.</p>
-            )}
-            {run.stats?.messages && run.stats.messages.length > 0 && (
-              <div className="mt-3">
-                <p className="mb-1 text-xs font-semibold text-slate-600">Izohlar (o'tkazilgan yozuvlar):</p>
-                <ul className="max-h-48 list-disc space-y-0.5 overflow-y-auto pl-5 text-xs text-slate-600">
-                  {run.stats.messages.map((message, index) => (
-                    <li key={index}>{message}</li>
-                  ))}
-                </ul>
+              <div className="h-2.5 w-full overflow-hidden rounded-full bg-surface-3" role="progressbar" aria-label="Sinxronlash jarayoni">
+                <div className="h-full w-1/3 animate-pulse rounded-full bg-primary" />
               </div>
             )}
-          </td>
-        </tr>
-      )}
-    </>
+          </div>
+        )}
+      </Card>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-5">
+      {connection}
+
+      <Section title="Sinxronlash tarixi" description="Qatorni bosing — bo'limlar bo'yicha natija va izohlar.">
+        <DataTable
+          columns={RUN_COLUMNS}
+          rows={runs?.items ?? []}
+          rowKey={(r) => r.id}
+          onRowClick={(r) => setOpenRunId(r.id)}
+          selectedKey={openRunId}
+          rowTone={(r) => (r.status === 'xato' ? 'danger' : r.status === 'ishlamoqda' ? 'info' : null)}
+          loading={hemis.runsLoading && !runs}
+          loadingRows={4}
+          error={runs ? null : hemis.runsError}
+          onRetry={() => void hemis.loadRuns()}
+          emptyTitle="Hali sinxronlash bo'lmagan"
+          emptyDescription="“Hozir sinxronlash” tugmasini bosing."
+          ariaLabel="Sinxronlash tarixi"
+          maxHeight="none"
+          footer={
+            runs
+              ? pagerFooter({ page: runs.page, totalPages: runs.totalPages, total: runs.total, pageSize: runs.pageSize, onChange: hemis.setRunsPage })
+              : undefined
+          }
+        />
+      </Section>
+
+      <Drawer
+        open={openRun !== null}
+        onClose={() => setOpenRunId(null)}
+        title="Sinxronlash natijasi"
+        subtitle={openRun ? formatDateTime(openRun.startedAt) : undefined}
+        size="lg"
+      >
+        {openRun && <RunDetails run={openRun} />}
+      </Drawer>
+    </div>
   );
 }

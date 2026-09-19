@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, ChevronDown, Loader2, RotateCcw, ScanFace, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, ChevronDown, RotateCcw, ScanFace, ShieldCheck } from 'lucide-react';
+import { Button, Skeleton, SkeletonText, cn, focusRing } from '../../ui';
+import { Notice } from '../settings/kit';
 import { ApiError } from '../../lib/apiClient';
 import { fetchConsentText, type ConsentText } from '../../lib/enrollment';
 
@@ -39,26 +41,29 @@ export default function EnrollmentConsent({ onContinue, onBack }: EnrollmentCons
   if (error) {
     return (
       <div className="flex flex-col gap-3">
-        <div className="flex items-start gap-2 rounded-xl bg-red-50 p-3 text-sm text-red-600">
-          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-          <span>{error}</span>
-        </div>
-        <button
-          type="button"
-          onClick={() => setAttempt((n) => n + 1)}
-          className="flex items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-4 py-2.5 text-sm font-semibold text-indigo-600 transition-colors hover:bg-indigo-50"
-        >
-          <RotateCcw size={15} />
+        <Notice tone="danger">{error}</Notice>
+        <Button size="lg" icon={RotateCcw} onClick={() => setAttempt((n) => n + 1)} fullWidth>
           Qayta urinish
-        </button>
+        </Button>
+        <Button variant="ghost" icon={ArrowLeft} onClick={onBack} fullWidth>
+          Orqaga
+        </Button>
       </div>
     );
   }
 
   if (!text) {
     return (
-      <div className="flex items-center justify-center py-8 text-slate-400">
-        <Loader2 size={20} className="animate-spin" />
+      <div className="flex flex-col gap-4" aria-busy="true" aria-label="Rozilik matni yuklanmoqda">
+        <div className="flex items-start gap-3">
+          <Skeleton className="h-9 w-9 shrink-0" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-3 w-1/2" />
+          </div>
+        </div>
+        <SkeletonText lines={3} />
+        <Skeleton className="h-11 w-full" />
       </div>
     );
   }
@@ -67,71 +72,67 @@ export default function EnrollmentConsent({ onContinue, onBack }: EnrollmentCons
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-start gap-2">
-        <ShieldCheck size={18} className="mt-0.5 shrink-0 text-indigo-500" />
-        <div>
-          <p className="text-sm font-bold text-slate-900">{text.title}</p>
-          <p className="text-xs text-slate-500">
-            Ma'lumotlar operatori: {text.controller} · Matn versiyasi: {text.version}
+      <div className="flex items-start gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control bg-primary-soft text-primary">
+          <ShieldCheck size={18} aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold leading-snug text-fg">{text.title}</h2>
+          <p className="mt-0.5 text-xs text-muted">
+            Ma&apos;lumotlar operatori: {text.controller} · Matn versiyasi: {text.version}
           </p>
         </div>
       </div>
 
-      <p className="text-sm leading-relaxed text-slate-600">
-        Kameralar sizni tanishi uchun yuzingiz tasviri va undan olingan raqamli shablon saqlanadi. Ular faqat davomat
-        va bino xavfsizligi uchun ishlatiladi, rozilikni esa istalgan vaqtda qaytarib olishingiz mumkin.
+      <p className="text-sm leading-relaxed text-muted">
+        Kameralar sizni tanishi uchun yuzingiz tasviri va undan olingan raqamli shablon saqlanadi. Ular faqat davomat va bino xavfsizligi uchun
+        ishlatiladi, rozilikni esa istalgan vaqtda qaytarib olishingiz mumkin.
       </p>
 
-      <div className="rounded-xl border border-white/80 bg-white/50">
+      <div className="overflow-hidden rounded-control border border-border">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
           aria-controls="consent-full-text"
-          className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm font-semibold text-indigo-600"
+          className={cn('flex min-h-11 w-full items-center justify-between gap-2 bg-surface-2 px-3.5 py-2.5 text-left text-sm font-medium text-primary hover:bg-surface-3', focusRing)}
         >
           {expanded ? "To'liq matnni yashirish" : "To'liq matnni o'qish"}
-          <ChevronDown size={16} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
+          <ChevronDown size={16} aria-hidden="true" className={cn('shrink-0 transition-transform', expanded && 'rotate-180')} />
         </button>
         {expanded && (
-          <div id="consent-full-text" className="max-h-72 space-y-3 overflow-y-auto border-t border-white/80 px-3 py-3">
+          <div id="consent-full-text" className="max-h-72 space-y-3 overflow-y-auto border-t border-border px-3.5 py-3">
             {text.sections.map((section) => (
               <div key={section.title}>
-                <p className="text-xs font-bold text-slate-700">{section.title}</p>
-                <p className="text-xs leading-relaxed text-slate-600">{section.body}</p>
+                <p className="text-[13px] font-semibold text-fg">{section.title}</p>
+                <p className="mt-0.5 text-[13px] leading-relaxed text-muted">{section.body}</p>
               </div>
             ))}
           </div>
         )}
       </div>
 
-      <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-slate-50 p-3">
-        <input
-          type="checkbox"
-          checked={agreed}
-          onChange={(e) => setAgreed(e.target.checked)}
-          className="mt-0.5 h-4 w-4 shrink-0 accent-indigo-600"
-        />
-        <span className="text-xs leading-relaxed text-slate-700">
-          <span className="font-bold">Roziman.</span> {text.statement}
+      <label
+        className={cn(
+          'flex cursor-pointer items-start gap-3 rounded-control border p-3.5 transition-colors has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-primary/40',
+          agreed ? 'border-primary bg-primary-soft' : 'border-border bg-surface hover:border-border-strong',
+        )}
+      >
+        <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer accent-primary" />
+        <span className="text-[13px] leading-relaxed text-fg">
+          <span className="font-semibold">Roziman.</span> {text.statement}
         </span>
       </label>
 
-      <button
-        type="button"
-        onClick={() => onContinue(agreed)}
-        disabled={!canContinue}
-        className="flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-btn transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        <ScanFace size={16} />
-        Yuzni skanerlashga o'tish
-      </button>
-      {!canContinue && (
-        <p className="-mt-2 text-center text-[11px] text-slate-400">Davom etish uchun rozilik belgisini qo'ying</p>
-      )}
-      <button type="button" onClick={onBack} className="text-xs font-medium text-slate-400 hover:text-slate-600">
+      <div className="flex flex-col gap-1.5">
+        <Button variant="primary" size="lg" icon={ScanFace} onClick={() => onContinue(agreed)} disabled={!canContinue} fullWidth>
+          Yuzni skanerlashga o&apos;tish
+        </Button>
+        {!canContinue && <p className="text-center text-xs text-muted">Davom etish uchun rozilik belgisini qo&apos;ying</p>}
+      </div>
+      <Button variant="ghost" icon={ArrowLeft} onClick={onBack} fullWidth>
         Orqaga
-      </button>
+      </Button>
     </div>
   );
 }
