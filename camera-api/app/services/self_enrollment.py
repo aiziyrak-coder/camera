@@ -14,13 +14,14 @@ import uuid
 from datetime import datetime, timezone
 
 import numpy as np
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models import AuditLog, StudentStaff
 
 logger = logging.getLogger("app.self_enrollment")
+_LOCK_KEY = 7_310_422_001
 
 
 def _unit(vec: list[float]) -> np.ndarray | None:
@@ -80,6 +81,11 @@ async def approve_pending(db: AsyncSession) -> tuple[int, int]:
     Ishga tushishda chaqiriladi — idempotent. Qaytaradi: (tasdiqlandi, qoldi)."""
     if not settings.self_enrollment_auto_approve:
         return 0, 0
+    # api va ai-worker bir vaqtda ishga tushadi — faqat bittasi bajaradi
+    # (tranzaksiya qulfi commit bilan bo'shaydi).
+    locked = (await db.execute(text("SELECT pg_try_advisory_xact_lock(:k)"), {"k": _LOCK_KEY})).scalar()
+    if not locked:
+        return 0, 0
     pending = (
         await db.execute(
             select(StudentStaff).where(
@@ -88,6 +94,7 @@ async def approve_pending(db: AsyncSession) -> tuple[int, int]:
         )
     ).scalars().all()
     if not pending:
+        await db.commit()
         return 0, 0
     ids, names, matrix = await _confirmed_matrix(db)
     approved, held = 0, 0
