@@ -89,6 +89,12 @@ const LIVE_EDGE_CHECK_MS = 3_000;
 // soniyadan ortiq orqada qolish allaqachon anomaliya.
 const MAX_BEHIND_LIVE_S = 3;
 const TARGET_BEHIND_LIVE_S = 1;
+// Qotib qolish nazorati: video "o'ynayapti" deb turib, shuncha vaqt ichida
+// currentTime bir millisekund ham siljimasa — oqim qotgan (kamera qayta
+// ulangan, MediaMTX yo'lni yangilagan, tarmoq uzilgan). Bunday holatda
+// hls.js ko'pincha o'zini sog' deb biladi va xato bermaydi, tasvir esa
+// operator ekranida qotib turaveradi. To'liq qayta ulanamiz.
+const FROZEN_AFTER_MS = 8_000;
 
 export default function LiveVideoPlayer({
   streamUrl,
@@ -329,7 +335,34 @@ export default function LiveVideoPlayer({
       video.currentTime = Math.max(0, edge - TARGET_BEHIND_LIVE_S);
     }
 
-    liveEdgeTimer = setInterval(() => jumpToLiveEdge(false), LIVE_EDGE_CHECK_MS);
+    let lastTime = -1;
+    let lastProgressAt = Date.now();
+    function checkFrozen() {
+      if (cancelled || !video || !hlsInstance || document.visibilityState !== 'visible') {
+        lastProgressAt = Date.now();
+        return;
+      }
+      if (video.readyState >= 2 && video.paused) {
+        // Brauzer ijroni to'xtatgan (masalan fon yorlig'idan qaytganda) —
+        // muted video uchun qayta boshlash ruxsat etilgan.
+        void video.play().catch(() => undefined);
+      }
+      if (video.currentTime !== lastTime) {
+        lastTime = video.currentTime;
+        lastProgressAt = Date.now();
+        return;
+      }
+      if (video.videoWidth > 0 && Date.now() - lastProgressAt > FROZEN_AFTER_MS) {
+        lastProgressAt = Date.now();
+        lastTime = -1;
+        scheduleRetry();
+      }
+    }
+
+    liveEdgeTimer = setInterval(() => {
+      jumpToLiveEdge(false);
+      checkFrozen();
+    }, LIVE_EDGE_CHECK_MS);
 
     // Brauzer fondagi yorliqda videoni to'xtatadi/sekinlashtiradi, qaytib
     // kelganda esa u o'sha eski nuqtadan davom etadi — devor ochiq turib

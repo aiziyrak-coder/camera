@@ -189,7 +189,44 @@ def _path_config(rtsp_url: str, *, relay: bool | None = None) -> dict:
     }
 
 
+def _switch_payload(payload: dict) -> dict:
+    """Patch uchun: rejim almashganda (transkod <-> relay) eski rejim kalitlari
+    tozalanadi, aks holda MediaMTX ikkalasini birga saqlab xato beradi."""
+    if "source" in payload:
+        return {**payload, "runOnDemand": ""}
+    return {**payload, "source": "publisher", "sourceOnDemand": False}
+
+
+def _same_config(current: dict, payload: dict) -> bool:
+    """MediaMTX'dagi yo'l konfiguratsiyasi biz yubormoqchi bo'lgan bilan bir xilmi.
+
+    Faqat biz boshqaradigan kalitlar solishtiriladi. Relay yo'lida
+    runOnDemand bo'sh bo'lishi, transkod yo'lida esa source "publisher"
+    bo'lishi kerak — aks holda eski rejim qoldig'i ishlab qolardi."""
+    for key, value in payload.items():
+        if current.get(key) != value:
+            return False
+    if "source" in payload and current.get("runOnDemand"):
+        return False
+    if "runOnDemand" in payload and current.get("source") not in (None, "", "publisher"):
+        return False
+    return True
+
+
 async def _upsert_path(client: httpx.AsyncClient, api_url: str, name: str, payload: dict) -> None:
+    """Yo'lni qo'shadi yoki yangilaydi — o'zgarish bo'lmasa MediaMTX'ga TEGMAYDI.
+
+    Har add/patch MediaMTX konfiguratsiyasini qayta yuklaydi; ilgari API va
+    ai-worker har ishga tushganda 107 ta yo'lni qayta yozardi ("reloading
+    configuration" + "path already exists" to'lqini) va ochiq oqimlar
+    silkinardi. Endi avval hozirgi holat o'qiladi."""
+    existing = await client.get(f"{api_url}/v3/config/paths/get/{name}")
+    if existing.status_code == 200:
+        if _same_config(existing.json(), payload):
+            return
+        resp = await client.patch(f"{api_url}/v3/config/paths/patch/{name}", json=_switch_payload(payload))
+        if resp.status_code < 400:
+            return
     resp = await client.post(f"{api_url}/v3/config/paths/add/{name}", json=payload)
     if resp.status_code == 400:
         resp = await client.patch(f"{api_url}/v3/config/paths/patch/{name}", json=payload)
