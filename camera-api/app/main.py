@@ -73,6 +73,8 @@ from app.routers import (
     users,
 )
 from app.seed import seed_all
+from app.services.face_matching import announce_roster_change
+from app.services.self_enrollment import approve_pending
 from app.services.stream_sync import sync_all_active_camera_streams
 
 configure_logging()
@@ -193,6 +195,13 @@ async def lifespan(app: FastAPI):
     apply_thread_limits()
     async with SessionLocal() as session:
         await seed_all(session)
+    try:
+        async with SessionLocal() as session:
+            approved, _held = await approve_pending(session)
+        if approved:
+            await announce_roster_change()
+    except Exception:  # noqa: BLE001 — ishga tushishni to'xtatmasin
+        logging.getLogger("app.self_enrollment").exception("auto-approve failed")
 
     # See app/jobs/leader_lock.py: with WEB_CONCURRENCY>1 (multiple
     # uvicorn worker processes), only one worker should run the AI sweep

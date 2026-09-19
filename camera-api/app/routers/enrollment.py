@@ -68,6 +68,7 @@ from app.schemas.enrollment import (
 from app.services.face_matching import announce_roster_change
 from app.services.inference_gate import PRIORITY_LIVE
 from app.services.privacy import record_consent
+from app.services.self_enrollment import decide_status
 from app.services.face_recognition import (
     InconsistentFacesError,
     NoFaceDetectedError,
@@ -471,10 +472,13 @@ async def submit_enrollment(
     if consent:
         record_consent(record, "royxatdan_otish")
     if record.self_registered:
-        # Institut ro'yxatida yo'q odam — administrator tasdiqlaguncha
-        # tanish ro'yxatiga kirmaydi (register_self izohiga qarang).
-        record.biometrics_status = "kutilmoqda"
-        record.biometrics_confirmed_at = None
+        # Institut ro'yxatida yo'q odam: avtomatik tasdiqlanadi, faqat yuzi
+        # boshqa odamga juda o'xshasa admin tekshiruviga qoladi.
+        new_status, reason = await decide_status(db, record, embedding)
+        record.biometrics_status = new_status
+        record.biometrics_confirmed_at = datetime.now(timezone.utc) if new_status == "tasdiqlangan" else None
+        if reason:
+            logger.warning("self-enrollment held for review", extra={"record_id": record_id, "reason": reason})
     else:
         record.biometrics_status = "tasdiqlangan"
         record.biometrics_confirmed_at = datetime.now(timezone.utc)

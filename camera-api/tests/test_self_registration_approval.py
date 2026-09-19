@@ -23,7 +23,12 @@ FRAMES = [("photos", (f"{step}.jpg", b"jpeg", "image/jpeg")) for step in ("front
 
 
 @pytest.fixture(autouse=True)
-def fake_face_pipeline(monkeypatch):
+def fake_face_pipeline(monkeypatch, request):
+    from app.config import settings
+
+    # Qo'lda tasdiqlash rejimi (self_enrollment_auto_approve=False) testlari;
+    # avtomatik rejim — TestAutoApprove.
+    monkeypatch.setattr(settings, "self_enrollment_auto_approve", request.cls is TestAutoApprove)
     async def no_liveness_check(frames):
         return None
 
@@ -175,3 +180,39 @@ class TestAdminDecides:
         result = await _register_and_submit(client)
         resp = await client.post(f"/api/students-staff/{result['id']}/biometrics/approve")
         assert resp.status_code == 401
+
+
+@pytest.mark.usefixtures("seeded")
+class TestAutoApprove:
+    async def test_a_new_face_is_approved_and_recognised_at_once(self, client: AsyncClient, db_session):
+        result = await _register_and_submit(client)
+        assert result["biometricsStatus"] == "tasdiqlangan"
+        assert result["id"] in await _known_ids(db_session)
+
+    async def test_a_face_like_someone_already_known_waits_for_review(self, client: AsyncClient, db_session):
+        import json
+
+        db_session.add(StudentStaff(full_name="Tanish Odam", type="talaba", group_or_position="DI-101",
+                                    biometrics_status="tasdiqlangan", biometric_embedding=json.dumps([0.1] * 512)))
+        await db_session.commit()
+        result = await _register_and_submit(client)
+        assert result["biometricsStatus"] == "kutilmoqda"
+
+    async def test_startup_approves_everyone_waiting_except_duplicates(self, db_session):
+        import json
+
+        from app.services.self_enrollment import approve_pending
+
+        a = StudentStaff(full_name="Kutuvchi Bir", type="talaba", group_or_position="DI-101", self_registered=True, biometrics_status="kutilmoqda",
+                         biometric_embedding=json.dumps([1.0] + [0.0] * 511))
+        b = StudentStaff(full_name="Kutuvchi Ikki", type="talaba", group_or_position="DI-101", self_registered=True, biometrics_status="kutilmoqda",
+                         biometric_embedding=json.dumps([1.0, 0.01] + [0.0] * 510))
+        c = StudentStaff(full_name="Kutuvchi Uch", type="talaba", group_or_position="DI-101", self_registered=True, biometrics_status="kutilmoqda",
+                         biometric_embedding=json.dumps([0.0, 1.0] + [0.0] * 510))
+        db_session.add_all([a, b, c])
+        await db_session.commit()
+        approved, held = await approve_pending(db_session)
+        assert (approved, held) == (2, 1)
+        # a va b — bitta yuz: bittasi tasdiqlanadi, takrori tekshiruvda qoladi.
+        assert sorted([a.biometrics_status, b.biometrics_status]) == ["kutilmoqda", "tasdiqlangan"]
+        assert c.biometrics_status == "tasdiqlangan"
