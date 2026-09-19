@@ -339,6 +339,82 @@ class DetectedFace:
     bbox: np.ndarray  # (4,) — [x1, y1, x2, y2] in the source image's pixel coordinates
     # True — oldingi kadrda tanilgan odam (skip_boxes), ataylab tahlil qilinmagan.
     tracked: bool = False
+    # Sifat o'lchovlari (faqat tahlil qilingan yuzlar uchun; aks holda None) —
+    # face_quality_ok() ga qarang.
+    det_score: float | None = None
+    # Burilish: burun uchi ko'z o'rtasidan ko'zlar oralig'iga nisbatan qancha
+    # siljigan (0 — to'g'ri qarab turibdi, ~0.5 — yarim profil).
+    yaw: float | None = None
+    # Hizalangan 112x112 kesimning Laplas dispersiyasi (xiralik o'lchovi).
+    sharpness: float | None = None
+
+
+def face_quality_ok(face) -> bool:
+    """Yuz vektori ishonchli bo'lishi uchun yetarlicha sifatlimi.
+
+    Faqat "yumshoq" moslik va avtomatik galereya uchun ishlatiladi
+    (app/jobs/attendance_ai.py): qat'iy moslik o'z chegarasi bilan
+    himoyalangan, uni sifat bo'yicha kesish tanishni kamaytirardi. Profil,
+    xira yoki detektor ikkilangan yuzning ArcFace vektori boshqa odamnikiga
+    tasodifan yaqin chiqishi mumkin — yumshoq chegarada aynan shu xavfli.
+    Sifat o'lchanmagan (eski/soxta) yuz — tekshiruvdan o'tgan hisoblanadi."""
+    if not settings.face_quality_gate_enabled:
+        return True
+    det_score = getattr(face, "det_score", None)
+    if det_score is not None and det_score < settings.face_quality_min_det_score:
+        return False
+    yaw = getattr(face, "yaw", None)
+    if yaw is not None and abs(yaw) > settings.face_quality_max_yaw:
+        return False
+    sharpness = getattr(face, "sharpness", None)
+    if sharpness is not None and sharpness < settings.face_quality_min_sharpness:
+        return False
+    return True
+
+
+def _yaw_from_kps(kps: np.ndarray) -> float | None:
+    """5 nuqta: chap ko'z, o'ng ko'z, burun, og'iz chap/o'ng burchagi."""
+    try:
+        left_eye, right_eye, nose = kps[0], kps[1], kps[2]
+    except (IndexError, TypeError):
+        return None
+    eye_distance = float(np.hypot(*(right_eye[:2] - left_eye[:2])))
+    if eye_distance <= 1e-6:
+        return None
+    eye_mid_x = (float(left_eye[0]) + float(right_eye[0])) / 2.0
+    return (float(nose[0]) - eye_mid_x) / eye_distance
+
+
+def _sharpness(crop: np.ndarray) -> float:
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY) if crop.ndim == 3 else crop
+    return float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+
+def detection_input_size(width: int, height: int) -> tuple[int, int] | None:
+    """Detektor kirish o'lchami (w, h) — kadrning o'z nisbatida.
+
+    Ilgari har kadr 640x640 ga siqilardi. Bu ikki tomonga ham yomon edi:
+      * substream (640x360) kadr kvadratga to'ldirilib, 44% bo'sh piksel
+        ham hisoblanardi;
+      * asosiy oqim (1920x1080, 2560x1440) kadri 3-4 marta kichraytirilib,
+        40 pikselli yuz 10-13 px bo'lib qolardi — detektor uni topmasdi.
+    Endi kadr uzun tomoni face_det_max_side dan oshmaydigan qilib (kichik
+    kadr — face_det_min_side gacha kattalashtiriladi, eski xatti-harakat
+    kabi) o'z nisbatida, 32 ga karrali o'lchamda tahlil qilinadi.
+    None — eski usul (prepare() dagi 640x640)."""
+    if not settings.face_det_native_resolution or width <= 0 or height <= 0:
+        return None
+    long_side = max(width, height)
+    max_side = max(32, settings.face_det_max_side)
+    min_side = min(max(32, settings.face_det_min_side), max_side)
+    scale = min(1.0, max_side / long_side)
+    if long_side * scale < min_side:
+        scale = min_side / long_side
+
+    def up32(value: float) -> int:
+        return max(32, int(np.ceil(value / 32.0)) * 32)
+
+    return up32(width * scale), up32(height * scale)
 
 
 def recognizable_faces(faces: list) -> list:
@@ -412,7 +488,11 @@ def _detect_faces_sync(
         offset_x, offset_y = x1, y1
     offset = np.array([offset_x, offset_y, offset_x, offset_y], dtype=np.float32)
     app = _get_app()
-    bboxes, kpss = app.det_model.detect(img, max_num=0, metric="default")
+    input_size = detection_input_size(img.shape[1], img.shape[0])
+    if input_size is None:
+        bboxes, kpss = app.det_model.detect(img, max_num=0, metric="default")
+    else:
+        bboxes, kpss = app.det_model.detect(img, input_size=input_size, max_num=0, metric="default")
     faces: list[DetectedFace] = []
     to_analyse: list[tuple[DetectedFace, Face]] = []
     for i in range(bboxes.shape[0]):
@@ -420,6 +500,9 @@ def _detect_faces_sync(
         face = DetectedFace(embedding=None, landmarks_68=None, bbox=local_bbox + offset)
         faces.append(face)
         kps = kpss[i] if kpss is not None else None
+        face.det_score = float(bboxes[i, 4]) if bboxes.shape[1] > 4 else None
+        if kps is not None:
+            face.yaw = _yaw_from_kps(kps)
         if not analyse or kps is None or (local_bbox[3] - local_bbox[1]) < min_face_px:
             continue
         if any(_iou(face.bbox, box) >= TRACK_IOU for box in skip_boxes):
@@ -433,6 +516,8 @@ def _detect_faces_sync(
     if recognition is not None:
         size = recognition.input_size[0]
         crops = [face_align.norm_crop(img, landmark=raw.kps, image_size=size) for _, raw in to_analyse]
+        for (face, _), crop in zip(to_analyse, crops, strict=True):
+            face.sharpness = _sharpness(crop)
         for (face, _), feat in zip(to_analyse, recognition.get_feat(crops), strict=True):
             norm = np.linalg.norm(feat)
             face.embedding = feat / norm if norm > 0 else feat

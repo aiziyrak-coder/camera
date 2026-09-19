@@ -54,6 +54,7 @@ from app.routers import (
     enrollment,
     events,
     face,
+    hisobot,
     floor_plans,
     integrations,
     lesson_sessions,
@@ -287,6 +288,7 @@ app.include_router(metrics.router)
 app.include_router(privacy.router)
 app.include_router(situation.router)
 app.include_router(situation_analytics.router)
+app.include_router(hisobot.router)
 app.include_router(attendance_policy.router)
 
 

@@ -9,6 +9,7 @@ IndexFlatIP approximate path is used (exact for normalized vectors).
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 from dataclasses import dataclass, field
@@ -19,7 +20,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import StudentStaff
+from app.models import FaceGalleryEmbedding, StudentStaff
 from app.redis_bus import _get_redis, _redis_url
 
 logger = logging.getLogger("app.face_matching")
@@ -51,6 +52,11 @@ class GradedMatch:
     similarity: float
     second_similarity: float
     grade: str  # 'strict' | 'relaxed' | 'none'
+    # Asl ro'yxat rasmi bilan o'xshashlik (galereya bo'lmasa = similarity).
+    anchor_similarity: float | None = None
+    # True — natija bitta kadrdan emas, yuz izining birlashtirilgan
+    # vektoridan (app/services/face_tracks.py).
+    fused: bool = False
 
 
 @dataclass
@@ -59,6 +65,28 @@ class CandidateMatrix:
     matrix: np.ndarray  # shape (N, 512) — rows are L2-normalized ArcFace embeddings
     person_types: dict[str, str] | None = None  # id -> 'talaba' | 'xodim'
     _faiss_index: object | None = field(default=None, repr=False, compare=False)
+    # Galereya (app/services/face_gallery.py): matritsada bir odamga bir necha
+    # qator bo'lishi mumkin. Qatorlar odam bo'yicha guruhlangan; group_starts[k]
+    # — k-odamning birinchi (ASL rasm) qatori. None — har qator = bitta odam.
+    group_starts: np.ndarray | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def has_gallery(self) -> bool:
+        return self.group_starts is not None and len(self.group_starts) < self.matrix.shape[0]
+
+    def _person_similarities(self, embeddings: np.ndarray) -> np.ndarray:
+        """(yuzlar, odamlar) — har odam uchun uning barcha namunalaridan eng yaqini."""
+        similarities = embeddings @ self.matrix.T
+        if self.group_starts is None:
+            return similarities
+        return np.maximum.reduceat(similarities, self.group_starts, axis=1)
+
+    def anchor_similarities(self, embeddings: np.ndarray, person_indices: np.ndarray) -> np.ndarray:
+        """Har yuzning ko'rsatilgan odamning ASL rasmi bilan o'xshashligi."""
+        embeddings = _normalize_rows(np.asarray(embeddings, dtype=np.float64))
+        indices = np.asarray(person_indices, dtype=np.int64)
+        rows = indices if self.group_starts is None else self.group_starts[indices]
+        return np.einsum("ij,ij->i", embeddings, self.matrix[rows])
 
     @property
     def is_empty(self) -> bool:
@@ -76,7 +104,7 @@ class CandidateMatrix:
         moslikka ishonchning o'zi. Bitta nomzod bo'lsa ikkinchisi -1."""
         embeddings = _normalize_rows(np.asarray(embeddings, dtype=np.float64))
         n = len(self.ids)
-        if self._faiss_index is not None and _FAISS_AVAILABLE:
+        if self._faiss_index is not None and _FAISS_AVAILABLE and self.group_starts is None:
             k = 2 if n >= 2 else 1
             sims, indices = self._faiss_index.search(embeddings.astype(np.float32), k)  # type: ignore[union-attr]
             best_idx = indices[:, 0].astype(np.int64)
@@ -84,7 +112,7 @@ class CandidateMatrix:
             second = sims[:, 1].astype(np.float64) if k == 2 else np.full(len(embeddings), -1.0)
             return best_idx, best_sim, second
 
-        similarities = embeddings @ self.matrix.T
+        similarities = self._person_similarities(embeddings)
         best_idx = np.argmax(similarities, axis=1)
         rows = np.arange(len(embeddings))
         best_sim = similarities[rows, best_idx]
@@ -143,19 +171,29 @@ class CandidateMatrix:
         if self.is_empty or len(embeddings) == 0:
             return [GradedMatch(None, -1.0, -1.0, "none") for _ in range(len(embeddings))]
         best_idx, best_sim, second = self.top_two(embeddings)
+        if self.has_gallery:
+            anchors = self.anchor_similarities(embeddings, np.clip(best_idx, 0, None))
+        else:
+            anchors = best_sim
+        floor = settings.face_gallery_anchor_floor
         out: list[GradedMatch] = []
-        for i, s, s2 in zip(best_idx, best_sim, second, strict=True):
+        for i, s, s2, a in zip(best_idx, best_sim, second, anchors, strict=True):
             idx = int(i)
             sim = float(s)
             sim2 = float(s2)
+            anchor = float(a)
             if idx < 0:
                 out.append(GradedMatch(None, -1.0, -1.0, "none"))
+            elif self.has_gallery and anchor < floor:
+                # Faqat galereya namunasi orqali topilgan, asl rasmga esa
+                # deyarli o'xshamaydi — namunaga ishonib nom berilmaydi.
+                out.append(GradedMatch(None, sim, sim2, "none", anchor))
             elif sim >= strict_threshold and (sim - sim2) >= strict_margin:
-                out.append(GradedMatch(self.ids[idx], sim, sim2, "strict"))
+                out.append(GradedMatch(self.ids[idx], sim, sim2, "strict", anchor))
             elif sim >= relaxed_threshold and (sim - sim2) >= margin:
-                out.append(GradedMatch(self.ids[idx], sim, sim2, "relaxed"))
+                out.append(GradedMatch(self.ids[idx], sim, sim2, "relaxed", anchor))
             else:
-                out.append(GradedMatch(None, sim, sim2, "none"))
+                out.append(GradedMatch(None, sim, sim2, "none", anchor))
         return out
 
     def best_match(
@@ -172,10 +210,50 @@ def _maybe_build_faiss_index(matrix: np.ndarray) -> object | None:
     return index
 
 
-def _build_candidate_matrix(rows: list) -> CandidateMatrix:
+def anchor_hash(embedding_json: str) -> str:
+    """Asl vektor matnining xeshi — galereya namunasi qaysi rasmga bog'liq."""
+    return hashlib.sha256(embedding_json.encode("utf-8")).hexdigest()
+
+
+def _build_with_gallery(rows: list, gallery_rows: list) -> CandidateMatrix | None:
+    """Galereyali matritsa; mos namuna bo'lmasa None."""
+    hashes = {str(row_id): anchor_hash(embedding_json) for row_id, embedding_json, _ in rows}
+    extra: dict[str, list[str]] = {}
+    for person_id, embedding_json, row_hash in gallery_rows:
+        key = str(person_id)
+        if hashes.get(key) == row_hash:
+            extra.setdefault(key, []).append(embedding_json)
+    if not extra:
+        return None
+    ids: list[str] = []
+    vectors: list[list[float]] = []
+    starts: list[int] = []
+    person_types: dict[str, str] = {}
+    for row_id, embedding_json, person_type in rows:
+        key = str(row_id)
+        ids.append(key)
+        person_types[key] = person_type
+        starts.append(len(vectors))
+        vectors.append(json.loads(embedding_json))
+        vectors.extend(json.loads(item) for item in extra.get(key, ()))
+    matrix = _normalize_rows(np.array(vectors, dtype=np.float64))
+    return CandidateMatrix(
+        ids=ids, matrix=matrix, person_types=person_types, group_starts=np.array(starts, dtype=np.int64)
+    )
+
+
+def _build_candidate_matrix(rows: list, gallery_rows: list | None = None) -> CandidateMatrix:
     """JSON matnlaridan matritsa — CPU ishi (10 000 odam × 512 son), shuning
     uchun chaqiruvchi uni alohida oqimda bajaradi: event loop'da bir necha
-    soniya turib qolsa, shu vaqt ichida API ham, sweeplar ham to'xtaydi."""
+    soniya turib qolsa, shu vaqt ichida API ham, sweeplar ham to'xtaydi.
+
+    `gallery_rows` — (odam_id, vektor_json, anchor_hash) kamera namunalari
+    (app/services/face_gallery.py); faqat asl vektori hozirgisi bilan bir xil
+    bo'lganlari qo'shiladi."""
+    if gallery_rows:
+        with_gallery = _build_with_gallery(rows, gallery_rows)
+        if with_gallery is not None:
+            return with_gallery
     ids = [str(row_id) for row_id, _, _ in rows]
     matrix = _normalize_rows(np.array([json.loads(embedding_json) for _, embedding_json, _ in rows], dtype=np.float64))
     person_types = {str(row_id): person_type for row_id, _, person_type in rows}
@@ -210,7 +288,20 @@ async def load_candidate_matrix(db: AsyncSession) -> CandidateMatrix:
     rows = result.all()
     if not rows:
         return CandidateMatrix(ids=[], matrix=np.empty((0, 0)), person_types={})
-    return await asyncio.to_thread(_build_candidate_matrix, rows)
+    gallery_rows: list = []
+    if settings.face_gallery_enabled:
+        gallery_rows = list(
+            (
+                await db.execute(
+                    select(
+                        FaceGalleryEmbedding.student_staff_id,
+                        FaceGalleryEmbedding.embedding,
+                        FaceGalleryEmbedding.anchor_hash,
+                    ).order_by(FaceGalleryEmbedding.created_at)
+                )
+            ).all()
+        )
+    return await asyncio.to_thread(_build_candidate_matrix, rows, gallery_rows)
 
 
 # Ro'yxat versiyasi — worker'lar o'rtasida kesh bekor qilinishini ulashish.

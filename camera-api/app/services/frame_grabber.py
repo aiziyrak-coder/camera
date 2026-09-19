@@ -19,6 +19,7 @@ from app.config import settings
 from app.crypto import decrypt
 from app.models import Camera
 from app.rtsp import build_rtsp_url
+from app.services import stream_promotion
 from app.services.frame_quality import looks_like_decode_damage, measure_frame
 from app.services.stream_cache import (
     get_cached_frame_with_seq,
@@ -41,7 +42,13 @@ def _is_security_camera(camera: Camera) -> bool:
     kamera davomat uchun yuz taniydi — substream'da yuz tanib bo'lmas darajada kichik."""
     if camera.is_entrance or camera.is_perimeter:
         return True
-    return settings.attendance_all_cameras and settings.ai_room_cameras_main_stream
+    if not settings.attendance_all_cameras:
+        return False
+    if settings.ai_room_cameras_main_stream:
+        return True
+    # Byudjet doirasida tanlangan xona kameralari (app/services/stream_promotion.py).
+    camera_id = getattr(camera, "id", None)
+    return camera_id is not None and stream_promotion.is_promoted(str(camera_id))
 
 
 # camera_id -> monotonic payt: shu paytgacha asosiy oqim ishlatilmaydi.

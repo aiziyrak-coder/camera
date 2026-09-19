@@ -38,7 +38,7 @@ def fake_app(monkeypatch):
     kpss = np.zeros((3, 5, 2), dtype=np.float32)
     recognition, landmarks = _FakeRecognition(), _FakeLandmarks()
     app = SimpleNamespace(
-        det_model=SimpleNamespace(detect=lambda img, max_num, metric: (bboxes, kpss)),
+        det_model=SimpleNamespace(detect=lambda img, max_num, metric, input_size=None: (bboxes, kpss)),
         models={"detection": None, "recognition": recognition, "landmark_3d_68": landmarks},
     )
     monkeypatch.setattr(face_recognition, "_get_app", lambda: app)
@@ -82,7 +82,7 @@ def test_roi_crops_the_frame_and_returns_full_frame_coordinates(fake_app, monkey
     app = face_recognition._get_app()
     original_detect = app.det_model.detect
 
-    def detect(img, max_num, metric):
+    def detect(img, max_num, metric, input_size=None):
         shapes.append(img.shape[:2])
         return original_detect(img, max_num, metric)
 

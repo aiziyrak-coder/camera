@@ -127,6 +127,79 @@ class Settings(BaseSettings):
     # har bir yuz to'liq R50 chaqiruvini olardi —
     # app/services/face_recognition.py _detect_faces_sync izohiga qarang.
     face_analysis_min_px: int = 20
+    # Detektor kadrni o'z nisbatida tahlil qiladi (app/services/face_recognition.py
+    # detection_input_size). 2026-09-19 o'lchovi: 107 kameraning 99 tasi AI
+    # uchun 640x360 substreamdan o'qiladi — ular uchun 640x384 kirish eski
+    # 640x640 dan ~40% arzon. Asosiy oqim (1920-2560 px) esa 1280 gacha
+    # tahlil qilinadi: 640 ga siqilganda 40 px lik yuz 10-13 px bo'lib
+    # detektordan tushib qolardi. False — eski 640x640.
+    # O'lchov (ai-worker, AVX'siz QEMU CPU, 2 oqim): 640x640 — 705 ms,
+    # 640x384 — 421 ms, 1280x736 — 1652 ms. 960 — murosa (~1 s): 1080p
+    # kadrdagi 40 px yuz detektorda ~20 px (SCRFD ~10 px dan topadi),
+    # embedding esa baribir TO'LIQ o'lchamli kadrdan olinadi.
+    face_det_native_resolution: bool = True
+    face_det_max_side: int = 960
+    face_det_min_side: int = 640
+    # Yuz sifati darvozasi (face_recognition.face_quality_ok): faqat YUMSHOQ
+    # moslik va avtomatik galereya uchun. Qat'iy moslik bunga bog'liq emas.
+    face_quality_gate_enabled: bool = True
+    face_quality_min_det_score: float = 0.60
+    # |burun siljishi| / ko'zlar oralig'i; ~0.35 — taxminan 35-40 daraja burilish.
+    face_quality_max_yaw: float = 0.35
+    # Hizalangan 112x112 kesimning Laplas dispersiyasi; shundan past — xira.
+    face_quality_min_sharpness: float = 25.0
+    # Kamera-domen galereyasi (app/services/face_gallery.py). Productionda
+    # ro'yxatdagi rasm — hujjat rasmi, kamera kadri esa boshqa yorug'lik va
+    # burchak: tanilgan tashriflarning 82% i o'xshashlik 0.45-0.60 da
+    # (2026-09-19). Ishonchli (yuqori o'xshashlik, katta, sifatli) tanilgan
+    # yuzning vektori odamning qo'shimcha namunasi sifatida saqlanadi va
+    # keyingi safar odam "asl rasm YOKI kamera namunalari"dan eng yaqiniga
+    # solishtiriladi — o'sha kamera sharoitida o'xshashlik sezilarli oshadi.
+    # Namuna faqat ASL rasm bilan o'xshashlik gallery_min_similarity dan
+    # yuqori bo'lganda qo'shiladi (galereya namunasi orqali emas) — boshqa
+    # odamning yuzi galereyaga "sirg'alib" kirib qolmasligi uchun.
+    face_gallery_enabled: bool = True
+    face_gallery_auto_add: bool = True
+    face_gallery_min_similarity: float = 0.58
+    face_gallery_min_margin: float = 0.10
+    face_gallery_min_face_px: int = 56
+    face_gallery_max_per_person: int = 5
+    # Mavjud namunaga shundan yaqin bo'lsa yangisi qo'shilmaydi (takror).
+    face_gallery_dedupe_similarity: float = 0.90
+    # Bitta odamga ikki namuna orasidagi eng qisqa vaqt.
+    face_gallery_min_interval_seconds: int = 600
+    # Galereya namunasi orqali topilgan moslik uchun qo'shimcha talab:
+    # asl rasm bilan o'xshashlik ham kamida shuncha bo'lsin.
+    face_gallery_anchor_floor: float = 0.30
+    # Kadrlar bo'yicha yuz izini birlashtirish (app/services/face_tracks.py).
+    # Auditoriyada o'tirgan odam bir joyda qoladi: shu joydagi yuzning
+    # bir necha kadrdagi vektorlari o'rtachalanadi — shovqin kamayadi va
+    # o'xshashlik ko'tariladi. Tanilmagan yuzlar uchungina ishlaydi.
+    face_track_fusion_enabled: bool = True
+    face_track_iou: float = 0.30
+    face_track_max_age_seconds: float = 180.0
+    # Izga qo'shilayotgan yangi vektor iz o'rtachasiga shundan kam o'xshash
+    # bo'lsa — bu boshqa odam, iz yangidan boshlanadi.
+    face_track_min_self_similarity: float = 0.35
+    face_track_max_frames: int = 8
+    # Birlashtirilgan iz kamida shuncha kadrdan iborat bo'lsa ishlatiladi.
+    face_track_min_frames: int = 2
+    # Asosiy oqimga tanlab o'tkazish (app/services/stream_promotion.py). Tarmoq
+    # hamma xona kamerasining 4K oqimini ko'tarmaydi (ai_room_cameras_main_stream
+    # =False), lekin yuz ko'rinadigan-u, kichikligi sababli tanilmaydigan bir
+    # nechta kamerani asosiy oqimga o'tkazish mumkin. Byudjet — bir vaqtda
+    # asosiy oqimda ishlaydigan xona kameralari soni.
+    ai_main_stream_promotion_enabled: bool = True
+    ai_main_stream_promotion_budget: int = 3
+    # Kamerada bugun kamida shuncha yuz ko'ringan bo'lsin...
+    ai_main_stream_promotion_min_faces: int = 10
+    # ...va ularning o'rtacha balandligi shu oraliqda bo'lsin: pastroq —
+    # asosiy oqimda ham tanib bo'lmaydi; yuqoriroq — substream yetarli.
+    ai_main_stream_promotion_min_px: int = 10
+    ai_main_stream_promotion_max_px: int = 40
+    # Tanlangan kamera kamida shuncha vaqt asosiy oqimda qoladi.
+    ai_main_stream_promotion_hold_seconds: int = 1800
+    ai_main_stream_promotion_refresh_seconds: int = 120
     # Yuzi hech qachon tanib bo'lmaydigan kameralar (keng qamrovli
     # auditoriya/koridor kameralari) yuz sweepidan chiqariladi.
     #

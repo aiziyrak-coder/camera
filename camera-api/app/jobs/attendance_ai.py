@@ -51,7 +51,10 @@ from app.models import AttendanceRecord, AuditLog, Camera, StudentStaff
 from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, find_best_match as _vectorized_find_best_match, load_candidate_matrix_for_sweep
 from app.services.attendance_policy import current_policy, load_policy
-from app.services.face_recognition import detect_faces, recognizable_faces
+from app.services import face_gallery
+from app.services.face_matching import GradedMatch
+from app.services.face_recognition import detect_faces, face_quality_ok, recognizable_faces
+from app.services.face_tracks import track_store
 from app.services.inference_gate import PRIORITY_ATTENDANCE, PRIORITY_BACKGROUND
 from app.services.frame_grabber import (
     frame_wait_seconds_for_camera,
@@ -85,6 +88,39 @@ STUDENT_ATTENDANCE_MODULE_CODE = 7
 # Concurrent camera pipelines share app/jobs/sweep_concurrency.global_camera_semaphore
 # (ai_global_sweep_concurrency in .env) — separate from face_recognition inference cap.
 _sweep_guard = SweepGuard("attendance_ai")
+
+
+def _fuse_tracks(camera_key: str, usable: list, graded: list, candidates: CandidateMatrix) -> list:
+    """Tanilmagan yuzlarni ularning izi bo'yicha birlashtirilgan vektor bilan
+    qayta baholaydi (app/services/face_tracks.py). Birlashtirilgan natija
+    faqat bitta kadrnikidan YAXSHIROQ bo'lsa (tanilmagan -> tanilgan)
+    almashtiriladi; bitta kadrda allaqachon tanilgan yuz o'zgarmaydi."""
+    fused = track_store.update(camera_key, usable, monotonic())
+    indices = [
+        i for i, (match, item) in enumerate(zip(graded, fused, strict=True))
+        if item.embedding is not None and match.person_id is None
+    ]
+    if not indices:
+        return graded
+    regraded = candidates.graded_matches(
+        np.stack([fused[i].embedding for i in indices]),
+        strict_threshold=settings.attendance_ai_match_threshold,
+        relaxed_threshold=_relaxed_threshold(),
+        margin=settings.attendance_ai_relaxed_margin,
+        strict_margin=settings.attendance_ai_strict_margin,
+    )
+    out = list(graded)
+    for i, match in zip(indices, regraded, strict=True):
+        if match.person_id is not None:
+            out[i] = GradedMatch(
+                match.person_id,
+                match.similarity,
+                match.second_similarity,
+                match.grade,
+                match.anchor_similarity,
+                fused=True,
+            )
+    return out
 
 
 def _relaxed_threshold() -> float:
@@ -479,6 +515,8 @@ async def process_camera_frame(
             margin=settings.attendance_ai_relaxed_margin,
             strict_margin=settings.attendance_ai_strict_margin,
         )
+        if settings.face_track_fusion_enabled and camera_key is not None:
+            graded = await asyncio.to_thread(_fuse_tracks, camera_key, usable, graded, candidates)
     recognition_stats.record_frame(camera_key, faces, graded)
 
     matched_ids: set[str] = set()
@@ -509,6 +547,10 @@ async def process_camera_frame(
             # qolganlari esa ikkinchi ko'rinish bilan tasdiqlanishi shart.
             if small_face:
                 continue
+            # Profil/xira yuzning vektori tasodifan boshqa odamga yaqin
+            # chiqishi mumkin — yumshoq chegarada unga ishonilmaydi.
+            if not face_quality_ok(face):
+                continue
             if not recognition_stats.confirm_relaxed(student_staff_id):
                 recognition_stats.record_credit(camera_key, "relaxed_pending")
                 continue
@@ -527,6 +569,13 @@ async def process_camera_frame(
                 "face_px": recognition_stats.face_height_px(face),
             },
         )
+        if match.grade == "strict" and not getattr(match, "fused", False):
+            try:
+                if await face_gallery.maybe_add(db, face, match, camera.id if camera is not None else None):
+                    await db.commit()
+            except Exception:
+                await db.rollback()
+                logger.warning("face gallery update failed", exc_info=True)
         if camera is not None:
             # "Kim qayerda qachon bo'lgani" — kunlik davomatdan mustaqil.
             await record_visit(db, student_staff_id, camera.id, moment, similarity)

@@ -5,6 +5,7 @@ from app.models.attendance_policy import AttendancePolicy
 from app.models.audit_log import AuditLog
 from app.models.camera import Camera
 from app.models.event import Event
+from app.models.face_gallery import FaceGalleryEmbedding
 from app.models.lesson_attendance import LessonAttendance
 from app.models.lesson_session import LessonSession
 from app.models.module_suppression import ModuleCameraSuppression
@@ -39,6 +40,7 @@ __all__ = [
     "AuditLog",
     "Camera",
     "Event",
+    "FaceGalleryEmbedding",
     "AIModuleConfig",
     "AttendanceRecord",
     "LessonSession",

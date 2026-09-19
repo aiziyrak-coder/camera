@@ -72,11 +72,20 @@ def _fresh_inference_cache():
 
     from app.jobs.lesson_quality_ai import reset_sampling_for_tests
 
+    from app.services import face_gallery, stream_promotion
+    from app.services.face_tracks import track_store
+
     inference_cache.clear()
     reset_sampling_for_tests()
+    track_store.clear()
+    face_gallery.reset_for_tests()
+    stream_promotion.reset_for_tests()
     yield
     inference_cache.clear()
     reset_sampling_for_tests()
+    track_store.clear()
+    face_gallery.reset_for_tests()
+    stream_promotion.reset_for_tests()
 
 
 @pytest_asyncio.fixture(autouse=True)
