@@ -66,6 +66,7 @@ from app.routers import (
     reports,
     situation,
     situation_analytics,
+    attendance_policy,
     students_staff,
     system,
     users,
@@ -286,6 +287,7 @@ app.include_router(metrics.router)
 app.include_router(privacy.router)
 app.include_router(situation.router)
 app.include_router(situation_analytics.router)
+app.include_router(attendance_policy.router)
 
 
 @app.get("/health")

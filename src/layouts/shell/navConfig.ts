@@ -3,6 +3,7 @@ import {
   BookUser,
   BrainCircuit,
   CalendarClock,
+  Clock,
   Cctv,
   ChartColumn,
   Contact,
@@ -76,6 +77,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: 'Sozlamalar',
     items: [
       { to: '/sozlamalar/kameralar', label: 'Kameralar', icon: Cctv, permission: 'editCameraLocation' },
+      { to: '/sozlamalar/ish-vaqti', label: 'Ish vaqti', icon: Clock, permission: 'manageAttendance' },
       { to: '/sozlamalar/ai', label: 'AI modullar', icon: BrainCircuit, permission: 'configureAi' },
       { to: '/sozlamalar/bildirishnomalar', label: 'Bildirishnomalar', icon: BellRing, permission: 'manageNotifications' },
       { to: '/sozlamalar/integratsiyalar', label: 'Integratsiyalar', icon: PlugZap, permission: 'manageIntegrations' },

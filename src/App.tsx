@@ -26,6 +26,7 @@ const KafedrasPage = lazyPage(() => import('./pages/teachers/KafedrasPage'));
 const KafedraPage = lazyPage(() => import('./pages/teachers/KafedraPage'));
 const LessonsPage = lazyPage(() => import('./pages/lessons/LessonsPage'));
 const PersonPage = lazyPage(() => import('./pages/person/PersonPage'));
+const WorkHoursPage = lazyPage(() => import('./pages/settings/WorkHoursPage'));
 const SystemPage = lazyPage(() => import('./pages/settings/SystemPage'));
 const StyleGuidePage = lazyPage(() => import('./pages/settings/StyleGuidePage'));
 
@@ -147,6 +148,9 @@ export default function App() {
               </Route>
               <Route element={<RequirePermission permission="managePrivacy" />}>
                 <Route path="/sozlamalar/maxfiylik" element={<PrivacyPage />} />
+              </Route>
+              <Route element={<RequirePermission permission="manageAttendance" />}>
+                <Route path="/sozlamalar/ish-vaqti" element={<WorkHoursPage />} />
               </Route>
               <Route element={<RequirePermission permission="systemSettings" />}>
                 <Route path="/sozlamalar/tizim" element={<SystemPage />} />

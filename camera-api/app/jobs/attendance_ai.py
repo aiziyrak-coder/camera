@@ -50,6 +50,7 @@ from app.jobs.sweep_concurrency import camera_sweep_slot, entrance_exit_sweep_sl
 from app.models import AttendanceRecord, AuditLog, Camera, StudentStaff
 from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, find_best_match as _vectorized_find_best_match, load_candidate_matrix_for_sweep
+from app.services.attendance_policy import current_policy, load_policy
 from app.services.face_recognition import detect_faces, recognizable_faces
 from app.services.inference_gate import PRIORITY_ATTENDANCE, PRIORITY_BACKGROUND
 from app.services.frame_grabber import (
@@ -108,7 +109,12 @@ def _is_off_hours(occurred_time: time_type, *, at_entrance: bool = True) -> bool
     return occurred_time < start or (at_entrance and occurred_time >= end)
 
 
-def first_sighting_status(occurred_time: time_type, camera: Camera | None) -> tuple[str, time_type | None]:
+def first_sighting_status(
+    occurred_time: time_type,
+    camera: Camera | None,
+    person_type: str | None = None,
+    day=None,
+) -> tuple[str, time_type | None]:
     """Kunning birinchi ko'rinishidan davomat holati va kelish vaqti.
 
     Kelish vaqti faqat KIRISH kamerasi ko'rganda ma'lum. Boshqa kamera odamni
@@ -135,9 +141,11 @@ def first_sighting_status(occurred_time: time_type, camera: Camera | None) -> tu
 
     `camera` bo'lmasa (qo'lda/test chaqiruvi) — avvalgi xatti-harakat.
 
-    ATTENDANCE_ARRIVAL_ONLY: har doim "keldi" va ko'ringan soat."""
+    ATTENDANCE_ARRIVAL_ONLY: kelish vaqti — kunning birinchi ko'rinishi
+    (istalgan kamera), holat esa ish vaqti qoidasidan
+    (app/services/attendance_policy.py: 08:00 + 10 daqiqadan keyin — kech)."""
     if settings.attendance_arrival_only:
-        return "keldi", occurred_time
+        return current_policy().arrival_status(occurred_time, person_type, day), occurred_time
     cutoff = time_type.fromisoformat(settings.attendance_ai_late_cutoff)
     if occurred_time < cutoff:
         return "keldi", occurred_time
@@ -206,6 +214,7 @@ async def upsert_attendance_from_recognition(
     Kunlik davomat dars jadvaliga BOG'LIQ EMAS — institut talabi. Qaysi
     darsda qachon bo'lgani alohida, tashriflar orqali ko'rsatiladi
     (app/models/presence_visit.py, app/routers/presence.py)."""
+    policy = await load_policy(db)
     local_occurred_at = to_local(occurred_at)
     record_date = local_occurred_at.date()
     occurred_time = local_occurred_at.time().replace(microsecond=0)
@@ -231,7 +240,10 @@ async def upsert_attendance_from_recognition(
     person: StudentStaff | None = None
 
     if is_first_sighting_today:
-        status, check_in = first_sighting_status(occurred_time, camera)
+        person = await db.get(StudentStaff, student_staff_id)
+        status, check_in = first_sighting_status(
+            occurred_time, camera, person.type if person else None, record_date
+        )
 
         # on_conflict_do_nothing (not do_update): a concurrent sighting on
         # another camera may have inserted the row a moment ago — that
@@ -276,6 +288,22 @@ async def upsert_attendance_from_recognition(
         )
         record = (await db.execute(stmt.execution_options(populate_existing=True))).scalar_one()
         wrote_something = True
+    elif (
+        not wrote_something
+        and existing is not None
+        and settings.attendance_arrival_only
+        and policy.track_last_seen
+        and _is_later_sighting(existing, occurred_time)
+    ):
+        # Oxirgi ko'rinish (istalgan kamera) — "ketdi / oxirgi ko'rilgan".
+        # Daqiqada bir martadan ko'p yozilmaydi.
+        stmt = (
+            update(AttendanceRecord)
+            .where(AttendanceRecord.id == existing.id)
+            .values(check_out=occurred_time)
+            .returning(AttendanceRecord)
+        )
+        record = (await db.execute(stmt.execution_options(populate_existing=True))).scalar_one()
     elif not wrote_something:
         record = existing
 
@@ -331,6 +359,15 @@ async def upsert_attendance_from_recognition(
     if created:
         await _announce_attendance(record, person, camera)
     return record
+
+
+def _is_later_sighting(record: AttendanceRecord, occurred_time: time_type) -> bool:
+    last = record.check_out or record.check_in
+    if last is None:
+        return False
+    return (occurred_time.hour * 3600 + occurred_time.minute * 60 + occurred_time.second) - (
+        last.hour * 3600 + last.minute * 60 + last.second
+    ) >= 60
 
 
 async def _announce_attendance(record: AttendanceRecord, person: StudentStaff | None, camera: Camera | None) -> None:

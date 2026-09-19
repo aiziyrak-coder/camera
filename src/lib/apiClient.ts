@@ -114,6 +114,8 @@ export const api = {
     request<T>(path, { method: 'POST', body, token, signal: opts.signal }),
   patch: <T>(path: string, body: unknown, token?: string | null, opts: CallOptions = {}) =>
     request<T>(path, { method: 'PATCH', body, token, signal: opts.signal }),
+  put: <T>(path: string, body: unknown, token?: string | null, opts: CallOptions = {}) =>
+    request<T>(path, { method: 'PUT', body, token, signal: opts.signal }),
   del: (path: string, token?: string | null, opts: CallOptions = {}) =>
     request<void>(path, { method: 'DELETE', token, signal: opts.signal }),
   postForm: <T>(path: string, form: FormData, token?: string | null, opts: CallOptions = {}) =>

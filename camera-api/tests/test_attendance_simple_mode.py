@@ -22,14 +22,19 @@ def _camera(**flags):
 
 
 class TestArrivalOnly:
-    def test_late_entrance_sighting_is_just_keldi_with_time(self, monkeypatch):
+    def test_first_sighting_on_any_camera_uses_work_hours(self, monkeypatch):
+        """08:00 + 10 daqiqa: 08:10 gacha keldi, keyin kech keldi — kamera turi ahamiyatsiz."""
         monkeypatch.setattr(settings, "attendance_arrival_only", True)
-        status, check_in = first_sighting_status(time(10, 42), _camera(is_entrance=True, face_direction="kirish"))
-        assert (status, check_in) == ("keldi", time(10, 42))
+        room = _camera(room_type="auditoriya")
+        assert first_sighting_status(time(8, 10), room) == ("keldi", time(8, 10))
+        assert first_sighting_status(time(8, 11), room) == ("kech_keldi", time(8, 11))
+        assert first_sighting_status(time(17, 55), _camera(is_entrance=True)) == ("kech_keldi", time(17, 55))
 
-    def test_room_camera_also_records_the_time(self, monkeypatch):
+    def test_weekend_is_never_late(self, monkeypatch):
+        from datetime import date
+
         monkeypatch.setattr(settings, "attendance_arrival_only", True)
-        assert first_sighting_status(time(15, 5), _camera(room_type="auditoriya")) == ("keldi", time(15, 5))
+        assert first_sighting_status(time(11, 0), _camera(), "xodim", date(2026, 9, 20))[0] == "keldi"
 
     def test_off_keeps_the_late_rule(self, monkeypatch):
         monkeypatch.setattr(settings, "attendance_arrival_only", False)
@@ -98,7 +103,7 @@ class TestModeScript:
 
 @pytest.mark.usefixtures("seeded")
 class TestArrivalOnlyRecords:
-    async def test_first_sighting_keldi_with_time_and_no_check_out(self, db_session, monkeypatch):
+    async def test_first_sighting_on_room_camera_is_arrival_and_last_sighting_is_departure(self, db_session, monkeypatch):
         from datetime import datetime, timedelta
 
         from sqlalchemy import select
@@ -124,14 +129,16 @@ class TestArrivalOnlyRecords:
         names = {c.name for c in await _entrance_cameras(db_session)}
         assert {"Eshik", "211-xona"} <= names  # xona kamerasi ham davomat qiladi
 
-        late = datetime.now(INSTITUTE_TZ).replace(hour=10, minute=37, second=0, microsecond=0)
+        # Dushanba, 10:37 — 08:10 dan keyin, birinchi ko'rinish xona kamerasida.
+        late = datetime(2026, 9, 21, 10, 37, tzinfo=INSTITUTE_TZ)
         first = await upsert_attendance_from_recognition(db_session, str(person.id), late, room)
-        assert first.status == "keldi"
+        assert first.status == "kech_keldi"
         assert first.check_in.strftime("%H:%M") == "10:37"
 
         evening = await upsert_attendance_from_recognition(db_session, str(person.id), late + timedelta(hours=7), door)
-        assert evening.check_out is None  # ketish yozilmaydi
+        assert evening.check_out.strftime("%H:%M") == "17:37"  # oxirgi ko'rinish — ketdi
         assert evening.check_in.strftime("%H:%M") == "10:37"
+        assert evening.status == "kech_keldi"
 
 
 class TestBandwidthPriority:

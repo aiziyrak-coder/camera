@@ -1,6 +1,7 @@
 from app.database import Base
 from app.models.ai_module import AIModuleConfig
 from app.models.attendance import AttendanceRecord
+from app.models.attendance_policy import AttendancePolicy
 from app.models.audit_log import AuditLog
 from app.models.camera import Camera
 from app.models.event import Event
@@ -27,6 +28,7 @@ from app.models.user import User
 
 __all__ = [
     "Base",
+    "AttendancePolicy",
     "User",
     "Permission",
     "Faculty",
