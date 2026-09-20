@@ -10,6 +10,7 @@ APP_DIR=${APP_DIR:-/opt/camera/camera-api}
 OUT_DIR=${OUT_DIR:-$HOME/camera-backups}
 RETENTION_DAYS=${RETENTION_DAYS:-14}
 WEB_ROOT=${WEB_ROOT:-/var/www/cam.fermi.uz}
+MINIO_VOLUME=${MINIO_VOLUME:-camera-api_minio_data}
 STAMP=$(date +%F-%H%M)
 
 mkdir -p "$OUT_DIR"
@@ -36,7 +37,10 @@ fi
 
 # 3. Yuzlar va hodisa rasmlari (MinIO) — haftada bir (yakshanba), hajmi katta.
 if [ "$(date +%u)" = "7" ]; then
-    docker compose exec -T minio sh -c 'tar -cz -C /data camera-uploads' > "$OUT_DIR/minio-$STAMP.tgz" \
+    # MinIO obrazida tar yo'q — arxivni api obrazi bilan olamiz (volume read-only).
+    img=$(docker compose images -q api | head -1)
+    docker run --rm -v "$MINIO_VOLUME":/data:ro --entrypoint tar "$img" -cz -C /data camera-uploads \
+        > "$OUT_DIR/minio-$STAMP.tgz" \
         && echo "$(date -Is) minio: $(du -h "$OUT_DIR/minio-$STAMP.tgz" | cut -f1)"
     tar -czf "$OUT_DIR/www-$STAMP.tgz" -C "$WEB_ROOT" . 2>/dev/null || true
 fi
