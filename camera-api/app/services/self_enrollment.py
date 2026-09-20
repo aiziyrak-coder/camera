@@ -66,8 +66,12 @@ def lookalike(
 
 
 async def decide_status(db: AsyncSession, record: StudentStaff, embedding: list[float]) -> tuple[str, str | None]:
-    """Yangi topshirilgan yuz uchun: ("tasdiqlangan", None) yoki ("kutilmoqda", sabab)."""
-    if not settings.self_enrollment_auto_approve:
+    """Yangi topshirilgan yuz uchun: ("tasdiqlangan", None) yoki ("kutilmoqda", sabab).
+
+    Avtomatik tasdiqlash o'chirilgan bo'lsa — eski tartib: ro'yxatda bor
+    odam darhol tasdiqlanadi, o'zini o'zi qo'shgan odam admin qaroriga
+    qoladi. O'xshash yuz tekshiruvi esa har doim ishlaydi."""
+    if not settings.self_enrollment_auto_approve and record.self_registered:
         return "kutilmoqda", None
     ids, names, matrix = await _confirmed_matrix(db)
     hit = lookalike(embedding, ids, names, matrix, record.id)

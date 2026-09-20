@@ -36,7 +36,12 @@ export function useApiResource<T>(path: string | null) {
           err instanceof ApiError ? err.message : "Ma'lumotni yuklab bo'lmadi — ulanishni tekshiring",
         );
       })
-      .finally(() => setLoading(false));
+      // Bekor qilingan so'rovning `finally`si yangisidan keyin kelardi —
+      // shunda yangi so'rov hali ketayotgan bo'lsa ham "yuklanmoqda" o'chib,
+      // ekran bir zumda "bo'sh" ko'rinardi.
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
     return () => controller.abort();
   }, [path, token, nonce]);
 

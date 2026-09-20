@@ -1,22 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
 import { AlarmClock, Clock } from 'lucide-react';
 import { Badge, type Tone } from '../../ui';
 import { isOpenStatus, slaInfo } from '../../lib/eventWorkflow';
+import { useSharedNow } from '../../lib/sharedClock';
 import type { AIEvent } from '../../types';
-
-const TICK_MS = 30_000;
-
-/** Joriy vaqt — har 30 soniyada yangilanadi (qolgan vaqt sanog'i uchun). */
-function useNow(enabled: boolean): Date {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    if (!enabled) return;
-    setNow(new Date());
-    const id = window.setInterval(() => setNow(new Date()), TICK_MS);
-    return () => window.clearInterval(id);
-  }, [enabled]);
-  return now;
-}
 
 const TONE: Record<'ok' | 'soon' | 'overdue', Tone> = {
   ok: 'neutral',
@@ -28,7 +15,9 @@ const TONE: Record<'ok' | 'soon' | 'overdue', Tone> = {
  *  qilingan hodisada hech narsa ko'rsatilmaydi. */
 export default function SlaBadge({ event, className = '' }: { event: Pick<AIEvent, 'status' | 'dueAt'>; className?: string }) {
   const active = !!event.dueAt && isOpenStatus(event.status);
-  const now = useNow(active);
+  // Umumiy soat: ro'yxatdagi har bir yorliq o'z taymerini ochmaydi.
+  const nowMs = useSharedNow(active);
+  const now = useMemo(() => new Date(nowMs), [nowMs]);
   const info = slaInfo(event, now);
   if (info.state === 'none') return null;
   const Icon = info.state === 'overdue' ? AlarmClock : Clock;

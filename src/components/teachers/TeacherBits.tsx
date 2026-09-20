@@ -20,8 +20,11 @@ export function TodayLessons({ t, className }: { t: KafedraTeacher; className?: 
   );
 }
 
-/** PersonCard pastidagi qism: bugungi darslar + davrdagi o'z vaqtida halqasi. */
+/** PersonCard pastidagi qism: bugungi darslar + davrdagi o'z vaqtida halqasi.
+ *  Dars jadvali yo'q bo'lsa (na bugun, na davrda) bu qism umuman
+ *  chizilmaydi — "Darsi yo'q · Faollik: —" har kartada takrorlanardi. */
 export function TeacherCardMeta({ t }: { t: KafedraTeacher }) {
+  if (t.lessonsScheduled === 0 && t.periodLessons === 0) return null;
   return (
     <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-border pt-2">
       <div className="min-w-0">

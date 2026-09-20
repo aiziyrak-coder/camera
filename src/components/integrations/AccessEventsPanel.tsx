@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { ArrowDownLeft, ArrowUpRight } from 'lucide-react';
-import { Badge, DataTable, Input, SearchInput, Select, Toolbar, cn, focusRing, type DataTableColumn } from '../../ui';
+import { Badge, DataTable, FilterBar, Input, cn, focusRing, type DataTableColumn, type FilterFieldEntry } from '../../ui';
 import { pagerFooter } from '../settings/kit';
 import { useServerPage } from '../../lib/useServerPage';
 import { formatDateTime, peopleSearchLink, type AccessDevice, type AccessEventItem } from '../../lib/integrationsApi';
@@ -25,10 +25,6 @@ const MATCHED_OPTIONS = [
   { value: 'false', label: 'Aniqlanmagan' },
 ];
 
-function activeCount(filters: AccessEventFilters): number {
-  return Object.values(filters).filter((value) => value.trim() !== '').length;
-}
-
 /** Kirish hodisalari filtrlari — sahifaning `toolbar` joyida. */
 export function AccessEventsToolbar({
   filters,
@@ -40,42 +36,50 @@ export function AccessEventsToolbar({
   devices: AccessDevice[];
 }) {
   const set = <K extends keyof AccessEventFilters>(key: K, value: AccessEventFilters[K]) => onChange({ ...filters, [key]: value });
-  return (
-    <Toolbar activeCount={activeCount(filters)} onReset={() => onChange(EMPTY_ACCESS_EVENT_FILTERS)}>
-      <SearchInput value={filters.search} onChange={(v) => set('search', v)} placeholder="Ism, karta yoki xodim raqami" />
-      <Select
-        value={filters.deviceId}
-        onChange={(v) => set('deviceId', v)}
-        placeholder="Barcha qurilmalar"
-        ariaLabel="Qurilma"
-        highlightActive
-        options={devices.map((d) => ({ value: d.id, label: d.name }))}
-      />
-      <Select value={filters.granted} onChange={(v) => set('granted', v)} placeholder="Ruxsat: hammasi" ariaLabel="Natija" highlightActive options={GRANTED_OPTIONS} />
-      <Select value={filters.matched} onChange={(v) => set('matched', v)} placeholder="Odam: hammasi" ariaLabel="Odam" highlightActive options={MATCHED_OPTIONS} />
-      <div className="flex w-full items-center gap-2 sm:w-auto">
-        <Input
-          type="date"
-          value={filters.from}
-          max={filters.to || undefined}
-          onChange={(e) => set('from', e.target.value)}
-          aria-label="Sanadan"
-          className="min-w-0 flex-1 sm:w-40 sm:flex-none"
-        />
-        <span className="text-muted" aria-hidden="true">
-          –
-        </span>
-        <Input
-          type="date"
-          value={filters.to}
-          min={filters.from || undefined}
-          onChange={(e) => set('to', e.target.value)}
-          aria-label="Sanagacha"
-          className="min-w-0 flex-1 sm:w-40 sm:flex-none"
-        />
-      </div>
-    </Toolbar>
-  );
+  const fields: FilterFieldEntry[] = [
+    { kind: 'search', value: filters.search, onChange: (v) => set('search', v), placeholder: 'Ism, karta yoki xodim raqami' },
+    {
+      kind: 'select',
+      value: filters.deviceId,
+      onChange: (v) => set('deviceId', v),
+      placeholder: 'Barcha qurilmalar',
+      ariaLabel: 'Qurilma',
+      options: devices.map((d) => ({ value: d.id, label: d.name })),
+    },
+    { kind: 'select', value: filters.granted, onChange: (v) => set('granted', v), placeholder: 'Ruxsat: hammasi', ariaLabel: 'Natija', options: GRANTED_OPTIONS },
+    { kind: 'select', value: filters.matched, onChange: (v) => set('matched', v), placeholder: 'Odam: hammasi', ariaLabel: 'Odam', options: MATCHED_OPTIONS },
+    {
+      kind: 'custom',
+      active: Boolean(filters.from || filters.to),
+      onClear: () => onChange({ ...filters, from: '', to: '' }),
+      render: (
+        <div className="flex w-full items-center gap-2 sm:w-auto">
+          <Input
+            type="date"
+            value={filters.from}
+            max={filters.to || undefined}
+            onChange={(e) => set('from', e.target.value)}
+            aria-label="Sanadan"
+            className="min-w-0 flex-1 sm:w-40 sm:flex-none"
+          />
+          <span className="text-muted" aria-hidden="true">
+            –
+          </span>
+          <Input
+            type="date"
+            value={filters.to}
+            min={filters.from || undefined}
+            onChange={(e) => set('to', e.target.value)}
+            aria-label="Sanagacha"
+            className="min-w-0 flex-1 sm:w-40 sm:flex-none"
+          />
+        </div>
+      ),
+    },
+  ];
+  // Tozalash — bitta yozuvda (har maydon alohida `onChange` chaqirsa,
+  // oxirgisi qolgan barchasini bosib ketardi: `filters` — bitta obyekt).
+  return <FilterBar fields={fields} onReset={() => onChange(EMPTY_ACCESS_EVENT_FILTERS)} />;
 }
 
 function Direction({ value }: { value: string | null }) {
@@ -173,7 +177,7 @@ export default function AccessEventsPanel({ filters }: { filters: AccessEventFil
     },
     25,
   );
-  const filtered = activeCount(filters) > 0;
+  const filtered = Object.values(filters).some((v) => v.trim() !== '');
 
   return (
     <DataTable

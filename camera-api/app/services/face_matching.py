@@ -280,9 +280,12 @@ async def load_candidate_matrix(db: AsyncSession) -> CandidateMatrix:
             # (app/jobs/cleanup.py). Faollik o'zgarganda
             # app/routers/privacy.py announce_roster_change() ni chaqiradi.
             StudentStaff.active.is_(True),
-            # O'zini o'zi ro'yxatdan o'tkazgan odam administrator
-            # tasdiqlagunicha tanilmaydi (app/routers/enrollment.py).
-            or_(StudentStaff.self_registered.is_(False), StudentStaff.biometrics_status == "tasdiqlangan"),
+            # Tekshiruvda turgan yuz tanilmaydi. 2026-09-20 gacha bu faqat
+            # o'zini o'zi ro'yxatdan o'tkazganlarga tegishli edi: ro'yxatdagi
+            # odam uchun topshirilgan shubhali yuz ("kutilmoqda") baribir
+            # tanish ro'yxatida qolardi, ya'ni tekshiruvga qo'yishning
+            # ma'nosi yo'q edi (app/routers/enrollment.py).
+            StudentStaff.biometrics_status != "kutilmoqda",
         )
     )
     rows = result.all()

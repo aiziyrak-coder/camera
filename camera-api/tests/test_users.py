@@ -163,11 +163,17 @@ class TestUsers:
         resp = await client.delete(f"/api/users/{admin_user['id']}", headers=headers)
         assert resp.status_code == 400
 
-    async def test_cannot_delete_last_super_admin(self, client: AsyncClient):
-        """Isolates the last-super-admin guard from the self-deletion guard:
-        the actor here ("operator", role Admin, granted manageRoles) is
-        deleting a DIFFERENT user (the seeded "admin", the only super-admin),
-        so a 400 here can only come from the last-super-admin check."""
+    async def test_admin_cannot_delete_a_super_admin(self, client: AsyncClient):
+        """Admin (manageRoles berilgan) Super Admin hisobini o'chira olmaydi.
+
+        Ilgari bu yerda 400 kutilardi — "oxirgi Super Admin" tekshiruvidan.
+        Endi so'rov undan OLDIN to'xtaydi: 2026-09-20 auditi Super Admin
+        hisobiga admin tega olishini (o'chirish, parolni tiklash, rolini
+        almashtirish) egallab olish yo'li deb topdi, shuning uchun bunday
+        so'rov endi 403. "Oxirgi Super Admin" himoyasining o'zi
+        tests/test_security_audit_fixes.py da rolni pasaytirish orqali
+        tekshiriladi — o'zini o'chirish esa alohida taqiqlangan
+        (test_cannot_delete_self)."""
         super_headers = await auth_headers(client, "admin", "admin123")
         await client.patch("/api/permissions/manageRoles", headers=super_headers, json={"role": "admin"})
         operator_headers = await auth_headers(client, "operator", "operator123")
@@ -176,4 +182,4 @@ class TestUsers:
         original_admin = next(u for u in users if u["login"] == "admin")
 
         resp = await client.delete(f"/api/users/{original_admin['id']}", headers=operator_headers)
-        assert resp.status_code == 400
+        assert resp.status_code == 403

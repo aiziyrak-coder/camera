@@ -74,6 +74,7 @@ from app.routers import (
 )
 from app.seed import seed_all
 from app.services.face_matching import announce_roster_change
+from app.services.security_checks import log_insecure_config
 from app.services.self_enrollment import approve_pending
 from app.services.stream_sync import sync_all_active_camera_streams
 
@@ -193,6 +194,9 @@ async def _become_leader_when_free(tasks: list[asyncio.Task]) -> None:
 async def lifespan(app: FastAPI):
     # Birinchi model chaqiruvidan oldin — app/services/thread_limits.py.
     apply_thread_limits()
+    # Fail-open sozlamalar ishga tushishda baland ovozda aytiladi
+    # (app/services/security_checks.py).
+    log_insecure_config()
     async with SessionLocal() as session:
         await seed_all(session)
     try:

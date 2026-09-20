@@ -20,6 +20,21 @@ import { useDebouncedValue } from './useDebouncedValue';
 const CACHE_LIMIT = 50;
 const cache = new Map<string, Page<unknown>>();
 
+/** Kesh kimga tegishli (token). Boshqa foydalanuvchi kirsa tozalanadi. */
+let cacheOwner: string | null | undefined;
+
+/** Token o'zgargan bo'lsa keshni tozalaydi.
+ *
+ *  Kesh kaliti faqat manzil va filtrlardan tuzilgani uchun, bitta
+ *  brauzerda chiqib boshqa hisob bilan kirilganda oldingi foydalanuvchining
+ *  ro'yxati ko'rinib ketardi. `true` — kesh tozalandi. */
+export function syncServerPageCacheOwner(token: string | null): boolean {
+  if (cacheOwner === token) return false;
+  cacheOwner = token;
+  cache.clear();
+  return true;
+}
+
 function remember(key: string, value: Page<unknown>) {
   if (cache.size >= CACHE_LIMIT) {
     const oldest = cache.keys().next().value;
@@ -61,11 +76,17 @@ export function useServerPage<T>(
 
   const paramsKey = useDebouncedValue(JSON.stringify(params), options.debounceMs ?? 300);
 
-  useEffect(() => {
-    setPage(1);
-  }, [paramsKey]);
+  // Filtr o'zgarsa 1-sahifaga qaytamiz. Effekt emas, render paytida:
+  // effekt bo'lganda eski `page` bilan bitta ortiqcha so'rov ketib,
+  // darhol bekor qilinardi (har filtr o'zgarishida bekorga so'rov).
+  const prevParamsKey = useRef(paramsKey);
+  if (prevParamsKey.current !== paramsKey) {
+    prevParamsKey.current = paramsKey;
+    if (page !== 1) setPage(1);
+  }
 
   useEffect(() => {
+    syncServerPageCacheOwner(token ?? null);
     if (!token || !enabled) {
       // So'rov yuborilmaydi => "ma'lumot yo'q" tugallangan holat.
       setLoading(false);

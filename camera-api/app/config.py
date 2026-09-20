@@ -127,6 +127,41 @@ class Settings(BaseSettings):
     # har bir yuz to'liq R50 chaqiruvini olardi —
     # app/services/face_recognition.py _detect_faces_sync izohiga qarang.
     face_analysis_min_px: int = 20
+    # ── Kichik yuzni asosiy oqimdan yaqinlashtirib tanish ───────────────
+    # (app/services/face_zoom.py). 2026-09-20 o'lchovi: bir kunda 112433
+    # kadr, 8884 yuz, ulardan 8079 tasi tanish chegarasidan kichik, yuz
+    # balandligi medianasi 22 px, tanish 0 ta — odamlar 720p substreamda
+    # shunchaki juda kichik. Asosiy oqim 4K, ya'ni o'sha yuz ~3 barobar
+    # katta. Doimiy 4K o'qish mumkin emas (AVX'siz CPU, tarmoq), lekin
+    # kichik yuz KO'RINGANDA bitta 4K kadr olib, faqat o'sha yuzlar
+    # atrofini qayta tahlil qilish mumkin.
+    face_zoom_enabled: bool = True
+    # Shu balandlikdan (piksel) kichik yuz zoom uchun ham nomzod emas:
+    # 10 px dan kichik ramka ko'pincha yuz emas (dog', stul suyanchig'i),
+    # asosiy oqimda ham u 30 px atrofida qoladi. Yuqori chegara —
+    # face_analysis_min_px (undan kattasi allaqachon tahlil qilingan).
+    face_zoom_min_px: int = 10
+    # Yuqori chegara: shundan kichik yuzlar yaqinlashtiriladi. Bu
+    # face_analysis_min_px dan KATTA: 20-40 px lik yuz tahlil qilinadi,
+    # lekin 2026-09-20 o'lchovida ular hech qachon mos kelmadi (median 22 px,
+    # 8884 yuzdan 0 ta moslik) — ular ham 4K dan qayta ko'riladi.
+    face_zoom_max_px: int = 45
+    # Bitta kadrda shundan ko'p hudud qayta tahlil qilinmaydi: har biri
+    # 4K kadrda alohida detektor chaqiruvi (AVX'siz CPU'da ~0.3-0.5 s).
+    face_zoom_max_faces: int = 4
+    # Yuz ramkasi hudud (ROI) ga aylanishdan oldin shuncha barobar
+    # kengaytiriladi — odam ikki kadr orasida siljigan bo'ladi va
+    # detektorga yuz atrofidagi kontekst kerak.
+    face_zoom_margin: float = 2.5
+    # Bitta kamera asosiy oqimdan kadrni shundan tez-tez olmaydi.
+    face_zoom_interval_seconds: int = 60
+    # Bir vaqtning o'zida shuncha kameragina 4K kadr oladi — tarmoq va
+    # CPU yuklamasining asosiy chegarasi shu.
+    face_zoom_max_concurrent_cameras: int = 2
+    # Asosiy oqimdan kadr kutish. Kalit kadr 4-8 s da bir keladi; shundan
+    # keyin o'quvchi (ffmpeg) DARHOL yopiladi, ya'ni 4K ulanish faqat shu
+    # necha soniya yashaydi.
+    face_zoom_wait_seconds: float = 8.0
     # Detektor kadrni o'z nisbatida tahlil qiladi (app/services/face_recognition.py
     # detection_input_size). 2026-09-19 o'lchovi: 107 kameraning 99 tasi AI
     # uchun 640x360 substreamdan o'qiladi — ular uchun 640x384 kirish eski

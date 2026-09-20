@@ -39,9 +39,7 @@ import {
   PersonGrid,
   ProgressBar,
   ProgressRing,
-  SearchInput,
   Section,
-  Select,
   Skeleton,
   SkeletonTable,
   StatTile,
@@ -49,7 +47,7 @@ import {
   StatusBadge,
   StatusDot,
   Tabs,
-  Toolbar,
+  FilterBar,
   rangeForPreset,
   readChartTheme,
   toneForRate,
@@ -61,6 +59,9 @@ import {
   type TabItem,
 } from '../../ui';
 import { todayInTashkent } from '../../lib/uzDate';
+
+// Barqaror havola: har renderda yangi obyekt recharts'ni qayta chizardi.
+const CHART_MARGIN = { top: 4, right: 4, bottom: 0, left: -24 };
 
 type Mode = 'ikkalasi' | 'yorug' | 'qorongi';
 
@@ -321,29 +322,33 @@ function Controls() {
   const [name, setName] = useState('');
   return (
     <Section title="Filtrlar va maydonlar" description="Toolbar — tablar/sarlavha ostida, har sahifada bir xil.">
-      <Toolbar
-        activeCount={(search ? 1 : 0) + (faculty ? 1 : 0)}
-        onReset={() => {
-          setSearch('');
-          setFaculty('');
-        }}
+      <FilterBar
         end={<Button icon={Download}>Eksport</Button>}
-      >
-        <SearchInput value={search} onChange={setSearch} placeholder="F.I.Sh. yoki guruh" />
-        <Select
-          value={faculty}
-          onChange={setFaculty}
-          placeholder="Barcha fakultetlar"
-          highlightActive
-          ariaLabel="Fakultet"
-          options={[
-            { value: '1', label: 'Davolash ishi' },
-            { value: '2', label: 'Pediatriya' },
-            { value: '3', label: 'Stomatologiya' },
-          ]}
-        />
-        <Select value="3" onChange={() => {}} label="Kurs" options={[1, 2, 3, 4, 5, 6].map((n) => ({ value: String(n), label: `${n}-kurs` }))} />
-      </Toolbar>
+        fields={[
+          { kind: 'search', value: search, onChange: setSearch, placeholder: 'F.I.Sh. yoki guruh' },
+          {
+            kind: 'select',
+            value: faculty,
+            onChange: setFaculty,
+            placeholder: 'Barcha fakultetlar',
+            ariaLabel: 'Fakultet',
+            options: [
+              { value: '1', label: 'Davolash ishi' },
+              { value: '2', label: 'Pediatriya' },
+              { value: '3', label: 'Stomatologiya' },
+            ],
+          },
+          {
+            kind: 'select',
+            value: '3',
+            // Namuna: tanlangan qiymat "standart" bo'lsa faol sanalmaydi.
+            inactiveValue: '3',
+            onChange: () => {},
+            label: 'Kurs',
+            options: [1, 2, 3, 4, 5, 6].map((n) => ({ value: String(n), label: `${n}-kurs` })),
+          },
+        ]}
+      />
       <div className="mt-3 flex flex-col gap-3">
         <DatePicker value={date} onChange={setDate} />
         <DateRangePicker value={range} onChange={setRange} />
@@ -440,7 +445,7 @@ function CardsAndText({ chart }: { chart: ChartTheme | null }) {
           <div className="h-48">
             {chart && (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={CHART_DATA} margin={{ top: 4, right: 4, bottom: 0, left: -24 }}>
+                <BarChart data={CHART_DATA} margin={CHART_MARGIN}>
                   <CartesianGrid vertical={false} stroke={chart.grid} />
                   <XAxis dataKey="day" tick={chart.axisTick} axisLine={false} tickLine={false} />
                   <YAxis tick={chart.axisTick} axisLine={false} tickLine={false} />

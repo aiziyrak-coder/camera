@@ -1,23 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BookOpen, Building2, Landmark, Pencil, Plus, Trash2, Users2 } from 'lucide-react';
-import {
-  Badge,
-  Button,
-  ConfirmDialog,
-  DataTable,
-  ErrorState,
-  IconButton,
-  Page,
-  SearchInput,
-  Select,
-  Toolbar,
-  formatNumber,
-  useToast,
-  useUrlTab,
-  type DataTableColumn,
-  type TabItem,
-} from '../../ui';
+import { Badge, Button, ConfirmDialog, DataTable, ErrorState, FilterBar, filterActiveCount, formatNumber, IconButton, Page, useToast, useUrlTab, type DataTableColumn, type FilterFieldEntry, type TabItem } from '../../ui';
 import AddBuildingModal from '../../components/admin/AddBuildingModal';
 import AddDepartmentModal from '../../components/admin/AddDepartmentModal';
 import AddFacultyModal from '../../components/admin/AddFacultyModal';
@@ -307,7 +291,6 @@ export default function OrgStructurePage() {
       : []),
   ];
 
-  const filtersActive = (query ? 1 : 0) + (tab === 'guruhlar' ? (facultyFilter ? 1 : 0) + (courseFilter ? 1 : 0) : 0);
   const searchPlaceholder: Record<TabId, string> = {
     binolar: 'Korpus nomi…',
     fakultetlar: 'Fakultet nomi…',
@@ -315,30 +298,39 @@ export default function OrgStructurePage() {
     kafedralar: 'Kafedra yoki bino…',
   };
 
+  const isGroups = tab === 'guruhlar';
+  const filterFields: FilterFieldEntry[] = [
+    { kind: 'search', value: search, onChange: setSearch, placeholder: searchPlaceholder[tab] },
+    // Fakultet/kurs faqat "Guruhlar" tabida — boshqa tabda sanalmaydi ham.
+    isGroups && {
+      kind: 'select',
+      value: facultyFilter,
+      onChange: setFacultyFilter,
+      placeholder: 'Barcha fakultetlar',
+      ariaLabel: 'Fakultet',
+      options: faculties.map((f) => ({ value: f.name, label: f.name })),
+    },
+    isGroups && {
+      kind: 'select',
+      value: courseFilter,
+      onChange: setCourseFilter,
+      placeholder: 'Barcha kurslar',
+      ariaLabel: 'Kurs',
+      options: courseOptions,
+    },
+  ];
+  // Bo'sh holat matni ham xuddi shu sanoqqa tayanadi (ilgari alohida
+  // hisoblanardi va qidiruvdagi bo'sh probelni boshqacha sanardi).
+  const filtersActive = filterActiveCount(filterFields);
   const toolbar = (
-    <Toolbar
-      activeCount={filtersActive}
+    <FilterBar
+      fields={filterFields}
       onReset={() => {
         setSearch('');
         setFacultyFilter('');
         setCourseFilter('');
       }}
-    >
-      <SearchInput value={search} onChange={setSearch} placeholder={searchPlaceholder[tab]} />
-      {tab === 'guruhlar' && (
-        <>
-          <Select
-            value={facultyFilter}
-            onChange={setFacultyFilter}
-            placeholder="Barcha fakultetlar"
-            ariaLabel="Fakultet"
-            options={faculties.map((f) => ({ value: f.name, label: f.name }))}
-            highlightActive
-          />
-          <Select value={courseFilter} onChange={setCourseFilter} placeholder="Barcha kurslar" ariaLabel="Kurs" options={courseOptions} highlightActive />
-        </>
-      )}
-    </Toolbar>
+    />
   );
 
   const emptyAction = (id: TabId) =>

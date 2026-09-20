@@ -21,6 +21,8 @@ const DAYS: [number, string][] = [
 ];
 
 /** Ish vaqti: kim "kech keldi" hisoblanishi shu yerda belgilanadi. */
+const SUBTITLE = "Kim o'z vaqtida, kim kech kelgani shu qoidadan hisoblanadi";
+
 export default function WorkHoursPage() {
   const { token } = useAuth();
   const toast = useToast();
@@ -45,16 +47,18 @@ export default function WorkHoursPage() {
       .catch((err) => setError(err instanceof ApiError ? err.message : "Qoidani yuklab bo'lmadi"));
   }, [token, nonce]);
 
+  // Sarlavha uchta holatda ham bir xil — aks holda yuklanishdan
+  // yuklangan holatga o'tganda sahifa boshi sakrardi.
   if (error) {
     return (
-      <Page title="Ish vaqti">
+      <Page title="Ish vaqti" subtitle={SUBTITLE}>
         <ErrorState message={error} onRetry={() => setNonce((n) => n + 1)} />
       </Page>
     );
   }
   if (!form) {
     return (
-      <Page title="Ish vaqti">
+      <Page title="Ish vaqti" subtitle={SUBTITLE}>
         <Skeleton className="h-80 rounded-card" />
       </Page>
     );
@@ -84,7 +88,7 @@ export default function WorkHoursPage() {
   return (
     <Page
       title="Ish vaqti"
-      subtitle="Kim o'z vaqtida, kim kech kelgani shu qoidadan hisoblanadi"
+      subtitle={SUBTITLE}
       actions={
         <Button variant="primary" icon={Save} disabled={saving} onClick={save}>
           {saving ? 'Saqlanmoqda…' : 'Saqlash'}

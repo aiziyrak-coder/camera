@@ -30,18 +30,20 @@ import {
   IconButton,
   Page,
   ProgressBar,
-  SearchInput,
+  FilterBar,
   Select,
+  filterActiveCount,
+  resetFilterFields,
   SkeletonTiles,
   StatTile,
   Tabs,
-  Toolbar,
   cn,
   focusRing,
   formatNumber,
   useToast,
   useUrlTab,
   type DataTableColumn,
+  type FilterFieldEntry,
   type TabItem,
   type Tone,
 } from '../../ui';
@@ -262,13 +264,6 @@ export default function StudentsStaffPage() {
 
   useEffect(loadOverview, [loadOverview]);
 
-  function resetFilters() {
-    setFacultyFilter('');
-    setCourseFilter(null);
-    setStatusFilter('');
-    setSearch('');
-    setAwaitingOnly(false);
-  }
 
   function refresh() {
     invalidateServerPageCache('/api/students-staff');
@@ -283,7 +278,6 @@ export default function StudentsStaffPage() {
     if (key === 'tasdiqlanmagan') return current.missing + current.pending;
     return current.total;
   };
-  const activeFilters = [facultyFilter, isStudents && courseFilter, statusFilter, search.trim(), awaitingOnly].filter(Boolean).length;
   const awaitingCount = current?.awaitingApproval ?? 0;
 
   const tabs = useMemo<TabItem<PersonType>[]>(
@@ -415,46 +409,58 @@ export default function StudentsStaffPage() {
     },
   ];
 
-  const toolbar = (
-    <Toolbar activeCount={activeFilters} onReset={resetFilters}>
-      <SearchInput
-        value={search}
-        onChange={setSearch}
-        placeholder={`${isStudents ? 'Talaba' : 'Xodim'} F.I.Sh. yoki JSHSHIR…`}
-        ariaLabel={`${PERSON_LABELS[tab]}ni qidirish`}
-      />
-      <Select
-        value={facultyFilter}
-        onChange={setFacultyFilter}
-        placeholder="Barcha fakultetlar"
-        ariaLabel="Fakultet"
-        highlightActive
-        options={(current?.byFaculty ?? []).map((row) => ({
-          value: row.faculty === NO_FACULTY_LABEL ? NO_FACULTY_KEY : row.faculty,
-          label: `${row.faculty} (${formatNumber(row.total)})`,
-        }))}
-      />
-      {isStudents && (
-        <Select
-          value={courseFilter ? String(courseFilter) : ''}
-          onChange={(value) => setCourseFilter(value ? Number(value) : null)}
-          placeholder="Barcha kurslar"
-          ariaLabel="Kurs"
-          highlightActive
-          options={(current?.byCourse ?? [])
-            .filter((row) => row.courseNumber !== null)
-            .map((row) => ({ value: String(row.courseNumber), label: `${row.course} (${formatNumber(row.total)})` }))}
+  const filterFields: FilterFieldEntry[] = [
+    {
+      kind: 'search',
+      value: search,
+      onChange: setSearch,
+      placeholder: `${isStudents ? 'Talaba' : 'Xodim'} F.I.Sh. yoki JSHSHIR…`,
+      ariaLabel: `${PERSON_LABELS[tab]}ni qidirish`,
+    },
+    {
+      kind: 'select',
+      value: facultyFilter,
+      onChange: setFacultyFilter,
+      placeholder: 'Barcha fakultetlar',
+      ariaLabel: 'Fakultet',
+      options: (current?.byFaculty ?? []).map((row) => ({
+        value: row.faculty === NO_FACULTY_LABEL ? NO_FACULTY_KEY : row.faculty,
+        label: `${row.faculty} (${formatNumber(row.total)})`,
+      })),
+    },
+    // Kurs faqat talabalarda.
+    isStudents && {
+      kind: 'select',
+      value: courseFilter ? String(courseFilter) : '',
+      onChange: (value: string) => setCourseFilter(value ? Number(value) : null),
+      placeholder: 'Barcha kurslar',
+      ariaLabel: 'Kurs',
+      options: (current?.byCourse ?? [])
+        .filter((row) => row.courseNumber !== null)
+        .map((row) => ({ value: String(row.courseNumber), label: `${row.course} (${formatNumber(row.total)})` })),
+    },
+    // Yuz holati — segmentli tablar; faolligi va tozalanishi shu yerda.
+    {
+      kind: 'custom',
+      active: Boolean(statusFilter) || awaitingOnly,
+      onClear: () => {
+        setStatusFilter('');
+        setAwaitingOnly(false);
+      },
+      render: (
+        <Tabs
+          variant="segmented"
+          ariaLabel="Yuz holati"
+          tabs={STATUS_FILTERS.map((f) => ({ id: f.key, label: f.label, count: statusCount(f.key) ?? null }))}
+          value={awaitingOnly ? ('__awaiting__' as StatusFilter) : statusFilter}
+          onChange={pickStatus}
         />
-      )}
-      <Tabs
-        variant="segmented"
-        ariaLabel="Yuz holati"
-        tabs={STATUS_FILTERS.map((f) => ({ id: f.key, label: f.label, count: statusCount(f.key) ?? null }))}
-        value={awaitingOnly ? ('__awaiting__' as StatusFilter) : statusFilter}
-        onChange={pickStatus}
-      />
-    </Toolbar>
-  );
+      ),
+    },
+  ];
+  const activeFilters = filterActiveCount(filterFields);
+  const resetFilters = () => resetFilterFields(filterFields);
+  const toolbar = <FilterBar fields={filterFields} />;
 
   return (
     <Page

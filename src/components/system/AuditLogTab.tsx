@@ -4,7 +4,7 @@ import { api, buildQuery, type Page } from '../../lib/apiClient';
 import { exportRowsAsCsv } from '../../lib/csvExport';
 import { useServerPage } from '../../lib/useServerPage';
 import type { AuditLogEntry } from '../../types';
-import { Badge, Button, DataTable, Select, StatTile, Toolbar, formatNumber, useToast, type DataTableColumn, type Tone } from '../../ui';
+import { Badge, Button, DataTable, FilterBar, StatTile, filterActiveCount, formatNumber, useToast, type DataTableColumn, type FilterFieldEntry, type Tone } from '../../ui';
 import { Pager } from './Pager';
 import type { AuditStatus } from './systemTypes';
 
@@ -97,7 +97,25 @@ export function AuditLogTab({ canExport }: { canExport: boolean }) {
   }
 
   const toggleStatus = (s: AuditStatus) => setStatus((cur) => (cur === s ? '' : s));
-  const activeCount = (status ? 1 : 0) + (module ? 1 : 0);
+  const filterFields: FilterFieldEntry[] = [
+    {
+      kind: 'select',
+      value: status,
+      onChange: (v) => setStatus(v as AuditStatus | ''),
+      placeholder: 'Barcha holatlar',
+      ariaLabel: 'Holat',
+      options: (Object.keys(STATUS) as AuditStatus[]).map((s) => ({ value: s, label: STATUS[s].label })),
+    },
+    {
+      kind: 'select',
+      value: module,
+      onChange: setModule,
+      placeholder: 'Barcha modullar',
+      ariaLabel: 'Modul',
+      options: MODULES.map((m) => ({ value: m, label: m })),
+    },
+  ];
+  const activeCount = filterActiveCount(filterFields);
 
   return (
     <>
@@ -107,12 +125,8 @@ export function AuditLogTab({ canExport }: { canExport: boolean }) {
         <StatTile label="Ogohlantirishlar" icon={AlertTriangle} tone="warning" value={formatNumber(counts?.ogohlantirish)} loading={!counts} onClick={() => toggleStatus('ogohlantirish')} className={status === 'ogohlantirish' ? 'border-warning' : undefined} />
       </section>
 
-      <Toolbar
-        activeCount={activeCount}
-        onReset={() => {
-          setStatus('');
-          setModule('');
-        }}
+      <FilterBar
+        fields={filterFields}
         end={
           <Button
             variant="secondary"
@@ -125,17 +139,7 @@ export function AuditLogTab({ canExport }: { canExport: boolean }) {
             CSV
           </Button>
         }
-      >
-        <Select
-          value={status}
-          onChange={(v) => setStatus(v as AuditStatus | '')}
-          placeholder="Barcha holatlar"
-          ariaLabel="Holat"
-          highlightActive
-          options={(Object.keys(STATUS) as AuditStatus[]).map((s) => ({ value: s, label: STATUS[s].label }))}
-        />
-        <Select value={module} onChange={setModule} placeholder="Barcha modullar" ariaLabel="Modul" highlightActive options={MODULES.map((m) => ({ value: m, label: m }))} />
-      </Toolbar>
+      />
 
       <DataTable
         ariaLabel="Tizim jurnali"

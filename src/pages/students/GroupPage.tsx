@@ -14,13 +14,12 @@ import {
   PersonCard,
   PersonGrid,
   ProgressRing,
-  SearchInput,
   Select,
   Skeleton,
   StatTile,
   StatusDot,
   Tabs,
-  Toolbar,
+  FilterBar,
   Button,
   cn,
   formatPercent,
@@ -28,6 +27,7 @@ import {
   useShell,
   useUrlTab,
   type DataTableColumn,
+  type FilterFieldEntry,
   type TabItem,
 } from '../../ui';
 import { getGroup, situationPaths, type GroupDetail, type GroupStudent, type Lesson, type TrendPoint } from '../../lib/situationApi';
@@ -175,13 +175,18 @@ export default function GroupPage() {
     return () => window.clearTimeout(id);
   }, [flash]);
 
+  const lessonCount = data?.lessons.length ?? 0;
   const tabs: TabItem<TabId>[] = useMemo(
     () => [
       { id: 'talabalar', label: 'Talabalar', icon: LayoutGrid, count: data?.students.length ?? null },
-      { id: 'darslar', label: isToday ? 'Bugungi darslar' : 'Shu kungi darslar', icon: CalendarClock, count: data?.lessons.length ?? null },
+      // Dars jadvali kiritilmagan bo'lsa tab umuman chiqmaydi (doimo bo'sh
+      // ko'rinish o'rniga). Jadval paydo bo'lganda o'zi qaytadi.
+      ...(lessonCount > 0
+        ? [{ id: 'darslar' as const, label: isToday ? 'Bugungi darslar' : 'Shu kungi darslar', icon: CalendarClock, count: lessonCount }]
+        : []),
       { id: 'dinamika', label: 'Dinamika', icon: TrendingUp },
     ],
-    [data?.students.length, data?.lessons.length, isToday],
+    [data?.students.length, lessonCount, isToday],
   );
   const [tab, setTab] = useUrlTab(tabs, { defaultTab: 'talabalar' });
 
@@ -400,16 +405,7 @@ export default function GroupPage() {
             />
           )}
 
-          {tab === 'darslar' &&
-            (data.lessons.length === 0 ? (
-              <EmptyState
-                icon={CalendarClock}
-                title={isToday ? "Bugun bu guruhda dars yo'q" : "Bu kunda dars jadvalda yo'q"}
-                description="Darslar jadvali «Darslar» bo'limida yuritiladi."
-              />
-            ) : (
-              <LessonList lessons={data.lessons} onOpen={setLesson} />
-            ))}
+          {tab === 'darslar' && data.lessons.length > 0 && <LessonList lessons={data.lessons} onOpen={setLesson} />}
 
           {tab === 'dinamika' && <TrendTab points={data.trend} />}
         </>
@@ -467,11 +463,27 @@ function StudentsTab({
   presentation: boolean;
   enrollMode?: boolean;
 }) {
-  const activeCount = (filter !== 'all' ? 1 : 0) + (query ? 1 : 0);
+  const filterFields: FilterFieldEntry[] = [
+    // Taqdimot rejimida qidiruv maydoni ko'rsatilmaydi.
+    !presentation && { kind: 'search', value: query, onChange: onQuery, placeholder: 'Talaba ismi…' },
+    // Holat filtri yuqoridagi plitkalardan qo'yiladi — bu yerda faqat
+    // natijasi ko'rinadi, lekin sanoq va tozalash uchun u ham maydon.
+    {
+      kind: 'custom',
+      active: filter !== 'all',
+      render:
+        filter !== 'all' ? (
+          <Badge tone={STATUS_META[filter].tone === 'neutral' ? 'primary' : STATUS_META[filter].tone} size="md">
+            {STATUS_META[filter].label}: {visible.length} / {total}
+          </Badge>
+        ) : null,
+    },
+  ];
   return (
     <>
-      <Toolbar
-        activeCount={activeCount}
+      <FilterBar
+        fields={filterFields}
+        // Holat/yuz filtrlari bitta joyda tozalanadi (sahifa holati).
         onReset={onResetFilter}
         end={
           <>
@@ -492,14 +504,7 @@ function StudentsTab({
             />
           </>
         }
-      >
-        {!presentation && <SearchInput value={query} onChange={onQuery} placeholder="Talaba ismi…" />}
-        {filter !== 'all' && (
-          <Badge tone={STATUS_META[filter].tone === 'neutral' ? 'primary' : STATUS_META[filter].tone} size="md">
-            {STATUS_META[filter].label}: {visible.length} / {total}
-          </Badge>
-        )}
-      </Toolbar>
+      />
 
       {liveFeed.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-card border border-success/30 bg-success-soft/50 px-3 py-2 text-[13px]" aria-live="polite">
@@ -601,7 +606,7 @@ function TrendTab({ points }: { points: TrendPoint[] }) {
   const columns: DataTableColumn<TrendPoint>[] = [
     { key: 'date', header: 'Sana', cell: (p) => formatUzDate(p.date, { weekday: true, year: false }), sortValue: (p) => p.date },
     { key: 'present', header: 'Keldi', align: 'right', cell: (p) => p.present, sortValue: (p) => p.present },
-    { key: 'late', header: 'Kech', align: 'right', cell: (p) => p.late, sortValue: (p) => p.late },
+    { key: 'late', header: 'Kech keldi', align: 'right', cell: (p) => p.late, sortValue: (p) => p.late },
     { key: 'absent', header: 'Kelmadi', align: 'right', cell: (p) => p.absent, sortValue: (p) => p.absent },
     {
       key: 'rate',

@@ -658,28 +658,9 @@ export const UNIT_KIND_LABELS: Record<UnitKind | 'guruh', string> = {
   guruh: 'Guruh',
 };
 
-export const ATTENDANCE_STATUS_LABELS: Record<AttendanceStatus, string> = {
-  keldi: 'Keldi',
-  kech_keldi: 'Kech qoldi',
-  kelmadi: 'Kelmadi',
-  dam_olish: 'Dam olish',
-  kutilmoqda: 'Hali kelmagan',
-  malumot_yoq: "Ma'lumot yo'q",
-};
-
-export const TEACHER_STATUS_LABELS: Record<TeacherStatus, string> = {
-  oz_vaqtida: "O'z vaqtida",
-  kechikdi: 'Kechikdi',
-  kelmadi: 'Kelmadi',
-  kutilmoqda: 'Kutilmoqda',
-  nomalum: "Noma'lum",
-};
-
-export const LESSON_STATE_LABELS: Record<LessonState, string> = {
-  upcoming: 'Boshlanmagan',
-  ongoing: 'Davom etmoqda',
-  finished: 'Tugagan',
-};
+// Davomat/dars yorliqlari bitta joyda: src/ui/status.ts (umumiy holatlar) va
+// src/lib/studentAttendance.ts (dars kesimidagi holatlar). Bu yerda nusxasi
+// bo'lgani uchun "kech keldi" ikki xil yozilib qolgandi.
 
 /** Frontend marshrutlari (davomat sahifalari orasida havola uchun). */
 export const situationPaths = {

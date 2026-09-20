@@ -15,7 +15,7 @@ interface Props {
 
 const LEGEND = [
   { tone: 'success', label: "O'z vaqtida" },
-  { tone: 'warning', label: 'Kech qoldi' },
+  { tone: 'warning', label: 'Kech keldi' },
   { tone: 'danger', label: 'Kelmadi' },
   { tone: 'neutral', label: 'Hali kelmagan' },
 ] as const;

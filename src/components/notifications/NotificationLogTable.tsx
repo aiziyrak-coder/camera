@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
-import { Badge, Button, DataTable, Drawer, KeyValue, SearchInput, Section, Select, Toolbar, type DataTableColumn, type Tone } from '../../ui';
+import { Badge, Button, DataTable, Drawer, FilterBar, KeyValue, Section, type DataTableColumn, type Tone } from '../../ui';
 import { Notice, pagerFooter } from '../settings/kit';
 import { useServerPage } from '../../lib/useServerPage';
 import {
@@ -39,10 +39,6 @@ export interface LogFilters {
 
 const EMPTY_LOG_FILTERS: LogFilters = { search: '', status: '', channel: '', kind: '' };
 
-function activeCount(filters: LogFilters): number {
-  return Object.values(filters).filter((v) => v.trim() !== '').length;
-}
-
 /** Jurnal filtrlari — sahifaning `toolbar` joyida (Jurnal tabi). */
 export function NotificationLogToolbar({
   filters,
@@ -55,20 +51,22 @@ export function NotificationLogToolbar({
 }) {
   const set = <K extends keyof LogFilters>(key: K, value: LogFilters[K]) => onChange({ ...filters, [key]: value });
   return (
-    <Toolbar
-      activeCount={activeCount(filters)}
+    <FilterBar
+      // Tozalash — bitta yozuvda: `filters` bitta obyekt, maydon-maydon
+      // tozalash oxirgisidan boshqasini bekor qilardi.
       onReset={() => onChange(EMPTY_LOG_FILTERS)}
       end={
         <Button variant="ghost" icon={RefreshCw} onClick={onRefresh}>
           Yangilash
         </Button>
       }
-    >
-      <SearchInput value={filters.search} onChange={(v) => set('search', v)} placeholder="Qabul qiluvchi, matn yoki xato" ariaLabel="Jurnaldan qidirish" />
-      <Select value={filters.status} onChange={(v) => set('status', v)} options={STATUS_OPTIONS} placeholder="Barcha holatlar" ariaLabel="Holat" highlightActive />
-      <Select value={filters.channel} onChange={(v) => set('channel', v)} options={CHANNEL_OPTIONS} placeholder="Barcha kanallar" ariaLabel="Kanal" highlightActive />
-      <Select value={filters.kind} onChange={(v) => set('kind', v)} options={KIND_FILTER_OPTIONS} placeholder="Barcha turlar" ariaLabel="Turi" highlightActive />
-    </Toolbar>
+      fields={[
+        { kind: 'search', value: filters.search, onChange: (v: string) => set('search', v), placeholder: 'Qabul qiluvchi, matn yoki xato', ariaLabel: 'Jurnaldan qidirish' },
+        { kind: 'select', value: filters.status, onChange: (v: string) => set('status', v), options: STATUS_OPTIONS, placeholder: 'Barcha holatlar', ariaLabel: 'Holat' },
+        { kind: 'select', value: filters.channel, onChange: (v: string) => set('channel', v), options: CHANNEL_OPTIONS, placeholder: 'Barcha kanallar', ariaLabel: 'Kanal' },
+        { kind: 'select', value: filters.kind, onChange: (v: string) => set('kind', v), options: KIND_FILTER_OPTIONS, placeholder: 'Barcha turlar', ariaLabel: 'Turi' },
+      ]}
+    />
   );
 }
 
@@ -131,7 +129,7 @@ export default function NotificationLogTable({ refreshKey, filters = EMPTY_LOG_F
   }, [refreshKey, reload]);
 
   const open = items.find((r) => r.id === openId) ?? null;
-  const filtered = activeCount(filters) > 0;
+  const filtered = Object.values(filters).some((v) => v.trim() !== '');
 
   return (
     <>

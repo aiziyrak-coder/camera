@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_action
@@ -126,9 +126,14 @@ async def forgot_password(
     if user.email:
         send_password_reset_email(user.email, user.full_name, reset_link)
     else:
+        # HAVOLANING O'ZI JURNALGA YOZILMAYDI. Token — bir martalik parol
+        # tiklash kaliti: jurnalni o'qiy oladigan (yoki jurnal yig'uvchi
+        # tizimga ulangan) har kim shu havola bilan hisobni egallab olardi.
+        # Email yo'q bo'lsa to'g'ri yo'l — administrator orqali tiklash
+        # (POST /api/users/{id}/reset-password).
         logger.warning(
-            "Foydalanuvchida email manzili yo'q — reset havolasi faqat logga yozildi",
-            extra={"login": user.login, "reset_link": reset_link},
+            "parolni tiklash so'raldi, lekin foydalanuvchida email manzili yo'q — havola yuborilmadi",
+            extra={"user_id": str(user.id)},
         )
 
 
@@ -157,6 +162,18 @@ async def reset_password(
     # avtomatik yaroqsiz bo'ladi — get_current_user token_version'ni solishtiradi.
     user.token_version += 1
     reset_token.used_at = now
+    # Shu foydalanuvchining BOSHQA ishlatilmagan tiklash havolalari ham
+    # bekor qilinadi: bir necha marta "parolni unutdim" bosilgan bo'lsa,
+    # eski email'dagi havola parol allaqachon almashtirilganidan keyin
+    # ham ishlab turardi (hisobni qayta egallash yo'li).
+    await db.execute(
+        update(PasswordResetToken)
+        .where(
+            PasswordResetToken.user_id == user.id,
+            PasswordResetToken.used_at.is_(None),
+        )
+        .values(used_at=now)
+    )
 
     await log_action(db, request, str(user.id), "Parolni muvaffaqiyatli tikladi", "Autentifikatsiya")
     await db.commit()

@@ -7,7 +7,7 @@
  * monitoring yozuvlari, xodim qidiruvi) va hisob-kitoblar.
  */
 import { api, buildQuery, type CallOptions, type Page } from './apiClient';
-import type { KafedraStat, KafedraTeacher, Lesson, TeacherStatus } from './situationApi';
+import type { KafedraStat, KafedraTeacher, Lesson } from './situationApi';
 import type { Tone } from '../ui';
 import type {
   AttendanceCameras,
@@ -83,13 +83,8 @@ export function deleteLessonSession(id: string): Promise<void> {
 
 // ───────────────────────────────────────────── Yorliqlar va ohanglar
 
-export const TEACHER_STATUS_META: Record<TeacherStatus, { label: string; tone: Tone }> = {
-  oz_vaqtida: { label: "O'z vaqtida", tone: 'success' },
-  kechikdi: { label: 'Kechikdi', tone: 'warning' },
-  kelmadi: { label: 'Kelmadi', tone: 'danger' },
-  kutilmoqda: { label: 'Kutilmoqda', tone: 'neutral' },
-  nomalum: { label: "Noma'lum", tone: 'neutral' },
-};
+// Yagona ta'rif studentAttendance.ts'da — bu yerda faqat qayta eksport.
+export { TEACHER_STATUS_META } from './studentAttendance';
 
 export const LESSON_RELATION_TONE: Record<LessonRelation, Tone> = {
   oz_darsi: 'success',

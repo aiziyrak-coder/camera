@@ -57,12 +57,16 @@ from app.services.face_recognition import detect_faces, face_quality_ok, recogni
 from app.services.face_tracks import track_store
 from app.services.inference_gate import PRIORITY_ATTENDANCE, PRIORITY_BACKGROUND
 from app.services.frame_grabber import (
+    ai_prefers_substream,
     frame_wait_seconds_for_camera,
     grab_frame_burst_for_camera,
     grab_frame_for_camera,
+    grab_main_stream_frame_once,
     grab_newer_frame,
     stream_label,
 )
+from app.services import face_zoom
+from app.services.image_size import jpeg_dimensions
 from app.services import recognition_stats
 from app.services.camera_roles import face_roi_box
 from app.services.motion_gate import MotionGate
@@ -446,6 +450,7 @@ async def process_camera_frame(
     roi: tuple[float, float, float, float] | None = None,
     skip_boxes: tuple = (),
     identified_boxes: list | None = None,
+    allow_zoom: bool = True,
 ) -> list[AttendanceRecord]:
     """Checks EVERY face in the frame — not just the largest — and writes
     an attendance record for each one that matches an enrolled person.
@@ -478,7 +483,10 @@ async def process_camera_frame(
     `roi` — kirish eshigi hududi (Camera.face_roi), `skip_boxes` — oldingi
     kadrda tanilgan yuzlar (qayta hisoblanmaydi). `identified_boxes` berilsa,
     shu kadrda tanilgan (davomatga yozilgan) yuzlarning ramkalari unga
-    qo'shiladi — kuzatuvchi ularni keyingi kadrda `skip_boxes` qilib beradi."""
+    qo'shiladi — kuzatuvchi ularni keyingi kadrda `skip_boxes` qilib beradi.
+
+    `allow_zoom=False` — bu kadrning o'zi asosiy oqimdan yaqinlashtirib
+    olingan (app/services/face_zoom.py), ya'ni yana zoom qilinmaydi."""
     if faces is None:
         faces = await detect_faces(frame_bytes, priority=inference_priority, roi=roi, skip_boxes=skip_boxes)
     camera_key_tracked = sum(1 for face in faces if getattr(face, "tracked", False))
@@ -520,6 +528,7 @@ async def process_camera_frame(
     recognition_stats.record_frame(camera_key, faces, graded)
 
     matched_ids: set[str] = set()
+    matched_boxes: list = []
     records: list[AttendanceRecord] = []
     for face, match in zip(usable, graded, strict=True):
         if match.person_id is None:
@@ -557,6 +566,7 @@ async def process_camera_frame(
             recognition_stats.record_credit(camera_key, "relaxed_confirmed")
 
         matched_ids.add(student_staff_id)
+        matched_boxes.append(face.bbox)
         if identified_boxes is not None:
             identified_boxes.append(face.bbox)
         logger.info(
@@ -585,7 +595,99 @@ async def process_camera_frame(
             )
         )
 
+    if allow_zoom:
+        records.extend(
+            await _zoom_recheck(
+                faces,
+                tuple(matched_boxes),
+                frame_bytes,
+                db,
+                camera,
+                candidates,
+                moment=moment,
+                off_hours_module_active=off_hours_module_active,
+                staff_module_active=staff_module_active,
+                student_module_active=student_module_active,
+            )
+        )
     return records
+
+
+async def _zoom_recheck(
+    faces: list,
+    matched_boxes: tuple,
+    frame_bytes: bytes,
+    db: AsyncSession,
+    camera: Camera | None,
+    candidates: CandidateMatrix,
+    *,
+    moment: datetime,
+    off_hours_module_active: bool,
+    staff_module_active: bool,
+    student_module_active: bool,
+) -> list[AttendanceRecord]:
+    """Kadrdagi "tanish uchun juda kichik" yuzlarni ASOSIY oqimdan
+    yaqinlashtirib qayta tekshiradi — app/services/face_zoom.py izohiga
+    qarang (nega kerakligi, o'lchovlar).
+
+    Zanjir: nomzodlarni tanlash -> chegaralovchi (kamera bo'yicha oraliq va
+    bir vaqtdagi kameralar soni) -> bitta 4K kadr -> faqat o'sha yuzlar
+    atrofidagi hududlarda detektsiya -> AYNAN shu funksiyaning o'zi
+    (allow_zoom=False), ya'ni moslik, sifat darvozasi, galereya va davomat
+    yozuvi odatdagi ko'rinishdan farq qilmaydi."""
+    if not settings.face_zoom_enabled or camera is None:
+        return []
+    # Kamera allaqachon asosiy oqimda — yaqinlashtiradigan joyi yo'q.
+    if not ai_prefers_substream(camera):
+        return []
+    boxes = face_zoom.zoom_candidate_boxes(
+        faces,
+        min_px=settings.face_zoom_max_px,
+        floor_px=settings.face_zoom_min_px,
+        max_faces=settings.face_zoom_max_faces,
+        matched=matched_boxes,
+    )
+    if not boxes:
+        return []
+    size = jpeg_dimensions(frame_bytes)
+    if size is None:
+        return []
+    width, height = size
+    camera_key = str(camera.id)
+    with face_zoom.zoom_limiter.slot(camera_key) as allowed:
+        if not allowed:
+            return []
+        recognition_stats.record_zoom_attempt(camera_key)
+        main_frame = await grab_main_stream_frame_once(camera)
+        if not main_frame:
+            return []
+        rois = [face_zoom.roi_for_box(box, width, height, margin=settings.face_zoom_margin) for box in boxes]
+        detections = await asyncio.gather(
+            *(detect_faces(main_frame, priority=PRIORITY_ATTENDANCE, roi=roi) for roi in rois)
+        )
+        zoom_faces = face_zoom.merge_zoom_faces(list(detections))
+        recognition_stats.record_zoom_faces(camera_key, [recognition_stats.face_height_px(f) for f in zoom_faces])
+        if not zoom_faces:
+            return []
+        records = await process_camera_frame(
+            main_frame,
+            db,
+            camera,
+            occurred_at=moment,
+            candidates=candidates,
+            off_hours_module_active=off_hours_module_active,
+            staff_module_active=staff_module_active,
+            student_module_active=student_module_active,
+            faces=zoom_faces,
+            allow_zoom=False,
+        )
+        recognition_stats.record_zoom_matches(camera_key, len(records))
+        if records:
+            logger.info(
+                "zoom pass matched faces the substream could not",
+                extra={"camera_id": camera_key, "regions": len(rois), "matches": len(records)},
+            )
+        return records
 
 
 async def run_attendance_ai_sweep_once(

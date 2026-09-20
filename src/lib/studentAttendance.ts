@@ -259,7 +259,7 @@ export function applyArrival<T extends GroupStudent>(
 
 export const TEACHER_STATUS_META: Record<TeacherStatus, { label: string; tone: Tone }> = {
   oz_vaqtida: { label: "O'z vaqtida", tone: 'success' },
-  kechikdi: { label: 'Kechikdi', tone: 'warning' },
+  kechikdi: { label: 'Kech keldi', tone: 'warning' },
   kelmadi: { label: 'Kelmadi', tone: 'danger' },
   kutilmoqda: { label: 'Kutilmoqda', tone: 'neutral' },
   nomalum: { label: "Noma'lum", tone: 'neutral' },

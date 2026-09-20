@@ -15,17 +15,18 @@ import {
   Card,
   DataTable,
   Page,
-  SearchInput,
-  Select,
   StatTile,
   StatusDot,
   TONE_TEXT,
-  Toolbar,
+  FilterBar,
+  filterActiveCount,
+  resetFilterFields,
   cn,
   focusRing,
   formatNumber,
   useToast,
   type DataTableColumn,
+  type FilterFieldEntry,
   type Tone,
 } from '../../ui';
 import { api } from '../../lib/apiClient';
@@ -209,21 +210,67 @@ export default function CamerasZonesPage() {
     return options;
   }, [zones, zoneFilter]);
 
-  const activeFilters =
-    (statusFilter ? 1 : 0) +
-    (buildingFilter ? 1 : 0) +
-    (floorFilter ? 1 : 0) +
-    (zoneFilter ? 1 : 0) +
-    (roomTypeFilter ? 1 : 0) +
-    (search.trim() ? 1 : 0);
+  const filterFields: FilterFieldEntry[] = [
+    {
+      kind: 'search',
+      value: search,
+      onChange: setSearch,
+      placeholder: "Nom, zona yoki IP bo'yicha…",
+      ariaLabel: 'Kameralarni qidirish',
+    },
+    {
+      kind: 'select',
+      value: statusFilter,
+      onChange: setStatusFilter,
+      options: STATUS_OPTIONS,
+      placeholder: 'Barcha holatlar',
+      ariaLabel: "Holat bo'yicha filtr",
+    },
+    {
+      kind: 'select',
+      value: buildingFilter,
+      // Bino almashsa zona filtri ma'nosini yo'qotadi.
+      onChange: (value) => {
+        setBuildingFilter(value);
+        setZoneFilter('');
+      },
+      options: buildings.map((b) => ({ value: b.name, label: b.name })),
+      placeholder: 'Barcha binolar',
+      ariaLabel: "Bino bo'yicha filtr",
+    },
+    {
+      kind: 'select',
+      value: floorFilter,
+      onChange: setFloorFilter,
+      options: floorOptions,
+      placeholder: 'Barcha qavatlar',
+      ariaLabel: "Qavat bo'yicha filtr",
+    },
+    {
+      kind: 'select',
+      value: roomTypeFilter,
+      onChange: setRoomTypeFilter,
+      options: ROOM_FILTER_OPTIONS,
+      placeholder: 'Barcha xona turlari',
+      ariaLabel: "Xona turi bo'yicha filtr",
+    },
+    zoneOptions.length > 0 && {
+      kind: 'select',
+      value: zoneFilter,
+      onChange: setZoneFilter,
+      options: zoneOptions,
+      placeholder: 'Barcha zonalar',
+      ariaLabel: "Xona/zona bo'yicha filtr",
+      className: 'sm:max-w-[16rem]',
+    },
+  ];
+  const activeFilters = filterActiveCount(filterFields);
 
   function resetFilters() {
-    setStatusFilter('');
-    setBuildingFilter('');
-    setFloorFilter('');
+    resetFilterFields(filterFields);
+    // Zona tanlagichi bino o'zgarganda ro'yxatdan chiqib ketishi mumkin —
+    // ko'rinmasa ham qiymati qolib ketmasin.
     setZoneFilter('');
-    setRoomTypeFilter('');
-    setSearch('');
   }
 
   function toggleOne(id: string) {
@@ -455,62 +502,7 @@ export default function CamerasZonesPage() {
           )}
         </>
       }
-      toolbar={
-        <Toolbar activeCount={activeFilters} onReset={resetFilters}>
-          <SearchInput
-            value={search}
-            onChange={setSearch}
-            placeholder="Nom, zona yoki IP bo'yicha…"
-            ariaLabel="Kameralarni qidirish"
-          />
-          <Select
-            value={statusFilter}
-            onChange={setStatusFilter}
-            options={STATUS_OPTIONS}
-            placeholder="Barcha holatlar"
-            ariaLabel="Holat bo'yicha filtr"
-            highlightActive
-          />
-          <Select
-            value={buildingFilter}
-            onChange={(value) => {
-              setBuildingFilter(value);
-              setZoneFilter('');
-            }}
-            options={buildings.map((b) => ({ value: b.name, label: b.name }))}
-            placeholder="Barcha binolar"
-            ariaLabel="Bino bo'yicha filtr"
-            highlightActive
-          />
-          <Select
-            value={floorFilter}
-            onChange={setFloorFilter}
-            options={floorOptions}
-            placeholder="Barcha qavatlar"
-            ariaLabel="Qavat bo'yicha filtr"
-            highlightActive
-          />
-          <Select
-            value={roomTypeFilter}
-            onChange={setRoomTypeFilter}
-            options={ROOM_FILTER_OPTIONS}
-            placeholder="Barcha xona turlari"
-            ariaLabel="Xona turi bo'yicha filtr"
-            highlightActive
-          />
-          {zoneOptions.length > 0 && (
-            <Select
-              value={zoneFilter}
-              onChange={setZoneFilter}
-              options={zoneOptions}
-              placeholder="Barcha zonalar"
-              ariaLabel="Xona/zona bo'yicha filtr"
-              highlightActive
-              className="sm:max-w-[16rem]"
-            />
-          )}
-        </Toolbar>
-      }
+      toolbar={<FilterBar fields={filterFields} onReset={resetFilters} />}
     >
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatTile icon={Video} tone="success" label="Faol kameralar" value={formatNumber(summary?.faol ?? 0)} loading={!summary} />

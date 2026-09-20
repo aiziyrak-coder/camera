@@ -77,7 +77,12 @@ export default function ReportView({ data, onDrill }: ReportViewProps) {
   );
 
   const breakdown = body.breakdown;
-  const maxValue = breakdown ? Math.max(1, ...breakdown.rows.map((r) => r.value ?? 0)) : 1;
+  // Spread (`Math.max(...rows)`) uzun hisobotda argument limitidan oshib
+  // ketardi; reduce xavfsiz va faqat satrlar o'zgarganda hisoblanadi.
+  const maxValue = useMemo(
+    () => (breakdown ? breakdown.rows.reduce((max, r) => Math.max(max, r.value ?? 0), 1) : 1),
+    [breakdown],
+  );
 
   return (
     <div className="flex min-w-0 flex-col gap-5">

@@ -35,6 +35,8 @@ export function TrendChart({ points, height = 260, target = 85, markLowest = tru
   const theme = useChartTheme();
   const data = useMemo(() => points.map((p) => ({ ...p, label: dayTick(p.date) })), [points]);
   const hasArrival = points.some((p) => p.arrivalMinutes !== null && p.arrivalMinutes !== undefined);
+  // Barqaror havola: har renderda yangi obyekt recharts'ni qayta chizardi.
+  const margin = useMemo(() => ({ top: 16, right: hasArrival ? 0 : 8, bottom: 0, left: 0 }), [hasArrival]);
   const arrivals = points.map((p) => p.arrivalMinutes).filter((m): m is number => m !== null && m !== undefined);
   const aMin = arrivals.length ? Math.floor((Math.min(...arrivals) - 10) / 15) * 15 : 420;
   const aMax = arrivals.length ? Math.ceil((Math.max(...arrivals) + 10) / 15) * 15 : 600;
@@ -45,7 +47,7 @@ export function TrendChart({ points, height = 260, target = 85, markLowest = tru
   return (
     <div style={{ height }} className="-ml-2 w-[calc(100%+0.5rem)]" role="img" aria-label={ariaLabel}>
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={data} margin={{ top: 16, right: hasArrival ? 0 : 8, bottom: 0, left: 0 }}>
+        <ComposedChart data={data} margin={margin}>
           <defs>
             <linearGradient id="trendchart-fill" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={theme.primary} stopOpacity={0.2} />

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CalendarCheck, CheckCircle2, Clock, GraduationCap, Hourglass, RefreshCw, ScanFace, UserX, Users } from 'lucide-react';
-import { Button, Card, EmptyState, ErrorState, IconButton, Page, SkeletonTiles, StatTile, Toolbar, formatNumber, formatPercent, formatUzDate, useShell, useUrlTab, type TabItem } from '../../ui';
-import { Skeleton } from '../../ui';
+import { Button, Card, EmptyState, ErrorState, IconButton, Page, SkeletonCards, SkeletonTiles, StatTile, Toolbar, formatNumber, formatPercent, formatUzDate, useShell, useUrlTab, type TabItem } from '../../ui';
 import { getOverview, situationPaths, type Overview } from '../../lib/situationApi';
 import { useLiveAttendance, type LiveAttendanceMessage } from '../../lib/realtime';
 import { useViewDate } from '../../lib/viewDate';
@@ -91,11 +90,7 @@ export default function FacultiesPage() {
       {overview.loading ? (
         <>
           <SkeletonTiles count={5} className="xl:grid-cols-5" />
-          <div className="grid gap-4 md:grid-cols-2">
-            {Array.from({ length: 4 }, (_, i) => (
-              <Skeleton key={i} className="h-44 rounded-card" />
-            ))}
-          </div>
+          <SkeletonCards count={4} />
         </>
       ) : overview.error && !data ? (
         <Card padding="none">

@@ -39,6 +39,29 @@ export function SkeletonCard({ className, lines = 4 }: { className?: string; lin
   );
 }
 
+/** Karta to'ridagi yuklanish holati (fakultetlar, guruhlar, kafedralar).
+ *
+ *  Ilgari har sahifa `Array.from(...).map(<Skeleton className="h-44 …" />)`ni
+ *  o'zi yozardi — balandligi har joyda boshqacha va `aria-busy` yo'q edi. */
+export function SkeletonCards({
+  count = 4,
+  height = 'h-44',
+  className = 'md:grid-cols-2',
+}: {
+  count?: number;
+  /** Tailwind balandlik sinfi (masalan "h-36"). */
+  height?: string;
+  className?: string;
+}) {
+  return (
+    <div className={cn('grid gap-3 sm:gap-4', className)} aria-busy="true" aria-label="Yuklanmoqda">
+      {Array.from({ length: count }).map((_, i) => (
+        <Skeleton key={i} className={cn(height, 'rounded-card')} />
+      ))}
+    </div>
+  );
+}
+
 export function SkeletonTable({ rows = 6, columns = 5, className }: { rows?: number; columns?: number; className?: string }) {
   const grid = { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` };
   return (

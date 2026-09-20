@@ -28,7 +28,8 @@ def fake_face_pipeline(monkeypatch, request):
 
     # Qo'lda tasdiqlash rejimi (self_enrollment_auto_approve=False) testlari;
     # avtomatik rejim — TestAutoApprove.
-    monkeypatch.setattr(settings, "self_enrollment_auto_approve", request.cls is TestAutoApprove)
+    auto = request.cls in (TestAutoApprove, TestImpersonationOfAnImportedPerson)
+    monkeypatch.setattr(settings, "self_enrollment_auto_approve", auto)
     async def no_liveness_check(frames):
         return None
 
@@ -216,3 +217,42 @@ class TestAutoApprove:
         # a va b — bitta yuz: bittasi tasdiqlanadi, takrori tekshiruvda qoladi.
         assert sorted([a.biometrics_status, b.biometrics_status]) == ["kutilmoqda", "tasdiqlangan"]
         assert c.biometrics_status == "tasdiqlangan"
+
+
+@pytest.mark.usefixtures("seeded")
+class TestImpersonationOfAnImportedPerson:
+    """JSHSHIR sir emas: u bilan birovning yozuviga o'z yuzini bog'lab
+    bo'lmaydi — yuz boshqa tanilgan odamnikiga o'xshasa, tekshiruvga qoladi."""
+
+    async def test_a_face_that_belongs_to_someone_else_is_held(self, client: AsyncClient, db_session):
+        import json
+
+        victim = StudentStaff(full_name="Ro'yxatdagi Xodim", type="xodim", group_or_position="Assistent",
+                              pinfl="51234567890123", biometrics_status="yoq")
+        impostor_owner = StudentStaff(full_name="Begona Yuz Egasi", type="xodim", group_or_position="Assistent",
+                                      biometrics_status="tasdiqlangan", biometric_embedding=json.dumps([0.1] * 512))
+        db_session.add_all([victim, impostor_owner])
+        await db_session.commit()
+
+        resp = await client.post(
+            f"/api/public/enrollment/{victim.id}/submit",
+            data={"pinfl": "51234567890123", "consent": "true"},
+            files=FRAMES,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["biometricsStatus"] == "kutilmoqda"
+        assert str(victim.id) not in await _known_ids(db_session)
+
+    async def test_an_ordinary_first_enrollment_still_works(self, client: AsyncClient, db_session):
+        person = StudentStaff(full_name="Oddiy Xodim", type="xodim", group_or_position="Assistent",
+                              pinfl="61234567890123", biometrics_status="yoq")
+        db_session.add(person)
+        await db_session.commit()
+        resp = await client.post(
+            f"/api/public/enrollment/{person.id}/submit",
+            data={"pinfl": "61234567890123", "consent": "true"},
+            files=FRAMES,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["biometricsStatus"] == "tasdiqlangan"
+        assert str(person.id) in await _known_ids(db_session)

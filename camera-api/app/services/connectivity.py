@@ -15,7 +15,7 @@ import json
 import shutil
 import time
 
-from app.rtsp import build_rtsp_url
+from app.rtsp import build_rtsp_url, redact_credentials
 from app.schemas.camera import ConnectionTestOut
 
 TCP_TIMEOUT_SECONDS = 3.0
@@ -67,7 +67,12 @@ async def _rtsp_probe(url: str) -> tuple[bool, str | None]:
         return False, None
 
     if proc.returncode != 0:
-        return False, stderr.decode(errors="ignore").strip()[:300] or None
+        # ffprobe o'z xato satrida KIRISH URL'ini aynan qaytaradi
+        # ("rtsp://admin:Parol123@10.0.0.5:554/...: 401 Unauthorized"), bu
+        # matn esa HTTP javobida foydalanuvchiga ko'rsatiladi. Kamera
+        # paroli shu yo'l bilan ochiq chiqib ketmasligi kerak
+        # (app/services/stream_cache.py dagi _redact bilan bir xil).
+        return False, redact_credentials(stderr.decode(errors="ignore").strip())[:300] or None
 
     try:
         data = json.loads(stdout.decode(errors="ignore"))

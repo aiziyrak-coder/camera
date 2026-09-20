@@ -875,12 +875,11 @@ async def enroll_biometrics(
     (to the DB, JSON-encoded) — see biometric_photo_key/biometric_embedding
     on the model for why. A pure /api/face/compare call never touches this
     endpoint; this only runs once the wizard's match step has passed."""
-    result = await db.execute(
-        select(StudentStaff).options(selectinload(StudentStaff.faculty)).where(StudentStaff.id == record_id)
-    )
-    record = result.scalar_one_or_none()
-    if record is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Yozuv topilmadi")
+    # Shu fayldagi boshqa endpointlar bilan bir xil yo'l: _load_record
+    # identifikator shaklini tekshiradi. Xom satr UUID ustuniga
+    # solishtirilganda Postgres darajasida xato bo'lib, 404 o'rniga 500
+    # qaytardi.
+    record = await _load_record(db, record_id)
 
     data = await photo.read()
     if len(data) > MAX_PHOTO_SIZE_BYTES:

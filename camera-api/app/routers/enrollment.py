@@ -44,12 +44,14 @@ via the existing /api/students-staff/{id}/biometrics endpoint.
 
 import asyncio
 import json
+import uuid
 from datetime import datetime, timezone
 import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -91,19 +93,6 @@ router = APIRouter(prefix="/api/public/enrollment", tags=["enrollment"])
 MAX_PHOTO_SIZE_BYTES = 10 * 1024 * 1024
 #: Jonli yo'naltirish kadri — kichraytirilgan holda keladi.
 MAX_POSE_FRAME_BYTES = 2 * 1024 * 1024
-MIN_FRAMES = 1
-"""Bitta rasm ham yetarli.
-
-Avval 2 ta talab qilinardi, chunki oqim faqat kameradan ko'p burchakli
-suratga olishni bilardi va bir nechta kadr o'rtachasi bitta kadrdan
-ishonchliroq. Endi odam tayyor rasmini yuklashi mumkin, va u yerda
-"ikkinchi burchak" degan tushuncha yo'q.
-
-E'tiborga loyiq narsa: yuklangan rasm jonli suratga olishdan ZAIFROQ
-dalil — uni boshqa odamning rasmi bilan almashtirib bo'ladi. Bu mahsulot
-qarori, xavfsizlik jihatidan emas: jarayonni oddiylashtirish uchun
-qabul qilingan."""
-MAX_FRAMES = 6
 
 #: Tiriklik tekshiruvining bosqichlari — AYNAN shu tartibda.
 #:
@@ -132,6 +121,19 @@ def _pose_hint(faces: int, direction: str | None, close: bool, expected: str) ->
 
 
 
+def _as_uuid(value: str | None) -> uuid.UUID | None:
+    """Noto'g'ri shakldagi identifikator — None.
+
+    Bu endpointlar OCHIQ: xom satrni to'g'ridan-to'g'ri so'rovga
+    qo'yganda Postgres "invalid input syntax for type uuid" bilan
+    yiqilardi va mijoz 500 olardi (sessiya esa buzilgan holda qolardi).
+    Noma'lum identifikator "topilmadi" bo'lishi kerak, xato emas."""
+    try:
+        return uuid.UUID(str(value))
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
 def _normalize(series: str | None, number: str | None) -> tuple[str, str]:
     return (series or "").strip().upper(), (number or "").strip()
 
@@ -152,12 +154,22 @@ async def _find_by_pinfl(db: AsyncSession, pinfl: str) -> StudentStaff | None:
 
 
 async def _find_by_passport(db: AsyncSession, series: str, number: str) -> StudentStaff | None:
+    """Pasport bo'yicha eng eski yozuv.
+
+    JSHSHIR dan farqli o'laroq, pasport ustunlarida unikal indeks YO'Q
+    (ommaviy importda takror pasport uchrashi mumkin). Ilgari bu yerda
+    scalar_one_or_none() turardi — ikkita mos yozuv bo'lsa u istisno
+    ko'tarib, o'sha odam uchun ro'yxatdan o'tishni butunlay buzardi.
+    Eng eskisini tanlash — barqaror: har chaqiruvda bir xil yozuv
+    qaytadi, ya'ni yuz har safar boshqa dublikatga yopishib qolmaydi."""
     result = await db.execute(
         select(StudentStaff)
         .where(StudentStaff.passport_series == series)
         .where(StudentStaff.passport_number == number)
+        .order_by(StudentStaff.created_at, StudentStaff.id)
+        .limit(1)
     )
-    return result.scalar_one_or_none()
+    return result.scalars().first()
 
 
 async def _find_person(
@@ -251,7 +263,7 @@ async def register_self(
 
     faculty_id = None
     if body.faculty_id:
-        faculty = await db.get(Faculty, body.faculty_id)
+        faculty = await db.get(Faculty, _as_uuid(body.faculty_id)) if _as_uuid(body.faculty_id) else None
         if faculty is None:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Bunday fakultet topilmadi")
         faculty_id = faculty.id
@@ -268,7 +280,17 @@ async def register_self(
         self_registered=True,
     )
     db.add(record)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # JSHSHIR ustuni unikal: bir vaqtda kelgan ikkita so'rov ikkalasi
+        # ham "yozuv yo'q" deb topib, ikkalasi ham qo'shishga urinadi.
+        # Yutqazgani 500 emas, mavjud yozuvni olishi kerak.
+        await db.rollback()
+        existing = await _find_person(db, body.pinfl, body.passport_series, body.passport_number)
+        if existing is None:
+            raise
+        return _lookup_out(existing)
     await db.refresh(record)
     logger.info("self-service registration created", extra={"record_id": str(record.id)})
 
@@ -388,10 +410,13 @@ async def submit_enrollment(
     passport_number: Annotated[str | None, Form(alias="passportNumber")] = None,
     consent: Annotated[bool, Form(alias="consent")] = False,
 ) -> EnrollmentSubmitOut:
-    result = await db.execute(
-        select(StudentStaff).options(selectinload(StudentStaff.faculty)).where(StudentStaff.id == record_id)
-    )
-    record = result.scalar_one_or_none()
+    record_uuid = _as_uuid(record_id)
+    record = None
+    if record_uuid is not None:
+        result = await db.execute(
+            select(StudentStaff).options(selectinload(StudentStaff.faculty)).where(StudentStaff.id == record_uuid)
+        )
+        record = result.scalar_one_or_none()
     if record is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Yozuv topilmadi")
 
@@ -473,17 +498,21 @@ async def submit_enrollment(
     record.biometric_embedding = json.dumps(embedding)
     if consent:
         record_consent(record, "royxatdan_otish")
-    if record.self_registered:
-        # Institut ro'yxatida yo'q odam: avtomatik tasdiqlanadi, faqat yuzi
-        # boshqa odamga juda o'xshasa admin tekshiruviga qoladi.
-        new_status, reason = await decide_status(db, record, embedding)
-        record.biometrics_status = new_status
-        record.biometrics_confirmed_at = datetime.now(timezone.utc) if new_status == "tasdiqlangan" else None
-        if reason:
-            logger.warning("self-enrollment held for review", extra={"record_id": record_id, "reason": reason})
-    else:
-        record.biometrics_status = "tasdiqlangan"
-        record.biometrics_confirmed_at = datetime.now(timezone.utc)
+    # Avtomatik tasdiqlash HAMMA uchun bir xil tekshiruvdan o'tadi (2026-09-20).
+    # Sabab: JSHSHIR sir emas (hujjatda va ro'yxatlarda bor), tiriklik
+    # tekshiruvi esa "tirik odam"ni isbotlaydi, "AYNAN SHU odam"ni emas.
+    # Shusiz begona odam birovning JSHSHIRi bilan o'z yuzini uning nomiga
+    # bog'lab, davomat va turniketda o'sha odam bo'lib ko'rinardi. Halol
+    # topshirgan odamning yuzi hech kimga o'xshamaydi, shuning uchun
+    # tekshiruvga faqat o'zgalashtirish holati tushadi.
+    new_status, reason = await decide_status(db, record, embedding)
+    record.biometrics_status = new_status
+    record.biometrics_confirmed_at = datetime.now(timezone.utc) if new_status == "tasdiqlangan" else None
+    if reason:
+        logger.warning(
+            "enrollment held for review",
+            extra={"record_id": record_id, "self_registered": record.self_registered, "reason": reason},
+        )
 
     await db.commit()
     if previous_key and previous_key != key:

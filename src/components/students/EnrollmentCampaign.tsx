@@ -9,16 +9,15 @@ import {
   EmptyState,
   ErrorState,
   ProgressBar,
-  SearchInput,
-  Select,
   Skeleton,
-  Toolbar,
+  FilterBar,
   cn,
   focusRing,
   formatNumber,
   formatPercent,
   formatUzDate,
   type DataTableColumn,
+  type FilterFieldEntry,
 } from '../../ui';
 import { NO_FACULTY_ID, getEnrollment, getEnrollmentGroups, situationPaths, type EnrollCounts, type EnrollGroup, type Enrollment } from '../../lib/situationApi';
 import {
@@ -114,7 +113,15 @@ export function EnrollmentCampaign({ facultyId, today, withDate }: { facultyId?:
     return out;
   }, [data]);
 
-  const activeFilters = (query ? 1 : 0) + (faculty ? 1 : 0) + (course ? 1 : 0) + (stage ? 1 : 0);
+  const filterFields: FilterFieldEntry[] = [
+    { kind: 'search', value: query, onChange: setQuery, placeholder: 'Guruh nomi…' },
+    // Fakultet tanlagichi fakultet ichidagi ko'rinishda ortiqcha.
+    !scoped && { kind: 'select', value: faculty, onChange: setFaculty, options: facultyOptions, placeholder: 'Barcha fakultetlar', ariaLabel: 'Fakultet' },
+    courseOptions.length > 1 && { kind: 'select', value: course, onChange: setCourse, options: courseOptions, placeholder: 'Barcha kurslar', ariaLabel: 'Kurs' },
+    { kind: 'select', value: stage, onChange: (v) => setStage(v as Stage), options: STAGES, placeholder: 'Har qanday holat', ariaLabel: 'Holat' },
+  ];
+  // Ko'rinmayotgan tanlagich ham tozalansin (fakultet/kurs ro'yxati
+  // o'zgarganda qiymat qolib ketmasin).
   const reset = () => {
     setQuery('');
     setFaculty('');
@@ -239,12 +246,7 @@ export function EnrollmentCampaign({ facultyId, today, withDate }: { facultyId?:
             <span className="font-semibold text-success">{stageCounts.done}</span> tayyor
           </p>
         </div>
-        <Toolbar activeCount={activeFilters} onReset={reset}>
-          <SearchInput value={query} onChange={setQuery} placeholder="Guruh nomi…" />
-          {!scoped && <Select value={faculty} onChange={setFaculty} options={facultyOptions} placeholder="Barcha fakultetlar" ariaLabel="Fakultet" highlightActive />}
-          {courseOptions.length > 1 && <Select value={course} onChange={setCourse} options={courseOptions} placeholder="Barcha kurslar" ariaLabel="Kurs" highlightActive />}
-          <Select value={stage} onChange={(v) => setStage(v as Stage)} options={STAGES} placeholder="Har qanday holat" ariaLabel="Holat" highlightActive />
-        </Toolbar>
+        <FilterBar fields={filterFields} onReset={reset} />
         {data.groups.length === 0 ? (
           <EmptyState icon={Users} title="Guruhlar yo'q" description="Talabalar «Reestr» bo'limida guruhlarga biriktiriladi." />
         ) : rows.length === 0 ? (

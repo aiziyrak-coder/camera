@@ -516,9 +516,19 @@ async def access_webhook(
     if not device.enabled or not settings.access_control_enabled:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Qurilma o'chirilgan")
 
-    raw = await request.body()
-    if len(raw) > MAX_WEBHOOK_BODY_BYTES:
+    # Content-Length AVVAL tekshiriladi: `await request.body()` butun tanani
+    # xotiraga o'qiydi, ya'ni chegarani o'qishdan KEYIN tekshirish gigabaytli
+    # so'rov bilan jarayonni xotiradan tushirishga to'sqinlik qilmasdi.
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > MAX_WEBHOOK_BODY_BYTES:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "So'rov juda katta")
+    raw = b""
+    async for chunk in request.stream():
+        raw += chunk
+        if len(raw) > MAX_WEBHOOK_BODY_BYTES:
+            # Content-Length yo'q (chunked) yoki yolg'on bo'lsa — oqim
+            # chegaraga yetganda uziladi.
+            raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "So'rov juda katta")
     events, rejected = parse_webhook_body(raw, request.headers.get("content-type", "").lower())
     counts = await ingest_many(db, device, events)
     return WebhookResultOut(**counts, rejected=rejected)

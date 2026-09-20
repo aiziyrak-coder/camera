@@ -61,6 +61,23 @@ router = APIRouter(
 )
 
 
+async def _load_camera(db: AsyncSession, camera_id: str) -> Camera:
+    """Kamerani identifikator bo'yicha oladi; noto'g'ri shaklda — 404.
+
+    Xom satrni so'rovga qo'yish Postgres darajasida "invalid input
+    syntax for type uuid" xatosiga olib kelardi: OCHIQ endpointda bu
+    500 va buzilgan sessiya degani edi, holbuki javob oddiy "topilmadi"
+    bo'lishi kerak."""
+    try:
+        key = uuid.UUID(camera_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi") from None
+    camera = (await db.execute(select(Camera).where(Camera.id == key))).scalar_one_or_none()
+    if camera is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
+    return camera
+
+
 def _is_live_expr():
     """SQL mirror of app/jobs/camera_health.py's is_reachable() — lets the
     'JONLI'/'OFLAYN' filter and the live/offline stats counts be computed
@@ -277,10 +294,7 @@ async def get_live_detection(
     runs a real inference pass — cheap enough for a human watching one
     camera, not something to leave wide open on a no-auth endpoint.
     """
-    result = await db.execute(select(Camera).where(Camera.id == camera_id))
-    camera = result.scalar_one_or_none()
-    if camera is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
+    camera = await _load_camera(db, camera_id)
 
     try:
         frame_bytes = await grab_frame_for_camera(
@@ -331,9 +345,7 @@ async def get_camera_analysis_status(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CameraAnalysisStatusOut:
     """Oxirgi fon AI sweep vaqti va natijasi — monitoring modal badge."""
-    result = await db.execute(select(Camera).where(Camera.id == camera_id))
-    if result.scalar_one_or_none() is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
+    await _load_camera(db, camera_id)
 
     snap = await get_camera_sweep(camera_id)
     if snap is None:

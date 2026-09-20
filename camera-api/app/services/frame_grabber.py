@@ -217,6 +217,38 @@ async def grab_frame_for_camera(camera: Camera, *, wait_seconds: float | None = 
     return latest[0] if latest is not None else None
 
 
+async def grab_main_stream_frame_once(camera: Camera, *, wait_seconds: float | None = None) -> bytes | None:
+    """Asosiy (4K) oqimdan BITTA kadr — o'quvchi darhol yopiladi.
+
+    Yaqinlashtirib tanish uchun (app/services/face_zoom.py). Odatdagi
+    grab_frame_for_camera() kadrni keshdan oladi va o'quvchini tirik
+    qoldiradi: u yana stream_cache_idle_timeout_seconds davomida 4K
+    oqimni dekodlab turardi. Bu yerda esa aksincha — kadr olindimi yoki
+    yo'qmi, ffmpeg jarayoni shu yerda o'ldiriladi, ya'ni 4K ulanish
+    faqat shu bir necha soniya yashaydi.
+
+    None qaytadi: to'g'ridan-to'g'ri RTSP o'chirilgan, kamera allaqachon
+    asosiy oqimda (u holda zoom keraksiz — o'quvchisini yopib bo'lmaydi)
+    yoki oqim kadr bermadi."""
+    if not settings.ai_use_direct_rtsp:
+        return None
+    source = rtsp_url_for_camera(camera, substream=False)
+    if not source or source == camera_video_source(camera):
+        return None
+    deadline = time.monotonic() + (settings.face_zoom_wait_seconds if wait_seconds is None else wait_seconds)
+    try:
+        while time.monotonic() < deadline:
+            latest = await get_cached_frame_with_seq(source)
+            if latest is not None:
+                return latest[0]
+            if is_stream_known_broken(source):
+                return None
+            await asyncio.sleep(_POLL_SECONDS)
+        return None
+    finally:
+        await stop_stream_reader(source)
+
+
 def _spaced(history: list[tuple[bytes, int, float]], count: int, gap_seconds: float) -> list[bytes] | None:
     """Tarixdan (eng yangisidan) kamida `gap_seconds` oraliqli `count` ta kadr,
     eskisidan yangisiga tartibda. Yetmasa None."""

@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronRight, ScanFace } from 'lucide-react';
 import type { Enrollment } from '../../lib/situationApi';
@@ -22,7 +23,10 @@ const THRESHOLD = 5;
 export function EnrollmentCampaign({ data, loading, error, onRetry, link, facultyLink, big }: Props) {
   const s = data?.students;
   const pct = s?.pct ?? 0;
-  const faculties = [...(data?.byFaculty ?? [])].filter((f) => f.total > 0).sort((a, b) => (b.pct ?? 0) - (a.pct ?? 0) || b.total - a.total);
+  const faculties = useMemo(
+    () => [...(data?.byFaculty ?? [])].filter((f) => f.total > 0).sort((a, b) => (b.pct ?? 0) - (a.pct ?? 0) || b.total - a.total),
+    [data?.byFaculty],
+  );
   const leftToThreshold = s ? Math.max(0, Math.ceil((s.total * THRESHOLD) / 100) - s.confirmed) : 0;
 
   return (

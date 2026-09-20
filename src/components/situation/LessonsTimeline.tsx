@@ -106,7 +106,7 @@ export function LessonsTimeline({ lessons, loading, error, onRetry, isToday, big
                         size="sm"
                         segments={[
                           { value: slot.onTime, tone: 'success', label: "O'z vaqtida" },
-                          { value: slot.late, tone: 'warning', label: 'Kechikdi' },
+                          { value: slot.late, tone: 'warning', label: 'Kech keldi' },
                           { value: slot.missed, tone: 'danger', label: 'Kelmadi' },
                         ]}
                         ariaLabel={`${slot.start}: o'qituvchilar`}

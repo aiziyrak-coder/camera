@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ShieldCheck, Users } from 'lucide-react';
-import { ConfirmDialog, ErrorState, Page, SearchInput, Select, SkeletonCard, SkeletonTiles, Toolbar, useToast, useUrlTab, type TabItem } from '../../ui';
+import { ConfirmDialog, ErrorState, FilterBar, Page, SkeletonCard, SkeletonTiles, useToast, useUrlTab, type TabItem } from '../../ui';
 import { pagerFooter } from '../../components/settings/kit';
 import ConsentRecordModal from '../../components/privacy/ConsentRecordModal';
 import PrivacyPeopleTable, { PrivacyPersonDrawer, type PrivacyAction } from '../../components/privacy/PrivacyPeopleTable';
@@ -169,27 +169,29 @@ export default function PrivacyPage() {
   }
 
   const retentionDays = overview?.retention.biometricRetentionDaysAfterInactive ?? 0;
-  const activeFilters = (filter === 'all' ? 0 : 1) + (search.trim() ? 1 : 0);
 
   const toolbar =
     tab === 'shaxslar' ? (
-      <Toolbar
-        activeCount={activeFilters}
-        onReset={() => {
-          setFilter('all');
-          setSearch('');
-        }}
-      >
-        <SearchInput value={search} onChange={setSearch} placeholder="F.I.Sh., JSHSHIR yoki HEMIS ID" ariaLabel="Shaxslarni qidirish" />
-        <Select
-          value={filter === 'all' ? '' : filter}
-          onChange={(value) => setFilter((value || 'all') as FilterValue)}
-          options={FILTER_OPTIONS}
-          placeholder="Barcha shaxslar"
-          ariaLabel="Shaxslar filtri"
-          highlightActive
-        />
-      </Toolbar>
+      <FilterBar
+        fields={[
+          {
+            kind: 'search',
+            value: search,
+            onChange: setSearch,
+            placeholder: 'F.I.Sh., JSHSHIR yoki HEMIS ID',
+            ariaLabel: 'Shaxslarni qidirish',
+          },
+          {
+            kind: 'select',
+            value: filter,
+            onChange: (value) => setFilter(value as FilterValue),
+            options: FILTER_OPTIONS,
+            placeholder: 'Barcha shaxslar',
+            ariaLabel: 'Shaxslar filtri',
+            inactiveValue: 'all',
+          },
+        ]}
+      />
     ) : undefined;
 
   return (

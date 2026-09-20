@@ -27,7 +27,8 @@ import {
   ErrorState,
   Page,
   RANGE_PRESET_LABELS,
-  SearchInput,
+  FilterBar,
+  filterActiveCount,
   Select,
   Skeleton,
   StatTile,
@@ -41,6 +42,7 @@ import {
   useToast,
   useUrlTab,
   type DataTableColumn,
+  type FilterFieldEntry,
   type TabItem,
 } from '../../ui';
 import EventDrawer from '../../components/events/EventDrawer';
@@ -498,11 +500,98 @@ export default function EventsPage() {
     }
   }
 
-  const activeFilters = [severity, !queue && statusFilter, quick, moduleCode, building, from || to, search.trim()].filter(Boolean).length;
+  const moduleOptions = (trialView ? summary?.trialModules : summary?.modules) ?? [];
+  const filterFields: FilterFieldEntry[] = [
+    { kind: 'search', value: search, onChange: setSearch, placeholder: 'Kriteriya, kamera yoki shaxs…', ariaLabel: 'Hodisalarni qidirish' },
+    {
+      kind: 'select',
+      label: 'Muhimlik',
+      value: severity,
+      onChange: (value: string) => setParam({ muhimlik: value || null }),
+      placeholder: 'Barchasi',
+      options: SEVERITY_OPTIONS,
+    },
+    // Navbat ko'rinishida holat allaqachon belgilangan — filtr ko'rinmaydi.
+    !queue && {
+      kind: 'select',
+      label: 'Holat',
+      value: statusFilter,
+      onChange: (value: string) => setParam({ holat: value || null }),
+      placeholder: `Barchasi${summary ? ` (${summary.total})` : ''}`,
+      options: (
+        [
+          ['yangi', summary?.unreviewed],
+          ['jarayonda', summary?.inProgress],
+          ['tasdiqlangan', summary?.confirmed],
+          ['hal_qilindi', summary?.resolved],
+          ['rad_etilgan', summary?.rejected],
+        ] as const
+      ).map(([value, count]) => ({ value, label: `${STATUS_LABEL[value]}${count !== undefined ? ` (${count})` : ''}` })),
+    },
+    {
+      kind: 'select',
+      label: 'Modul',
+      value: moduleCode,
+      onChange: (value: string) => setParam({ modul: value || null }),
+      placeholder: 'Barchasi',
+      options: moduleOptions.map((m) => ({ value: m.value, label: `${m.label} (${m.count})` })),
+    },
+    {
+      kind: 'select',
+      label: 'Bino',
+      value: building,
+      onChange: (value: string) => setParam({ bino: value || null }),
+      placeholder: 'Barchasi',
+      options: (summary?.buildings ?? []).map((b) => ({ value: b.value, label: `${b.label} (${b.count})` })),
+    },
+    {
+      kind: 'select',
+      label: 'Davr',
+      value: periodValue,
+      onChange: selectPeriod,
+      placeholder: 'Barcha vaqt',
+      options: PERIOD_OPTIONS,
+    },
+    // Qo'lda sana oralig'i — "Davr: boshqa" tanlanganda.
+    showCustomDates && {
+      kind: 'custom',
+      active: Boolean(from || to),
+      onClear: () => setParam({ from: null, to: null }),
+      render: (
+        <span className="flex flex-wrap items-center gap-1.5">
+          <input
+            type="date"
+            aria-label="Sanadan"
+            value={from}
+            max={to || undefined}
+            onChange={(e) => setParam({ from: e.target.value || null })}
+            className={cn(controlBase, 'h-9 w-auto px-3 text-sm tabular-nums')}
+          />
+          <span className="text-muted" aria-hidden="true">
+            –
+          </span>
+          <input
+            type="date"
+            aria-label="Sanagacha"
+            value={to}
+            min={from || undefined}
+            onChange={(e) => setParam({ to: e.target.value || null })}
+            className={cn(controlBase, 'h-9 w-auto px-3 text-sm tabular-nums')}
+          />
+        </span>
+      ),
+    },
+    // Tezkor chiplar alohida qatorda chiziladi, lekin sanoq va tozalash
+    // uchun u ham xuddi shu ro'yxatda.
+    { kind: 'custom', render: null, active: Boolean(quick), onClear: () => setParam({ tez: null }) },
+  ];
+  const activeFilters = filterActiveCount(filterFields);
 
   function resetFilters() {
     setSearch('');
     setCustomPeriod(false);
+    // URL parametrlari bitta yozuvda tozalanadi (maydon-maydon emas) —
+    // aks holda har biri alohida navigatsiya bo'lardi.
     setParam({ muhimlik: null, holat: null, tez: null, modul: null, bino: null, from: null, to: null });
   }
 
@@ -612,7 +701,6 @@ export default function EventsPage() {
     },
   ];
 
-  const moduleOptions = (trialView ? summary?.trialModules : summary?.modules) ?? [];
 
   const toolbar = trialView ? (
     <Toolbar
@@ -633,75 +721,7 @@ export default function EventsPage() {
     </Toolbar>
   ) : (
     <div className="flex flex-col gap-2.5">
-      <Toolbar activeCount={activeFilters} onReset={resetFilters}>
-        <SearchInput value={search} onChange={setSearch} placeholder="Kriteriya, kamera yoki shaxs…" ariaLabel="Hodisalarni qidirish" />
-        <Select
-          label="Muhimlik"
-          value={severity}
-          onChange={(value) => setParam({ muhimlik: value || null })}
-          placeholder="Barchasi"
-          options={SEVERITY_OPTIONS}
-          highlightActive
-        />
-        {!queue && (
-          <Select
-            label="Holat"
-            value={statusFilter}
-            onChange={(value) => setParam({ holat: value || null })}
-            placeholder={`Barchasi${summary ? ` (${summary.total})` : ''}`}
-            highlightActive
-            options={(
-              [
-                ['yangi', summary?.unreviewed],
-                ['jarayonda', summary?.inProgress],
-                ['tasdiqlangan', summary?.confirmed],
-                ['hal_qilindi', summary?.resolved],
-                ['rad_etilgan', summary?.rejected],
-              ] as const
-            ).map(([value, count]) => ({ value, label: `${STATUS_LABEL[value]}${count !== undefined ? ` (${count})` : ''}` }))}
-          />
-        )}
-        <Select
-          label="Modul"
-          value={moduleCode}
-          onChange={(value) => setParam({ modul: value || null })}
-          placeholder="Barchasi"
-          highlightActive
-          options={moduleOptions.map((m) => ({ value: m.value, label: `${m.label} (${m.count})` }))}
-        />
-        <Select
-          label="Bino"
-          value={building}
-          onChange={(value) => setParam({ bino: value || null })}
-          placeholder="Barchasi"
-          highlightActive
-          options={(summary?.buildings ?? []).map((b) => ({ value: b.value, label: `${b.label} (${b.count})` }))}
-        />
-        <Select label="Davr" value={periodValue} onChange={selectPeriod} placeholder="Barcha vaqt" highlightActive options={PERIOD_OPTIONS} />
-        {showCustomDates && (
-          <span className="flex flex-wrap items-center gap-1.5">
-            <input
-              type="date"
-              aria-label="Sanadan"
-              value={from}
-              max={to || undefined}
-              onChange={(e) => setParam({ from: e.target.value || null })}
-              className={cn(controlBase, 'h-9 w-auto px-3 text-sm tabular-nums')}
-            />
-            <span className="text-muted" aria-hidden="true">
-              –
-            </span>
-            <input
-              type="date"
-              aria-label="Sanagacha"
-              value={to}
-              min={from || undefined}
-              onChange={(e) => setParam({ to: e.target.value || null })}
-              className={cn(controlBase, 'h-9 w-auto px-3 text-sm tabular-nums')}
-            />
-          </span>
-        )}
-      </Toolbar>
+      <FilterBar fields={filterFields} onReset={resetFilters} />
       <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Tezkor filtrlar">
         {quickFilters.map((filter) => (
           <QuickChip

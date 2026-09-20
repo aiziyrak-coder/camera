@@ -29,10 +29,10 @@ import asyncio
 import itertools
 from collections import deque
 import logging
-import re
 import time
 
 from app.config import settings
+from app.rtsp import redact_credentials
 from app.services.frame_quality import FlatBlock, looks_like_decode_damage, measure_frame
 
 logger = logging.getLogger("app.stream_cache")
@@ -41,8 +41,6 @@ _JPEG_SOI = b"\xff\xd8"
 _JPEG_EOI = b"\xff\xd9"
 _MAX_BUFFER_BYTES = 5_000_000  # guards against unbounded growth if a stream never emits a clean JPEG boundary
 _STDERR_TAIL_LINES = 20  # enough to see the actual RTSP failure reason without unbounded memory growth
-
-_CREDENTIALS_IN_URL = re.compile(r"(rtsp://)[^@/]+@")
 
 # Har bir YANGI kadrga beriladigan tartib raqami (publish()) — BUTUN jarayon
 # bo'yicha o'sib boradi, o'quvchi qayta ishga tushganda ham noldan
@@ -55,8 +53,11 @@ def _redact(text: str) -> str:
     """Strips `user:pass@` from any rtsp:// URL in `text` — ffmpeg's own
     stderr often echoes the input URL verbatim (e.g. in a 401/DESCRIBE
     failure line), so logging its raw stderr would otherwise leak camera
-    RTSP credentials in plaintext the moment any camera has real ones set."""
-    return _CREDENTIALS_IN_URL.sub(r"\1***:***@", text)
+    RTSP credentials in plaintext the moment any camera has real ones set.
+
+    Bitta amalga oshirish app/rtsp.py da — kamera parolini yashirish
+    ffprobe (app/services/connectivity.py) uchun ham kerak."""
+    return redact_credentials(text)
 
 
 class JpegSplitter:

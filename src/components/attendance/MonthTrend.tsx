@@ -4,6 +4,9 @@ import { Card, CardHeader, EmptyState, cn, focusRing, useChartTheme } from '../.
 import { monthLabel, shortMonthLabel } from '../../lib/attendanceCalendar';
 import type { AttendanceMonth } from '../../types';
 
+// Barqaror havola: har renderda yangi obyekt recharts'ni qayta chizardi.
+const CHART_MARGIN = { top: 6, right: 4, bottom: 0, left: 0 };
+
 function rateText(rate: number | null): string {
   return rate === null ? '—' : `${String(rate).replace('.', ',')}%`;
 }
@@ -43,7 +46,7 @@ export default function MonthTrend({
       {hasData ? (
         <div className="-ml-2 h-44 w-[calc(100%+0.5rem)]" role="img" aria-label="Oylar bo'yicha davomat">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} margin={{ top: 6, right: 4, bottom: 0, left: 0 }}>
+            <BarChart data={data} margin={CHART_MARGIN}>
               <CartesianGrid stroke={theme.grid} vertical={false} />
               <XAxis dataKey="month" tickFormatter={shortMonthLabel} tick={theme.axisTick} tickLine={false} axisLine={false} />
               <YAxis allowDecimals={false} tick={theme.axisTick} tickLine={false} axisLine={false} width={32} />

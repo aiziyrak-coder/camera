@@ -15,6 +15,7 @@ import {
   SearchInput,
   Select,
   Skeleton,
+  SkeletonCards,
   Tabs,
   Toolbar,
   formatNumber,
@@ -110,7 +111,7 @@ export default function FacultyPage() {
       cell: (g) => <span className={hasAttendanceData(g) ? 'tabular-nums' : 'tabular-nums font-medium text-warning'}>{formatPercent(enrolledPct(g))}</span>,
     },
     { key: 'on', header: 'Keldi', align: 'right', cell: (g) => formatNumber(g.present - g.late), sortValue: (g) => g.present - g.late },
-    { key: 'late', header: 'Kech', align: 'right', cell: (g) => formatNumber(g.late), sortValue: (g) => g.late },
+    { key: 'late', header: 'Kech keldi', align: 'right', cell: (g) => formatNumber(g.late), sortValue: (g) => g.late },
     { key: 'absent', header: 'Kelmadi', align: 'right', cell: (g) => formatNumber(g.absent), sortValue: (g) => g.absent },
     { key: 'notYet', header: 'Kutilmoqda', align: 'right', cell: (g) => formatNumber(g.notYet), sortValue: (g) => g.notYet, hideOnMobile: !isToday },
     {
@@ -147,11 +148,7 @@ export default function FacultyPage() {
       ) : faculty.loading ? (
         <>
           <Skeleton className="h-32 rounded-card" />
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {Array.from({ length: 8 }, (_, i) => (
-              <Skeleton key={i} className="h-36 rounded-card" />
-            ))}
-          </div>
+          <SkeletonCards count={8} height="h-36" className="sm:grid-cols-2 xl:grid-cols-4" />
         </>
       ) : faculty.error && !data ? (
         <Card padding="none">

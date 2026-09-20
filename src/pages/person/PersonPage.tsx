@@ -286,7 +286,10 @@ export default function PersonPage() {
 
   const tabs: TabItem<TabId>[] = [
     { id: 'davomat', label: 'Davomat', icon: CalendarDays },
-    { id: 'darslar', label: 'Darslar', icon: GraduationCap, count: data?.lessons.length ?? null },
+    // Dars jadvali yo'q shaxsda tab ham yo'q — doimo bo'sh jadval o'rniga.
+    ...(data && data.lessons.length > 0
+      ? [{ id: 'darslar' as const, label: 'Darslar', icon: GraduationCap, count: data.lessons.length }]
+      : []),
     { id: 'harakatlar', label: 'Harakatlar', icon: Footprints, count: data?.recentVisits.length ?? null },
   ];
   const [tab, setTab] = useUrlTab(tabs, { defaultTab: 'davomat' });

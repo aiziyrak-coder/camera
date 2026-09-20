@@ -52,7 +52,13 @@ async def user_from_token(token: str, db: AsyncSession) -> CurrentUser:
     if user is None or user.token_version != payload.token_version:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessiya tugatilgan — qayta kiring")
 
-    return CurrentUser(id=payload.user_id, role=payload.role, jti=payload.jti, expires_at=payload.expires_at)
+    # ROL BAZADAN OLINADI, tokendan EMAS. Token ichidagi "role" — chiqarilgan
+    # paytdagi nusxa: admin foydalanuvchining rolini pasaytirsa (yoki
+    # oshirsa), eski token jwt_ttl_hours tugaguncha ESKI rol bilan ishlashda
+    # davom etardi — ya'ni lavozimidan olingan odam yana bir yarim kun
+    # administrator huquqlari bilan yurardi. User qatori baribir shu yerda
+    # o'qilgan, qo'shimcha so'rov kerak emas.
+    return CurrentUser(id=payload.user_id, role=user.role, jti=payload.jti, expires_at=payload.expires_at)
 
 
 async def require_monitoring_access(

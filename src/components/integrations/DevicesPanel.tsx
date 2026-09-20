@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Copy, DoorOpen, KeyRound, Link2, Pencil, PlugZap, Plus, Trash2, Wifi, WifiOff } from 'lucide-react';
 import {
   cn,
@@ -18,6 +18,8 @@ import {
 } from '../../ui';
 import { Notice } from '../settings/kit';
 import { useAuth } from '../../lib/auth';
+import { isAbortError } from '../../lib/apiClient';
+import { useVisibleInterval } from '../../lib/useVisibleInterval';
 import {
   DEVICE_STATUS_META,
   DIRECTION_LABELS,
@@ -71,23 +73,32 @@ export default function DevicesPanel({
     [onAddingChange],
   );
 
+  const abort = useRef<AbortController | null>(null);
+
   const load = useCallback(async () => {
+    abort.current?.abort();
+    const controller = new AbortController();
+    abort.current = controller;
     try {
-      const list = await integrationsApi.devices(token);
+      const list = await integrationsApi.devices(token, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       setDevices(list);
       setError(null);
       onDevicesChange?.(list);
     } catch (err) {
+      if (isAbortError(err) || controller.signal.aborted) return;
       setError(err instanceof Error ? err.message : "Qurilmalarni yuklab bo'lmadi");
     }
   }, [token, onDevicesChange]);
 
   useEffect(() => {
     void load();
-    // Holat (onlayn/oxirgi hodisa) fonda yangilanib turadi.
-    const timer = window.setInterval(() => void load(), REFRESH_MS);
-    return () => window.clearInterval(timer);
+    return () => abort.current?.abort();
   }, [load]);
+
+  // Holat (onlayn/oxirgi hodisa) fonda yangilanib turadi — lekin yorliq
+  // ko'rinib turganda: yopilmagan yorliq har 15 soniyada so'rov yubormasin.
+  useVisibleInterval(load, REFRESH_MS);
 
   const selected = devices?.find((d) => d.id === selectedId) ?? null;
 

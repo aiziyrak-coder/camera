@@ -1,5 +1,5 @@
 import { Cctv } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import LiveVideoPlayer from '../LiveVideoPlayer';
 import { fetchAllPages } from '../../lib/apiClient';
 import { isCameraOnline } from '../../lib/videoWall';
@@ -30,10 +30,13 @@ export function CamerasPanel({ ids, onAvailability }: { ids: string[]; onAvailab
     };
   }, []);
 
-  const online = (cams ?? []).filter((c) => isCameraOnline(c) && c.streamUrl);
-  const picked = ids.length
-    ? ids.map((id) => online.find((c) => c.id === id)).filter((c): c is CameraFeed => Boolean(c))
-    : online.slice(0, 2);
+  const picked = useMemo(() => {
+    const online = (cams ?? []).filter((c) => isCameraOnline(c) && c.streamUrl);
+    if (!ids.length) return online.slice(0, 2);
+    // Indeks bo'yicha: ilgari har bir id uchun butun ro'yxat qidirilardi.
+    const byId = new Map(online.map((c) => [c.id, c]));
+    return ids.map((id) => byId.get(id)).filter((c): c is CameraFeed => Boolean(c));
+  }, [cams, ids]);
   const has = picked.length > 0;
 
   useEffect(() => {

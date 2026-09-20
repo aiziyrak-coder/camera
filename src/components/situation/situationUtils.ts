@@ -134,7 +134,7 @@ export function peakHour(rows: Overview['arrivalsByHour']): { hour: number; tota
 export function attendanceSegments(counts: Counts): ProgressSegment[] {
   return [
     { value: Math.max(0, counts.present - counts.late), tone: 'success', label: "O'z vaqtida" },
-    { value: counts.late, tone: 'warning', label: 'Kech qoldi' },
+    { value: counts.late, tone: 'warning', label: 'Kech keldi' },
     { value: counts.absent, tone: 'danger', label: 'Kelmadi' },
     { value: counts.notYet, tone: 'neutral', label: 'Hali kelmagan' },
   ];

@@ -15,6 +15,11 @@ import { formatNumber, formatPercent, formatUzDate, useChartTheme } from '../../
 import type { TrendPoint } from '../../lib/situationApi';
 import { UZ_WEEKDAYS_SHORT, parseIsoDate } from '../../lib/uzDate';
 
+// Barqaror havola: har renderda yangi obyekt recharts'ni qayta chizardi.
+const AREA_MARGIN = { top: 10, right: 8, bottom: 0, left: 0 };
+const BAR_MARGIN = { top: 6, right: 8, bottom: 0, left: 0 };
+const AREA_MARGIN_SM = { top: 8, right: 8, bottom: 0, left: 0 };
+
 function dayTick(iso: string): string {
   const d = parseIsoDate(iso);
   return `${d.getUTCDate()} ${UZ_WEEKDAYS_SHORT[(d.getUTCDay() + 6) % 7]}`;
@@ -36,7 +41,7 @@ export function RateTrendChart({ points, height = 240, target = 85 }: { points: 
   return (
     <div style={{ height }} className="-ml-2 w-[calc(100%+0.5rem)]" role="img" aria-label="Kunlik davomat foizi grafigi">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 10, right: 8, bottom: 0, left: 0 }}>
+        <AreaChart data={data} margin={AREA_MARGIN}>
           <defs>
             <linearGradient id="rate-fill" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={theme.primary} stopOpacity={0.18} />
@@ -90,7 +95,7 @@ export function StatusTrendChart({ points, height = 220 }: { points: readonly Tr
       </ul>
       <div style={{ height }} className="-ml-2 w-[calc(100%+0.5rem)]" role="img" aria-label="Kunlik holatlar grafigi">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} margin={{ top: 6, right: 8, bottom: 0, left: 0 }} barCategoryGap="22%">
+          <BarChart data={data} margin={BAR_MARGIN} barCategoryGap="22%">
             <CartesianGrid vertical={false} stroke={theme.grid} />
             <XAxis dataKey="label" tick={theme.axisTick} tickLine={false} axisLine={{ stroke: theme.grid }} interval="preserveStartEnd" minTickGap={8} />
             <YAxis tick={theme.axisTick} tickLine={false} axisLine={false} allowDecimals={false} width={42} />
@@ -142,7 +147,7 @@ export function ArrivalTimeChart({
   return (
     <div style={{ height }} className="-ml-2 w-[calc(100%+0.5rem)]" role="img" aria-label="Kunlik kelish vaqti grafigi">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+        <AreaChart data={data} margin={AREA_MARGIN_SM}>
           <CartesianGrid vertical={false} stroke={theme.grid} />
           <XAxis dataKey="label" tick={theme.axisTick} tickLine={false} axisLine={{ stroke: theme.grid }} interval="preserveStartEnd" minTickGap={10} />
           <YAxis domain={[min, max]} reversed tickFormatter={minutesToClock} tick={theme.axisTick} tickLine={false} axisLine={false} width={46} />

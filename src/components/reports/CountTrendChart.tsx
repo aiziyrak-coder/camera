@@ -3,6 +3,9 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { formatUzDate, useChartTheme } from '../../ui';
 import { UZ_WEEKDAYS_SHORT, parseIsoDate } from '../../lib/uzDate';
 
+// Barqaror havola: har renderda yangi obyekt recharts'ni qayta chizardi.
+const CHART_MARGIN = { top: 12, right: 8, bottom: 0, left: 0 };
+
 interface CountTrendChartProps {
   points: readonly { date: string; value: number | null }[];
   label: string;
@@ -21,7 +24,7 @@ export default function CountTrendChart({ points, label, height = 240 }: CountTr
   return (
     <div style={{ height }} className="-ml-2 w-[calc(100%+0.5rem)]" role="img" aria-label={`${label} — kunlar bo'yicha`}>
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 12, right: 8, bottom: 0, left: 0 }}>
+        <BarChart data={data} margin={CHART_MARGIN}>
           <CartesianGrid vertical={false} stroke={theme.grid} />
           <XAxis dataKey="label" tick={theme.axisTick} tickLine={false} axisLine={{ stroke: theme.grid }} interval="preserveStartEnd" minTickGap={10} />
           <YAxis allowDecimals={false} tick={theme.axisTick} tickLine={false} axisLine={false} width={36} />

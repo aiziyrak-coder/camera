@@ -68,11 +68,23 @@ class CameraRecognitionStats:
     # va allaqachon tanilgan odam sifatida qayta hisoblanmagan yuzlar (tracking).
     motion_skipped: int = 0
     tracked_faces: int = 0
+    # Asosiy oqimdan yaqinlashtirib tanish (app/services/face_zoom.py):
+    # nechta 4K kadr olindi, unda nechta yuz topildi, nechtasi davomatga
+    # yozildi va o'sha yuzlar necha piksel edi. Aynan shu to'rt raqam
+    # "zoom ishladimi" degan savolga javob beradi.
+    zoom_attempts: int = 0
+    zoom_faces: int = 0
+    zoom_matches: int = 0
     _face_heights: deque[int] = field(default_factory=lambda: deque(maxlen=500))
+    _zoom_heights: deque[int] = field(default_factory=lambda: deque(maxlen=500))
 
     @property
     def face_px_median(self) -> int | None:
         return int(median(self._face_heights)) if self._face_heights else None
+
+    @property
+    def zoom_px_median(self) -> int | None:
+        return int(median(self._zoom_heights)) if self._zoom_heights else None
 
 
 _stats: dict[str, CameraRecognitionStats] = {}
@@ -191,6 +203,28 @@ def record_tracked(camera_id: str | None, count: int) -> None:
     _camera_stats(camera_id).tracked_faces += count
 
 
+def record_zoom_attempt(camera_id: str | None) -> None:
+    """Asosiy oqimdan kadr olishga urinildi (kadr kelmasa ham sanaladi —
+    urinish 4K tarmoq yuklamasini beradi)."""
+    if camera_id is None:
+        return
+    _camera_stats(camera_id).zoom_attempts += 1
+
+
+def record_zoom_faces(camera_id: str | None, heights: list[int]) -> None:
+    if camera_id is None or not heights:
+        return
+    stats = _camera_stats(camera_id)
+    stats.zoom_faces += len(heights)
+    stats._zoom_heights.extend(heights)
+
+
+def record_zoom_matches(camera_id: str | None, count: int) -> None:
+    if camera_id is None or count <= 0:
+        return
+    _camera_stats(camera_id).zoom_matches += count
+
+
 def confirm_relaxed(person_id: str, *, now: float | None = None) -> bool:
     """True — shu odam oynada allaqachon bir marta ko'ringan (tasdiqlandi).
     False — birinchi ko'rinish, eslab qolindi va keyingisi kutiladi."""
@@ -245,6 +279,10 @@ class RecognitionView:
     stream: str | None = None
     motion_skipped: int = 0
     tracked_faces: int = 0
+    zoom_attempts: int = 0
+    zoom_faces: int = 0
+    zoom_matches: int = 0
+    zoom_px_median: int | None = None
     last_frame_at: datetime | None = None
     last_face_at: datetime | None = None
     last_match_at: datetime | None = None
@@ -283,6 +321,10 @@ def export_snapshot() -> dict[str, dict]:
             "stream": s.stream,
             "motion_skipped": s.motion_skipped,
             "tracked_faces": s.tracked_faces,
+            "zoom_attempts": s.zoom_attempts,
+            "zoom_faces": s.zoom_faces,
+            "zoom_matches": s.zoom_matches,
+            "zoom_px_median": s.zoom_px_median,
         }
         for camera_id, s in _stats.items()
         if s.day == today
@@ -318,6 +360,10 @@ def view_from_dict(row: dict) -> RecognitionView | None:
         stream=row.get("stream"),
         motion_skipped=int(row.get("motion_skipped", 0)),
         tracked_faces=int(row.get("tracked_faces", 0)),
+        zoom_attempts=int(row.get("zoom_attempts", 0)),
+        zoom_faces=int(row.get("zoom_faces", 0)),
+        zoom_matches=int(row.get("zoom_matches", 0)),
+        zoom_px_median=row.get("zoom_px_median"),
     )
 
 

@@ -5,6 +5,9 @@ import type { Overview } from '../../lib/situationApi';
 import { Card, CardHeader, EmptyState, Skeleton, cn, formatNumber, useChartTheme } from '../../ui';
 import { peakHour } from './situationUtils';
 
+// Barqaror havola: har renderda yangi obyekt recharts'ni qayta chizardi.
+const CHART_MARGIN = { top: 20, right: 4, bottom: 0, left: 0 };
+
 interface Props {
   rows: Overview['arrivalsByHour'] | null;
   loading: boolean;
@@ -53,7 +56,7 @@ export function ArrivalsChart({ rows, loading, currentHour, big }: Props) {
       ) : (
         <div className="-ml-2 w-[calc(100%+0.5rem)]" style={{ height }} role="img" aria-label={`Kelish dinamikasi: jami ${total} kishi`}>
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} margin={{ top: 20, right: 4, bottom: 0, left: 0 }} barCategoryGap="18%">
+            <BarChart data={data} margin={CHART_MARGIN} barCategoryGap="18%">
               <CartesianGrid vertical={false} stroke={theme.grid} />
               <XAxis dataKey="label" tick={{ ...theme.axisTick, fontSize: big ? 13 : 11 }} tickLine={false} axisLine={{ stroke: theme.grid }} interval={0} />
               <YAxis tick={{ ...theme.axisTick, fontSize: big ? 13 : 11 }} tickLine={false} axisLine={false} allowDecimals={false} width={36} />

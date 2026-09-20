@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Building2, CalendarX2, Clock, LayoutGrid, Rows3, Timer, UserCheck } from 'lucide-react';
 import {
   Badge,
+  cn,
   DataTable,
   EmptyState,
   ErrorState,
@@ -37,7 +38,15 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
   const navigate = useNavigate();
   const [view, setView] = usePersistedState<View>('oqituvchilar.view', 'cards');
   const [kind, setKind] = usePersistedState<KindFilter>('oqituvchilar.kind', 'all');
-  const lessons = useLoader(`l:${date}`, (signal) => getLessons({ date, pageSize: 500 }, { signal }), { refreshMs: isToday ? REFRESH_MS : undefined });
+  // Bo'linmalar ro'yxatidagi `lessonsToday` — darslar bor-yo'qligining
+  // tekin manbasi. Jadval kiritilmagan kunda 500 ta darsni so'ramaymiz;
+  // jadval paydo bo'lishi bilan so'rov o'zi qayta tiklanadi.
+  const scheduledLessons = useMemo(() => (loader.data ?? []).reduce((sum, u) => sum + u.lessonsToday, 0), [loader.data]);
+  const lessons = useLoader(
+    scheduledLessons > 0 ? `l:${date}` : null,
+    (signal) => getLessons({ date, pageSize: 500 }, { signal }),
+    { refreshMs: isToday ? REFRESH_MS : undefined },
+  );
   // Trend: tanlangan kungacha 7 kun vs undan oldingi 7 kun.
   const week = useMemo(() => rangeForPreset('last7', date), [date]);
   const trends = useLoader(`tr:${week.from}:${week.to}`, (signal) => getAnalyticsUnits({ from: week.from, to: week.to, kind: 'all' }, { signal }));
@@ -52,7 +61,7 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
   const rows = useMemo(() => (kind === 'all' ? all : all.filter((u) => u.kind === kind)), [all, kind]);
   const summary = useMemo(() => summarizeKafedras(rows), [rows]);
   const punctuality = useMemo(() => (lessons.data ? summarizePunctuality(lessons.data.items) : null), [lessons.data]);
-  const hasLessons = (lessons.data?.items.length ?? 0) > 0;
+  const hasLessons = scheduledLessons > 0;
   const staffRate = summary.staffTotal ? (summary.present / summary.staffTotal) * 100 : null;
   const effectiveView: View = presentation ? 'cards' : view;
 
@@ -143,7 +152,7 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
         <TeacherSearch />
       </Toolbar>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className={cn('grid grid-cols-2 gap-3', hasLessons ? 'lg:grid-cols-4' : 'lg:grid-cols-2')}>
         <StatTile
           label="Xodimlar keldi"
           icon={UserCheck}
@@ -154,8 +163,8 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
           progress={staffRate}
           hint={staffRate === null ? undefined : `${formatPercent(staffRate)} tanlangan bo'linmalarda`}
         />
-        <StatTile label="Kech qolganlar" icon={Timer} tone={summary.late ? 'warning' : 'neutral'} loading={loader.loading} value={summary.late} hint={`${summary.absent} kishi kelmadi`} />
-        {hasLessons || lessons.loading ? (
+        <StatTile label="Kech kelganlar" icon={Timer} tone={summary.late ? 'warning' : 'neutral'} loading={loader.loading} value={summary.late} hint={`${summary.absent} kishi kelmadi`} />
+        {hasLessons && (
           <>
             <StatTile
               label="Darsga o'z vaqtida"
@@ -175,14 +184,6 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
               hint={`${summary.lateLessons} kechikkan · ${summary.missedLessons} kelinmagan · ${summary.lessons} dars`}
             />
           </>
-        ) : (
-          <div className="col-span-2 flex flex-col justify-center rounded-card border border-dashed border-border-strong bg-surface p-4 text-sm">
-            <p className="font-medium text-fg">Dars jadvali hali yuklanmagan</p>
-            <p className="mt-1 text-xs text-muted">
-              Darsga punktuallik jadval yuklangach ko'rinadi —{' '}
-              <span className="font-medium text-fg">HEMIS ulangach avtomatik</span>
-            </p>
-          </div>
         )}
       </div>
 

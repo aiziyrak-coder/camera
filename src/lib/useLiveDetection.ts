@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
-import { api } from './apiClient';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { api, isAbortError } from './apiClient';
+import { useVisibleInterval } from './useVisibleInterval';
 import { tryAcquireLiveDetection, releaseLiveDetection } from './liveDetectionGate';
 import type { LiveDetectionResult } from '../types';
 
@@ -26,11 +27,33 @@ export function useLiveDetection(cameraId: string | undefined, enabled: boolean)
   const [slotDenied, setSlotDenied] = useState(false);
   const inFlight = useRef(false);
   const hasSlot = useRef(false);
+  const abort = useRef<AbortController | null>(null);
+  const [polling, setPolling] = useState(false);
+
+  const poll = useCallback(async () => {
+    if (!cameraId || inFlight.current) return;
+    inFlight.current = true;
+    const controller = new AbortController();
+    abort.current = controller;
+    try {
+      const res = await api.get<LiveDetectionResult>(`/api/public/cameras/${cameraId}/live-detection`, undefined, {
+        signal: controller.signal,
+      });
+      if (!controller.signal.aborted) setResult(res);
+    } catch (err) {
+      if (!isAbortError(err)) {
+        // bitta so'rov muvaffaqiyatsiz bo'lsa ham keyingi urinishda davom etamiz
+      }
+    } finally {
+      inFlight.current = false;
+    }
+  }, [cameraId]);
 
   useEffect(() => {
     if (!cameraId || !enabled) {
       setResult(null);
       setSlotDenied(false);
+      setPolling(false);
       if (cameraId && hasSlot.current) {
         releaseLiveDetection(cameraId);
         hasSlot.current = false;
@@ -41,37 +64,27 @@ export function useLiveDetection(cameraId: string | undefined, enabled: boolean)
     const acquired = tryAcquireLiveDetection(cameraId);
     hasSlot.current = acquired;
     setSlotDenied(!acquired);
+    setPolling(acquired);
     if (!acquired) {
       setResult(null);
       return;
     }
 
-    let cancelled = false;
-
-    async function poll() {
-      if (inFlight.current) return;
-      inFlight.current = true;
-      try {
-        const res = await api.get<LiveDetectionResult>(`/api/public/cameras/${cameraId}/live-detection`);
-        if (!cancelled) setResult(res);
-      } catch {
-        // bitta so'rov muvaffaqiyatsiz bo'lsa ham keyingi urinishda davom etamiz
-      } finally {
-        inFlight.current = false;
-      }
-    }
-
     poll();
-    const interval = setInterval(poll, POLL_INTERVAL_MS);
     return () => {
-      cancelled = true;
-      clearInterval(interval);
+      abort.current?.abort();
+      inFlight.current = false;
+      setPolling(false);
       if (hasSlot.current) {
         releaseLiveDetection(cameraId);
         hasSlot.current = false;
       }
     };
-  }, [cameraId, enabled]);
+  }, [cameraId, enabled, poll]);
+
+  // Yorliq fonga o'tsa so'rovlar to'xtaydi: har bir chaqiruv backendda
+  // haqiqiy kadr olish + inference, ko'rilmayotgan kamera uchun bu isrof.
+  useVisibleInterval(poll, polling ? POLL_INTERVAL_MS : null);
 
   return { result, slotDenied };
 }

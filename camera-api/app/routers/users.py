@@ -42,6 +42,47 @@ def _to_admin_user_out(user: User) -> AdminUserOut:
     )
 
 
+def _resolve_role(requested_label: str, current_user: CurrentUser) -> str:
+    """Tanlangan rolni qaytaradi, lekin imtiyozni OSHIRISHGA yo'l qo'ymaydi.
+
+    `manageRoles` — sozlanadigan huquq: Super Admin uni "Admin" ustuniga
+    yoqib qo'yishi mumkin. Shu holatda tekshiruvsiz admin o'zini yoki
+    boshqa hisobni Super Admin qilib qo'yib, huquqlar matritsasini
+    (faqat Super Admin tahrirlaydigan) o'z qo'liga olib olardi. Super
+    Admin rolini faqat Super Admin bera oladi."""
+    role = role_from_display_label(requested_label)
+    if role == "super-admin" and current_user.role != "super-admin":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Super Admin rolini faqat Super Admin tayinlay oladi"
+        )
+    return role
+
+
+def _guard_super_admin_target(user: User, current_user: CurrentUser) -> None:
+    """Super Admin hisobiga faqat Super Admin tegishi mumkin.
+
+    Aks holda `manageRoles` berilgan admin Super Admin'ning parolini
+    tiklab (yoki hisobini o'chirib) uning o'rnini egallab olardi — ya'ni
+    rolni ko'tarish taqiqi aylanib o'tilardi."""
+    if user.role == "super-admin" and current_user.role != "super-admin":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Super Admin hisobini faqat Super Admin o'zgartira oladi"
+        )
+
+
+async def _forbid_last_super_admin_demotion(db: AsyncSession, user: User, new_role: str) -> None:
+    """Oxirgi Super Admin'ni pasaytirib bo'lmaydi — aks holda huquqlar
+    matritsasini o'zgartira oladigan hech kim qolmaydi (o'chirishda shu
+    tekshiruv bor edi, tahrirlashda esa yo'q edi)."""
+    if user.role != "super-admin" or new_role == "super-admin":
+        return
+    others = (
+        await db.execute(select(User.id).where(User.role == "super-admin", User.id != user.id))
+    ).scalars().first()
+    if others is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Oxirgi Super Admin rolini o'zgartirib bo'lmaydi")
+
+
 def _clean_phone(value: str | None) -> str | None:
     """Bo'sh — o'chiriladi; aks holda +998XXXXXXXXX (SMS shu ko'rinishni kutadi)."""
     if value is None or not value.strip():
@@ -79,7 +120,7 @@ async def create_user(
         login=body.login,
         password_hash=hash_password(body.password),
         full_name=body.name,
-        role=role_from_display_label(body.role),
+        role=_resolve_role(body.role, current_user),
         email=body.email,
         phone=_clean_phone(body.phone),
     )
@@ -107,9 +148,13 @@ async def update_user(
         if existing.scalar_one_or_none() is not None:
             raise HTTPException(status.HTTP_409_CONFLICT, "Bu login band")
 
+    _guard_super_admin_target(user, current_user)
+    new_role = _resolve_role(body.role, current_user)
+    await _forbid_last_super_admin_demotion(db, user, new_role)
+
     user.full_name = body.name
     user.login = body.login
-    user.role = role_from_display_label(body.role)
+    user.role = new_role
     user.email = body.email
     if "phone" in body.model_fields_set:
         user.phone = _clean_phone(body.phone)
@@ -136,6 +181,7 @@ async def reset_user_password(
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Foydalanuvchi topilmadi")
 
+    _guard_super_admin_target(user, current_user)
     user.password_hash = hash_password(body.new_password)
     user.token_version += 1
     forget_default_password_check()
@@ -159,6 +205,8 @@ async def delete_user(
 
     if str(user.id) == str(current_user.id):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "O'zingizni o'chira olmaysiz")
+
+    _guard_super_admin_target(user, current_user)
 
     if user.role == "super-admin":
         count_result = await db.execute(select(User).where(User.role == "super-admin"))

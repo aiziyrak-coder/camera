@@ -5,7 +5,7 @@
   "description": "Videokuzatuv, AI hodisalar va davomat monitoringi",
   "lang": "uz",
   "dir": "ltr",
-  "start_url": "/admin?source=pwa",
+  "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
   "display_override": [

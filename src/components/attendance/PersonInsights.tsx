@@ -46,7 +46,7 @@ export function StaffKpis({
         hint={arrivalLate ? `${minutesClock(lateCutoff)} dan kech` : `chegara ${minutesClock(lateCutoff)}`}
       />
       <StatTile
-        label="Kech qolgan kunlar"
+        label="Kech kelgan kunlar"
         value={current.lateDays}
         unit="kun"
         icon={Clock}

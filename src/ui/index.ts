@@ -49,7 +49,9 @@ export { sortRows, compareValues, nextSort } from './tableSort';
 export type { SortState, SortDir, SortValue } from './tableSort';
 
 export { Toolbar, FilterBar } from './Toolbar';
-export type { ToolbarProps } from './Toolbar';
+export type { ToolbarProps, FilterBarProps } from './Toolbar';
+export { filterActiveCount, isFilterActive, resetFilterFields, presentFilterFields } from './filterFields';
+export type { FilterField, FilterFieldEntry } from './filterFields';
 export { SearchInput } from './SearchInput';
 export type { SearchInputProps } from './SearchInput';
 export { Select } from './Select';
@@ -76,7 +78,7 @@ export { EmptyState } from './EmptyState';
 export type { EmptyStateProps } from './EmptyState';
 export { ErrorState } from './ErrorState';
 export type { ErrorStateProps } from './ErrorState';
-export { Skeleton, SkeletonText, SkeletonTiles, SkeletonCard, SkeletonTable, PageSkeleton } from './Skeleton';
+export { Skeleton, SkeletonText, SkeletonTiles, SkeletonCard, SkeletonCards, SkeletonTable, PageSkeleton } from './Skeleton';
 export { ToastProvider, useToast } from './Toast';
 
 export { useChartTheme, readChartTheme, readToken } from './chartTheme';

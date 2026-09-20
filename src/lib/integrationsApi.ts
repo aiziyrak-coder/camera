@@ -1,4 +1,4 @@
-import { api, buildQuery, type Page } from './apiClient';
+import { api, buildQuery, type CallOptions, type Page } from './apiClient';
 import { config } from './config';
 import type { Tone } from '../ui/tones';
 
@@ -145,7 +145,7 @@ export const integrationsApi = {
   runs: (page: number, token: string | null) =>
     api.get<Page<SyncRun>>(`/api/integrations/runs${buildQuery({ source: 'hemis', page, pageSize: 10 })}`, token),
 
-  devices: (token: string | null) => api.get<AccessDevice[]>('/api/access/devices', token),
+  devices: (token: string | null, opts?: CallOptions) => api.get<AccessDevice[]>('/api/access/devices', token, opts),
   createDevice: (body: Record<string, unknown>, token: string | null) =>
     api.post<AccessDeviceCreated>('/api/access/devices', body, token),
   updateDevice: (id: string, body: Record<string, unknown>, token: string | null) =>

@@ -3,7 +3,7 @@
  * Nima qiladi:
  *   - sahifalar (navigatsiya): avval tarmoq, tarmoq bo'lmasa oxirgi
  *     saqlangan ilova qobig'i (index.html) — yangi deploy darhol ko'rinadi;
- *   - /assets/* (Vite, nomida hash bor): keshdan, bo'lmasa tarmoqdan;
+ *   - /app/* va /assets/* (Vite, nomida hash bor): keshdan, bo'lmasa tarmoqdan;
  *   - ikonlar, shriftlar, manifest: keshdan darhol, fonda yangilanadi.
  *
  * Nima QILMAYDI (ataylab): /api, WebSocket, jonli video (HLS: /s0/.., /cam-..,
@@ -148,7 +148,8 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(handleNavigation(request));
     return;
   }
-  if (url.pathname.startsWith('/assets/')) {
+  // Build --assetsDir app bilan chiqadi (/app/*); /assets/* eski build uchun.
+  if (url.pathname.startsWith('/app/') || url.pathname.startsWith('/assets/')) {
     event.respondWith(handleAsset(request));
     return;
   }

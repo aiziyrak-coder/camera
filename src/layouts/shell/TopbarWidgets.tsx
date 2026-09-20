@@ -82,16 +82,25 @@ export function SystemStatus({ showLabel = true }: { showLabel?: boolean }) {
     }
 
     void check();
-    const id = window.setInterval(check, 60_000);
+    // Fonda turgan yorliq /health'ni chaqirmaydi; qaytib ko'ringanda
+    // darhol bir marta tekshiriladi (holat eskirib qolmasin).
+    const id = window.setInterval(() => {
+      if (document.visibilityState !== 'hidden') void check();
+    }, 60_000);
     const recheck = () => void check();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void check();
+    };
     window.addEventListener('online', recheck);
     window.addEventListener('offline', recheck);
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       cancelled = true;
       controller?.abort();
       window.clearInterval(id);
       window.removeEventListener('online', recheck);
       window.removeEventListener('offline', recheck);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, []);
 

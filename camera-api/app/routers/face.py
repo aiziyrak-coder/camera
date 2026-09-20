@@ -8,6 +8,11 @@ from app.services.face_recognition import NoFaceDetectedError, compare_faces
 
 router = APIRouter(prefix="/api/face", tags=["face"])
 
+#: Har bir rasm uchun chegara — ro'yxatdan o'tish oqimidagi bilan bir xil
+#: (app/routers/enrollment.py). Chegarasiz bu endpoint istalgan hajmdagi
+#: faylni xotiraga o'qib, keyin uni InsightFace'ga berardi.
+MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024
+
 
 @router.post("/compare", response_model=FaceCompareOut)
 async def compare(
@@ -16,6 +21,10 @@ async def compare(
     image_b: Annotated[UploadFile, File(description="Kamerada suratga olingan jonli yuz")],
 ) -> FaceCompareOut:
     data_a, data_b = await image_a.read(), await image_b.read()
+    if len(data_a) > MAX_IMAGE_SIZE_BYTES or len(data_b) > MAX_IMAGE_SIZE_BYTES:
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Har bir rasm 10 MB dan oshmasligi kerak"
+        )
     try:
         result = await compare_faces(data_a, data_b)
     except NoFaceDetectedError as exc:

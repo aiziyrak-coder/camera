@@ -103,7 +103,15 @@ export default function SituationPage() {
 
   const overview = useLiveResource(canData ? `overview:${date}` : null, (signal) => getOverview(date, { signal }), tick);
   const groups = useLiveResource(canData ? `groups:${date}` : null, (signal) => getGroups({ date }, { signal }), tick);
-  const lessons = useLiveResource(canLessons ? `lessons:${date}` : null, (signal) => getLessons({ date, pageSize: 500 }, { signal }), tick);
+  // Dars jadvali kiritilmagan bo'lsa (ishlab turgan tizimda odatiy holat)
+  // 500 ta darsni har yangilanishda so'rashning ma'nosi yo'q: umumiy
+  // ko'rsatkich darslar borligini aytganda so'raladi.
+  const hasLessons = (overview.data?.lessons.total ?? 0) > 0;
+  const lessons = useLiveResource(
+    canLessons && hasLessons ? `lessons:${date}` : null,
+    (signal) => getLessons({ date, pageSize: 500 }, { signal }),
+    tick,
+  );
   // Xodimlar: oxirgi 14 kun (trend + kecha / o'tgan hafta shu kuni bilan taqqoslash).
   const staffTrend = useLiveResource(canData ? `staff-trend:${date}` : null, (signal) => getAnalyticsSummary({ from: shiftIso(date, -14), to: date, type: 'xodim' }, { signal }), tick);
   const units = useLiveResource(canData ? `units:${date}` : null, (signal) => getKafedras(date, { signal }), tick);
@@ -284,7 +292,7 @@ export default function SituationPage() {
               big={big}
             />
             <KpiTile
-              label="Kech qolgan xodimlar"
+              label="Kech kelgan xodimlar"
               icon={Clock}
               tone="warning"
               value={formatNumber(staff?.late)}
@@ -323,56 +331,63 @@ export default function SituationPage() {
               loading={chronic.loading && !chronic.data}
               big={big}
             />
-            <KpiTile
-              label="O'qituvchilar darsga o'z vaqtida"
-              icon={Users}
-              tone={toneForRate(teacherRate)}
-              value={formatPercent(teacherRate)}
-              segments={
-                data && data.teachers.onTime + data.teachers.late + data.teachers.absent > 0
-                  ? [
-                      { value: data.teachers.onTime, tone: 'success', label: "O'z vaqtida" },
-                      { value: data.teachers.late, tone: 'warning', label: 'Kechikdi' },
-                      { value: data.teachers.absent, tone: 'danger', label: 'Kelmadi' },
-                    ]
-                  : undefined
-              }
-              hint={
-                data
-                  ? data.teachers.scheduled > 0
-                    ? `${formatNumber(data.teachers.scheduled)} o'qituvchi · ${formatNumber(data.teachers.late)} kech · ${formatNumber(data.teachers.absent)} kelmadi`
-                    : "Darsi bor o'qituvchi yo'q"
-                  : undefined
-              }
-              to={teachersLink}
-              loading={loadingTiles}
-              big={big}
-            />
-            <KpiTile
-              label="Darslar"
-              icon={BookOpen}
-              tone="info"
-              value={formatNumber(isToday ? data?.lessons.finished : data?.lessons.total)}
-              suffix={data && isToday ? `/ ${formatNumber(data.lessons.total)}` : undefined}
-              segments={
-                data && isToday && data.lessons.total > 0
-                  ? [
-                      { value: data.lessons.finished, tone: 'neutral', label: "O'tgan" },
-                      { value: data.lessons.ongoing, tone: 'primary', label: 'Davom etmoqda' },
-                      { value: data.lessons.upcoming, tone: 'info', label: 'Kutilmoqda' },
-                    ]
-                  : undefined
-              }
-              hint={
-                data
-                  ? isToday
-                    ? `o'tgan · ${formatNumber(data.lessons.ongoing)} davom etmoqda · ${formatNumber(data.lessons.upcoming)} kutilmoqda`
-                    : "ta dars o'tgan"
-                  : undefined
-              }
-              loading={loadingTiles}
-              big={big}
-            />
+            {/* Dars jadvali kiritilmagan bo'lsa bu ikki ko'rsatkichni
+                tizim umuman o'lchay olmaydi — 0% ko'rsatish o'rniga
+                ko'rsatkich chiqmaydi. Jadval paydo bo'lsa o'zi qaytadi. */}
+            {hasLessons && (
+              <>
+              <KpiTile
+                label="O'qituvchilar darsga o'z vaqtida"
+                icon={Users}
+                tone={toneForRate(teacherRate)}
+                value={formatPercent(teacherRate)}
+                segments={
+                  data && data.teachers.onTime + data.teachers.late + data.teachers.absent > 0
+                    ? [
+                        { value: data.teachers.onTime, tone: 'success', label: "O'z vaqtida" },
+                        { value: data.teachers.late, tone: 'warning', label: 'Kech keldi' },
+                        { value: data.teachers.absent, tone: 'danger', label: 'Kelmadi' },
+                      ]
+                    : undefined
+                }
+                hint={
+                  data
+                    ? data.teachers.scheduled > 0
+                      ? `${formatNumber(data.teachers.scheduled)} o'qituvchi · ${formatNumber(data.teachers.late)} kech · ${formatNumber(data.teachers.absent)} kelmadi`
+                      : "Darsi bor o'qituvchi yo'q"
+                    : undefined
+                }
+                to={teachersLink}
+                loading={loadingTiles}
+                big={big}
+              />
+              <KpiTile
+                label="Darslar"
+                icon={BookOpen}
+                tone="info"
+                value={formatNumber(isToday ? data?.lessons.finished : data?.lessons.total)}
+                suffix={data && isToday ? `/ ${formatNumber(data.lessons.total)}` : undefined}
+                segments={
+                  data && isToday && data.lessons.total > 0
+                    ? [
+                        { value: data.lessons.finished, tone: 'neutral', label: "O'tgan" },
+                        { value: data.lessons.ongoing, tone: 'primary', label: 'Davom etmoqda' },
+                        { value: data.lessons.upcoming, tone: 'info', label: 'Kutilmoqda' },
+                      ]
+                    : undefined
+                }
+                hint={
+                  data
+                    ? isToday
+                      ? `${formatNumber(data.lessons.finished)} o'tgan · ${formatNumber(data.lessons.ongoing)} davom etmoqda · ${formatNumber(data.lessons.upcoming)} kutilmoqda`
+                      : `${formatNumber(data.lessons.total)} ta dars o'tgan`
+                    : undefined
+                }
+                loading={loadingTiles}
+                big={big}
+              />
+              </>
+            )}
             {isToday ? (
               <KpiTile
                 label="Kameralar onlayn"
@@ -443,7 +458,7 @@ export default function SituationPage() {
               big={big}
             />
             <KpiTile
-              label="Kech qolganlar"
+              label="Kech kelganlar"
               icon={Clock}
               tone="warning"
               value={formatNumber(s?.late)}
@@ -485,56 +500,63 @@ export default function SituationPage() {
                 big={big}
               />
             )}
-            <KpiTile
-              label="O'qituvchilar darsga o'z vaqtida"
-              icon={Users}
-              tone={toneForRate(teacherRate)}
-              value={formatPercent(teacherRate)}
-              segments={
-                data && data.teachers.onTime + data.teachers.late + data.teachers.absent > 0
-                  ? [
-                      { value: data.teachers.onTime, tone: 'success', label: "O'z vaqtida" },
-                      { value: data.teachers.late, tone: 'warning', label: 'Kechikdi' },
-                      { value: data.teachers.absent, tone: 'danger', label: 'Kelmadi' },
-                    ]
-                  : undefined
-              }
-              hint={
-                data
-                  ? data.teachers.scheduled > 0
-                    ? `${formatNumber(data.teachers.scheduled)} o'qituvchi · ${formatNumber(data.teachers.late)} kech · ${formatNumber(data.teachers.absent)} kelmadi`
-                    : "Darsi bor o'qituvchi yo'q"
-                  : undefined
-              }
-              to={teachersLink}
-              loading={loadingTiles}
-              big={big}
-            />
-            <KpiTile
-              label="Darslar"
-              icon={BookOpen}
-              tone="info"
-              value={formatNumber(isToday ? data?.lessons.finished : data?.lessons.total)}
-              suffix={data && isToday ? `/ ${formatNumber(data.lessons.total)}` : undefined}
-              segments={
-                data && isToday && data.lessons.total > 0
-                  ? [
-                      { value: data.lessons.finished, tone: 'neutral', label: "O'tgan" },
-                      { value: data.lessons.ongoing, tone: 'primary', label: 'Davom etmoqda' },
-                      { value: data.lessons.upcoming, tone: 'info', label: 'Kutilmoqda' },
-                    ]
-                  : undefined
-              }
-              hint={
-                data
-                  ? isToday
-                    ? `o'tgan · ${formatNumber(data.lessons.ongoing)} davom etmoqda · ${formatNumber(data.lessons.upcoming)} kutilmoqda`
-                    : "ta dars o'tgan"
-                  : undefined
-              }
-              loading={loadingTiles}
-              big={big}
-            />
+            {/* Dars jadvali kiritilmagan bo'lsa bu ikki ko'rsatkichni
+                tizim umuman o'lchay olmaydi — 0% ko'rsatish o'rniga
+                ko'rsatkich chiqmaydi. Jadval paydo bo'lsa o'zi qaytadi. */}
+            {hasLessons && (
+              <>
+              <KpiTile
+                label="O'qituvchilar darsga o'z vaqtida"
+                icon={Users}
+                tone={toneForRate(teacherRate)}
+                value={formatPercent(teacherRate)}
+                segments={
+                  data && data.teachers.onTime + data.teachers.late + data.teachers.absent > 0
+                    ? [
+                        { value: data.teachers.onTime, tone: 'success', label: "O'z vaqtida" },
+                        { value: data.teachers.late, tone: 'warning', label: 'Kech keldi' },
+                        { value: data.teachers.absent, tone: 'danger', label: 'Kelmadi' },
+                      ]
+                    : undefined
+                }
+                hint={
+                  data
+                    ? data.teachers.scheduled > 0
+                      ? `${formatNumber(data.teachers.scheduled)} o'qituvchi · ${formatNumber(data.teachers.late)} kech · ${formatNumber(data.teachers.absent)} kelmadi`
+                      : "Darsi bor o'qituvchi yo'q"
+                    : undefined
+                }
+                to={teachersLink}
+                loading={loadingTiles}
+                big={big}
+              />
+              <KpiTile
+                label="Darslar"
+                icon={BookOpen}
+                tone="info"
+                value={formatNumber(isToday ? data?.lessons.finished : data?.lessons.total)}
+                suffix={data && isToday ? `/ ${formatNumber(data.lessons.total)}` : undefined}
+                segments={
+                  data && isToday && data.lessons.total > 0
+                    ? [
+                        { value: data.lessons.finished, tone: 'neutral', label: "O'tgan" },
+                        { value: data.lessons.ongoing, tone: 'primary', label: 'Davom etmoqda' },
+                        { value: data.lessons.upcoming, tone: 'info', label: 'Kutilmoqda' },
+                      ]
+                    : undefined
+                }
+                hint={
+                  data
+                    ? isToday
+                      ? `${formatNumber(data.lessons.finished)} o'tgan · ${formatNumber(data.lessons.ongoing)} davom etmoqda · ${formatNumber(data.lessons.upcoming)} kutilmoqda`
+                      : `${formatNumber(data.lessons.total)} ta dars o'tgan`
+                    : undefined
+                }
+                loading={loadingTiles}
+                big={big}
+              />
+              </>
+            )}
             {isToday ? (
               <KpiTile
                 label="Kameralar onlayn"
@@ -634,7 +656,7 @@ export default function SituationPage() {
                 big={big}
               />
               <ArrivalsChart rows={data?.arrivalsByHour ?? null} loading={loadingTiles} currentHour={isToday && data ? hourOf(data.generatedAt) : null} big={big} />
-            {canLessons && (
+            {canLessons && hasLessons && (
               <LessonsTimeline
                 lessons={lessons.data?.items ?? null}
                 loading={lessons.loading && !lessons.data}

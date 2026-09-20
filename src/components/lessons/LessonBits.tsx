@@ -1,6 +1,6 @@
 import { Badge, ProgressBar, cn } from '../../ui';
-import { LESSON_STATE_LABELS, type Lesson, type LessonState, type TeacherStatus } from '../../lib/situationApi';
-import { TEACHER_STATUS_META } from '../../lib/teachersApi';
+import type { Lesson, LessonState, TeacherStatus } from '../../lib/situationApi';
+import { LESSON_STATE_META, TEACHER_STATUS_META } from '../../lib/studentAttendance';
 import type { Tone } from '../../ui';
 
 const STATE_TONE: Record<LessonState, Tone> = { ongoing: 'primary', upcoming: 'neutral', finished: 'neutral' };
@@ -19,7 +19,7 @@ export function TeacherPunctualityBadge({ status, time, className }: { status: T
 export function LessonStateBadge({ state }: { state: LessonState }) {
   return (
     <Badge tone={STATE_TONE[state]} dot={state === 'ongoing'}>
-      {LESSON_STATE_LABELS[state]}
+      {LESSON_STATE_META[state].label}
     </Badge>
   );
 }

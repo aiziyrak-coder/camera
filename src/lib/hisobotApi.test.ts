@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  activeFilterCount,
   courseOptions,
   drillPatch,
   formatCell,
@@ -102,7 +101,6 @@ describe('misc', () => {
     expect(path).toContain('kind=talaba');
     expect(path).toContain('faculty=di');
     expect(path).not.toContain('unit=');
-    expect(activeFilterCount(s)).toBe(1);
   });
 
   it('formats cells', () => {

@@ -195,7 +195,7 @@ export function AttentionPanel({ loading, events, cameras, groups, groupLink, te
                           </p>
                         </div>
                         <Badge tone={missed ? 'danger' : 'warning'} dot>
-                          {missed ? 'Kelmadi' : lesson.teacherArrivedAt ? `Kechikdi ${lesson.teacherArrivedAt}` : 'Kechikmoqda'}
+                          {missed ? 'Kelmadi' : lesson.teacherArrivedAt ? `Kech keldi ${lesson.teacherArrivedAt}` : 'Hali kelmagan'}
                         </Badge>
                       </RowLink>
                     </li>

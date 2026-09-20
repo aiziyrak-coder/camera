@@ -173,9 +173,9 @@ export function writeState(current: URLSearchParams, patch: Partial<HisobotState
   return next;
 }
 
-export function activeFilterCount(state: HisobotState): number {
-  return [state.faculty, state.course, state.group, state.unitKind, state.unit, state.q].filter(Boolean).length;
-}
+// Faol filtrlarni sanash endi FilterBar'da (src/ui/Toolbar.tsx) — bitta
+// joyda, barcha sahifalarda bir xil. Bu yerdagi nusxa `q`ni trim qilmay
+// sanardi: bitta probel "Tozalash (1)" chiqarib, hech nimani filtrlamasdi.
 
 function queryParams(state: HisobotState, criterion?: string) {
   return {

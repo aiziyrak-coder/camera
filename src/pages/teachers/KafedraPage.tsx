@@ -4,6 +4,7 @@ import { BarChart3, BookOpen, CalendarCheck, Clock, LayoutGrid, Rows3, Timer, Us
 import {
   Avatar,
   Badge,
+  cn,
   ButtonLink,
   DataTable,
   DateRangePicker,
@@ -53,6 +54,8 @@ const SORT_OPTIONS: { value: TeacherSort; label: string }[] = [
   { value: 'activity', label: 'Faollik (yuqori birinchi)' },
   { value: 'name', label: 'F.I.Sh.' },
 ];
+/** Dars jadvalisiz hisoblab bo'lmaydigan tartiblar. */
+const LESSON_SORTS: TeacherSort[] = ['onTime', 'activity'];
 const REFRESH_MS = 60_000;
 
 export default function KafedraPage() {
@@ -76,17 +79,33 @@ export default function KafedraPage() {
     (signal) => getKafedra(departmentId, { date, from: period.from, to: period.to }, { signal }),
     { refreshMs: isToday ? REFRESH_MS : undefined, group: `${departmentId}:${date}` },
   );
+  const data = detail.data;
+  // Dars jadvali kiritilmagan bo'lsa "Darslar" tabi ham, so'rovi ham yo'q.
+  // `lessonsScheduled` o'qituvchilar ro'yxati bilan kelgan — qo'shimcha
+  // so'rovsiz. Jadval paydo bo'lishi bilan tab o'zi qaytadi.
+  const scheduledLessons = useMemo(
+    () => (data?.teachers ?? []).reduce((sum, t) => sum + t.lessonsScheduled, 0),
+    [data?.teachers],
+  );
   const lessons = useLoader(
-    `${departmentId}:${date}`,
+    scheduledLessons > 0 ? `${departmentId}:${date}` : null,
     (signal) => getLessons({ date, departmentId, pageSize: 500 }, { signal }),
     { refreshMs: isToday ? REFRESH_MS : undefined },
   );
 
-  const data = detail.data;
+  // Dars jadvali yo'q bo'lsa dars asosidagi tartiblar ro'yxatdan chiqadi
+  // (saqlangan tanlov ham "kechikish"ga qaytadi — Select bo'sh qolmasin).
+  const periodLessons = data?.period.lessons ?? 0;
+  const sortOptions = periodLessons > 0 ? SORT_OPTIONS : SORT_OPTIONS.filter((o) => !LESSON_SORTS.includes(o.value));
+  const effectiveSort: TeacherSort = periodLessons > 0 || !LESSON_SORTS.includes(sort) ? sort : 'lateness';
+
   const tabs: TabItem<TabId>[] = [
     { id: 'oqituvchilar', label: "O'qituvchilar", icon: Users, count: data?.teachers.length ?? null },
     { id: 'tahlil', label: 'Tahlil', icon: BarChart3 },
-    { id: 'darslar', label: 'Darslar', icon: BookOpen, count: lessons.data?.total ?? null },
+    // Tab ro'yxatda bo'lmasa `?tab=darslar` standart tabga tushadi (resolveTab).
+    ...(scheduledLessons > 0
+      ? [{ id: 'darslar' as const, label: 'Darslar', icon: BookOpen, count: lessons.data?.total ?? null }]
+      : []),
   ];
   const [tab] = useUrlTab(tabs, { defaultTab: 'oqituvchilar' });
 
@@ -140,7 +159,7 @@ export default function KafedraPage() {
             }
           >
             <SearchInput value={search} onChange={setSearch} placeholder="Ism bo'yicha…" ariaLabel="O'qituvchini qidirish" />
-            <Select value={sort} onChange={(v) => setSort(v as TeacherSort)} options={SORT_OPTIONS} label="Tartib:" ariaLabel="Tartiblash" />
+            <Select value={effectiveSort} onChange={(v) => setSort(v as TeacherSort)} options={sortOptions} label="Tartib:" ariaLabel="Tartiblash" />
             {!presentation && <DateRangePicker value={period} onChange={setPeriod} presets={PERIOD_PRESETS} size="sm" showSummary={false} />}
           </Toolbar>
         ) : data && tab === 'tahlil' && !presentation ? (
@@ -169,7 +188,7 @@ export default function KafedraPage() {
         <>
           {tab !== 'tahlil' && <KafedraTiles data={data} />}
           {tab === 'oqituvchilar' ? (
-            <TeachersSection data={data} date={date} view={presentation ? 'grid' : view} sort={sort} search={search} />
+            <TeachersSection data={data} date={date} view={presentation ? 'grid' : view} sort={effectiveSort} search={search} />
           ) : tab === 'tahlil' ? (
             <UnitAnalyticsSection unitId={data.id} unitName={data.name} kind={data.kind} from={period.from} to={period.to} />
           ) : (
@@ -190,8 +209,9 @@ function KafedraTiles({ data }: { data: KafedraDetail }) {
   const t = data.today;
   const p = data.period;
   const checked = p.onTime + p.late + p.missed;
+  const hasLessons = p.lessons > 0;
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div className={cn('grid grid-cols-2 gap-3', hasLessons ? 'lg:grid-cols-4' : 'lg:grid-cols-2')}>
       <StatTile
         label="Xodimlar keldi"
         icon={UserCheck}
@@ -201,27 +221,35 @@ function KafedraTiles({ data }: { data: KafedraDetail }) {
         progress={t.rate}
         hint={`${formatPercent(t.rate)} · ${t.absent} kelmadi${t.notYet ? ` · ${t.notYet} hali kelmagan` : ''}`}
       />
-      <StatTile label="Kech qolganlar" icon={Timer} tone={t.late ? 'warning' : 'neutral'} value={t.late} hint={t.noData ? `${t.noData} kishida ma'lumot yo'q` : undefined} />
-      <StatTile
-        label="Darsga o'z vaqtida"
-        icon={Clock}
-        tone={toneForRate(p.onTimeRate)}
-        value={formatPercent(p.onTimeRate)}
-        progress={p.onTimeRate}
-        hint={`${formatUzRange(p.dateFrom, p.dateTo)} · ${p.onTime}/${checked} dars`}
-      />
-      <StatTile
-        label="Kechikkan / kelmagan darslar"
-        icon={CalendarCheck}
-        tone={p.late + p.missed ? 'danger' : 'neutral'}
-        value={`${p.late} / ${p.missed}`}
-        hint={`Davrda ${p.lessons} dars · o'rtacha faollik ${p.avgActivityScore === null ? '—' : `${Math.round(p.avgActivityScore)}%`}`}
-      />
+      <StatTile label="Kech kelganlar" icon={Timer} tone={t.late ? 'warning' : 'neutral'} value={t.late} hint={t.noData ? `${t.noData} kishida ma'lumot yo'q` : undefined} />
+      {hasLessons && (
+        <>
+          <StatTile
+            label="Darsga o'z vaqtida"
+            icon={Clock}
+            tone={toneForRate(p.onTimeRate)}
+            value={formatPercent(p.onTimeRate)}
+            progress={p.onTimeRate}
+            hint={`${formatUzRange(p.dateFrom, p.dateTo)} · ${p.onTime}/${checked} dars`}
+          />
+          <StatTile
+            label="Kech kelgan / kelmagan darslar"
+            icon={CalendarCheck}
+            tone={p.late + p.missed ? 'danger' : 'neutral'}
+            value={`${p.late} / ${p.missed}`}
+            hint={`Davrda ${p.lessons} dars · o'rtacha faollik ${p.avgActivityScore === null ? '—' : `${Math.round(p.avgActivityScore)}%`}`}
+          />
+        </>
+      )}
     </div>
   );
 }
 
 function TeachersSection({ data, date, view, sort, search }: { data: KafedraDetail; date: string; view: View; sort: TeacherSort; search: string }) {
+  // Dars jadvali yo'q bo'lsa dars ustunlari/qatorlari chizilmaydi:
+  // har satrda "Darsi yo'q" va har joyda "—" turishining ma'nosi yo'q.
+  const hasTodayLessons = data.teachers.some((t) => t.lessonsScheduled > 0);
+  const hasPeriodLessons = data.period.lessons > 0;
   const { presentation } = useShell();
   const [selected, setSelected] = useState<KafedraTeacher | null>(null);
 
@@ -251,7 +279,10 @@ function TeachersSection({ data, date, view, sort, search }: { data: KafedraDeta
       header: 'Bugun',
       cell: (t) => <StatusBadge status={t.status === 'malumot_yoq' ? 'nomalum' : t.status} time={t.checkIn} />,
     },
-    { key: 'lessons', header: 'Darslar', cell: (t) => <TodayLessons t={t} /> },
+    ...(hasTodayLessons
+      ? [{ key: 'lessons', header: 'Darslar', cell: (t: KafedraTeacher) => <TodayLessons t={t} /> }]
+      : []),
+
     {
       key: 'onTime',
       header: "O'z vaqtida (davr)",
@@ -340,22 +371,28 @@ function TeachersSection({ data, date, view, sort, search }: { data: KafedraDeta
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-fg">Davr: {formatUzRange(data.period.dateFrom, data.period.dateTo)}</p>
-                <p className="text-xs text-muted">Darsga o'z vaqtida kelish va ishga kelish</p>
+                <p className="text-xs text-muted">{hasPeriodLessons ? "Darsga o'z vaqtida kelish va ishga kelish" : 'Ishga kelish'}</p>
               </div>
-              <ProgressRing value={selected.onTimeRate} size={52} ariaLabel="O'z vaqtida" />
+              {hasPeriodLessons && <ProgressRing value={selected.onTimeRate} size={52} ariaLabel="O'z vaqtida" />}
             </div>
             <KeyValue
               layout="stacked"
               columns={4}
               items={[
-                { label: 'Darslar', value: selected.periodLessons },
-                { label: "O'z vaqtida", value: selected.periodOnTime },
-                { label: 'Kechikkan', value: selected.periodLate },
-                { label: 'Kelmagan', value: selected.periodMissed },
+                ...(hasPeriodLessons
+                  ? [
+                      { label: 'Darslar', value: selected.periodLessons },
+                      { label: "O'z vaqtida", value: selected.periodOnTime },
+                      { label: 'Kech keldi', value: selected.periodLate },
+                      { label: 'Kelmagan', value: selected.periodMissed },
+                    ]
+                  : []),
                 { label: 'Kelgan kunlar', value: selected.periodPresentDays },
                 { label: 'Kech kelgan kunlar', value: selected.periodLateDays },
                 { label: 'Kelmagan kunlar', value: selected.periodAbsentDays },
-                { label: "O'rtacha faollik", value: selected.avgActivityScore === null ? '—' : `${Math.round(selected.avgActivityScore)}%` },
+                ...(hasPeriodLessons
+                  ? [{ label: "O'rtacha faollik", value: selected.avgActivityScore === null ? '—' : `${Math.round(selected.avgActivityScore)}%` }]
+                  : []),
               ]}
             />
           </div>
