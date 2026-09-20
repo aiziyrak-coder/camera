@@ -91,14 +91,15 @@ export function ChronicTab() {
     <>
       <Toolbar end={<Button variant="secondary" size="sm" icon={Download} onClick={exportCsv} disabled={!rows.length}>CSV</Button>}>
         <DateRangePicker value={period} onChange={setPeriod} presets={ANALYTICS_PRESETS} size="sm" showSummary={false} />
-        <Select size="sm" value={minLate} onChange={setMinLate} options={THRESHOLDS} ariaLabel="Kechikish chegarasi" label="Kech:" />
-        <Select size="sm" value={minAbsent} onChange={setMinAbsent} options={THRESHOLDS} ariaLabel="Kelmaslik chegarasi" label="Kelmadi:" />
+        <Select size="sm" value={minLate} onChange={setMinLate} options={THRESHOLDS} ariaLabel="Kechikish chegarasi" label="Kech kelgan:" />
+        <Select size="sm" value={minAbsent} onChange={setMinAbsent} options={THRESHOLDS} ariaLabel="Kelmaslik chegarasi" label="Kelmagan:" />
       </Toolbar>
       <Card>
         {chronic.data && (
           <p className="mb-2 text-sm text-muted">
-            <span className="font-semibold text-fg">{rows.length}</span> kishi e'tibor talab qiladi · <span className="text-warning">{lateCount} surunkali kechikadi</span> ·{' '}
-            <span className="text-danger">{absentCount} tez-tez kelmaydi</span>
+            Tanlangan davrda <span className="font-semibold text-fg">{rows.length}</span> xodim belgilangan chegaradan ko'p marta
+            kechikkan yoki kelmagan: <span className="text-warning">{lateCount} kishi takror kech kelgan</span> ·{' '}
+            <span className="text-danger">{absentCount} kishi takror kelmagan</span>
           </p>
         )}
         {chronic.error && !chronic.data ? (
@@ -110,7 +111,11 @@ export function ChronicTab() {
             ))}
           </div>
         ) : rows.length === 0 ? (
-          <EmptyState icon={ShieldCheck} title="Surunkali holatlar yo'q" description="Bu davrda chegaradan oshgan xodim topilmadi." />
+          <EmptyState
+            icon={ShieldCheck}
+            title="Takror kechikkan xodim yo'q"
+            description={`Bu davrda ${minLate} kundan ko'p kech kelgan yoki ${minAbsent} kundan ko'p kelmagan xodim topilmadi. Chegarani yuqoridagi tanlagichlar orqali o'zgartirish mumkin.`}
+          />
         ) : (
           <ul className="divide-y divide-border">
             {rows.map((p) => (

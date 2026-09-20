@@ -135,6 +135,7 @@ export function DataTable<T>({
 
   const tableView = (
     <div
+      data-table-scroll=""
       className={cn('overflow-auto', mobile === 'cards' && 'hidden md:block')}
       style={maxHeight !== 'none' ? { maxHeight } : undefined}
       onScroll={(event) => {
@@ -242,7 +243,7 @@ export function DataTable<T>({
   );
 
   const cardsView = mobile === 'cards' && (
-    <ul className="divide-y divide-border md:hidden" aria-label={ariaLabel} aria-busy={loading || undefined}>
+    <ul data-table-cards="" className="divide-y divide-border md:hidden" aria-label={ariaLabel} aria-busy={loading || undefined}>
       {loading &&
         Array.from({ length: Math.min(loadingRows, 4) }).map((_, r) => (
           <li key={`sk-${r}`} className="space-y-2 p-4">

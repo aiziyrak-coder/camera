@@ -31,7 +31,7 @@ export function LiveArrivals({ items, loading, live, freshIds, personLink, big }
               )}
             </span>
           }
-          subtitle="Bugun birinchi marta tanilgan oxirgi odamlar"
+          subtitle="Kamera bugun birinchi marta tanigan oxirgi odamlar"
           icon={UserCheck}
           className="mb-3"
         />
@@ -50,7 +50,12 @@ export function LiveArrivals({ items, loading, live, freshIds, personLink, big }
         </ul>
       ) : items.length === 0 ? (
         <div className="px-4 pb-5 sm:px-5">
-          <EmptyState compact icon={UserCheck} title="Hozircha hech kim kelmagan" description="Kamera odamni kunda birinchi marta taniganda shu yerda darhol paydo bo'ladi." />
+          <EmptyState
+            compact
+            icon={UserCheck}
+            title="Hozircha hech kim tanilmadi"
+            description="Kamera odamni kunda birinchi marta taniganda ismi shu yerda darhol paydo bo'ladi. Kamera faqat yuzi ro'yxatdan o'tgan odamni taniy oladi."
+          />
         </div>
       ) : (
         <ul className="divide-y divide-border border-t border-border" aria-live="polite">

@@ -11,8 +11,8 @@ const MAX_ROWS = 300;
 
 const STATUS_TABS: Array<{ id: WallStatusFilter; label: string }> = [
   { id: 'all', label: 'Hammasi' },
-  { id: 'live', label: 'Onlayn' },
-  { id: 'offline', label: 'Oflayn' },
+  { id: 'live', label: 'Tasvir bor' },
+  { id: 'offline', label: "Tasvir yo'q" },
 ];
 
 export default function CameraSidebar({
@@ -58,7 +58,7 @@ export default function CameraSidebar({
         <div className="min-w-0">
           <p className="text-sm font-semibold">Kameralar</p>
           <p className="text-xs text-muted">
-            {cameras.length} ta · <span className="text-success">{onlineCount} onlayn</span>
+            {cameras.length} ta · <span className="text-success">{onlineCount} tasi tasvir bermoqda</span>
           </p>
         </div>
         <div className="-mr-1 flex items-center">

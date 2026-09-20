@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Download, GraduationCap, UserRound } from 'lucide-react';
+import { Download, GraduationCap, Printer, UserRound } from 'lucide-react';
 import { Button, ErrorState, Page, SkeletonCard, SkeletonTiles, Tabs, formatUzRange, useToast, type TabItem } from '../../ui';
 import CriteriaPanel from '../../components/reports/CriteriaPanel';
 import ReportFilters from '../../components/reports/ReportFilters';
@@ -78,23 +78,28 @@ export default function ReportsPage() {
       title="Hisobotlar"
       subtitle={
         data
-          ? `${formatUzRange(data.period.from, data.period.to)} · ${data.population.total.toLocaleString('ru-RU')} ${state.section === 'xodimlar' ? 'xodim' : 'talaba'}`
+          ? `${data.scope} · ${formatUzRange(data.period.from, data.period.to)} · ${data.population.total.toLocaleString('ru-RU')} ${state.section === 'xodimlar' ? 'xodim' : 'talaba'}`
           : undefined
       }
       actions={
-        <Button variant="secondary" icon={Download} onClick={exportExcel} loading={exporting} disabled={!data}>
-          Excel
-        </Button>
+        <span className="flex gap-2 print-hide">
+          <Button variant="secondary" icon={Printer} onClick={() => window.print()} disabled={!data}>
+            Chop etish
+          </Button>
+          <Button variant="secondary" icon={Download} onClick={exportExcel} loading={exporting} disabled={!data}>
+            Excel
+          </Button>
+        </span>
       }
       toolbar={
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 print-hide">
           <Tabs tabs={SECTIONS} value={state.section} onChange={(section) => update({ section })} ariaLabel="Hisobot bo'limi" />
           <ReportFilters state={state} options={filterOptions} onChange={update} onReset={reset} />
         </div>
       }
     >
       <div className="grid min-w-0 gap-5 lg:grid-cols-[15rem_minmax(0,1fr)]">
-        <aside className="min-w-0 lg:sticky lg:top-4 lg:self-start">
+        <aside className="min-w-0 print-hide lg:sticky lg:top-4 lg:self-start">
           <CriteriaPanel
             criteria={data?.criteria ?? null}
             value={criterion}

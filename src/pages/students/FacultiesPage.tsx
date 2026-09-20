@@ -71,8 +71,8 @@ export default function FacultiesPage() {
       title="Talabalar"
       subtitle={
         view === 'yuz'
-          ? "Kameralar talabani tanishi uchun yuzlarni yig'ish"
-          : `Fakultetlar kesimida davomat · ${formatUzDate(date, { weekday: true })}`
+          ? "Kamera talabani tanishi uchun uning yuzi oldindan ro'yxatdan o'tishi kerak. Bu yerda — kim topshirgan, kim yo'q"
+          : `Har bir fakultetda bugun nechta talaba kelgani · ${formatUzDate(date, { weekday: true })}`
       }
       breadcrumbs={[{ label: 'Talabalar' }]}
       actions={<IconButton icon={RefreshCw} label="Yangilash" variant="secondary" onClick={overview.reload} loading={overview.refreshing} />}
@@ -104,8 +104,9 @@ export default function FacultiesPage() {
             <div className="flex flex-col gap-3 rounded-card border border-warning/30 bg-warning-soft px-4 py-3 text-[13px] text-fg sm:flex-row sm:items-center">
               <AlertTriangle size={16} className="shrink-0 text-warning" aria-hidden="true" />
               <p className="flex-1">
-                <span className="font-semibold">Talabalarning atigi {formatPercent(data.studentsEnrolledPct, 1)} yuzi tizimda.</span> Quyidagi foizlar{' '}
-                {formatNumber(s.enrolled)} kishidan chiqadi — hozircha ishonchli emas.
+                <span className="font-semibold">Talabalarning atigi {formatPercent(data.studentsEnrolledPct, 1)} qismi yuzini ro'yxatdan o'tkazgan.</span> Kamera
+                qolganlarini taniy olmaydi, shuning uchun quyidagi foizlar {formatNumber(data.students.total)} emas, faqat{' '}
+                {formatNumber(s.enrolled)} talaba bo'yicha hisoblangan — butun institut holatini aks ettirmaydi.
               </p>
               <Button size="sm" icon={ScanFace} onClick={() => setView('yuz')}>
                 Yuz topshirishga o&apos;tish
@@ -115,28 +116,38 @@ export default function FacultiesPage() {
           {overview.error && <ErrorState title="Yangilab bo'lmadi" message={overview.error} onRetry={overview.reload} />}
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
             <StatTile
-              label="Davomat"
+              label="Kelgan talabalar ulushi"
               value={formatPercent(s.rate, 1)}
               icon={GraduationCap}
               tone="primary"
               progress={s.rate}
-              hint={`${formatNumber(s.present)} / ${formatNumber(s.present + s.absent + s.notYet)} keldi`}
+              hint={`Kutilgan ${formatNumber(s.present + s.absent + s.notYet)} talabadan ${formatNumber(s.present)} tasi keldi`}
               size={presentation ? 'lg' : 'md'}
             />
-            <StatTile label="Keldi" value={formatNumber(s.present - s.late)} icon={CheckCircle2} tone="success" hint="o'z vaqtida" />
-            <StatTile label="Kech keldi" value={formatNumber(s.late)} icon={Clock} tone="warning" />
-            <StatTile label="Kelmadi" value={formatNumber(s.absent)} icon={UserX} tone="danger" />
+            <StatTile label="O'z vaqtida keldi" value={formatNumber(s.present - s.late)} icon={CheckCircle2} tone="success" hint="talaba" />
+            <StatTile label="Kech keldi" value={formatNumber(s.late)} icon={Clock} tone="warning" hint="talaba" />
+            <StatTile label="Kelmadi" value={formatNumber(s.absent)} icon={UserX} tone="danger" hint="talaba" />
             <StatTile
-              label={isToday ? 'Hali kelmagan' : "Ma'lumot yo'q"}
+              label={isToday ? 'Hali kelmagan' : 'Holati aniqlanmagan'}
               value={formatNumber(isToday ? s.notYet : s.noData)}
               icon={isToday ? Hourglass : Users}
-              hint={isToday && s.noData ? `+${formatNumber(s.noData)} yuzi yo'q` : `${formatNumber(s.total)} talabadan`}
+              hint={
+                isToday
+                  ? s.noData
+                    ? `Yuzi ro'yxatdan o'tgan, hali ko'rinmagan · yana ${formatNumber(s.noData)} talabaning yuzi ro'yxatda yo'q`
+                    : "Yuzi ro'yxatdan o'tgan, bugun hali ko'rinmagan"
+                  : `Ro'yxatdagi ${formatNumber(s.total)} talabadan — yuzi yo'qligi uchun kamera tanimagan`
+              }
             />
           </div>
 
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
             {faculties.length === 0 ? (
-              <EmptyState icon={GraduationCap} title="Fakultetlar yo'q" description="Fakultetlar «Tuzilma» bo'limida qo'shiladi." />
+              <EmptyState
+                icon={GraduationCap}
+                title="Fakultetlar kiritilmagan"
+                description="Fakultetlar «Tashkiliy tuzilma» bo'limida qo'shiladi. Shundan keyin bu yerda har biri bo'yicha davomat ko'rinadi."
+              />
             ) : (
               <div className="grid content-start gap-4 md:grid-cols-2">
                 {faculties.map((f) => (

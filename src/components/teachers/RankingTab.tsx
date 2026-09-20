@@ -110,7 +110,15 @@ export function RankingTab() {
         {people.error && !people.data ? (
           <ErrorState message={people.error} onRetry={people.reload} />
         ) : !people.loading && items.length === 0 ? (
-          <EmptyState icon={Trophy} title="Hech kim yo'q" description={search ? "Qidiruvga mos xodim topilmadi." : 'Bu davrda mos yozuvlar yo\'q — ajoyib!'} />
+          <EmptyState
+            icon={Trophy}
+            title="Ro'yxat bo'sh"
+            description={
+              search
+                ? 'Qidiruvga mos xodim topilmadi.'
+                : "Bu davrda bunday holat qayd etilmagan. Esda tuting: ro'yxatga faqat yuzi ro'yxatdan o'tgan xodimlar tushadi."
+            }
+          />
         ) : (
           <RankingList items={items} loading={people.loading} ariaLabel={cfg.label} />
         )}

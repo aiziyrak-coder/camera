@@ -22,11 +22,11 @@ export default function KafedrasPage() {
 
   const tabs: TabItem<TabId>[] = [
     { id: 'bolinmalar', label: "Bo'linmalar", icon: Building2, count: units.data?.length ?? null },
-    { id: 'tahlil', label: 'Tahlil', icon: BarChart3 },
+    { id: 'tahlil', label: 'Davr tahlili', icon: BarChart3 },
     { id: 'reyting', label: 'Reyting', icon: Trophy },
-    { id: 'surunkali', label: 'Surunkali', icon: AlertTriangle },
-    { id: 'kuzatuv', label: 'Kun kuzatuvi', icon: Clock },
-    { id: 'kameralar', label: 'Kameralar diagnostikasi', icon: Camera },
+    { id: 'surunkali', label: 'Takror kechikkanlar', icon: AlertTriangle },
+    { id: 'kuzatuv', label: 'Kim qachon kelgan', icon: Clock },
+    { id: 'kameralar', label: 'Kameralar ishlayaptimi', icon: Camera },
   ];
   const [tab] = useUrlTab(tabs, { defaultTab: 'bolinmalar' });
   const dayLabel = relativeDayLabel(date, today) ?? formatUzDate(date, { weekday: true });
@@ -35,7 +35,11 @@ export default function KafedrasPage() {
   return (
     <Page
       title="Xodimlar va o'qituvchilar"
-      subtitle={periodTab ? 'Davr bo\'yicha davomat tahlili — faqat yuzi tasdiqlangan xodimlar' : `Bo'linmalar kesimida davomat va darsga punktuallik · ${dayLabel}`}
+      subtitle={
+        periodTab
+          ? "Tanlangan davrda xodimlar qanday kelgani. Hisobga faqat yuzi ro'yxatdan o'tgan xodimlar kiradi"
+          : `Har bir bo'linmada kim ishga kelgani va o'qituvchilar darsga o'z vaqtida kirgani · ${dayLabel}`
+      }
       breadcrumbs={[{ label: "Xodimlar va o'qituvchilar" }]}
       tabs={tabs}
       defaultTab="bolinmalar"

@@ -49,10 +49,10 @@ type View = 'grid' | 'table';
 
 const PERIOD_PRESETS: readonly FixedPreset[] = ['last7', 'last30', 'month'];
 const SORT_OPTIONS: { value: TeacherSort; label: string }[] = [
-  { value: 'lateness', label: 'Kechikish bo‘yicha' },
-  { value: 'onTime', label: "O'z vaqtida % (past birinchi)" },
-  { value: 'activity', label: 'Faollik (yuqori birinchi)' },
-  { value: 'name', label: 'F.I.Sh.' },
+  { value: 'lateness', label: 'Avval ko‘p kechikkanlar' },
+  { value: 'onTime', label: "Avval darsga kam kirganlar" },
+  { value: 'activity', label: 'Avval darsda harakatchanlari' },
+  { value: 'name', label: 'Ism bo‘yicha' },
 ];
 /** Dars jadvalisiz hisoblab bo'lmaydigan tartiblar. */
 const LESSON_SORTS: TeacherSort[] = ['onTime', 'activity'];
@@ -126,7 +126,14 @@ export default function KafedraPage() {
       title={title}
       subtitle={
         data
-          ? [data.building, `${data.today.total} xodim`, data.unassigned ? "reestrda faqat lavozimi yozilgan, bo'linmasi ko'rsatilmagan xodimlar" : null].filter(Boolean).join(' · ')
+          ? [
+              "Bo'linma xodimlari bugun ishga kelganmi va darsga o'z vaqtida kirganmi",
+              data.building,
+              `${data.today.total} xodim`,
+              data.unassigned ? "Bu ro'yxatda reestrda bo'linmasi ko'rsatilmagan xodimlar turibdi" : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')
           : undefined
       }
       titleAddon={
@@ -213,31 +220,37 @@ function KafedraTiles({ data }: { data: KafedraDetail }) {
   return (
     <div className={cn('grid grid-cols-2 gap-3', hasLessons ? 'lg:grid-cols-4' : 'lg:grid-cols-2')}>
       <StatTile
-        label="Xodimlar keldi"
+        label="Bugun ishga kelgan xodimlar"
         icon={UserCheck}
         tone={toneForRate(t.rate)}
         value={t.present}
         unit={`/ ${t.total}`}
         progress={t.rate}
-        hint={`${formatPercent(t.rate)} · ${t.absent} kelmadi${t.notYet ? ` · ${t.notYet} hali kelmagan` : ''}`}
+        hint={`Bo'linmadagi ${t.total} xodimning ${formatPercent(t.rate)} qismi · ${t.absent} kishi kelmadi${t.notYet ? ` · ${t.notYet} kishi hali kelmagan` : ''}`}
       />
-      <StatTile label="Kech kelganlar" icon={Timer} tone={t.late ? 'warning' : 'neutral'} value={t.late} hint={t.noData ? `${t.noData} kishida ma'lumot yo'q` : undefined} />
+      <StatTile
+        label="Bugun kech kelgan xodimlar"
+        icon={Timer}
+        tone={t.late ? 'warning' : 'neutral'}
+        value={t.late}
+        hint={t.noData ? `Yana ${t.noData} xodimning holati aniqlanmagan — yuzi ro'yxatdan o'tmagan` : 'Ish boshlanish vaqtidan keyin kelganlar'}
+      />
       {hasLessons && (
         <>
           <StatTile
-            label="Darsga o'z vaqtida"
+            label="Darsga o'z vaqtida kirgan"
             icon={Clock}
             tone={toneForRate(p.onTimeRate)}
             value={formatPercent(p.onTimeRate)}
             progress={p.onTimeRate}
-            hint={`${formatUzRange(p.dateFrom, p.dateTo)} · ${p.onTime}/${checked} dars`}
+            hint={`${formatUzRange(p.dateFrom, p.dateTo)} oralig'ida tekshirilgan ${checked} darsdan ${p.onTime} tasi`}
           />
           <StatTile
-            label="Kech kelgan / kelmagan darslar"
+            label="O'qituvchi kech kirgan / kirmagan darslar"
             icon={CalendarCheck}
             tone={p.late + p.missed ? 'danger' : 'neutral'}
             value={`${p.late} / ${p.missed}`}
-            hint={`Davrda ${p.lessons} dars · o'rtacha faollik ${p.avgActivityScore === null ? '—' : `${Math.round(p.avgActivityScore)}%`}`}
+            hint={`${formatUzRange(p.dateFrom, p.dateTo)} oralig'idagi ${p.lessons} darsdan`}
           />
         </>
       )}
@@ -285,7 +298,7 @@ function TeachersSection({ data, date, view, sort, search }: { data: KafedraDeta
 
     {
       key: 'onTime',
-      header: "O'z vaqtida (davr)",
+      header: "Darsga o'z vaqtida kirgani",
       cell: (t) => (
         <div className="flex items-center gap-2.5">
           <ProgressRing value={t.onTimeRate} size={34} thickness={4} />
@@ -299,7 +312,7 @@ function TeachersSection({ data, date, view, sort, search }: { data: KafedraDeta
     },
     {
       key: 'days',
-      header: 'Ishga kelish (davr)',
+      header: 'Ishga kelgan kunlari',
       hideOnMobile: true,
       cell: (t) => (
         <span className="text-xs tabular-nums text-muted">
@@ -311,9 +324,18 @@ function TeachersSection({ data, date, view, sort, search }: { data: KafedraDeta
     },
     {
       key: 'activity',
-      header: 'Faollik',
+      header: 'Darsdagi harakatchanligi',
       align: 'right',
-      cell: (t) => (t.avgActivityScore === null ? <span className="text-subtle">—</span> : `${Math.round(t.avgActivityScore)}%`),
+      cell: (t) =>
+        t.avgActivityScore === null ? (
+          <span className="text-subtle" title="Bu o'qituvchi uchun dars videosi tahlil qilinmagan">
+            —
+          </span>
+        ) : (
+          <span title="Dars davomida o'qituvchi doska oldida qanchalik harakatlangani — kamera tasviridan o'lchanadi. Dars sifatining bahosi emas.">
+            {Math.round(t.avgActivityScore)}%
+          </span>
+        ),
     },
   ];
 
@@ -323,7 +345,7 @@ function TeachersSection({ data, date, view, sort, search }: { data: KafedraDeta
         <EmptyState
           icon={Users}
           title="Bu bo'linmada xodim yo'q"
-          description="Xodim bo'linmaga reestrdagi lavozim/bo'lim matni orqali bog'lanadi."
+          description="Xodim bu bo'linmaga «Shaxslar reestri» bo'limidagi lavozim va bo'lim yozuvi orqali bog'lanadi."
         />
       ) : rows.length === 0 ? (
         <EmptyState icon={Users} compact title="Hech kim topilmadi" description="Qidiruv so'zini o'zgartiring." />
@@ -391,7 +413,7 @@ function TeachersSection({ data, date, view, sort, search }: { data: KafedraDeta
                 { label: 'Kech kelgan kunlar', value: selected.periodLateDays },
                 { label: 'Kelmagan kunlar', value: selected.periodAbsentDays },
                 ...(hasPeriodLessons
-                  ? [{ label: "O'rtacha faollik", value: selected.avgActivityScore === null ? '—' : `${Math.round(selected.avgActivityScore)}%` }]
+                  ? [{ label: 'Darsdagi harakatchanligi', value: selected.avgActivityScore === null ? '—' : `${Math.round(selected.avgActivityScore)}%` }]
                   : []),
               ]}
             />

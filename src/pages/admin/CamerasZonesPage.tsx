@@ -383,7 +383,7 @@ export default function CamerasZonesPage() {
     },
     {
       key: 'modules',
-      header: 'AI modullar',
+      header: 'Kamera nimani kuzatadi',
       hideOnMobile: true,
       cell: (c) => {
         const moduleSummary = moduleOptions.length > 0 ? formatModuleSummary(moduleOptions, c) : '—';
@@ -399,7 +399,7 @@ export default function CamerasZonesPage() {
     },
     {
       key: 'video',
-      header: 'Ruxsat / FPS',
+      header: 'Tasvir sifati',
       hideOnMobile: true,
       cell: (c) => (
         <span className="whitespace-nowrap tabular-nums text-muted">
@@ -409,7 +409,7 @@ export default function CamerasZonesPage() {
     },
     {
       key: 'status',
-      header: 'Holat / aloqa',
+      header: 'Holati va aloqasi',
       mobileLabel: 'Holat',
       cell: (c) => (
         <div className="inline-flex flex-col items-end gap-1 md:items-start">
@@ -420,8 +420,8 @@ export default function CamerasZonesPage() {
             <span
               title={
                 c.isReachable
-                  ? 'Kamera oxirgi tekshiruvda topildi'
-                  : "Kamera hozircha javob bermayapti — kabel/tarmoq muammosi bo'lishi mumkin"
+                  ? 'Oxirgi tekshiruvda kamera javob berdi'
+                  : "Kamera javob bermayapti — kabel uzilgan, elektr yo'q yoki tarmoq sozlamasi noto'g'ri bo'lishi mumkin"
               }
               className={cn('inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium', c.isReachable ? 'text-success' : 'text-danger')}
             >
@@ -483,17 +483,17 @@ export default function CamerasZonesPage() {
   return (
     <Page
       title="Kameralar"
-      subtitle="RTSP kamera konfiguratsiyasi, bino, qavat, zona va AI modul bog'lanishi."
+      subtitle="Har bir kamera qaysi binoning qaysi qavatida va qanday xonada turgani. Joylashuv to'g'ri ko'rsatilsa, davomat va hodisalar to'g'ri hisoblanadi."
       breadcrumbs={[{ label: 'Sozlamalar' }, { label: 'Kameralar' }]}
       actions={
         <>
-          <Button icon={DoorOpen} onClick={() => setRolesOpen(true)}>
-            Xona turlari (CSV)
+          <Button icon={DoorOpen} onClick={() => setRolesOpen(true)} title="Xona turlarini jadval fayli orqali bir vaqtda ko'plab kameraga belgilash">
+            Xona turlarini fayldan yuklash
           </Button>
           {canManage && (
             <>
-              <Button icon={FileUp} onClick={() => setImportOpen(true)}>
-                SADP import
+              <Button icon={FileUp} onClick={() => setImportOpen(true)} title="Kameralarni qidirish dasturi (SADP) saqlagan fayldan ro'yxatni yuklash">
+                Kameralarni fayldan yuklash
               </Button>
               <Button variant="primary" icon={Plus} onClick={() => setAddOpen(true)}>
                 Kamera qo&apos;shish
@@ -505,15 +505,19 @@ export default function CamerasZonesPage() {
       toolbar={<FilterBar fields={filterFields} onReset={resetFilters} />}
     >
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatTile icon={Video} tone="success" label="Faol kameralar" value={formatNumber(summary?.faol ?? 0)} loading={!summary} />
-        <StatTile icon={VideoOff} tone="neutral" label="Nofaol kameralar" value={formatNumber(summary?.nofaol ?? 0)} loading={!summary} />
-        <StatTile icon={Wrench} tone="warning" label="Ta'mirda" value={formatNumber(summary?.tamirda ?? 0)} loading={!summary} />
+        <StatTile icon={Video} tone="success" label="Ishlatilayotgan kameralar" value={formatNumber(summary?.faol ?? 0)} hint="Tizim ulardan tasvir oladi" loading={!summary} />
+        <StatTile icon={VideoOff} tone="neutral" label="O'chirib qo'yilgan" value={formatNumber(summary?.nofaol ?? 0)} hint="Tizim ularga umuman ulanmaydi" loading={!summary} />
+        <StatTile icon={Wrench} tone="warning" label="Ta'mirda turgan" value={formatNumber(summary?.tamirda ?? 0)} hint="Vaqtincha ishlatilmaydi" loading={!summary} />
         <StatTile
           icon={Layers}
           tone={withoutFloor > 0 ? 'warning' : 'neutral'}
-          label="Qavatsiz kameralar"
+          label="Qavati ko'rsatilmagan"
           value={formatNumber(withoutFloor)}
-          hint={floorFilter === UNASSIGNED_FLOOR ? 'Filtr qo\'llangan' : "Ko'rish uchun bosing"}
+          hint={
+            floorFilter === UNASSIGNED_FLOOR
+              ? "Quyidagi ro'yxatda faqat shular ko'rsatilmoqda"
+              : "Bunday kameralar bino sxemasida ko'rinmaydi. Ro'yxatni ochish uchun bosing"
+          }
           loading={!summary}
           onClick={() => setFloorFilter(UNASSIGNED_FLOOR)}
         />
@@ -550,7 +554,7 @@ export default function CamerasZonesPage() {
           activeFilters > 0
             ? "Qidiruv yoki filtrlarni o'zgartiring."
             : canManage
-              ? "Kamerani qo'lda qo'shing yoki SADP'dan import qiling."
+              ? "Kamerani qo'lda qo'shing yoki tayyor ro'yxatni fayldan yuklang."
               : "Administrator kamera qo'shgandan keyin bu yerda ko'rinadi."
         }
         emptyAction={

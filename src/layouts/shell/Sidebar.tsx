@@ -56,6 +56,7 @@ export function Sidebar({ sections, collapsed, mobileOpen, onCloseMobile, userNa
     <>
       {mobileOpen && <div className="fixed inset-0 z-40 animate-fade-in bg-black/40 lg:hidden" onClick={onCloseMobile} aria-hidden="true" />}
       <aside
+        data-print="hide"
         id="app-sidebar"
         aria-label="Asosiy menyu"
         className={cn(

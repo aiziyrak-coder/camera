@@ -107,5 +107,9 @@ describe('misc', () => {
     expect(formatCell(87.5, '%')).toBe('87,5%');
     expect(formatCell(3, '')).toBe('3');
     expect(formatCell(null, '%')).toBe('—');
+    // Bitta kun tanlanganda jadvalda matnli kataklar ham bor (vaqt, holat, izoh).
+    expect(formatCell('08:15', '')).toBe('08:15');
+    expect(formatCell('Kech keldi', '')).toBe('Kech keldi');
+    expect(formatCell('', '')).toBe('—');
   });
 });

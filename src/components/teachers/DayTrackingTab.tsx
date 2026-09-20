@@ -33,18 +33,18 @@ export function DayTrackingTab({ date }: { date: string }) {
       sortValue: (r) => r.attendanceStatus ?? '',
       cell: (r) => <StatusBadge status={r.attendanceStatus ?? 'nomalum'} />,
     },
-    { key: 'firstSeen', header: "Birinchi ko'rilgan", align: 'right', sortValue: (r) => r.firstSeen ?? '99', cell: (r) => hhmm(r.firstSeen) },
-    { key: 'lastSeen', header: "Oxirgi ko'rilgan", align: 'right', hideOnMobile: true, sortValue: (r) => r.lastSeen ?? '', cell: (r) => hhmm(r.lastSeen) },
+    { key: 'firstSeen', header: 'Keldi', align: 'right', sortValue: (r) => r.firstSeen ?? '99', cell: (r) => hhmm(r.firstSeen) },
+    { key: 'lastSeen', header: "Oxirgi marta ko'ringan", align: 'right', hideOnMobile: true, sortValue: (r) => r.lastSeen ?? '', cell: (r) => hhmm(r.lastSeen) },
     {
       key: 'buildings',
       header: 'Binolar',
       hideOnMobile: true,
       cell: (r) => <span className="text-[13px] text-muted">{r.buildings.join(', ') || '—'}</span>,
     },
-    { key: 'visits', header: 'Tashriflar', align: 'right', sortValue: (r) => r.visits, sortFirst: 'desc' },
+    { key: 'visits', header: "Necha marta ko'ringan", align: 'right', sortValue: (r) => r.visits, sortFirst: 'desc' },
     {
       key: 'lessons',
-      header: 'Darslariga kirgan',
+      header: 'Darsiga kirgan',
       align: 'right',
       sortValue: (r) => (r.lessonsScheduled ? r.lessonsAttended / r.lessonsScheduled : null),
       cell: (r) =>
@@ -62,7 +62,10 @@ export function DayTrackingTab({ date }: { date: string }) {
     <>
       <Toolbar>
         <SearchInput value={search} onChange={setSearch} placeholder="O'qituvchi ismi…" ariaLabel="O'qituvchini qidirish" />
-        <p className="text-[13px] text-muted">Kameralar tanigan yoki shu kuni darsi bor xodimlar — kim soat nechida qaysi binoda bo'lgan.</p>
+        <p className="text-[13px] text-muted">
+          Kim soat nechada kelgan, qaysi binoda ko'ringan va darsiga kirganmi. Ro'yxatga kameralar tanigan yoki shu kuni darsi bor
+          xodimlar tushadi.
+        </p>
       </Toolbar>
       <DataTable
         columns={columns}
@@ -74,8 +77,8 @@ export function DayTrackingTab({ date }: { date: string }) {
         onRowClick={setSelected}
         selectedKey={selected?.id ?? null}
         rowTone={(r) => (r.lessonsScheduled > r.lessonsAttended ? 'danger' : null)}
-        emptyTitle="Xodim topilmadi"
-        emptyDescription="Bu kunda kameralar tanigan yoki darsi bor xodim yo'q. Xodim kuzatuvda ko'rinishi uchun yuzi tasdiqlangan bo'lishi kerak."
+        emptyTitle="Bu kunda hech kim ko'rinmagan"
+        emptyDescription="Bu kunda kameralar birorta xodimni tanimagan va darsi bor xodim ham topilmadi. Xodim bu ro'yxatda ko'rinishi uchun avval yuzini ro'yxatdan o'tkazishi kerak."
         ariaLabel="O'qituvchilar kuni"
         defaultSort={{ key: 'firstSeen', dir: 'asc' }}
       />

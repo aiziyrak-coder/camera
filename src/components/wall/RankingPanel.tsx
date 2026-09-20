@@ -65,7 +65,7 @@ export function RankingPanel({
         <div className="flex shrink-0 items-center gap-[0.8em] rounded-[0.8em] bg-warning-soft px-[0.9em] py-[0.6em]">
           <Timer className="h-[1.6em] w-[1.6em] shrink-0 text-warning" />
           <div className="min-w-0 flex-1 leading-tight">
-            <div className="text-[0.9em] font-medium text-fg">Surunkali kechikuvchilar</div>
+            <div className="text-[0.9em] font-medium text-fg">Takror kech keladigan xodimlar</div>
             <div className="text-[0.7em] text-muted">so'nggi 14 kunda ≥3 marta kech/kelmagan xodimlar</div>
           </div>
           <div className="text-[2em] font-semibold tabular-nums text-warning">{chronic ?? '—'}</div>

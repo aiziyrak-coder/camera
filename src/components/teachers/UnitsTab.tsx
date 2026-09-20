@@ -77,10 +77,10 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
         </div>
       ),
     },
-    { key: 'staffTotal', header: 'Xodimlar', align: 'right', sortValue: (k) => k.staffTotal, sortFirst: 'desc' },
+    { key: 'staffTotal', header: 'Jami xodim', align: 'right', sortValue: (k) => k.staffTotal, sortFirst: 'desc' },
     {
       key: 'rate',
-      header: 'Bugun',
+      header: 'Bugun ishga kelgani',
       width: '15rem',
       sortValue: (k) => k.rate,
       cell: (k) => (
@@ -97,15 +97,19 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
     },
     {
       key: 'trend',
-      header: '7 kun trendi',
+      header: "O'zgarish",
       align: 'right',
       sortValue: (k) => trendById.get(k.id) ?? null,
-      cell: (k) => <DeltaBadge value={trendById.get(k.id)} unit="pp" emptyLabel="—" />,
+      cell: (k) => (
+        <span title="Oxirgi 7 kun davomati undan oldingi 7 kunga nisbatan">
+          <DeltaBadge value={trendById.get(k.id)} unit="pp" emptyLabel="—" />
+        </span>
+      ),
     },
-    { key: 'lessonsToday', header: 'Darslar', align: 'right', hideOnMobile: true, sortValue: (k) => k.lessonsToday, sortFirst: 'desc' },
+    { key: 'lessonsToday', header: 'Bugungi darslar', align: 'right', hideOnMobile: true, sortValue: (k) => k.lessonsToday, sortFirst: 'desc' },
     {
       key: 'lessonIssues',
-      header: 'Dars muammolari',
+      header: "O'qituvchi kech kirgan / kirmagan",
       align: 'right',
       hideOnMobile: true,
       sortValue: (k) => k.teacherLateLessons + k.teacherMissedLessons,
@@ -161,27 +165,38 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
           value={summary.present}
           unit={`/ ${summary.staffTotal}`}
           progress={staffRate}
-          hint={staffRate === null ? undefined : `${formatPercent(staffRate)} tanlangan bo'linmalarda`}
+          hint={staffRate === null ? undefined : `Ko'rsatilgan bo'linmalardagi ${summary.staffTotal} xodimning ${formatPercent(staffRate)} qismi`}
         />
-        <StatTile label="Kech kelganlar" icon={Timer} tone={summary.late ? 'warning' : 'neutral'} loading={loader.loading} value={summary.late} hint={`${summary.absent} kishi kelmadi`} />
+        <StatTile
+          label="Kech kelgan xodimlar"
+          icon={Timer}
+          tone={summary.late ? 'warning' : 'neutral'}
+          loading={loader.loading}
+          value={summary.late}
+          hint={`Bundan tashqari ${summary.absent} kishi umuman kelmagan`}
+        />
         {hasLessons && (
           <>
             <StatTile
-              label="Darsga o'z vaqtida"
+              label="Darsga o'z vaqtida kirgan"
               icon={Clock}
               tone={toneForRate(punctuality?.rate)}
               loading={lessons.loading}
               value={formatPercent(punctuality?.rate)}
               progress={punctuality?.rate}
-              hint={punctuality ? `${punctuality.onTime} / ${punctuality.onTime + punctuality.late + punctuality.missed} tekshirilgan dars` : undefined}
+              hint={
+                punctuality
+                  ? `Tekshirilgan ${punctuality.onTime + punctuality.late + punctuality.missed} darsdan ${punctuality.onTime} tasiga o'qituvchi o'z vaqtida kirgan`
+                  : undefined
+              }
             />
             <StatTile
-              label="Muammoli darslar"
+              label="O'qituvchi kech kirgan yoki kirmagan darslar"
               icon={CalendarX2}
               tone={summary.lateLessons + summary.missedLessons ? 'danger' : 'neutral'}
               loading={loader.loading}
               value={summary.lateLessons + summary.missedLessons}
-              hint={`${summary.lateLessons} kechikkan · ${summary.missedLessons} kelinmagan · ${summary.lessons} dars`}
+              hint={`Bugungi ${summary.lessons} darsdan: ${summary.lateLessons} tasiga kech kirgan · ${summary.missedLessons} tasiga umuman kirmagan`}
             />
           </>
         )}
@@ -199,7 +214,7 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
         <EmptyState
           icon={Building2}
           title={kind === 'all' ? "Bo'linmalar yo'q" : `${kindTabs.find((t) => t.id === kind)?.label} topilmadi`}
-          description="Bo'linmalar xodimlarning reestrdagi lavozim/bo'lim matnidan avtomatik yig'iladi."
+          description="Bo'linmalar ro'yxati alohida kiritilmaydi — u xodimlar reestridagi lavozim va bo'lim yozuvlaridan avtomatik yig'iladi."
         />
       ) : effectiveView === 'cards' ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">

@@ -64,7 +64,7 @@ export function AttentionPanel({ loading, events, cameras, groups, groupLink, te
               Diqqat talab {!loading && issues > 0 && <Badge tone="warning">{issues}</Badge>}
             </span>
           }
-          subtitle="Hozir e'tibor berish kerak bo'lgan holatlar"
+          subtitle="Hozir aralashuv talab qiladigan holatlar"
           icon={AlertTriangle}
           className="mb-3"
         />
@@ -87,7 +87,7 @@ export function AttentionPanel({ loading, events, cameras, groups, groupLink, te
           <IconChip icon={CheckCircle2} tone="success" />
           <div>
             <p className="text-sm font-medium text-fg">Hammasi joyida</p>
-            <p className="text-xs text-muted">Muhim hodisa, nosoz kamera yoki keskin past davomat yo'q.</p>
+            <p className="text-xs text-muted">Muhim hodisa, aloqasiz kamera yoki keskin past davomatli guruh yo'q.</p>
           </div>
         </div>
       ) : (
@@ -102,9 +102,9 @@ export function AttentionPanel({ loading, events, cameras, groups, groupLink, te
                       <IconChip icon={ShieldAlert} tone="danger" />
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-fg">
-                          {formatNumber(events.highOpen)} ta yuqori muhimlikdagi ochiq hodisa
+                          {formatNumber(events.highOpen)} ta juda muhim hodisa hal qilinmagan
                         </p>
-                        <p className="text-xs text-muted">Ko'rib chiqilishi kerak</p>
+                        <p className="text-xs text-muted">Mas'ul xodim ko'rib chiqishi kerak</p>
                       </div>
                     </RowLink>
                   </li>
@@ -128,7 +128,7 @@ export function AttentionPanel({ loading, events, cameras, groups, groupLink, te
                       <IconChip icon={Clock} tone="warning" />
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-fg">{formatNumber(events.overdue)} ta hodisaning muddati o'tgan</p>
-                        <p className="text-xs text-muted">Belgilangan vaqtda hal qilinmagan</p>
+                        <p className="text-xs text-muted">Belgilangan muddatda hal qilinmadi</p>
                       </div>
                     </RowLink>
                   </li>
@@ -154,7 +154,7 @@ export function AttentionPanel({ loading, events, cameras, groups, groupLink, te
 
           {groups.length > 0 && (
             <section aria-label="Davomati past guruhlar">
-              <GroupTitle>Davomati past guruhlar</GroupTitle>
+              <GroupTitle>Bugun eng kam talaba kelgan guruhlar</GroupTitle>
               <ul className="divide-y divide-border">
                 {groups.map((group) => {
                   const tone = toneForRate(group.rate);
@@ -180,7 +180,7 @@ export function AttentionPanel({ loading, events, cameras, groups, groupLink, te
 
           {teacherLessons.length > 0 && (
             <section aria-label="Darsga kechikkan o'qituvchilar">
-              <GroupTitle>O'qituvchilar</GroupTitle>
+              <GroupTitle>Darsga kech kirgan o'qituvchilar</GroupTitle>
               <ul className="divide-y divide-border">
                 {teacherLessons.map((lesson) => {
                   const missed = lesson.teacherStatus === 'kelmadi';

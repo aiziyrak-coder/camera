@@ -45,17 +45,17 @@ const COLUMNS: DataTableColumn<AttendanceCamera>[] = [
   },
   {
     key: 'online',
-    header: 'Tarmoq / tasvir',
+    header: 'Aloqa va tasvir',
     cell: (c) => (
       <span className="inline-flex gap-1.5">
-        <Badge tone={c.online ? 'success' : 'danger'}>{c.online ? 'Tarmoqda' : "Tarmoq yo'q"}</Badge>
+        <Badge tone={c.online ? 'success' : 'danger'}>{c.online ? 'Aloqada' : "Aloqa yo'q"}</Badge>
         <Badge tone={c.video ? 'success' : 'warning'}>{c.video ? 'Tasvir bor' : "Tasvir yo'q"}</Badge>
       </span>
     ),
   },
   {
     key: 'recognized',
-    header: 'Bugun tanigan',
+    header: 'Bugun necha kishini tanigan',
     align: 'right',
     sortValue: (c) => c.recognizedToday,
     sortFirst: 'desc',
@@ -68,7 +68,7 @@ const COLUMNS: DataTableColumn<AttendanceCamera>[] = [
   },
   {
     key: 'ai',
-    header: 'Bugun AI',
+    header: 'Texnik tafsilot',
     hideOnMobile: true,
     cell: (c) =>
       c.framesCheckedToday > 0 ? (
@@ -94,8 +94,13 @@ const COLUMNS: DataTableColumn<AttendanceCamera>[] = [
   },
   {
     key: 'diagnosis',
-    header: 'Tashxis',
-    cell: (c) => (c.diagnosis ? <span className="block min-w-[12rem] text-xs text-warning">{c.diagnosis}</span> : <span className="text-subtle">—</span>),
+    header: 'Nega tanimayapti',
+    cell: (c) =>
+      c.diagnosis ? (
+        <span className="block min-w-[12rem] text-xs text-warning">{c.diagnosis}</span>
+      ) : (
+        <span className="text-xs text-muted">Muammo topilmadi</span>
+      ),
   },
 ];
 
@@ -135,26 +140,40 @@ export function AttendanceCamerasPanel() {
         <div className="flex items-start gap-2 rounded-card border border-warning/30 bg-warning-soft px-4 py-3 text-[13px] text-warning">
           <TriangleAlert size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
           <span>
-            {!data.staffModuleActive && 'Xodimlar davomati (#6) o‘chirilgan. '}
-            {!data.studentModuleActive && 'Talabalar davomati (#7) o‘chirilgan.'}
+            {!data.staffModuleActive && "Xodimlar davomatini yozish o‘chirib qo‘yilgan — hech bir kamera xodimlarni qayd etmaydi. "}
+            {!data.studentModuleActive && "Talabalar davomatini yozish o‘chirib qo‘yilgan — hech bir kamera talabalarni qayd etmaydi."}
           </span>
         </div>
       )}
       {problems.length > 0 && data.peopleRecognizedToday === 0 && (
         <div className="rounded-card border border-warning/30 bg-warning-soft px-4 py-3 text-[13px] text-warning">
-          <p className="font-semibold">Bugun hali hech kim davomatga tushmadi.</p>
+          <p className="font-semibold">Bugun hali birorta odam davomatga tushmadi.</p>
           <p className="mt-1">
-            "Tashxis" ustuni sababini ko&apos;rsatadi: kamera tekshirilmayaptimi, kadrda yuz yo&apos;qmi, yuzlar juda kichikmi yoki
-            o&apos;xshashlik chegaradan pastmi.
+            Har bir kamera uchun «Nega tanimayapti» ustuniga qarang: kamera umuman tekshirilmayaptimi, suratda yuz
+            ko&apos;rinmayaptimi, yuzlar juda kichikmi yoki tanilgan yuz ro&apos;yxatdagi hech kimga yetarlicha
+            o&apos;xshamayaptimi.
           </p>
         </div>
       )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatTile label="Davomatda ishlaydigan" value={`${data.attendanceEnabled} / ${data.total}`} hint="Kelish — istalgan kameradagi birinchi ko'rinish" />
-        <StatTile label="Tarmoqda / tasvir" value={`${data.online} / ${data.video}`} tone={data.video < data.attendanceEnabled ? 'warning' : 'success'} />
-        <StatTile label="Bugun tanigan kameralar" value={data.recognizingToday} />
-        <StatTile label="Bugun tanilgan odamlar" value={data.peopleRecognizedToday} hint={`Yuzi saqlangan: ${data.enrolledFaces}`} />
+        <StatTile
+          label="Davomatni yozadigan kameralar"
+          value={`${data.attendanceEnabled} / ${data.total}`}
+          hint="Odam kelgan hisoblanadi, agar shu kameralardan birortasi uni kun bo'yi birinchi marta tanisa"
+        />
+        <StatTile
+          label="Aloqada / tasvir bermoqda"
+          value={`${data.online} / ${data.video}`}
+          tone={data.video < data.attendanceEnabled ? 'warning' : 'success'}
+          hint="Tasvir bermayotgan kamera hech kimni tanimaydi"
+        />
+        <StatTile label="Bugun kimnidir tanigan kameralar" value={data.recognizingToday} hint="Qolganlari bugun hech kimni tanimadi" />
+        <StatTile
+          label="Bugun tanilgan odamlar"
+          value={data.peopleRecognizedToday}
+          hint={`Butun tizimda yuzi ro'yxatdan o'tgani ${data.enrolledFaces} kishi — faqat ularni tanish mumkin`}
+        />
       </div>
 
       <DataTable
@@ -163,14 +182,19 @@ export function AttendanceCamerasPanel() {
         rowKey={(c) => c.id}
         rowTone={(c) => (c.attendanceEnabled && c.diagnosis ? 'warning' : null)}
         defaultSort={{ key: 'attendance', dir: 'desc' }}
-        emptyTitle="Kameralar yo'q"
+        emptyTitle="Davomat uchun sozlangan kamera yo'q"
+        emptyDescription="Kamera davomatni yozishi uchun «Sozlamalar → Kameralar» bo'limida unga kirish eshigi turi va davomat moduli biriktirilishi kerak."
         ariaLabel="Davomat kameralari"
       />
       <p className="text-xs leading-relaxed text-muted">
-        "Tasvir" — kamera so&apos;nggi daqiqalarda AI uchun kadr bergani. "Bugun tanigan" — shu kamerada bugun tanilgan turli odamlar
-        soni. "Bugun AI" — server qayta ishga tushgandan beri: tekshirilgan kadrlar, ko&apos;rilgan yuzlar, yuzning o&apos;rtacha
-        balandligi va ro&apos;yxatdagi eng yaqin odamga eng yuqori o&apos;xshashlik (tanish chegarasi {data.matchThreshold}
-        {data.relaxedThreshold ? `; ${data.relaxedThreshold}–${data.matchThreshold} oralig'i ikkinchi ko'rinish bilan tasdiqlanadi` : ''}).
+        <span className="font-medium text-fg">Jadvalni qanday o&apos;qish kerak.</span> «Tasvir bor» — kamera so&apos;nggi daqiqalarda
+        surat yuborib turgani; tasvir bo&apos;lmasa hech kim tanilmaydi. «Bugun necha kishini tanigan» — shu kamerada bugun tanilgan
+        turli odamlar soni va oxirgi tanish vaqti. «Texnik tafsilot» ustuni mutaxassis uchun: tekshirilgan suratlar, ulardan topilgan
+        yuzlar va yuzning o&apos;rtacha balandligi (piksel). Dastur odamni tanidi deb hisoblashi uchun o&apos;xshashlik {data.matchThreshold} dan
+        yuqori bo&apos;lishi kerak
+        {data.relaxedThreshold ? `; ${data.relaxedThreshold} va ${data.matchThreshold} oralig'idagi o'xshashlik esa odam ikkinchi marta ko'ringanda tasdiqlanadi` : ''}.
+        Yuz juda kichik yoki qorong&apos;i bo&apos;lsa o&apos;xshashlik past chiqadi — bunda kamerani eshikka yaqinroq yoki pastroq
+        o&apos;rnatish kerak.
       </p>
     </div>
   );

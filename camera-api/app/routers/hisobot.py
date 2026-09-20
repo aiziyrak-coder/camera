@@ -79,9 +79,15 @@ def build_workbook(data: dict) -> bytes:
     bold = Font(bold=True)
     label = next(c["label"] for c in data["criteria"] if c["key"] == data["criterion"])
     body = data["report"]
+    # Ekrandagi bilan bir xil: sarlavha, tanlov, davr, keyin javob gapi.
     ws.append([f"{'Talabalar' if data['kind'] == 'talaba' else 'Xodimlar'} — {label}"])
     ws["A1"].font = Font(bold=True, size=14)
-    ws.append([f"Davr: {data['period']['from']} — {data['period']['to']}", f"Aholi: {data['population']['total']}"])
+    ws.append(["Tanlov", data.get("scope", "")])
+    ws.append(["Davr", f"{data['period']['from']} — {data['period']['to']}"])
+    ws.append(["Ro'yxatdagi odamlar", data["population"]["total"]])
+    ws.append([])
+    for line in body.get("summary") or []:
+        ws.append([line])
     ws.append([])
     for tile in body["tiles"]:
         ws.append([tile["label"], f"{tile['value']} {tile['unit']}".strip(), tile["hint"] or ""])
@@ -92,17 +98,22 @@ def build_workbook(data: dict) -> bytes:
     if body["breakdown"] and body["breakdown"]["rows"]:
         ws.append([body["breakdown"]["title"]])
         ws.cell(ws.max_row, 1).font = bold
-        ws.append(["Nomi", f"Qiymat ({body['breakdown']['unit']})", "Izoh", "Soni"])
+        ws.append(["Nomi", f"Qiymat ({body['breakdown']['unit']})", "Izoh", "Odamlar soni"])
         for row in body["breakdown"]["rows"]:
             ws.append([row["name"], row["value"], row["detail"] or "", row["headcount"]])
         ws.append([])
 
     if body["columns"]:
         people = wb.create_sheet("Odamlar")
-        header = ["№", "F.I.Sh.", "Bo'linma / guruh"] + [
-            f"{c['label']} ({c['unit']})" if c["unit"] else c["label"] for c in body["columns"]]
+        people.append([body.get("people_title") or "Odamlar"])
+        people.cell(1, 1).font = Font(bold=True, size=12)
+        people.append([body.get("people_hint") or ""])
+        people.append([])
+        # Ustunlar ekrandagi jadval bilan bir xil tartibda va bir xil nom bilan.
+        header = ["№", "F.I.Sh.", "Guruh yoki bo'linma"] + [
+            f"{c['label']}, {c['unit']}" if c["unit"] else c["label"] for c in body["columns"]]
         people.append(header)
-        for cell in people[1]:
+        for cell in people[people.max_row]:
             cell.font = bold
         for i, row in enumerate(body["people"], start=1):
             people.append([i, row["full_name"], row["unit"]] + [row["values"].get(c["key"]) for c in body["columns"]])

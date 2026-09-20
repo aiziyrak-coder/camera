@@ -263,3 +263,103 @@
     @apply rounded-control border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100;
   }
 }
+
+/* ------------------------------------------------------------------
+ * Chop etish (Ctrl+P). Hisobot sahifasi qog'ozda hujjatga aylanadi:
+ * yon menyu, yuqori panel, filtrlar va tugmalar chiqmaydi; jadval
+ * sarlavhasi har betda takrorlanadi; A4 eniga sig'adi.
+ * ------------------------------------------------------------------ */
+.print-only {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 14mm 10mm 16mm;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+  }
+
+  /* Ilova qobig'i va faqat ekran uchun boshqaruvlar. */
+  [data-print='hide'],
+  .print-hide {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  /* Jadval qog'ozda to'liq: ichki aylantirish yo'q, sarlavha takrorlanadi. */
+  [data-table-scroll] {
+    display: block !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  [data-table-cards] {
+    display: none !important;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  /* A4 eniga sig'sin: kichik shrift, matn ko'chirilsin, gorizontal
+     aylantirish o'rniga qator bo'linsin. */
+  [data-table-scroll] table {
+    width: 100% !important;
+    table-layout: auto;
+    font-size: 9pt;
+  }
+
+  [data-table-scroll] th,
+  [data-table-scroll] td {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    padding: 3pt 4pt !important;
+  }
+
+  [data-table-scroll] td span {
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: normal !important;
+  }
+
+  thead th {
+    position: static !important;
+    box-shadow: none !important;
+  }
+
+  tr,
+  li {
+    break-inside: avoid;
+  }
+
+  /* Qog'ozda soya va yumaloq ramka keraksiz; matn qora. */
+  .shadow-card,
+  .shadow-btn {
+    box-shadow: none !important;
+  }
+
+  * {
+    color: #111 !important;
+  }
+
+  /* Ba'zi brauzerlar qo'llab-quvvatlaydi: bet raqami. */
+  @page {
+    @bottom-right {
+      content: counter(page) ' / ' counter(pages);
+      font-size: 9pt;
+    }
+  }
+}

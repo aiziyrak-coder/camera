@@ -40,8 +40,8 @@ export const NAV_SECTIONS: NavSection[] = [
     id: 'monitoring',
     label: 'Monitoring',
     items: [
-      { to: '/', label: 'Situatsion markaz', icon: LayoutDashboard, end: true },
-      { to: '/videodevor', label: 'Videodevor', icon: MonitorPlay, permission: 'viewLive' },
+      { to: '/', label: 'Institut holati', icon: LayoutDashboard, end: true },
+      { to: '/videodevor', label: 'Jonli kameralar', icon: MonitorPlay, permission: 'viewLive' },
       { to: '/hodisalar', label: 'Hodisalar', icon: Siren, permission: 'reviewEvents' },
     ],
   },

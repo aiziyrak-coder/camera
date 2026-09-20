@@ -217,12 +217,13 @@ export default function CampusBrowser<T extends string>({ tabs, defaultTab }: { 
 
   return (
     <Page
-      title="Videodevor"
+      title="Jonli kameralar"
       subtitle={
         <>
-          {scope} · <span className="text-success">{formatNumber(campus.live)} jonli</span>
-          {campus.noVideo > 0 && <span className="text-warning"> · {formatNumber(campus.noVideo)} tasvirsiz</span>}
-          {campus.eventsToday > 0 && <span className="text-danger"> · {formatNumber(campus.eventsToday)} signal (bugun)</span>}
+          Binolar va qavatlar bo'yicha kameralarni ochish · {scope} ·{' '}
+          <span className="text-success">{formatNumber(campus.live)} tasi tasvir bermoqda</span>
+          {campus.noVideo > 0 && <span className="text-warning"> · {formatNumber(campus.noVideo)} tasi tasvir bermayapti</span>}
+          {campus.eventsToday > 0 && <span className="text-danger"> · bugun {formatNumber(campus.eventsToday)} hodisa qayd etilgan</span>}
         </>
       }
       tabs={tabs}

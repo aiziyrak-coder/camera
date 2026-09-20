@@ -727,8 +727,8 @@ export default function VideoWall<T extends string>({
 
   return (
     <Page
-      title="Videodevor"
-      subtitle="Kameralarni setkaga torting, ko'rinish sifatida saqlang va ikkinchi monitorda alohida oynada oching."
+      title="Jonli kameralar"
+      subtitle="Bir necha kameraning tasvirini bitta ekranda ko'rish. Kerakli kameralarni katakchalarga torting, tanlovni saqlab qo'ying yoki ikkinchi monitorda alohida oynada oching."
       tabs={tabs}
       defaultTab={defaultTab}
       actions={

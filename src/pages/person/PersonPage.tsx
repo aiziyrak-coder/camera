@@ -290,7 +290,7 @@ export default function PersonPage() {
     ...(data && data.lessons.length > 0
       ? [{ id: 'darslar' as const, label: 'Darslar', icon: GraduationCap, count: data.lessons.length }]
       : []),
-    { id: 'harakatlar', label: 'Harakatlar', icon: Footprints, count: data?.recentVisits.length ?? null },
+    { id: 'harakatlar', label: "Qayerda ko'ringan", icon: Footprints, count: data?.recentVisits.length ?? null },
   ];
   const [tab, setTab] = useUrlTab(tabs, { defaultTab: 'davomat' });
 
@@ -318,7 +318,13 @@ export default function PersonPage() {
   return (
     <Page
       title={person?.fullName ?? 'Shaxs profili'}
-      subtitle={person ? (isStudent ? 'Talaba' : person.unit || 'Xodim') : 'Davomat, darslar va harakatlar'}
+      subtitle={
+        person
+          ? `${isStudent ? 'Talaba' : person.unit || 'Xodim'} · Bu odam qaysi kunlari kelgani, soat nechada kelgani va qaysi kameralarda ko'ringani${
+              policy.data ? `. Soat ${lateLabel} dan keyin kelgan kun "kech keldi" hisoblanadi` : ''
+            }`
+          : 'Bir odamning davomati, darslari va kameralarda ko\'ringan joylari'
+      }
       breadcrumbs={crumbs}
       actions={<IconButton icon={RefreshCw} label="Yangilash" variant="secondary" onClick={() => { profile.reload(); summary.reload(); previous.reload(); months.invalidate(); }} loading={profile.refreshing} />}
     >
@@ -418,14 +424,19 @@ export default function PersonPage() {
                   <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]">
                     <Card>
                       <CardHeader
-                        title="Kelish vaqti"
-                        subtitle={`Har kuni · to'q sariq nuqta — ${lateLabel} dan keyin kelgan kun`}
+                        title="Har kuni soat nechada kelgan"
+                        subtitle={`Har bir nuqta — bir kun. To'q sariq nuqta — soat ${lateLabel} dan keyin kelgan, ya'ni kech kelgan kun`}
                         icon={LogIn}
                       />
                       {data.calendar.some((d) => d.checkIn) ? (
                         <ArrivalTimeChart points={arrivalSeries(data.calendar)} threshold={lateCutoff} average={kpis.avgArrivalMinutes} height={240} />
                       ) : (
-                        <EmptyState compact bordered={false} title="Kelish vaqti qayd etilmagan" />
+                        <EmptyState
+                          compact
+                          bordered={false}
+                          title="Kelish vaqti qayd etilmagan"
+                          description="Bu davrda kameralar bu xodimni birorta kun ham tanimagan."
+                        />
                       )}
                     </Card>
                     <WeekdayPatternCard rows={weekdays} lateCutoff={lateCutoff} />
@@ -433,16 +444,31 @@ export default function PersonPage() {
                 </>
               ) : (
               <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-                <StatTile label="Davomat" value={formatPercent(data.totals.rate, 1)} progress={data.totals.rate} hint={`${data.totals.days} kundan`} />
-                <StatTile label="Keldi" value={`${data.totals.present - data.totals.late} kun`} icon={CheckCircle2} tone="success" hint="o'z vaqtida" />
-                <StatTile label="Kech keldi" value={`${data.totals.late} kun`} icon={Clock} tone="warning" />
-                <StatTile label="Kelmadi" value={`${data.totals.absent} kun`} icon={UserX} tone="danger" />
-                <StatTile label="O'rtacha kelish" value={data.totals.avgArrival ?? '—'} icon={LogIn} tone="info" hint={data.totals.noData ? `${data.totals.noData} kun ma'lumot yo'q` : undefined} />
+                <StatTile
+                  label="Kelgan kunlari ulushi"
+                  value={formatPercent(data.totals.rate, 1)}
+                  progress={data.totals.rate}
+                  hint={`Tanlangan davrdagi ${data.totals.days} ish kunidan`}
+                />
+                <StatTile label="O'z vaqtida kelgan" value={`${data.totals.present - data.totals.late} kun`} icon={CheckCircle2} tone="success" hint={`Soat ${lateLabel} gacha`} />
+                <StatTile label="Kech kelgan" value={`${data.totals.late} kun`} icon={Clock} tone="warning" hint={`Soat ${lateLabel} dan keyin`} />
+                <StatTile label="Kelmagan" value={`${data.totals.absent} kun`} icon={UserX} tone="danger" hint="Hech bir kamerada ko'rinmagan" />
+                <StatTile
+                  label="Odatda kelish vaqti"
+                  value={data.totals.avgArrival ?? '—'}
+                  icon={LogIn}
+                  tone="info"
+                  hint={data.totals.noData ? `${data.totals.noData} kunda yozuv yo'q` : "Kelgan kunlaridagi o'rtacha vaqt"}
+                />
               </div>
               )}
               <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
                 <Card>
-                  <CardHeader title="Davomat kalendari" subtitle="Kunni bosing — kameralardagi harakat, darslar va qo'lda tuzatish" icon={CalendarDays} />
+                  <CardHeader
+                    title="Kunlar kalendari"
+                    subtitle="Har bir katak — bir kun. Kunni bosing: o'sha kuni qaysi kameralarda ko'ringani, darslari va kerak bo'lsa qo'lda tuzatish"
+                    icon={CalendarDays}
+                  />
                   <div className={cn('grid gap-6', calendarMonths.length > 1 && '2xl:grid-cols-2')}>
                     {calendarMonths.map((m) => (
                       <MonthCalendar
@@ -477,11 +503,20 @@ export default function PersonPage() {
                   )}
                   {!isStaff && (
                     <Card>
-                      <CardHeader title="Kelish vaqti" subtitle="Tanlangan davrda har kuni" icon={LogIn} />
+                      <CardHeader
+                        title="Har kuni soat nechada kelgan"
+                        subtitle={`Har bir nuqta — bir kun. To'q sariq nuqta — soat ${lateLabel} dan keyin kelgan kun`}
+                        icon={LogIn}
+                      />
                       {data.calendar.some((d) => d.checkIn) ? (
                         <ArrivalTimeChart points={arrivalSeries(data.calendar)} threshold={lateCutoff} />
                       ) : (
-                        <EmptyState compact bordered={false} title="Kelish vaqti qayd etilmagan" />
+                        <EmptyState
+                          compact
+                          bordered={false}
+                          title="Kelish vaqti qayd etilmagan"
+                          description="Bu davrda kameralar bu odamni birorta kun ham tanimagan."
+                        />
                       )}
                     </Card>
                   )}
@@ -494,17 +529,28 @@ export default function PersonPage() {
 
           {tab === 'harakatlar' && (
             data.recentVisits.length === 0 ? (
-              <EmptyState icon={Footprints} title="Kameralarda qayd etilmagan" description="Tanlangan davr oxirigacha bu odam hech bir kamerada tanilmagan." />
+              <EmptyState
+                icon={Footprints}
+                title="Hech bir kamerada ko'rinmagan"
+                description={
+                  person?.biometricsStatus === 'tasdiqlangan'
+                    ? 'Tanlangan davrda bu odam birorta kamerada tanilmagan.'
+                    : "Bu odam yuzini ro'yxatdan o'tkazmagan — shuning uchun kameralar uni tanay olmaydi va bu ro'yxat bo'sh turadi."
+                }
+              />
             ) : (
               <div className="flex flex-col gap-4">
-                <p className="text-[13px] text-muted">Oxirgi {data.recentVisits.length} ta tashrif (davr oxirigacha, yangisi birinchi).</p>
+                <p className="text-[13px] text-muted">
+                  Bu odam qaysi kunlari, soat nechada va qaysi kamerada ko'ringani. Oxirgi {data.recentVisits.length} ta yozuv, yangisi
+                  birinchi.
+                </p>
                 {visitsByDate(data.recentVisits).map((day) => (
                   <Card key={day.date} padding="sm">
                     <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
                       <h3 className="text-sm font-semibold text-fg">
                         {formatUzDate(day.date, { weekday: true })}
                         <span className="ml-2 font-normal text-muted">
-                          {day.visits.length} tashrif · {formatMinutes(day.minutes)}
+                          {day.visits.length} marta ko'ringan · binoda {formatMinutes(day.minutes)}
                         </span>
                       </h3>
                       <Button size="sm" variant="ghost" icon={CalendarDays} onClick={() => setSelectedDate(day.date)}>
@@ -584,7 +630,7 @@ function LessonsTab({
     isStudent
       ? {
           key: 'own',
-          header: 'Holati',
+          header: 'Darsga kirganmi',
           cell: (l) => {
             const meta = l.attendanceStatus ? LESSON_ATTENDANCE_META[l.attendanceStatus] : null;
             return meta ? (
@@ -598,10 +644,10 @@ function LessonsTab({
           },
           sortValue: (l) => l.attendanceStatus,
         }
-      : { key: 'punct', header: 'Kelishi', cell: (l) => <TeacherPunctuality lesson={l} />, sortValue: (l) => l.teacherStatus },
+      : { key: 'punct', header: 'Darsga kirgani', cell: (l) => <TeacherPunctuality lesson={l} />, sortValue: (l) => l.teacherStatus },
     {
       key: 'att',
-      header: 'Guruh davomati',
+      header: 'Darsdagi talabalar',
       align: 'right',
       cell: (l) => (
         <span className="tabular-nums">
@@ -624,7 +670,11 @@ function LessonsTab({
         return l.teacherStatus === 'kelmadi' ? 'danger' : l.teacherStatus === 'kechikdi' ? 'warning' : l.teacherStatus === 'oz_vaqtida' ? 'success' : null;
       }}
       emptyTitle="Bu davrda dars yo'q"
-      emptyDescription={isStudent ? 'Guruhining dars jadvalida bu davrga yozuv topilmadi.' : "Bu o'qituvchiga biriktirilgan dars topilmadi."}
+      emptyDescription={
+        isStudent
+          ? "Guruhining dars jadvalida bu davrga yozuv topilmadi — dars jadvali hali yuklanmagan bo'lishi mumkin."
+          : "Bu o'qituvchiga biriktirilgan dars topilmadi — dars jadvali hali yuklanmagan bo'lishi mumkin."
+      }
     />
   );
 }

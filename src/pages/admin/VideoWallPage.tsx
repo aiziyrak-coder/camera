@@ -6,8 +6,8 @@ import CampusBrowser from '../../components/monitor/CampusBrowser';
 type Tab = 'devor' | 'binolar';
 
 const TABS: readonly TabItem<Tab>[] = [
-  { id: 'devor', label: 'Videodevor', icon: LayoutGrid },
-  { id: 'binolar', label: "Bino bo'yicha", icon: Building2 },
+  { id: 'devor', label: 'Bir ekranda ko\'p kamera', icon: LayoutGrid },
+  { id: 'binolar', label: "Bino va qavat bo'yicha", icon: Building2 },
 ];
 
 /** /videodevor — ikki ko'rinish:

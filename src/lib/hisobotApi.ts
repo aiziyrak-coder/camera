@@ -12,9 +12,13 @@ export type HisobotTone = 'neutral' | 'primary' | 'success' | 'warning' | 'dange
 export interface HisobotCriterion {
   key: string;
   label: string;
+  /** Bir qatorli tushuntirish: bu son nimani o'lchaydi (vaqtlar ish vaqti sozlamasidan). */
   description: string;
   indicator: string;
   tone: HisobotTone;
+  /** Hozir hisoblab bo'lmasa — sababi oddiy tilda; aks holda null. */
+  unavailable: string | null;
+  available: boolean;
 }
 
 export interface HisobotTile {
@@ -31,6 +35,8 @@ export interface HisobotColumn {
   unit: string;
   /** Qaysi yo'nalish yaxshi: 'up' — katta yaxshi (davomat), 'down' — kichik yaxshi. */
   better: 'up' | 'down' | 'none';
+  /** 'text' — matnli katak (holat, izoh), 'number' — raqam. */
+  type?: 'text' | 'number';
 }
 
 export interface HisobotPerson {
@@ -39,7 +45,7 @@ export interface HisobotPerson {
   initials: string;
   photo_url: string | null;
   unit: string;
-  values: Record<string, number | null>;
+  values: Record<string, string | number | null>;
 }
 
 export interface HisobotBreakdownRow {
@@ -53,16 +59,38 @@ export interface HisobotBreakdownRow {
 export interface HisobotReport {
   kind: HisobotKind;
   period: { from: string; to: string; days: number };
-  population: { total: number; enrolled: number };
+  /** Tanlovning odamcha nomi: "Davolash ishi, 2-kurs, DI-2301 guruhi". */
+  scope: string;
+  population: { total: number; enrolled: number; not_enrolled: number };
   criteria: HisobotCriterion[];
   criterion: string;
   report: {
+    /** Tepadagi javob: plitkalardagi ayni sonlardan tuzilgan 1–3 gap. */
+    summary: string[];
     tiles: HisobotTile[];
-    trend: { unit: '%' | 'ta'; points: { date: string; value: number | null }[] };
-    breakdown: { title: string; unit: string; better: 'up' | 'down'; rows: HisobotBreakdownRow[] } | null;
+    trend: {
+      unit: '%' | 'ta';
+      points: { date: string; value: number | null }[];
+      title: string;
+      axis: string;
+      explain: string;
+    };
+    breakdown: {
+      title: string;
+      subtitle: string;
+      unit: string;
+      better: 'up' | 'down';
+      rows: HisobotBreakdownRow[];
+    } | null;
     columns: HisobotColumn[];
     people: HisobotPerson[];
     people_total: number;
+    people_title: string;
+    people_hint: string;
+    /** Ro'yxat bo'sh bo'lsa — sababi va nima qilish kerakligi. */
+    empty: { title: string; description: string } | null;
+    /** Bu son hozir umuman hisoblanmayapti (modul o'chiq, jadval yo'q...). */
+    blocked: boolean;
     sort_key: string | null;
     worst_desc: boolean;
     note: string | null;
@@ -225,9 +253,10 @@ export function unitOptions(options: HisobotFilterOptions | null, unitKind: stri
   return options.units.filter((u) => !unitKind || u.kind === unitKind);
 }
 
-/** Jadval qiymati: "87%", "3 kun", yoki "—". */
-export function formatCell(value: number | null | undefined, unit: string): string {
-  if (value === null || value === undefined) return '—';
+/** Jadval qiymati: "87%", "3 kun", "08:15", yoki "—". */
+export function formatCell(value: string | number | null | undefined, unit: string): string {
+  if (value === null || value === undefined || value === '') return '—';
+  if (typeof value === 'string') return value;
   const text = Number.isInteger(value) ? String(value) : value.toLocaleString('ru-RU', { maximumFractionDigits: 1 });
   if (unit === '%') return `${text}%`;
   return unit ? `${text} ${unit}` : text;

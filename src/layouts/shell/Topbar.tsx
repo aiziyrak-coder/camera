@@ -64,7 +64,7 @@ export function Topbar({ crumbs, showDate, onOpenMobileNav, mobileNavOpen, sideb
   }
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-surface/90 px-3 backdrop-blur supports-[backdrop-filter]:bg-surface/75 sm:gap-3 sm:px-6">
+    <header data-print="hide" className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-surface/90 px-3 backdrop-blur supports-[backdrop-filter]:bg-surface/75 sm:gap-3 sm:px-6">
       <IconButton
         icon={MenuIcon}
         label="Menyuni ochish"
@@ -144,7 +144,7 @@ function PresentationBar({ crumbs, showDate, onExit, bell }: { crumbs: Crumb[]; 
   const { date } = useViewDate();
   const title = crumbs[crumbs.length - 1]?.label;
   return (
-    <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-4 border-b border-border bg-surface/90 px-6 backdrop-blur">
+    <header data-print="hide" className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-4 border-b border-border bg-surface/90 px-6 backdrop-blur">
       <BrandMark />
       <div className="min-w-0 leading-tight">
         <p className="truncate text-sm font-semibold text-fg">{branding.orgName}</p>

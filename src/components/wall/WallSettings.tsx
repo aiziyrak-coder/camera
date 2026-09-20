@@ -72,7 +72,7 @@ export function WallSettings({
       <label className="mb-1 block text-xs font-medium text-muted" htmlFor="wall-cams">
         Kamera ID lari (vergul bilan, 4 tagacha)
       </label>
-      <Input id="wall-cams" value={cameras} onChange={(e) => setCameras(e.target.value)} placeholder="bo'sh — birinchi onlayn 2 ta" className="mb-3" />
+      <Input id="wall-cams" value={cameras} onChange={(e) => setCameras(e.target.value)} placeholder="bo'sh qoldirilsa — tasvir berayotgan birinchi 2 ta kamera" className="mb-3" />
       <div className="mb-3 break-all rounded-control bg-surface-2 p-2 font-mono text-xs text-muted">{url}</div>
       <div className="flex gap-2">
         <Button variant="secondary" icon={copied ? Check : Copy} onClick={copy}>

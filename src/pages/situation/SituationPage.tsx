@@ -82,7 +82,7 @@ function clockNow(ms: number | null): string | null {
   return new Date(ms).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' });
 }
 
-/** Situatsion markaz — rektor birinchi ko'radigan va devor ekranida
+/** "Institut holati" — rahbar birinchi ko'radigan va devor ekranida
  *  turadigan sahifa: institut bo'yicha kunlik holat bir qarashda. */
 export default function SituationPage() {
   const { role } = useAuth();
@@ -172,12 +172,13 @@ export default function SituationPage() {
   const updated = clockNow(overview.updatedAt);
   const subtitle = (
     <span className="inline-flex flex-wrap items-center gap-x-2">
-      <span>
-        {dayLabel ? `${dayLabel}, ` : ''}
+      <span>Kim keldi, kim kelmadi va nimaga e'tibor kerak.</span>
+      <span className="text-subtle">
+        · {dayLabel ? `${dayLabel}, ` : ''}
         {formatUzDate(date, { weekday: !dayLabel })}
       </span>
       {updated && canData && (
-        <span className="text-subtle">· {isToday ? `yangilandi ${updated}` : 'yakuniy natijalar'}</span>
+        <span className="text-subtle">· {isToday ? `${updated} da yangilandi` : 'kun yakunlangan, raqamlar o\'zgarmaydi'}</span>
       )}
     </span>
   );
@@ -221,7 +222,7 @@ export default function SituationPage() {
 
   if (!canData) {
     return (
-      <Page title="Situatsion markaz" subtitle={subtitle} actions={actions}>
+      <Page title="Institut holati" subtitle={subtitle} actions={actions}>
         <NoAccess has={has} />
       </Page>
     );
@@ -263,9 +264,9 @@ export default function SituationPage() {
   const teachersLink = canStudentsPages ? withDate('/oqituvchilar') : undefined;
 
   return (
-    <Page title="Situatsion markaz" subtitle={subtitle} titleAddon={titleAddon} actions={big ? undefined : actions}>
+    <Page title="Institut holati" subtitle={subtitle} titleAddon={titleAddon} actions={big ? undefined : actions}>
       {overview.error && !data ? (
-        <ErrorState variant="block" title="Situatsion markaz ma'lumotini olib bo'lmadi" message={overview.error} onRetry={overview.reload} />
+        <ErrorState variant="block" title="Bugungi holatni serverdan olib bo'lmadi" message={overview.error} onRetry={overview.reload} />
       ) : (
         <>
           {overview.error && data && (
@@ -286,7 +287,7 @@ export default function SituationPage() {
               segments={staff ? attendanceSegments(staff) : undefined}
               deltas={presentDeltas}
               trend={rateTrend}
-              hint={staff ? `Ro'yxatda ${formatNumber(staff.total)} ta · yuzi bor ${formatNumber(staff.enrolled)}` : undefined}
+              hint={staff ? `Ro'yxatda ${formatNumber(staff.total)} xodim · yuzi ro'yxatdan o'tgani ${formatNumber(staff.enrolled)} ta` : undefined}
               to={teachersLink}
               loading={loadingTiles}
               big={big}
@@ -298,7 +299,7 @@ export default function SituationPage() {
               value={formatNumber(staff?.late)}
               deltas={lateDeltas}
               trend={lateTrend}
-              hint={staff ? `Kelganlarning ${formatPercent(share(staff.late, staff.present))}` : undefined}
+              hint={staff ? `Bugun kelgan xodimlarning ${formatPercent(share(staff.late, staff.present))} qismi` : undefined}
               to={teachersLink}
               loading={loadingTiles}
               big={big}
@@ -310,21 +311,21 @@ export default function SituationPage() {
               value={formatNumber(staff?.absent)}
               deltas={absentDeltas}
               trend={absentTrend}
-              hint={staff ? (isToday && staff.notYet > 0 ? `Yana ${formatNumber(staff.notYet)} kishi hali kelmagan` : `Kutilganlarning ${formatPercent(share(staff.absent, staffExpected))}`) : undefined}
+              hint={staff ? (isToday && staff.notYet > 0 ? `Yana ${formatNumber(staff.notYet)} kishi hali kelmagan` : `Kutilgan ${formatNumber(staffExpected)} xodimning ${formatPercent(share(staff.absent, staffExpected))} qismi`) : undefined}
               to={teachersLink}
               loading={loadingTiles}
               big={big}
             />
             <KpiTile
-              label="Surunkali (30 kun)"
+              label="Takroran kechikkan yoki kelmagan xodimlar"
               icon={Repeat}
               tone={chronicCount > 0 ? 'warning' : 'success'}
               value={chronic.data ? formatNumber(chronicCount) : '—'}
               hint={
                 chronic.data
                   ? chronicCount > 0
-                    ? `${formatNumber(chronicAbsent)} tasi 3+ kun kelmagan · ${formatNumber(chronicLate)} tasi 3+ kun kech`
-                    : "30 kunda takroriy kechikish yoki kelmaslik yo'q"
+                    ? `So'nggi 30 kunda: ${formatNumber(chronicAbsent)} kishi 3+ kun kelmagan · ${formatNumber(chronicLate)} kishi 3+ kun kech kelgan`
+                    : "So'nggi 30 kunda takror kechikkan yoki kelmagan xodim yo'q"
                   : chronic.error ?? undefined
               }
               to={canStudentsPages ? withDate('/oqituvchilar?tab=surunkali') : undefined}
@@ -337,7 +338,7 @@ export default function SituationPage() {
             {hasLessons && (
               <>
               <KpiTile
-                label="O'qituvchilar darsga o'z vaqtida"
+                label="Darsga o'z vaqtida kirgan o'qituvchilar"
                 icon={Users}
                 tone={toneForRate(teacherRate)}
                 value={formatPercent(teacherRate)}
@@ -353,7 +354,7 @@ export default function SituationPage() {
                 hint={
                   data
                     ? data.teachers.scheduled > 0
-                      ? `${formatNumber(data.teachers.scheduled)} o'qituvchi · ${formatNumber(data.teachers.late)} kech · ${formatNumber(data.teachers.absent)} kelmadi`
+                      ? `Bugun darsi bor ${formatNumber(data.teachers.scheduled)} o'qituvchidan: ${formatNumber(data.teachers.late)} kech kirgan · ${formatNumber(data.teachers.absent)} kirmagan`
                       : "Darsi bor o'qituvchi yo'q"
                     : undefined
                 }
@@ -362,7 +363,7 @@ export default function SituationPage() {
                 big={big}
               />
               <KpiTile
-                label="Darslar"
+                label={isToday ? 'Bugungi darslar' : 'Shu kungi darslar'}
                 icon={BookOpen}
                 tone="info"
                 value={formatNumber(isToday ? data?.lessons.finished : data?.lessons.total)}
@@ -390,7 +391,7 @@ export default function SituationPage() {
             )}
             {isToday ? (
               <KpiTile
-                label="Kameralar onlayn"
+                label="Ishlab turgan kameralar"
                 icon={Camera}
                 tone={camerasOffline > 0 ? 'warning' : 'success'}
                 value={formatNumber(data?.cameras.online)}
@@ -398,12 +399,12 @@ export default function SituationPage() {
                 segments={
                   data && data.cameras.active > 0
                     ? [
-                        { value: data.cameras.online, tone: 'success', label: 'Onlayn' },
+                        { value: data.cameras.online, tone: 'success', label: 'Ishlayapti' },
                         { value: camerasOffline, tone: 'danger', label: 'Aloqada emas' },
                       ]
                     : undefined
                 }
-                hint={data ? (camerasOffline > 0 ? `${formatNumber(camerasOffline)} ta aloqada emas` : `${formatNumber(data.cameras.videoFlowing)} ta tasvir uzatmoqda`) : undefined}
+                hint={data ? (camerasOffline > 0 ? `${formatNumber(data.cameras.active)} ta ishlashi kerak, ${formatNumber(camerasOffline)} tasi aloqada emas` : `${formatNumber(data.cameras.videoFlowing)} tasi hozir tasvir uzatmoqda`) : undefined}
                 to={cameraLink ?? undefined}
                 loading={loadingTiles}
                 big={big}
@@ -417,7 +418,7 @@ export default function SituationPage() {
                 suffix={data ? `/ ${formatNumber(data.students.total)}` : undefined}
                 ring={data?.studentsEnrolledPct ?? null}
                 ringTone="primary"
-                hint="Talabalar davomati 5% dan yoqiladi"
+                hint="Kamera faqat yuzi ro'yxatdan o'tganlarni taniydi. Talabalar davomati 5% dan boshlab ko'rsatiladi"
                 to={studentsLink}
                 loading={loadingTiles}
                 big={big}
@@ -425,15 +426,15 @@ export default function SituationPage() {
             )}
             <KpiTile
               className="col-span-2 sm:col-span-1"
-              label={isToday ? 'Ochiq hodisalar' : 'Shu kungi hodisalar'}
+              label={isToday ? "Hal qilinmagan hodisalar" : 'Shu kuni qayd etilgan hodisalar'}
               icon={isToday ? AlertOctagon : Bell}
               tone={isToday ? eventsTone : 'neutral'}
               value={formatNumber(isToday ? data?.events.open : data?.events.today)}
               hint={
                 data
                   ? isToday
-                    ? `${formatNumber(data.events.highOpen)} yuqori muhimlik · ${formatNumber(data.events.overdue)} muddati o'tgan · bugun ${formatNumber(data.events.today)}`
-                    : 'AI aniqlagan signallar'
+                    ? `Shundan ${formatNumber(data.events.highOpen)} tasi juda muhim · ${formatNumber(data.events.overdue)} tasining muddati o'tgan · bugun jami ${formatNumber(data.events.today)} ta`
+                    : 'Kameralar dasturi shu kuni qayd etgan holatlar'
                   : undefined
               }
               to={canEvents ? (isToday ? '/hodisalar' : `/hodisalar?from=${date}&to=${date}&korinish=jurnal`) : undefined}
@@ -452,7 +453,7 @@ export default function SituationPage() {
               suffix={s ? `/ ${formatNumber(expected)}` : undefined}
               ring={s?.rate ?? null}
               segments={s ? attendanceSegments(s) : undefined}
-              hint={s ? `Ro'yxatda ${formatNumber(s.total)} ta${s.noData ? ` · ${formatNumber(s.noData)} ma'lumotsiz` : ''}` : undefined}
+              hint={s ? `Ro'yxatda ${formatNumber(s.total)} talaba${s.noData ? ` · ${formatNumber(s.noData)} tasining holati aniqlanmagan` : ''}` : undefined}
               to={studentsLink}
               loading={loadingTiles}
               big={big}
@@ -462,7 +463,7 @@ export default function SituationPage() {
               icon={Clock}
               tone="warning"
               value={formatNumber(s?.late)}
-              hint={s ? `Kelganlarning ${formatPercent(share(s.late, s.present))}` : undefined}
+              hint={s ? `Bugun kelganlarning ${formatPercent(share(s.late, s.present))} qismi` : undefined}
               to={studentsLink}
               loading={loadingTiles}
               big={big}
@@ -472,7 +473,7 @@ export default function SituationPage() {
               icon={UserX}
               tone="danger"
               value={formatNumber(s?.absent)}
-              hint={s ? `Kutilganlarning ${formatPercent(share(s.absent, expected))}` : undefined}
+              hint={s ? `Kutilgan ${formatNumber(expected)} talabaning ${formatPercent(share(s.absent, expected))} qismi` : undefined}
               to={studentsLink}
               loading={loadingTiles}
               big={big}
@@ -483,18 +484,18 @@ export default function SituationPage() {
                 icon={Hourglass}
                 tone="neutral"
                 value={formatNumber(s?.notYet)}
-                hint="Yuzi tasdiqlangan, bugun hali ko'rinmagan"
+                hint="Yuzi ro'yxatdan o'tgan, lekin bugun hali biror kamerada ko'rinmagan"
                 to={studentsLink}
                 loading={loadingTiles}
                 big={big}
               />
             ) : (
               <KpiTile
-                label="Ma'lumot yo'q"
+                label="Holati aniqlanmagan talabalar"
                 icon={Hourglass}
                 tone="neutral"
                 value={formatNumber(s?.noData)}
-                hint="Yuzi tasdiqlanmagan yoki qayd yo'q"
+                hint="Yuzini ro'yxatdan o'tkazmagan — kamera ularni tanay olmaydi"
                 to={studentsLink}
                 loading={loadingTiles}
                 big={big}
@@ -506,7 +507,7 @@ export default function SituationPage() {
             {hasLessons && (
               <>
               <KpiTile
-                label="O'qituvchilar darsga o'z vaqtida"
+                label="Darsga o'z vaqtida kirgan o'qituvchilar"
                 icon={Users}
                 tone={toneForRate(teacherRate)}
                 value={formatPercent(teacherRate)}
@@ -522,7 +523,7 @@ export default function SituationPage() {
                 hint={
                   data
                     ? data.teachers.scheduled > 0
-                      ? `${formatNumber(data.teachers.scheduled)} o'qituvchi · ${formatNumber(data.teachers.late)} kech · ${formatNumber(data.teachers.absent)} kelmadi`
+                      ? `Bugun darsi bor ${formatNumber(data.teachers.scheduled)} o'qituvchidan: ${formatNumber(data.teachers.late)} kech kirgan · ${formatNumber(data.teachers.absent)} kirmagan`
                       : "Darsi bor o'qituvchi yo'q"
                     : undefined
                 }
@@ -531,7 +532,7 @@ export default function SituationPage() {
                 big={big}
               />
               <KpiTile
-                label="Darslar"
+                label={isToday ? 'Bugungi darslar' : 'Shu kungi darslar'}
                 icon={BookOpen}
                 tone="info"
                 value={formatNumber(isToday ? data?.lessons.finished : data?.lessons.total)}
@@ -559,7 +560,7 @@ export default function SituationPage() {
             )}
             {isToday ? (
               <KpiTile
-                label="Kameralar onlayn"
+                label="Ishlab turgan kameralar"
                 icon={Camera}
                 tone={camerasOffline > 0 ? 'warning' : 'success'}
                 value={formatNumber(data?.cameras.online)}
@@ -567,12 +568,12 @@ export default function SituationPage() {
                 segments={
                   data && data.cameras.active > 0
                     ? [
-                        { value: data.cameras.online, tone: 'success', label: 'Onlayn' },
+                        { value: data.cameras.online, tone: 'success', label: 'Ishlayapti' },
                         { value: camerasOffline, tone: 'danger', label: 'Aloqada emas' },
                       ]
                     : undefined
                 }
-                hint={data ? (camerasOffline > 0 ? `${formatNumber(camerasOffline)} ta aloqada emas` : `${formatNumber(data.cameras.videoFlowing)} ta tasvir uzatmoqda`) : undefined}
+                hint={data ? (camerasOffline > 0 ? `${formatNumber(data.cameras.active)} ta ishlashi kerak, ${formatNumber(camerasOffline)} tasi aloqada emas` : `${formatNumber(data.cameras.videoFlowing)} tasi hozir tasvir uzatmoqda`) : undefined}
                 to={cameraLink ?? undefined}
                 loading={loadingTiles}
                 big={big}
@@ -595,15 +596,15 @@ export default function SituationPage() {
             )}
             <KpiTile
               className="col-span-2 sm:col-span-1"
-              label={isToday ? 'Ochiq hodisalar' : 'Shu kungi hodisalar'}
+              label={isToday ? "Hal qilinmagan hodisalar" : 'Shu kuni qayd etilgan hodisalar'}
               icon={isToday ? AlertOctagon : Bell}
               tone={isToday ? eventsTone : 'neutral'}
               value={formatNumber(isToday ? data?.events.open : data?.events.today)}
               hint={
                 data
                   ? isToday
-                    ? `${formatNumber(data.events.highOpen)} yuqori muhimlik · ${formatNumber(data.events.overdue)} muddati o'tgan · bugun ${formatNumber(data.events.today)}`
-                    : 'AI aniqlagan signallar'
+                    ? `Shundan ${formatNumber(data.events.highOpen)} tasi juda muhim · ${formatNumber(data.events.overdue)} tasining muddati o'tgan · bugun jami ${formatNumber(data.events.today)} ta`
+                    : 'Kameralar dasturi shu kuni qayd etgan holatlar'
                   : undefined
               }
               to={canEvents ? (isToday ? '/hodisalar' : `/hodisalar?from=${date}&to=${date}&korinish=jurnal`) : undefined}
@@ -702,7 +703,7 @@ export default function SituationPage() {
 }
 
 const QUICK_LINKS: Array<{ permission: PermissionKey; to: string; label: string; icon: typeof Camera }> = [
-  { permission: 'viewLive', to: '/videodevor', label: 'Videodevor', icon: Presentation },
+  { permission: 'viewLive', to: '/videodevor', label: 'Jonli kameralar', icon: Presentation },
   { permission: 'reviewEvents', to: '/hodisalar', label: 'Hodisalar', icon: Bell },
   { permission: 'editCameraLocation', to: '/sozlamalar/kameralar', label: 'Kameralar', icon: Camera },
 ];
@@ -713,7 +714,7 @@ function NoAccess({ has }: { has: (key: PermissionKey) => boolean }) {
   return (
     <EmptyState
       icon={Lock}
-      title="Situatsion markaz ko'rsatkichlari sizga yopiq"
+      title="Bu sahifadagi raqamlar sizga ko'rinmaydi"
       description="Institut bo'yicha davomat va dars ko'rsatkichlarini ko'rish uchun “Davomat” yoki “Hisobotlar” huquqi kerak. Administratorga murojaat qiling."
       action={
         links.length > 0

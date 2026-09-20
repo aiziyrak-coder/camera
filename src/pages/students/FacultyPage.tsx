@@ -101,27 +101,36 @@ export default function FacultyPage() {
   const columns: DataTableColumn<GroupStat>[] = [
     { key: 'name', header: 'Guruh', cell: (g) => <span className="font-medium text-fg">{g.name}</span>, sortValue: (g) => g.name },
     { key: 'course', header: 'Kurs', cell: (g) => (g.course ? `${g.course}-kurs` : '—'), sortValue: (g) => g.course, hideOnMobile: true },
-    { key: 'total', header: 'Talabalar', align: 'right', cell: (g) => formatNumber(g.total), sortValue: (g) => g.total },
+    { key: 'total', header: 'Jami talaba', align: 'right', cell: (g) => formatNumber(g.total), sortValue: (g) => g.total },
     {
       key: 'faces',
-      header: 'Yuzi bor',
+      header: "Yuzi ro'yxatda",
       align: 'right',
       hideOnMobile: true,
       sortValue: (g) => enrolledPct(g),
-      cell: (g) => <span className={hasAttendanceData(g) ? 'tabular-nums' : 'tabular-nums font-medium text-warning'}>{formatPercent(enrolledPct(g))}</span>,
+      cell: (g) => (
+        <span
+          className={hasAttendanceData(g) ? 'tabular-nums' : 'tabular-nums font-medium text-warning'}
+          title="Kamera faqat yuzi ro'yxatdan o'tgan talabani taniy oladi"
+        >
+          {formatPercent(enrolledPct(g))}
+        </span>
+      ),
     },
-    { key: 'on', header: 'Keldi', align: 'right', cell: (g) => formatNumber(g.present - g.late), sortValue: (g) => g.present - g.late },
+    { key: 'on', header: "O'z vaqtida", align: 'right', cell: (g) => formatNumber(g.present - g.late), sortValue: (g) => g.present - g.late },
     { key: 'late', header: 'Kech keldi', align: 'right', cell: (g) => formatNumber(g.late), sortValue: (g) => g.late },
     { key: 'absent', header: 'Kelmadi', align: 'right', cell: (g) => formatNumber(g.absent), sortValue: (g) => g.absent },
-    { key: 'notYet', header: 'Kutilmoqda', align: 'right', cell: (g) => formatNumber(g.notYet), sortValue: (g) => g.notYet, hideOnMobile: !isToday },
+    { key: 'notYet', header: 'Hali kelmagan', align: 'right', cell: (g) => formatNumber(g.notYet), sortValue: (g) => g.notYet, hideOnMobile: !isToday },
     {
       key: 'rate',
-      header: 'Davomat',
+      header: 'Kelganlar ulushi',
       width: '11rem',
       sortValue: (g) => g.rate,
       sortFirst: 'asc',
       cell: (g) => !hasAttendanceData(g) ? (
-        <span className="text-xs text-muted">yuzlar yetarli emas</span>
+        <span className="text-xs text-muted" title="Guruhda yuzini ro'yxatdan o'tkazgan talaba juda kam">
+          hisoblab bo'lmaydi
+        </span>
       ) : (
         <div className="flex items-center gap-2">
           <ProgressBar value={g.rate} size="xs" className="flex-1" />
@@ -136,7 +145,7 @@ export default function FacultyPage() {
   return (
     <Page
       title={name}
-      subtitle={`${data ? `${formatNumber(data.totals.total)} talaba · ${groupCount} guruh · ` : ''}${formatUzDate(date, { weekday: true })}`}
+      subtitle={`Fakultetdagi har bir guruhda bugun nechta talaba kelgani${data ? ` · ${groupCount} guruh, ${formatNumber(data.totals.total)} talaba` : ''} · ${formatUzDate(date, { weekday: true })}`}
       breadcrumbs={[{ label: 'Talabalar', to: withDate(situationPaths.faculties) }, { label: name }]}
       actions={<IconButton icon={RefreshCw} label="Yangilash" variant="secondary" onClick={faculty.reload} loading={faculty.refreshing} />}
       tabs={data ? VIEWS : undefined}
@@ -199,7 +208,11 @@ export default function FacultyPage() {
           </Toolbar>
 
           {groupCount === 0 ? (
-            <EmptyState icon={Users} title="Bu fakultetda guruh yo'q" description="Talabalar «Reestr» bo'limida guruhlarga biriktiriladi." />
+            <EmptyState
+              icon={Users}
+              title="Bu fakultetda guruh yo'q"
+              description="Talabalar «Shaxslar reestri» bo'limida guruhlarga biriktiriladi. Shundan keyin guruhlar shu yerda ko'rinadi."
+            />
           ) : flat.length === 0 ? (
             <EmptyState compact icon={SearchX} title="Guruh topilmadi" action={<Button size="sm" onClick={() => setQuery('')}>Qidiruvni tozalash</Button>} />
           ) : view === 'table' ? (

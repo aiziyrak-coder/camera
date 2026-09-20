@@ -23,8 +23,8 @@ export function UnitsRanking({ units, loading, error, onRetry, linkFor, allLink,
   return (
     <Card className="flex flex-col">
       <CardHeader
-        title="Bo'linmalar reytingi"
-        subtitle={isToday ? `Bugun xodimlar davomati bo'yicha · ${formatNumber(ranked)} ta bo'linma` : `Shu kun xodimlar davomati bo'yicha · ${formatNumber(ranked)} ta bo'linma`}
+        title="Qaysi bo'linmada xodimlar yaxshi keladi"
+        subtitle={`${formatNumber(ranked)} ta bo'linma ${isToday ? 'bugun' : 'shu kuni'} ishga kelgan xodimlar ulushi bo'yicha saralandi`}
         icon={Trophy}
         actions={
           allLink ? (
@@ -45,20 +45,20 @@ export function UnitsRanking({ units, loading, error, onRetry, linkFor, allLink,
           ))}
         </div>
       ) : error && !units ? (
-        <ErrorState title="Bo'linmalarni yuklab bo'lmadi" message={error} onRetry={onRetry} />
+        <ErrorState title="Bo'linmalar ro'yxatini olib bo'lmadi" message={error} onRetry={onRetry} />
       ) : ranked === 0 ? (
         <EmptyState
           compact
           bordered={false}
           icon={Trophy}
-          title="Reyting uchun ma'lumot yetarli emas"
-          description={isToday ? "Xodimlar kela boshlagach, bo'linmalar foiz bo'yicha shu yerda saralanadi." : "Bu kunda bo'linmalar bo'yicha davomat yozuvi yo'q."}
+          title="Bo'linmalarni hali taqqoslab bo'lmaydi"
+          description={isToday ? "Bugun hali birorta xodim kamerada ko'rinmadi. Xodimlar kela boshlagach ro'yxat o'zi to'ladi." : "Bu kunda hech bir bo'linma bo'yicha davomat yozuvi yo'q — kameralar hech kimni tanimagan."}
         />
       ) : (
         <div className="grid gap-x-6 gap-y-5 md:grid-cols-2">
-          <RankList title="Eng yaxshi" icon={Trophy} tone="success" rows={top} startRank={1} linkFor={linkFor} big={big} />
+          <RankList title="Eng yaxshi bo'linmalar" icon={Trophy} tone="success" rows={top} startRank={1} linkFor={linkFor} big={big} />
           {bottom.length > 0 && (
-            <RankList title="E'tibor talab" icon={TrendingDown} tone="danger" rows={bottom} startRank={ranked} descending linkFor={linkFor} big={big} />
+            <RankList title="Eng past bo'linmalar" icon={TrendingDown} tone="danger" rows={bottom} startRank={ranked} descending linkFor={linkFor} big={big} />
           )}
         </div>
       )}

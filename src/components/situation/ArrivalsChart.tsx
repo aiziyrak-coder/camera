@@ -29,11 +29,11 @@ export function ArrivalsChart({ rows, loading, currentHour, big }: Props) {
   return (
     <Card className="flex flex-col">
       <CardHeader
-        title="Kelish dinamikasi"
+        title="Odamlar soat nechada keldi"
         subtitle={
           peak
-            ? `Eng gavjum: ${pad(peak.hour)}–${pad(peak.hour + 1)} · ${formatNumber(peak.total)} kishi`
-            : 'Soatlar bo\'yicha birinchi kelishlar'
+            ? `Har bir ustun — o'sha soatda birinchi marta ko'ringan odamlar soni. Eng gavjum vaqt: ${pad(peak.hour)}–${pad(peak.hour + 1)}, ${formatNumber(peak.total)} kishi`
+            : "Har bir ustun — o'sha soatda birinchi marta ko'ringan odamlar soni"
         }
         icon={TrendingUp}
         actions={
@@ -52,7 +52,13 @@ export function ArrivalsChart({ rows, loading, currentHour, big }: Props) {
       {loading ? (
         <Skeleton className={cn('w-full', big ? 'h-[300px]' : 'h-[240px]')} />
       ) : total === 0 ? (
-        <EmptyState compact bordered={false} icon={TrendingUp} title="Hali kelish qayd etilmagan" description="Kameralar birinchi odamni tanigach grafik to'ladi." />
+        <EmptyState
+          compact
+          bordered={false}
+          icon={TrendingUp}
+          title="Bugun hali hech kim ko'rinmadi"
+          description="Kamera birinchi odamni taniganda ustunlar shu yerda paydo bo'ladi."
+        />
       ) : (
         <div className="-ml-2 w-[calc(100%+0.5rem)]" style={{ height }} role="img" aria-label={`Kelish dinamikasi: jami ${total} kishi`}>
           <ResponsiveContainer width="100%" height="100%">

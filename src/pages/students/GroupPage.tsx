@@ -184,7 +184,7 @@ export default function GroupPage() {
       ...(lessonCount > 0
         ? [{ id: 'darslar' as const, label: isToday ? 'Bugungi darslar' : 'Shu kungi darslar', icon: CalendarClock, count: lessonCount }]
         : []),
-      { id: 'dinamika', label: 'Dinamika', icon: TrendingUp },
+      { id: 'dinamika', label: "So'nggi 14 kun", icon: TrendingUp },
     ],
     [data?.students.length, lessonCount, isToday],
   );
@@ -267,7 +267,13 @@ export default function GroupPage() {
     ? { label: data.group.faculty ?? 'Fakultetsiz', to: withDate(situationPaths.faculty(data.group.facultyId)) }
     : { label: 'Fakultet' };
   const subtitle = data
-    ? [data.group.faculty ?? 'Fakultetsiz', data.group.course ? `${data.group.course}-kurs` : null, `${data.students.length} talaba`, formatUzDate(date, { weekday: true })]
+    ? [
+        "Har bir talabaning surati va bugungi holati",
+        data.group.faculty ?? 'Fakultetsiz',
+        data.group.course ? `${data.group.course}-kurs` : null,
+        `${data.students.length} talaba`,
+        formatUzDate(date, { weekday: true }),
+      ]
         .filter(Boolean)
         .join(' · ')
     : formatUzDate(date, { weekday: true });
@@ -353,8 +359,8 @@ export default function GroupPage() {
                     )}
                     <p className="text-xs text-muted">
                       {ready
-                        ? "Yuzlar yetarli — «Davomat» ko'rinishida bugungi holat."
-                        : "Yuzi borlar 50% dan oshgach, guruh davomati ishonchli bo'ladi."}
+                        ? "Yuzlar yetarli yig'ilgan — «Davomat» ko'rinishida bugungi holat ko'rinadi."
+                        : "Kamera faqat yuzi ro'yxatdan o'tgan talabani taniydi. Guruhning yarmidan ko'pi topshirgach, davomat foizi haqiqatga yaqin bo'ladi."}
                     </p>
                   </div>
                 </div>
@@ -524,7 +530,11 @@ function StudentsTab({
       )}
 
       {total === 0 ? (
-        <EmptyState icon={Users} title="Guruhda faol talaba yo'q" description="Talabalar «Reestr» bo'limida guruhga biriktiriladi." />
+        <EmptyState
+          icon={Users}
+          title="Guruhda faol talaba yo'q"
+          description="Talabalar «Shaxslar reestri» bo'limida guruhga biriktiriladi. Shundan keyin ularning suratlari shu yerda ko'rinadi."
+        />
       ) : visible.length === 0 ? (
         <EmptyState
           compact
@@ -549,9 +559,12 @@ function StudentsTab({
                   photoUrl={student.photoUrl}
                   status={enrollMode ? null : student.status === 'malumot_yoq' ? 'nomalum' : student.status}
                   subtitle={
-                    <span className="inline-flex items-center gap-1 font-medium text-warning">
+                    <span
+                      className="inline-flex items-center gap-1 font-medium text-warning"
+                      title="Kamera bu talabani taniy olmaydi — yuzi ro'yxatdan o'tmagan"
+                    >
                       <ScanFace size={12} aria-hidden="true" />
-                      {student.biometricsStatus === 'kutilmoqda' ? 'Tasdiq kutilmoqda' : "Yuz yo'q"}
+                      {student.biometricsStatus === 'kutilmoqda' ? 'Yuzi tekshiruvda' : "Yuzi ro'yxatda yo'q"}
                     </span>
                   }
                   meta={enrollMode ? <span className="text-primary">QR bilan topshirish →</span> : undefined}
@@ -570,7 +583,7 @@ function StudentsTab({
                 time={student.checkIn}
                 subtitle={
                   student.biometricsStatus !== 'tasdiqlangan' ? (
-                    <span className="text-warning">Yuzi yo'q</span>
+                    <span className="text-warning">Yuzi ro'yxatda yo'q</span>
                   ) : student.checkOut ? (
                     `ketdi ${student.checkOut}`
                   ) : isAwaiting(student.status) ? (
@@ -610,7 +623,7 @@ function TrendTab({ points }: { points: TrendPoint[] }) {
     { key: 'absent', header: 'Kelmadi', align: 'right', cell: (p) => p.absent, sortValue: (p) => p.absent },
     {
       key: 'rate',
-      header: 'Davomat',
+      header: 'Kelganlar ulushi',
       align: 'right',
       cell: (p) => <span className="font-semibold tabular-nums">{formatPercent(p.rate, 1)}</span>,
       sortValue: (p) => p.rate,
@@ -621,8 +634,8 @@ function TrendTab({ points }: { points: TrendPoint[] }) {
     return (
       <EmptyState
         icon={TrendingUp}
-        title="So'nggi 14 kunda davomat yozuvi yo'q"
-        description="Kameralar guruh talabalarini tanigach yoki davomat kiritilgach grafik to'ladi."
+        title="So'nggi 14 kunda birorta yozuv yo'q"
+        description="Bu guruhda hali hech kim kamerada tanilmagan — ehtimol talabalar yuzini ro'yxatdan o'tkazmagan. Birinchi kun qayd etilishi bilan grafik to'ladi."
       />
     );
   }
@@ -630,28 +643,28 @@ function TrendTab({ points }: { points: TrendPoint[] }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile label="14 kunlik o'rtacha" value={formatPercent(avg, 1)} progress={avg} tone={avg === null ? 'neutral' : undefined} />
+        <StatTile label="14 kunlik o'rtacha" value={formatPercent(avg, 1)} progress={avg} tone={avg === null ? 'neutral' : undefined} hint="Har kuni kelgan talabalar ulushi" />
         <StatTile
-          label="Eng yaxshi kun"
+          label="Eng ko'p kelgan kun"
           value={formatPercent(best?.rate ?? null, 1)}
           hint={best ? formatUzDate(best.date, { weekday: true, year: false }) : undefined}
           tone="success"
         />
         <StatTile
-          label="Eng past kun"
+          label="Eng kam kelgan kun"
           value={formatPercent(worst?.rate ?? null, 1)}
           hint={worst ? formatUzDate(worst.date, { weekday: true, year: false }) : undefined}
           tone="danger"
         />
-        <StatTile label="Kelmaganlar / kechikkanlar" value={`${absentTotal} / ${lateTotal}`} hint="14 kunda jami holatlar" />
+        <StatTile label="Kelmagan / kech kelgan" value={`${absentTotal} / ${lateTotal}`} hint="14 kun davomida jami qayd etilgan holatlar" />
       </div>
       <div className="grid gap-5 xl:grid-cols-2">
         <Card>
-          <CardHeader title="Davomat foizi" subtitle="Kunlik, so'nggi 14 kun · punktir — 85% maqsad" icon={TrendingUp} />
+          <CardHeader title="Kelgan talabalar ulushi" subtitle="Har kuni, so'nggi 14 kun · punktir chiziq — 85% maqsad" icon={TrendingUp} />
           <RateTrendChart points={points} />
         </Card>
         <Card>
-          <CardHeader title="Holatlar" subtitle="Har kuni nechta talaba keldi, kechikdi yoki kelmadi" icon={Users} />
+          <CardHeader title="Kunlik holatlar" subtitle="Har kuni nechta talaba o'z vaqtida keldi, kech keldi yoki kelmadi" icon={Users} />
           <StatusTrendChart points={points} />
         </Card>
       </div>

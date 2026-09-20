@@ -118,7 +118,9 @@ export function LessonsTimeline({ lessons, loading, error, onRetry, isToday, big
                       </p>
                     </>
                   ) : (
-                    <p className="text-xs text-subtle">{slot.state === 'upcoming' ? "O'qituvchilar hali tekshirilmagan" : "O'qituvchi ma'lumoti yo'q"}</p>
+                    <p className="text-xs text-subtle">
+                      {slot.state === 'upcoming' ? "Dars hali boshlanmadi" : "O'qituvchilarning kirgani qayd etilmagan"}
+                    </p>
                   )}
                 </div>
               </li>

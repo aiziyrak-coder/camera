@@ -29,7 +29,7 @@ export function FacultyAttendance({ faculties, loading, linkFor, allLink, big }:
       <div className={cn('px-4 pt-4 sm:px-5 sm:pt-5', big && 'sm:px-6 sm:pt-6')}>
         <CardHeader
           title="Fakultetlar bo'yicha davomat"
-          subtitle="Talabalar: kelgan / kutilgan va holatlar ulushi"
+          subtitle="Har bir fakultetda nechta talaba keldi va nechtasi kutilgan edi"
           icon={School}
           className="mb-3"
           actions={
@@ -62,7 +62,12 @@ export function FacultyAttendance({ faculties, loading, linkFor, allLink, big }:
         </div>
       ) : rows.length === 0 ? (
         <div className="px-4 pb-5 sm:px-5">
-          <EmptyState compact icon={School} title="Fakultetlar yo'q" description="Tashkiliy tuzilmada fakultetlar va talabalar qo'shilgach shu yerda ko'rinadi." />
+          <EmptyState
+            compact
+            icon={School}
+            title="Fakultetlar kiritilmagan"
+            description="«Tashkiliy tuzilma» bo'limida fakultetlar va ularga talabalar qo'shilgach shu yerda ko'rinadi."
+          />
         </div>
       ) : (
         <ul className="divide-y divide-border border-t border-border">
