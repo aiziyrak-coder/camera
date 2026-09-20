@@ -67,22 +67,23 @@ export function DatePicker({
     input.click();
   }
 
-  const h = size === 'sm' ? 'h-8' : 'h-9';
+  // Boshqaruv balandliklari cn.ts'dagi controlSizes bilan bir xil.
+  const h = size === 'sm' ? 'h-7' : 'h-8';
   const canPrev = !min || value > min;
   const canNext = !upper || value < upper;
   const stepClass = cn(
     'inline-flex shrink-0 items-center justify-center text-muted transition-colors hover:bg-surface-2 hover:text-fg disabled:pointer-events-none disabled:opacity-40',
     focusRing,
     h,
-    size === 'sm' ? 'w-7' : 'w-8',
+    size === 'sm' ? 'w-6' : 'w-7',
   );
 
   return (
-    <div className={cn('inline-flex max-w-full items-center gap-2', className)}>
-      <div className={cn('relative inline-flex min-w-0 items-stretch rounded-control border border-border bg-surface shadow-sm', h)}>
+    <div className={cn('inline-flex max-w-full items-center gap-1.5', className)}>
+      <div className={cn('relative inline-flex min-w-0 items-stretch rounded-control border border-border bg-surface', h)}>
         {stepper && (
           <button type="button" className={cn(stepClass, 'rounded-l-control border-r border-border')} onClick={() => commit(addDays(value, -1))} disabled={!canPrev} aria-label="Oldingi kun">
-            <ChevronLeft size={16} aria-hidden="true" />
+            <ChevronLeft size={14} aria-hidden="true" />
           </button>
         )}
         <button
@@ -90,18 +91,19 @@ export function DatePicker({
           onClick={openPicker}
           aria-label={`${ariaLabel}: ${isIsoDate(value) ? formatUzDate(value, { weekday: true }) : 'tanlanmagan'}. O'zgartirish`}
           className={cn(
-            'inline-flex min-w-0 items-center gap-2 px-2.5 font-medium text-fg transition-colors hover:bg-surface-2',
-            size === 'sm' ? 'text-[13px]' : 'text-sm',
+            // Sana — o'lchov: monoshrift, teng kenglikdagi raqamlar.
+            'intel-code inline-flex min-w-0 items-center gap-1.5 px-2 font-medium text-fg transition-colors hover:bg-surface-2',
+            size === 'sm' ? 'text-[12px]' : 'text-[13px]',
             !stepper && 'rounded-control',
             focusRing,
           )}
         >
-          <CalendarDays size={15} className="shrink-0 text-muted" aria-hidden="true" />
-          <span className="truncate tabular-nums">{label}</span>
+          <CalendarDays size={13} className="shrink-0 text-muted" aria-hidden="true" />
+          <span className="truncate">{label}</span>
         </button>
         {stepper && (
           <button type="button" className={cn(stepClass, 'rounded-r-control border-l border-border')} onClick={() => commit(addDays(value, 1))} disabled={!canNext} aria-label="Keyingi kun">
-            <ChevronRight size={16} aria-hidden="true" />
+            <ChevronRight size={14} aria-hidden="true" />
           </button>
         )}
         {/* Tizim kalendari shu ko'rinmas maydon orqali ochiladi (showPicker). */}
@@ -130,10 +132,11 @@ export function DatePicker({
               onClick={() => commit(item.date)}
               aria-pressed={value === item.date}
               className={cn(
-                'rounded-control px-2.5 font-medium transition-colors',
+                'intel-micro rounded-control border px-2 transition-colors',
                 h,
-                size === 'sm' ? 'text-xs' : 'text-[13px]',
-                value === item.date ? 'bg-primary-soft text-primary' : 'text-muted hover:bg-surface-2 hover:text-fg',
+                value === item.date
+                  ? 'border-primary bg-primary-soft !text-primary'
+                  : 'border-border hover:bg-surface-2 hover:!text-fg',
                 focusRing,
               )}
             >

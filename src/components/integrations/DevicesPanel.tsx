@@ -1,21 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Copy, DoorOpen, KeyRound, Link2, Pencil, PlugZap, Plus, Trash2, Wifi, WifiOff } from 'lucide-react';
+import { Copy, KeyRound, Link2, Pencil, PlugZap, Plus, Trash2 } from 'lucide-react';
 import {
   cn,
   focusRing,
-  Badge,
   Button,
+  CodeText,
   ConfirmDialog,
   DataTable,
   Drawer,
   IconButton,
+  IntelPanel,
   KeyValue,
-  Section,
-  StatTile,
+  MicroLabel,
+  Readout,
+  StatusLamp,
   formatNumber,
   useToast,
   type DataTableColumn,
+  type IntelStatus,
 } from '../../ui';
+import { RAG_LABEL, RAG_TEXT, RATE_RAG, rag } from '../../ui/rag';
+import { RagChip } from '../hisobot/board';
 import { Notice } from '../settings/kit';
 import { useAuth } from '../../lib/auth';
 import { isAbortError } from '../../lib/apiClient';
@@ -35,6 +40,19 @@ import DeviceModal from './DeviceModal';
 
 const REFRESH_MS = 15000;
 
+/** Qurilma holati — chiroq + SO'Z. Rang yolg'iz ma'no tashimaydi. */
+const DEVICE_LAMP: Record<string, IntelStatus> = {
+  onlayn: 'ok',
+  oflayn: 'warn',
+  xato: 'alert',
+  kutilmoqda: 'idle',
+  ochirilgan: 'idle',
+};
+
+function DeviceLamp({ status }: { status: AccessDevice['status'] }) {
+  return <StatusLamp status={DEVICE_LAMP[status] ?? 'idle'} label={DEVICE_STATUS_META[status].label} pulse={status === 'kutilmoqda'} />;
+}
+
 function deviceAddress(device: AccessDevice): string | null {
   if (device.kind !== 'hikvision' || !device.ip) return null;
   return `${device.ip}${device.port ? `:${device.port}` : ''}`;
@@ -47,10 +65,13 @@ export default function DevicesPanel({
   onDevicesChange,
   adding,
   onAddingChange,
+  reference,
 }: {
   onDevicesChange?: (devices: AccessDevice[]) => void;
   adding?: boolean;
   onAddingChange?: (value: boolean) => void;
+  /** Sahifaning hujjat raqami — panel sarlavhasining o'ng chetida. */
+  reference?: string;
 }) {
   const { token } = useAuth();
   const toast = useToast();
@@ -167,7 +188,7 @@ export default function DevicesPanel({
       cell: (d) => (
         <div className="min-w-0">
           <p className="truncate font-medium text-fg">{d.name}</p>
-          <p className="truncate text-xs text-muted">
+          <p className="truncate text-[12px] leading-4 text-muted">
             {d.buildingName ?? "Bino ko'rsatilmagan"}
             {!d.marksAttendance && ' · faqat jurnal'}
             {!d.enabled && " · o'chirilgan"}
@@ -184,7 +205,7 @@ export default function DevicesPanel({
         <div className="min-w-0">
           <p className="text-[13px] text-fg">{KIND_LABELS[d.kind]}</p>
           {deviceAddress(d) ? (
-            <p className="font-mono text-xs text-muted">{deviceAddress(d)}</p>
+            <CodeText className="block text-[11px] text-muted">{deviceAddress(d)}</CodeText>
           ) : (
             d.webhookPath && (
               <button
@@ -193,7 +214,7 @@ export default function DevicesPanel({
                   e.stopPropagation();
                   void copyWebhook(d);
                 }}
-                className={cn('inline-flex items-center gap-1 rounded text-xs font-medium text-primary hover:underline', focusRing)}
+                className={cn('intel-micro inline-flex items-center gap-1 !text-primary hover:underline', focusRing)}
               >
                 <Link2 size={12} aria-hidden="true" /> Webhook manzili
               </button>
@@ -207,34 +228,29 @@ export default function DevicesPanel({
       header: "Yo'nalish",
       hideOnMobile: true,
       sortValue: (d) => DIRECTION_LABELS[d.direction],
-      cell: (d) => <span className="text-[13px]">{DIRECTION_LABELS[d.direction]}</span>,
+      cell: (d) => <MicroLabel>{DIRECTION_LABELS[d.direction]}</MicroLabel>,
     },
     {
       key: 'status',
       header: 'Holat',
       sortValue: (d) => DEVICE_STATUS_META[d.status].label,
-      cell: (d) => {
-        const meta = DEVICE_STATUS_META[d.status];
-        return (
-          <div className="flex min-w-0 flex-col items-start gap-1">
-            <Badge tone={meta.tone} dot>
-              {meta.label}
-            </Badge>
-            {d.lastError && (
-              <p className="hidden max-w-[16rem] truncate text-xs text-danger md:block" title={d.lastError}>
-                {d.lastError}
-              </p>
-            )}
-          </div>
-        );
-      },
+      cell: (d) => (
+        <div className="flex min-w-0 flex-col items-start gap-0.5">
+          <DeviceLamp status={d.status} />
+          {d.lastError && (
+            <p className="hidden max-w-[16rem] truncate text-[12px] text-danger md:block" title={d.lastError}>
+              {d.lastError}
+            </p>
+          )}
+        </div>
+      ),
     },
     {
       key: 'lastEvent',
       header: 'Oxirgi hodisa',
       sortValue: (d) => d.lastEventAt,
       sortFirst: 'desc',
-      cell: (d) => <span className="whitespace-nowrap text-[13px] tabular-nums text-muted">{formatDateTime(d.lastEventAt, true)}</span>,
+      cell: (d) => <CodeText className="whitespace-nowrap text-[12px] text-muted">{formatDateTime(d.lastEventAt, true)}</CodeText>,
     },
     {
       key: 'actions',
@@ -254,19 +270,53 @@ export default function DevicesPanel({
 
   const loading = devices === null && !error;
 
-  return (
-    <div className="flex flex-col gap-5">
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatTile label="Qurilmalar" value={formatNumber(counts.total)} icon={DoorOpen} tone="primary" loading={loading} />
-        <StatTile label="Onlayn" value={formatNumber(counts.online)} icon={Wifi} tone="success" loading={loading} />
-        <StatTile label="Oflayn / kutilmoqda" value={formatNumber(counts.offline)} icon={WifiOff} tone="warning" loading={loading} />
-        <StatTile label="Xato" value={formatNumber(counts.error)} icon={AlertTriangle} tone={counts.error ? 'danger' : 'neutral'} loading={loading} />
-      </div>
+  // Onlayn ULUSHI — "yaxshi/yomon" hukmini tashiydi, shuning uchun
+  // svetofor bilan. Xom sonlar (jami, oflayn, xato) neytral qoladi:
+  // 3 ta xato ko'p yoki kamligi qurilmalar soniga bog'liq.
+  const onlineRate = counts.total > 0 ? (counts.online / counts.total) * 100 : null;
+  const onlineTone = rag(onlineRate, RATE_RAG);
 
-      <Section
+  return (
+    <div className="flex min-w-0 flex-col gap-3">
+      <IntelPanel
+        title="Qurilmalar holati"
+        code={reference}
+        right={
+          <span className="flex items-center gap-1.5">
+            <RagChip tone={onlineTone} />
+            <MicroLabel>{RAG_LABEL[onlineTone]}</MicroLabel>
+          </span>
+        }
+        bodyClassName="grid grid-cols-2 gap-x-6 gap-y-3 px-3 py-3 sm:grid-cols-3 xl:grid-cols-5"
+      >
+        <Readout label="Qurilmalar" value={loading ? '—' : formatNumber(counts.total)} title="Xom son — svetofor qo'yilmaydi" />
+        <Readout label="Onlayn" value={loading ? '—' : formatNumber(counts.online)} />
+        <Readout label="Oflayn / kutilmoqda" value={loading ? '—' : formatNumber(counts.offline)} />
+        <Readout label="Xato" value={loading ? '—' : formatNumber(counts.error)} />
+        <Readout
+          label="Onlayn ulushi"
+          value={
+            <span className={`flex items-center gap-1.5 ${RAG_TEXT[onlineTone]}`}>
+              {onlineRate === null ? '—' : `${Math.round(onlineRate)}%`}
+              <RagChip tone={onlineTone} />
+            </span>
+          }
+          title={`${counts.online} / ${counts.total} onlayn — ${RAG_LABEL[onlineTone]}`}
+        />
+      </IntelPanel>
+
+      <IntelPanel
         title="Turniket qurilmalari"
-        description="Hikvision qurilmalari har bir necha soniyada so'raladi; webhook/ZKTeco qurilmalari hodisani o'zi yuboradi."
-        actions={onAddingChange ? undefined : <Button variant="primary" icon={Plus} onClick={() => setAdding(true)}>Qurilma qo'shish</Button>}
+        code={`${counts.total} ta`}
+        right={
+          onAddingChange ? (
+            <MicroLabel>Hikvision — so&apos;rov; webhook/ZKTeco — o&apos;zi yuboradi</MicroLabel>
+          ) : (
+            <Button size="sm" variant="primary" icon={Plus} onClick={() => setAdding(true)}>
+              Qurilma qo&apos;shish
+            </Button>
+          )
+        }
       >
         <DataTable
           columns={columns}
@@ -288,8 +338,9 @@ export default function DevicesPanel({
           }
           ariaLabel="Turniket qurilmalari"
           maxHeight="none"
+          dense
         />
-      </Section>
+      </IntelPanel>
 
       <Drawer
         open={selected !== null}
@@ -319,12 +370,10 @@ export default function DevicesPanel({
       >
         {selected && (
           <div className="flex flex-col gap-5">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge tone={DEVICE_STATUS_META[selected.status].tone} dot size="md">
-                {DEVICE_STATUS_META[selected.status].label}
-              </Badge>
-              {!selected.enabled && <Badge>O'chirilgan</Badge>}
-              {!selected.marksAttendance && <Badge tone="info">Faqat jurnal</Badge>}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-border pb-2">
+              <DeviceLamp status={selected.status} />
+              {!selected.enabled && <StatusLamp status="idle" label="O'chirilgan" />}
+              {!selected.marksAttendance && <StatusLamp status="idle" label="Faqat jurnal" />}
             </div>
             {selected.lastError && <Notice tone="danger" title="Oxirgi xato">{selected.lastError}</Notice>}
             <KeyValue
@@ -332,26 +381,31 @@ export default function DevicesPanel({
                 { label: 'Turi', value: KIND_LABELS[selected.kind] },
                 ...(selected.kind === 'hikvision'
                   ? [
-                      { label: 'Manzil', value: <span className="font-mono text-xs">{deviceAddress(selected) ?? '—'}</span> },
+                      { label: 'Manzil', value: <CodeText className="text-xs">{deviceAddress(selected) ?? '—'}</CodeText> },
                       { label: 'Login', value: selected.username ?? '—' },
                       { label: 'Parol', value: selected.hasPassword ? 'Saqlangan' : 'Kiritilmagan' },
                     ]
                   : [{ label: 'API kalit', value: selected.hasApiKey ? 'Berilgan' : "Yo'q" }]),
-                { label: "Yo'nalish", value: DIRECTION_LABELS[selected.direction] },
+                { label: "Yo'nalish", value: <MicroLabel>{DIRECTION_LABELS[selected.direction]}</MicroLabel> },
                 { label: 'Bino', value: selected.buildingName ?? "Ko'rsatilmagan" },
-                { label: 'Davomatga yoziladi', value: selected.marksAttendance ? 'Ha' : "Yo'q (faqat jurnal)" },
-                { label: 'Oxirgi hodisa', value: <span className="tabular-nums">{formatDateTime(selected.lastEventAt, true)}</span> },
+                {
+                  label: 'Davomatga yoziladi',
+                  value: (
+                    <StatusLamp status={selected.marksAttendance ? 'ok' : 'idle'} label={selected.marksAttendance ? 'Ha' : "Yo'q (faqat jurnal)"} />
+                  ),
+                },
+                { label: 'Oxirgi hodisa', value: <CodeText>{formatDateTime(selected.lastEventAt, true)}</CodeText> },
                 ...(selected.kind === 'hikvision'
-                  ? [{ label: "Oxirgi so'rov", value: <span className="tabular-nums">{formatDateTime(selected.lastPollAt, true)}</span> }]
+                  ? [{ label: "Oxirgi so'rov", value: <CodeText>{formatDateTime(selected.lastPollAt, true)}</CodeText> }]
                   : []),
-                { label: "Qo'shilgan", value: <span className="tabular-nums">{formatDateTime(selected.createdAt)}</span> },
+                { label: "Qo'shilgan", value: <CodeText>{formatDateTime(selected.createdAt)}</CodeText> },
               ]}
             />
             {selected.webhookPath && (
               <div className="flex flex-col gap-1.5">
-                <p className="text-[13px] font-medium text-fg">Webhook manzili (POST)</p>
+                <MicroLabel>Webhook manzili (POST)</MicroLabel>
                 <div className="flex items-center gap-2">
-                  <code className="min-w-0 flex-1 break-all rounded-control border border-border bg-surface-2 px-3 py-2 font-mono text-xs text-fg">
+                  <code className="intel-code min-w-0 flex-1 break-all border border-border bg-surface-2 px-3 py-2 text-xs text-fg">
                     {webhookUrl(selected.webhookPath)}
                   </code>
                   <IconButton icon={Copy} label="Webhook manzilini nusxalash" variant="secondary" onClick={() => void copyWebhook(selected)} />

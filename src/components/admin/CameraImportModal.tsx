@@ -17,7 +17,7 @@ export function CsvDropzone({ file, placeholder, onChange }: { file: File | null
   return (
     <label
       className={cn(
-        'flex cursor-pointer flex-col items-center gap-2 rounded-card border border-dashed px-4 py-6 text-center transition-colors hover:border-primary/60 hover:bg-primary-soft/40',
+        'flex cursor-pointer flex-col items-center gap-2 border border-dashed px-4 py-6 text-center transition-colors hover:border-primary/60 hover:bg-primary-soft/40',
         'has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-primary/40',
         file ? 'border-primary/50 bg-primary-soft/40' : 'border-border-strong bg-surface-2',
       )}

@@ -7,7 +7,8 @@ import { RankingPanel } from '../../components/wall/RankingPanel';
 import { SecurityPanel } from '../../components/wall/SecurityPanel';
 import { SpotlightPanel } from '../../components/wall/SpotlightPanel';
 import { TodayPanel } from '../../components/wall/TodayPanel';
-import { tashkentClock, WallHeader } from '../../components/wall/WallHeader';
+import { connectionState, tashkentClock, WallHeader } from '../../components/wall/WallHeader';
+import { wallReference } from '../../components/wall/wallRef';
 import { WallSettings } from '../../components/wall/WallSettings';
 import { api, buildQuery, isAbortError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
@@ -34,7 +35,7 @@ import {
   type WallHighEvent,
 } from '../../lib/wallApi';
 import type { AIEvent } from '../../types';
-import { useTheme } from '../../ui';
+import { CodeText, MicroLabel, cn, useTheme } from '../../ui';
 
 const POLL_MS = 20_000;
 const CHRONIC_MS = 15 * 60_000;
@@ -160,7 +161,7 @@ export default function WallScreenPage() {
 
   // Qorong'i mavzu majburiy; chiqishda foydalanuvchi tanloviga qaytadi.
   useEffect(() => {
-    setForcedTheme('dark');
+    setForcedTheme(null); // qorong'i mavzu olib tashlandi
     return () => setForcedTheme(null);
   }, [setForcedTheme]);
 
@@ -445,17 +446,23 @@ export default function WallScreenPage() {
     };
   }, []);
 
+  // Ekran kodi sozlamadan chiqadi: zaldagi devorni boshqa ekran bilan
+  // solishtirish uchun yagona bog'lovchi.
+  const reference = wallReference({ date: wall?.date ?? null, config });
+
   return (
     <div
       className="fixed inset-0 overflow-hidden bg-bg text-fg"
-      style={{ fontSize: 'clamp(11px, min(1.55vh, 0.95vw), 44px)' }}
+      // Zaldan o'qiladigan ekran: asos o'lcham KATTALASHTIRILDI — barcha
+      // ichki o'lchamlar `em` da, shuning uchun butun devor bir xil o'sadi.
+      style={{ fontSize: 'clamp(12px, min(1.75vh, 1.08vw), 48px)' }}
     >
       <style>{WALL_CSS}</style>
       <div
         className="flex h-full w-full flex-col gap-[0.9em] p-[1em] transition-transform duration-[3000ms]"
         style={{ transform: `translate(${dx}px, ${dy}px)` }}
       >
-        <WallHeader online={online} updatedAt={updatedAt} />
+        <WallHeader online={online} updatedAt={updatedAt} reference={reference} />
         {!allowed ? (
           <Centered icon={<ShieldX className="h-[3em] w-[3em] text-danger" />} title="Ruxsat yo'q" text="Bu ekran uchun hisobot yoki davomat huquqi kerak." />
         ) : !wall ? (
@@ -502,6 +509,13 @@ export default function WallScreenPage() {
             )}
           </main>
         )}
+        <WallStatusStrip
+          reference={reference}
+          panels={effectivePanels}
+          rotateS={config.rotate}
+          online={online}
+          updatedAt={updatedAt}
+        />
       </div>
       {settingsOpen && <WallSettings config={config} onApply={applyConfig} onClose={() => setSettingsOpen(false)} />}
     </div>
@@ -512,8 +526,61 @@ function Centered({ icon, title, text }: { icon: ReactNode; title: string; text?
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-[0.6em] text-center">
       {icon}
-      <div className="text-[1.6em] font-semibold text-fg">{title}</div>
-      {text && <div className="text-muted">{text}</div>}
+      <div className="text-[1.9em] font-semibold tracking-tight text-fg">{title}</div>
+      {text && <div className="text-[0.95em] text-muted">{text}</div>}
     </div>
+  );
+}
+
+/**
+ * Pastki holat lentasi — ekranning "pasporti": qaysi panellar
+ * ko'rsatilmoqda, aylanish davri, oxirgi javob vaqti va tugmalar.
+ * Zaldagi odam ekranga qarab "nima ko'rinyapti va u tirikmi?" degan
+ * savolga varaqlamasdan javob oladi.
+ */
+function WallStatusStrip({
+  reference,
+  panels,
+  rotateS,
+  online,
+  updatedAt,
+}: {
+  reference: string;
+  panels: readonly string[];
+  rotateS: number;
+  online: boolean;
+  updatedAt: Date | null;
+}) {
+  // Ekran kunlab ochiq turadi: "yangilanmayapti" yozuvi poll kutmasdan
+  // o'zi paydo bo'lsin. Taymer yopilganda tozalanadi.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(new Date()), 15_000);
+    return () => window.clearInterval(t);
+  }, []);
+  const conn = connectionState(online, updatedAt, now);
+  return (
+    <footer className="flex shrink-0 flex-wrap items-center gap-x-[1.4em] gap-y-[0.3em] border border-border bg-surface-2 px-[0.9em] py-[0.35em]">
+      <span className="flex items-center gap-[0.45em]">
+        <MicroLabel>Hujjat</MicroLabel>
+        <CodeText className="text-[0.72em] font-semibold text-fg">{reference}</CodeText>
+      </span>
+      <span className="flex items-center gap-[0.45em]">
+        <MicroLabel>Panellar</MicroLabel>
+        <CodeText className="text-[0.72em] text-fg">{panels.join(' · ') || '—'}</CodeText>
+      </span>
+      <span className="flex items-center gap-[0.45em]">
+        <MicroLabel>Aylanish</MicroLabel>
+        <CodeText className="text-[0.72em] text-fg">{rotateS} s</CodeText>
+      </span>
+      <span className="flex items-center gap-[0.45em]">
+        <span aria-hidden="true" className={cn('h-[0.45em] w-[0.45em] rounded-[1px]', conn.ok ? 'bg-success' : 'bg-danger')} />
+        <MicroLabel className={conn.ok ? '!text-success' : '!text-danger'}>{conn.label}</MicroLabel>
+      </span>
+      <span className="ms-auto flex items-center gap-[0.9em]">
+        <MicroLabel>S — sozlamalar</MicroLabel>
+        <MicroLabel>F — to&apos;liq ekran</MicroLabel>
+      </span>
+    </footer>
   );
 }

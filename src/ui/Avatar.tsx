@@ -51,10 +51,12 @@ export function Avatar({ name, src, size = 'md', shape = 'circle', status, class
       className={cn(
         'relative inline-flex shrink-0 select-none items-center justify-center overflow-hidden font-semibold',
         shape === 'circle' ? 'rounded-full' : 'rounded-control',
+        // Bosh harflar — monoshrift indeks belgisi, ism emas.
+        !showImage && 'intel-code',
         box,
         text,
         !showImage && paletteFor(name),
-        status && cn('ring-2 ring-offset-2 ring-offset-surface', TONE_RING[status]),
+        status && cn('ring-2 ring-offset-1 ring-offset-surface', TONE_RING[status]),
         className,
       )}
       title={name}

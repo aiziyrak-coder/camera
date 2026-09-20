@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { AttentionPanel, type AttentionPanelProps } from './AttentionPanel';
+import { AttentionPanel, countAttentionIssues, type AttentionPanelProps } from './AttentionPanel';
 
 const base: AttentionPanelProps = {
   loading: false,
@@ -49,12 +49,20 @@ describe('AttentionPanel — manba kelmaganda', () => {
  *  rahbar "3 ta" deb o'qib, pastda 4 ta qator ko'rsa raqamga ishonmaydi. */
 describe('AttentionPanel — sarlavhadagi son', () => {
   it('muhim hodisa va muddati o\'tgan hodisa alohida sanaladi', () => {
-    show({
+    const props = {
       events: { highOpen: 2, overdue: 1, top: [], link: () => '/hodisalar' },
       cameras: { offline: 1, active: 10, link: null },
-    });
-    // 1 (muhim) + 1 (muddati o'tgan) + 1 (kamera) = 3 ta qator
-    expect(screen.getByText('3 ta')).toBeInTheDocument();
+      groups: [],
+      teacherLessons: [],
+    };
+    show(props);
+    // 1 (muhim) + 1 (muddati o'tgan) + 1 (kamera) = 3 ta qator.
+    // Son endi panel ramkasida (sahifada) chiqadi — bu yerda uni
+    // hisoblovchi yagona funksiya tekshiriladi.
+    expect(countAttentionIssues(props)).toBe(3);
+    expect(screen.getByText(/2 ta juda muhim hodisa hal qilinmagan/)).toBeInTheDocument();
+    expect(screen.getByText(/1 ta hodisaning muddati o'tgan/)).toBeInTheDocument();
+    expect(screen.getByText(/1 ta kamera aloqada emas/)).toBeInTheDocument();
   });
 
   it("o'tgan kun ko'rilayotganda guruhlar sarlavhasida 'Bugun' yozilmaydi", () => {

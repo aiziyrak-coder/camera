@@ -46,13 +46,16 @@ function sortHeader(name: RegExp) {
   return within(within(table).getByRole('columnheader', { name })).getByRole('button');
 }
 
-/** Jadvaldagi guruh nomlari — ko'ringan tartibda. */
+/** Jadvaldagi guruh nomlari — ko'ringan tartibda. Birinchi ikki ustun —
+ *  svetofor va xizmat kodi, guruh nomi uchinchi katakda. */
 function tableGroupNames(): string[] {
   const table = screen.getByRole('table', { name: 'Guruhlar' });
+  const headers = within(table).getAllByRole('columnheader').map((h) => h.textContent ?? '');
+  const index = headers.findIndex((text) => /Guruh/.test(text));
   return within(table)
     .getAllByRole('row')
     .slice(1)
-    .map((row) => row.querySelector('td')?.textContent ?? '');
+    .map((row) => row.querySelectorAll('td')[index]?.textContent ?? '');
 }
 
 describe('Fakultet sahifasi', () => {

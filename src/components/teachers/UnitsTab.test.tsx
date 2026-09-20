@@ -93,11 +93,12 @@ describe("UnitsTab — o'tgan sanada «Bugun» deyilmaydi", () => {
 });
 
 describe('UnitsTab — bo\'linma yorlig\'i', () => {
-  // Bo'linma sahifasi bu qatorni "Biriktirilmagan" deb ataydi; karta
+  // Bo'linma sahifasi bu qatorni "Biriktirilmagan" deb ataydi; ro'yxat
   // "Lavozim" derdi — bitta bo'linma ikki xil nomlanardi.
   it('labels the unassigned pseudo-unit the same way as its own page', async () => {
+    localStorage.setItem('oqituvchilar.view', JSON.stringify('table'));
     renderTab([unit({ id: 'unassigned', name: "Lavozim bo'yicha (bo'linmasi ko'rsatilmagan)", kind: 'lavozim', unassigned: true, staffTotal: 139, present: 100, absent: 39, rate: 71.9 })]);
-    await waitFor(() => expect(screen.getByText('Biriktirilmagan')).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByText('Biriktirilmagan').length).toBeGreaterThan(0));
     expect(screen.queryByText('Lavozim')).toBeNull();
   });
 });
@@ -123,17 +124,26 @@ describe("UnitsTab — bo'linma turi filtri URL da", () => {
   });
 });
 
-describe('UnitsTab — kartadagi raqamlar halqa maxraji bilan mos', () => {
-  // "Hali kelmagan" xodimlar kartada umuman ko'rinmasdi: uch raqam
-  // qo'shilib halqa maxrajiga teng chiqmasdi va sababi topilmasdi.
-  it('shows the people who have not arrived yet', async () => {
+describe('UnitsTab — taxtadagi raqamlar foiz maxraji bilan mos', () => {
+  /** Taxta katagidagi ikkinchi qator — foizning izohi. */
+  function boardDetail(): string {
+    return screen.getByTitle(/Normal anatomiya kafedrasi —/).textContent ?? '';
+  }
+
+  // "Hali kelmagan" xodimlar ro'yxatda umuman ko'rinmasdi: uch raqam
+  // qo'shilib foiz maxrajiga teng chiqmasdi va sababi topilmasdi.
+  it('shows the people who have not arrived yet, inside the same denominator', async () => {
     renderTab([unit({ staffTotal: 10, enrolled: 9, present: 4, late: 1, absent: 1, notYet: 4, noData: 1, rate: 44.4 })]);
-    await waitFor(() => expect(screen.getByText('Hali kelmagan')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Normal anatomiya kafedrasi')).toBeTruthy());
+    // 4 + 1 + 4 = 9 — foiz maxraji; "hali kelmagan" ham alohida aytiladi.
+    expect(boardDetail()).toContain('4 / 9 keldi');
+    expect(boardDetail()).toContain('4 hali kelmagan');
   });
 
-  it('keeps the three-column layout when nobody is pending', async () => {
+  it('says nothing about pending people when there are none', async () => {
     renderTab([unit({ staffTotal: 10, enrolled: 10, present: 8, late: 1, absent: 2, notYet: 0, rate: 80 })]);
-    await waitFor(() => expect(screen.getByText('Keldi')).toBeTruthy());
-    expect(screen.queryByText('Hali kelmagan')).toBeNull();
+    await waitFor(() => expect(screen.getByText('Normal anatomiya kafedrasi')).toBeTruthy());
+    expect(boardDetail()).toContain('8 / 10 keldi');
+    expect(boardDetail()).not.toContain('hali kelmagan');
   });
 });

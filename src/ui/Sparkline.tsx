@@ -64,16 +64,16 @@ export function Sparkline({ values, tone = 'primary', height = 32, min, max, sho
       >
         <defs>
           <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="currentColor" stopOpacity="0.22" />
+            <stop offset="0%" stopColor="currentColor" stopOpacity="0.16" />
             <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
           </linearGradient>
         </defs>
         <path d={areas} fill={`url(#${gradientId})`} />
-        <path d={line} fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d={line} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinejoin="miter" strokeLinecap="butt" vectorEffect="non-scaling-stroke" />
       </svg>
       {showLast && last && (
         <span
-          className="absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-current ring-2 ring-surface"
+          className="absolute h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-[1px] bg-current ring-1 ring-surface"
           style={{ left: `${last[0]}%`, top: last[1] }}
           aria-hidden="true"
         />

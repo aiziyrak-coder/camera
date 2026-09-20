@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, ChevronDown, RotateCcw, ScanFace, ShieldCheck } from 'lucide-react';
-import { Button, Skeleton, SkeletonText, cn, focusRing } from '../../ui';
+import { Button, CodeText, MicroLabel, Skeleton, SkeletonText, StatusLamp, cn, focusRing } from '../../ui';
 import { Notice } from '../settings/kit';
 import { ApiError } from '../../lib/apiClient';
 import { fetchConsentText, type ConsentText } from '../../lib/enrollment';
@@ -82,18 +82,35 @@ export default function EnrollmentConsent({ onContinue, onBack }: EnrollmentCons
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-start gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control bg-primary-soft text-primary">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control border border-primary/25 bg-primary-soft text-primary">
           <ShieldCheck size={18} aria-hidden="true" />
         </span>
         <div className="min-w-0">
-          <h2 className="text-base font-semibold leading-snug text-fg">{text.title}</h2>
-          <p className="mt-0.5 text-xs text-muted">
-            Ma&apos;lumotlar operatori: {text.controller} · Matn versiyasi: {text.version}
-          </p>
+          <MicroLabel>Bosqich 3 — Rozilik</MicroLabel>
+          <h2 className="mt-0.5 text-[15px] font-semibold leading-snug text-fg">{text.title}</h2>
         </div>
       </div>
 
-      <p className="text-sm leading-relaxed text-muted">
+      {/* Hujjat rekvizitlari: kim qayta ishlaydi, qaysi matn, majburiymi. */}
+      <div className="grid grid-cols-2 gap-x-4 gap-y-2 border-y border-border py-2">
+        <span className="col-span-2 flex min-w-0 flex-col gap-0.5">
+          <MicroLabel>Ma&apos;lumotlar operatori</MicroLabel>
+          <span className="truncate text-[13px] font-medium text-fg">{text.controller}</span>
+        </span>
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <MicroLabel>Matn versiyasi</MicroLabel>
+          <CodeText className="truncate text-[13px] font-semibold text-fg">{text.version}</CodeText>
+        </span>
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <MicroLabel>Rozilik holati</MicroLabel>
+          <StatusLamp
+            status={agreed ? 'ok' : text.required ? 'alert' : 'idle'}
+            label={agreed ? 'Berilgan' : text.required ? 'Berilmagan' : 'Ixtiyoriy'}
+          />
+        </span>
+      </div>
+
+      <p className="text-[13px] leading-relaxed text-muted">
         Kameralar sizni tanishi uchun yuzingiz tasviri va undan olingan raqamli shablon saqlanadi. Ular faqat davomat va bino xavfsizligi uchun
         ishlatiladi, rozilikni esa istalgan vaqtda qaytarib olishingiz mumkin.
       </p>
@@ -113,7 +130,7 @@ export default function EnrollmentConsent({ onContinue, onBack }: EnrollmentCons
           <div id="consent-full-text" className="max-h-72 space-y-3 overflow-y-auto border-t border-border px-3.5 py-3">
             {text.sections.map((section) => (
               <div key={section.title}>
-                <p className="text-[13px] font-semibold text-fg">{section.title}</p>
+                <MicroLabel className="intel-micro-wrap block !text-fg">{section.title}</MicroLabel>
                 <p className="mt-0.5 text-[13px] leading-relaxed text-muted">{section.body}</p>
               </div>
             ))}
@@ -128,8 +145,9 @@ export default function EnrollmentConsent({ onContinue, onBack }: EnrollmentCons
         )}
       >
         <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer accent-primary" />
-        <span className="text-[13px] leading-relaxed text-fg">
-          <span className="font-semibold">Roziman.</span> {text.statement}
+        <span className="min-w-0 text-[13px] leading-relaxed text-fg">
+          <MicroLabel className="block !text-fg">Roziman</MicroLabel>
+          <span className="mt-0.5 block">{text.statement}</span>
         </span>
       </label>
 

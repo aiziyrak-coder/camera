@@ -39,7 +39,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
   return (
     <div className={cn('relative inline-flex w-full min-w-0 sm:w-auto', className)}>
       {label && (
-        <label htmlFor={selectId} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 whitespace-nowrap text-[13px] text-muted">
+        <label htmlFor={selectId} className="intel-micro pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2">
           {label}
         </label>
       )}
@@ -53,14 +53,16 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
         aria-describedby={rest['aria-describedby']}
         onChange={(event) => onChange(event.target.value)}
         className={cn(
+          'intel-code',
           controlBase,
           controlSizes[size],
-          'cursor-pointer appearance-none truncate pr-9 font-medium',
-          active && 'border-primary/50 bg-primary-soft text-primary',
+          'cursor-pointer appearance-none truncate pr-7 font-medium',
+          active && 'border-primary bg-primary-soft text-primary',
           invalid && 'border-danger',
         )}
-        // Yorliq kengligiga taxminiy joy (Inter 13px ≈ 0.45rem/belgi).
-        style={label ? { paddingLeft: `calc(${label.length * 0.45}rem + 1.1rem)` } : undefined}
+        // Bosh harfli mikro-yorliq kengligiga joy (10px mono + 0.11em
+        // harf oralig'i ≈ 0.42rem/belgi).
+        style={label ? { paddingLeft: `calc(${label.length * 0.42}rem + 0.9rem)` } : undefined}
       >
         {placeholder !== undefined && <option value="">{placeholder}</option>}
         {options.map((option) => (
@@ -69,7 +71,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
           </option>
         ))}
       </select>
-      <ChevronDown size={16} aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-subtle" />
+      <ChevronDown size={13} aria-hidden="true" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-subtle" />
     </div>
   );
 });

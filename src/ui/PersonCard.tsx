@@ -47,34 +47,32 @@ export function PersonCard({ name, photoUrl, subtitle, status, time, meta, to, o
           </span>
         )}
         {status && (
-          <span
-            className={cn(
-              'absolute left-2 top-2 inline-flex h-[22px] items-center gap-1.5 rounded-full bg-surface/95 px-2 text-[11px] font-semibold text-fg shadow-sm backdrop-blur',
-            )}
-          >
-            <span className={cn('h-1.5 w-1.5 rounded-full', TONE_SOLID[statusMeta.tone])} aria-hidden="true" />
+          /* Holat yorlig'i — to'rtburchak qayd: rang + so'z birga. */
+          <span className="intel-micro absolute left-1 top-1 inline-flex items-center gap-1 border border-border bg-surface/95 px-1 py-0.5 !text-fg">
+            <span className={cn('h-1.5 w-1.5 rounded-[1px]', TONE_SOLID[statusMeta.tone])} aria-hidden="true" />
             {statusMeta.label}
           </span>
         )}
-        <span className={cn('absolute inset-x-0 bottom-0 h-1', status ? TONE_SOLID[statusMeta.tone] : 'bg-transparent')} aria-hidden="true" />
+        <span className={cn('absolute inset-x-0 bottom-0 h-[3px]', status ? TONE_SOLID[statusMeta.tone] : 'bg-transparent')} aria-hidden="true" />
       </div>
-      <div className="flex min-h-[4.25rem] flex-col gap-0.5 p-2.5">
-        <p className="line-clamp-2 text-[13px] font-semibold leading-snug text-fg" title={name}>
+      <div className="flex min-h-[3.75rem] flex-col gap-0.5 border-t border-border p-2">
+        {/* Odam ismi — proza: sans shriftda qoladi. */}
+        <p className="line-clamp-2 text-[12px] font-semibold leading-snug text-fg" title={name}>
           {name}
         </p>
-        <div className="mt-auto flex items-center justify-between gap-2 text-xs text-muted">
-          <span className="min-w-0 truncate">{subtitle}</span>
-          {time && <span className="shrink-0 font-medium tabular-nums text-fg">{time}</span>}
+        <div className="mt-auto flex items-center justify-between gap-2">
+          <span className="intel-micro min-w-0 truncate">{subtitle}</span>
+          {time && <span className="intel-code shrink-0 text-[12px] font-semibold text-fg">{time}</span>}
         </div>
-        {meta && <div className="text-xs text-muted">{meta}</div>}
+        {meta && <div className="intel-micro">{meta}</div>}
       </div>
     </>
   );
 
   const classes = cn(
-    'group flex flex-col overflow-hidden rounded-card border bg-surface text-left shadow-card transition-[border-color,box-shadow]',
-    selected ? 'border-primary ring-2 ring-primary/30' : 'border-border',
-    (to || onClick) && cn('hover:border-border-strong hover:shadow-pop', focusRing),
+    'group flex flex-col overflow-hidden rounded-card border bg-surface text-left transition-colors',
+    selected ? 'border-primary shadow-[inset_0_0_0_1px_rgb(var(--c-primary))]' : 'border-border',
+    (to || onClick) && cn('hover:border-border-strong', focusRing),
     className,
   );
   const label = `${name}${status ? `, ${statusMeta.label}` : ''}${time ? `, ${time}` : ''}`;
@@ -104,7 +102,7 @@ export function PersonCard({ name, photoUrl, subtitle, status, time, meta, to, o
 export function PersonGrid({ children, minItemWidth = 140, className }: { children: ReactNode; minItemWidth?: number; className?: string }) {
   return (
     <div
-      className={cn('grid gap-3', className)}
+      className={cn('grid gap-2', className)}
       style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${minItemWidth}px), 1fr))` }}
     >
       {children}

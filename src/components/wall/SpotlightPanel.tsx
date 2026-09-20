@@ -1,7 +1,7 @@
 import { Sparkles } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { fitGrid, type SpotlightDetail } from '../../lib/wallApi';
-import { cn } from '../../ui';
+import { CodeText, MicroLabel, cn } from '../../ui';
 import { WallFace, WallPanel, WallRing } from './primitives';
 
 function useSize<T extends HTMLElement>() {
@@ -49,7 +49,7 @@ function FaceGrid({ detail }: { detail: SpotlightDetail }) {
                   <div className="mt-[0.35em] w-full text-center leading-tight">
                     <div className="truncate font-medium text-fg">{f.fullName.split(' ').slice(0, 2).join(' ')}</div>
                     {/* "—" ning ma'nosi ekranda ko'rinmasdi. */}
-                    <div className="tabular-nums text-muted" title={f.checkIn ? 'Kelgan vaqti' : 'Hali kelmagan'}>
+                    <div className="intel-code text-muted" title={f.checkIn ? 'Kelgan vaqti' : 'Hali kelmagan'}>
                       {f.checkIn ?? '—'}
                     </div>
                   </div>
@@ -70,8 +70,8 @@ function SpotlightView({ detail }: { detail: SpotlightDetail }) {
       <div className="mb-[0.9em] flex shrink-0 items-center gap-[1em]">
         <WallRing value={c.rate} size={5} />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[1.7em] font-semibold leading-tight text-fg">{detail.name}</div>
-          <div className="truncate text-[0.85em] text-muted">{detail.subtitle}</div>
+          <div className="truncate text-[1.9em] font-semibold leading-tight tracking-tight text-fg">{detail.name}</div>
+          <MicroLabel className="mt-[0.3em] block">{detail.subtitle}</MicroLabel>
         </div>
         <div className="flex shrink-0 gap-[1.2em] text-right">
           <Stat label="keldi" value={c.present} tone="text-success" />
@@ -92,8 +92,8 @@ function SpotlightView({ detail }: { detail: SpotlightDetail }) {
 function Stat({ label, value, tone }: { label: string; value: number; tone: string }) {
   return (
     <div>
-      <div className={cn('text-[1.5em] font-semibold leading-none tabular-nums', tone)}>{value}</div>
-      <div className="mt-[0.3em] text-[0.7em] text-muted">{label}</div>
+      <div className={cn('intel-code text-[1.9em] font-semibold leading-none', tone)}>{value}</div>
+      <MicroLabel className="mt-[0.4em] block !text-[0.6em]">{label}</MicroLabel>
     </div>
   );
 }
@@ -132,7 +132,8 @@ export function SpotlightPanel({
       area="C"
       title="Diqqat markazida"
       icon={<Sparkles />}
-      aside={total > 0 ? <span className="tabular-nums">{index + 1} / {total}</span> : null}
+      code="C-03"
+      aside={total > 0 ? <CodeText className="text-[0.95em]">{index + 1} / {total}</CodeText> : null}
     >
       {layers.length === 0 ? (
         // Ro'yxat bor, lekin tafsilot hali kelmagan — bu "hech narsa yo'q"

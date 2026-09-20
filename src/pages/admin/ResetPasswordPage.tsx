@@ -4,12 +4,51 @@ import { AlertCircle, CheckCircle2, Eye, EyeOff, Link2Off, Lock } from 'lucide-r
 import { ApiError, api } from '../../lib/apiClient';
 import { required, minLength } from '../../lib/validation';
 import { authErrorMessage } from '../../components/admin/authErrors';
-import { Button, ButtonLink, Card, Field, IconButton, Input } from '../../ui';
+import { Button, ButtonLink, CodeText, Field, IconButton, Input, MicroLabel, Readout, StatusLamp } from '../../ui';
+import { formNumber } from '../../components/public/formNumber';
 
 /** Tiklash havolasining amal qilish muddati — backenddagi
  *  RESET_TOKEN_TTL_MINUTES bilan bir xil. Foydalanuvchiga "nega
  *  ishlamadi"ni tushuntirish uchun ekranda ko'rsatiladi. */
 const RESET_LINK_TTL_MINUTES = 30;
+
+/** Blankning yuqori qismi — uchala holatda ham bir xil: nima
+ *  to'ldirilyapti, blank raqami, amal muddati va joriy holat SO'Z bilan.
+ *  Raqam holatdan hisoblanadi, vaqtdan emas. */
+function FormHead({
+  title,
+  state,
+  status,
+  statusLabel,
+}: {
+  title: string;
+  /** Blank raqamiga ta'sir qiladigan holat (maxfiy token EMAS). */
+  state: string;
+  status: 'ok' | 'warn' | 'alert' | 'idle';
+  statusLabel: string;
+}) {
+  return (
+    <>
+      <div className="flex items-start gap-3 border-b border-border pb-2.5">
+        <div className="min-w-0 flex-1">
+          <MicroLabel>Blank</MicroLabel>
+          <h1 className="mt-0.5 text-[16px] font-semibold tracking-tight text-fg">{title}</h1>
+        </div>
+        <CodeText className="shrink-0 pt-0.5 text-[11px] font-semibold text-fg">
+          {formNumber({ kind: 'parol', parts: [state] })}
+        </CodeText>
+      </div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-2 border-b border-border py-2.5 sm:grid-cols-3">
+        <Readout label="Amal" value="Parol tiklash" />
+        <Readout label="Havola muddati" value={`${RESET_LINK_TTL_MINUTES} daq`} title="Tiklash havolasi shu muddatda va bir marta ishlaydi" />
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <MicroLabel>Holat</MicroLabel>
+          <StatusLamp status={status} label={statusLabel} />
+        </div>
+      </div>
+    </>
+  );
+}
 
 export default function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
@@ -68,48 +107,66 @@ export default function ResetPasswordPage() {
 
   if (!token || linkDead) {
     return (
-      <Card padding="lg" className="text-center shadow-pop">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-danger-soft text-danger">
-          <Link2Off size={22} aria-hidden="true" />
+      <div>
+        <FormHead
+          title={linkDead ? 'Havola muddati tugagan' : 'Havola yaroqsiz'}
+          state={linkDead ? 'havola-tugagan' : 'havola-yoq'}
+          status="alert"
+          statusLabel={linkDead ? 'Muddati tugagan' : 'Yaroqsiz'}
+        />
+        <div className="flex items-start gap-3 pt-3.5">
+          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-control border border-danger/35 bg-danger-soft text-danger">
+            <Link2Off size={16} aria-hidden="true" />
+          </span>
+          <p className="min-w-0 text-[13px] leading-relaxed text-muted">
+            {linkDead
+              ? `Tiklash havolasi faqat ${RESET_LINK_TTL_MINUTES} daqiqa va bir marta ishlaydi. Bu havola allaqachon ishlatilgan yoki muddati tugagan — kirish sahifasidagi “Parolni unutdingizmi?” orqali yangisini so'rang.`
+              : "Bu sahifaga elektron xatdagi tiklash havolasi orqali o'tiladi. Kirish sahifasidan qaytadan so'rov yuboring."}
+          </p>
         </div>
-        <h1 className="mt-4 text-lg font-semibold text-fg">{linkDead ? "Havola muddati tugagan" : 'Havola yaroqsiz'}</h1>
-        <p className="mt-1 text-[13px] text-muted">
-          {linkDead
-            ? `Tiklash havolasi faqat ${RESET_LINK_TTL_MINUTES} daqiqa va bir marta ishlaydi. Bu havola allaqachon ishlatilgan yoki muddati tugagan — kirish sahifasidagi “Parolni unutdingizmi?” orqali yangisini so'rang.`
-            : "Bu sahifaga elektron xatdagi tiklash havolasi orqali o'tiladi. Kirish sahifasidan qaytadan so'rov yuboring."}
-        </p>
-        <ButtonLink to="/kirish" className="mt-5" fullWidth>
+        <ButtonLink to="/kirish" className="mt-4" fullWidth>
           Kirish sahifasiga qaytish
         </ButtonLink>
-      </Card>
+      </div>
     );
   }
 
   if (done) {
     return (
-      <Card padding="lg" className="text-center shadow-pop">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success-soft text-success">
-          <CheckCircle2 size={24} aria-hidden="true" />
+      <div>
+        <FormHead title="Parol o'zgartirildi" state="bajarildi" status="ok" statusLabel="Bajarildi" />
+        <div className="flex items-start gap-3 pt-3.5">
+          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-control border border-success/35 bg-success-soft text-success">
+            <CheckCircle2 size={16} aria-hidden="true" />
+          </span>
+          <p className="min-w-0 text-[13px] leading-relaxed text-muted">
+            Barcha eski sessiyalar tugatildi — yangi parol bilan qayta kiring.
+          </p>
         </div>
-        <h1 className="mt-4 text-lg font-semibold text-fg">Parol o'zgartirildi</h1>
-        <p className="mt-1 text-[13px] text-muted">Barcha eski sessiyalar tugatildi — yangi parol bilan qayta kiring.</p>
-        <ButtonLink to="/kirish" variant="primary" className="mt-5" fullWidth>
+        <ButtonLink to="/kirish" variant="primary" className="mt-4" fullWidth>
           Tizimga kirish
         </ButtonLink>
-      </Card>
+      </div>
     );
   }
 
   return (
-    <Card padding="lg" className="shadow-pop">
-      <h1 className="text-lg font-semibold text-fg">Yangi parol o'rnatish</h1>
-      <p className="mt-1 text-[13px] text-muted">Kamida 8 belgidan iborat yangi parol kiriting.</p>
+    <div>
+      <FormHead
+        title="Yangi parol o'rnatish"
+        state="forma"
+        status={loading ? 'warn' : errors.form ? 'alert' : 'idle'}
+        statusLabel={loading ? 'Saqlanmoqda' : errors.form ? 'Rad etildi' : "To'ldirilmoqda"}
+      />
+      <p className="mt-3 text-[13px] leading-relaxed text-muted">
+        Kamida 8 belgidan iborat yangi parol kiriting. Saqlangach barcha eski sessiyalar tugatiladi.
+      </p>
 
-      <form onSubmit={handleSubmit} noValidate className="mt-5 flex flex-col gap-4">
+      <form onSubmit={handleSubmit} noValidate className="mt-4 flex flex-col gap-3.5">
         {errors.form && (
-          <div role="alert" className="flex items-start gap-2 rounded-control bg-danger-soft px-3 py-2.5 text-[13px] font-medium text-danger">
+          <div role="alert" className="flex items-start gap-2 rounded-control border border-danger/35 bg-danger-soft px-3 py-2.5 text-[13px] font-medium text-danger">
             <AlertCircle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-            {errors.form}
+            <span className="min-w-0">{errors.form}</span>
           </div>
         )}
 
@@ -160,6 +217,6 @@ export default function ResetPasswordPage() {
           {loading ? 'Saqlanmoqda…' : 'Parolni saqlash'}
         </Button>
       </form>
-    </Card>
+    </div>
   );
 }

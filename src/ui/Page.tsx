@@ -22,6 +22,10 @@ export interface PageProps<T extends string = string> {
   tabParam?: string;
   /** Tablar/sarlavha ostidagi filtrlar (Toolbar). */
   toolbar?: ReactNode;
+  /** Hujjat/bo'lim kodi — o'ng yuqorida, monoshriftda ("HISOBOT-07"). */
+  code?: ReactNode;
+  /** Vaqt tamg'asi — kod ostida ("Tuzildi: 21.09.2026 09:14"). */
+  stamp?: ReactNode;
   children?: ReactNode;
   className?: string;
 }
@@ -39,6 +43,8 @@ export function Page<T extends string = string>({
   defaultTab,
   tabParam = 'tab',
   toolbar,
+  code,
+  stamp,
   children,
   className,
 }: PageProps<T>) {
@@ -65,33 +71,42 @@ export function Page<T extends string = string>({
       {parent?.to && (
         <Link
           to={parent.to}
-          className={cn('mb-2 inline-flex w-fit items-center gap-1 rounded-control text-[13px] font-medium text-muted hover:text-fg', inShell && 'md:hidden', focusRing)}
+          className={cn('intel-micro mb-2 inline-flex w-fit items-center gap-1 rounded-control hover:!text-fg', inShell && 'md:hidden', focusRing)}
         >
-          <ChevronLeft size={16} aria-hidden="true" />
+          <ChevronLeft size={13} aria-hidden="true" />
           {parent.label}
         </Link>
       )}
-      <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+      {/* Hujjat blanki: chapda shaxsiy qator (bo'lim + nom), o'ngda
+          hujjat kodi va vaqt tamg'asi, ostida qalin ajratuvchi chiziq. */}
+      <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 border-b-2 border-border-strong pb-2">
         <div className="min-w-0 flex-1 basis-64">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-[-0.02em] text-fg sm:text-[1.625rem] sm:leading-8">{title}</h1>
+          <span className="intel-micro">{branding.systemName}</span>
+          <div className="mt-0.5 flex flex-wrap items-center gap-2">
+            <h1 className="truncate text-[19px] font-semibold leading-6 tracking-[-0.01em] text-fg">{title}</h1>
             {titleAddon}
           </div>
-          {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
+          {subtitle && <p className="mt-1 text-[13px] leading-5 text-muted">{subtitle}</p>}
         </div>
-        {actions && <div className="flex flex-wrap items-center justify-end gap-2">{actions}</div>}
+        {(code || stamp) && (
+          <div className="flex shrink-0 flex-col items-end gap-0.5 text-right">
+            {code && <span className="intel-code text-[12px] font-semibold text-fg">{code}</span>}
+            {stamp && <span className="intel-micro">{stamp}</span>}
+          </div>
+        )}
+        {actions && <div className="flex flex-wrap items-center justify-end gap-1.5">{actions}</div>}
       </header>
 
       {tabs && tabs.length > 0 && <PageTabs tabs={tabs} defaultTab={defaultTab} param={tabParam} />}
 
-      {toolbar && <div className="mt-4">{toolbar}</div>}
+      {toolbar && <div className={cn(tabs && tabs.length > 0 ? 'mt-0' : 'mt-3')}>{toolbar}</div>}
 
-      <div className={cn('flex min-w-0 flex-col gap-5', tabs || toolbar ? 'mt-5' : 'mt-6')}>{children}</div>
+      <div className={cn('flex min-w-0 flex-col gap-4', toolbar ? 'mt-4' : 'mt-4')}>{children}</div>
     </div>
   );
 }
 
 function PageTabs<T extends string>({ tabs, defaultTab, param }: { tabs: readonly TabItem<T>[]; defaultTab?: T; param: string }) {
   const [active, setActive] = useUrlTab(tabs, { defaultTab, param });
-  return <Tabs tabs={tabs} value={active} onChange={setActive} className="mt-4" />;
+  return <Tabs tabs={tabs} value={active} onChange={setActive} className="mt-3" />;
 }

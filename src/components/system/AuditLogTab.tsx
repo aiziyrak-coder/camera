@@ -4,10 +4,30 @@ import { api, buildQuery, type Page } from '../../lib/apiClient';
 import { exportRowsAsCsv } from '../../lib/csvExport';
 import { useServerPage } from '../../lib/useServerPage';
 import type { AuditLogEntry } from '../../types';
-import { Badge, Button, DataTable, FilterBar, StatTile, filterActiveCount, formatNumber, useToast, type DataTableColumn, type FilterFieldEntry, type Tone } from '../../ui';
+import {
+  Button,
+  CodeText,
+  DataTable,
+  DocumentFooter,
+  DocumentHeader,
+  FilterBar,
+  IntelPanel,
+  MicroLabel,
+  StatusLamp,
+  cn,
+  filterActiveCount,
+  focusRing,
+  formatNumber,
+  useToast,
+  type DataTableColumn,
+  type FilterFieldEntry,
+  type IntelStatus,
+  type Tone,
+} from '../../ui';
+import { branding } from '../../lib/branding';
 import { Pager } from './Pager';
 import { formatServerTime } from './parts';
-import type { AuditStatus } from './systemTypes';
+import { auditReference, type AuditStatus } from './systemTypes';
 
 const STATUS: Record<AuditStatus, { label: string; tone: Tone }> = {
   muvaffaqiyatli: { label: 'Muvaffaqiyatli', tone: 'success' },
@@ -35,25 +55,36 @@ const MODULES = [
 const PAGE_SIZE = 20;
 const MAX_EXPORT_ROWS = 20_000;
 
-const TILES: Array<{ id: AuditStatus; label: string; icon: typeof CheckCircle2; tone: Tone }> = [
-  { id: 'muvaffaqiyatli', label: 'Muvaffaqiyatli', icon: CheckCircle2, tone: 'success' },
-  { id: 'xatolik', label: 'Xatoliklar', icon: AlertCircle, tone: 'danger' },
-  { id: 'ogohlantirish', label: 'Ogohlantirishlar', icon: AlertTriangle, tone: 'warning' },
+const TILES: Array<{ id: AuditStatus; label: string; icon: typeof CheckCircle2; lamp: IntelStatus }> = [
+  { id: 'muvaffaqiyatli', label: 'Muvaffaqiyatli', icon: CheckCircle2, lamp: 'ok' },
+  { id: 'xatolik', label: 'Xatoliklar', icon: AlertCircle, lamp: 'alert' },
+  { id: 'ogohlantirish', label: 'Ogohlantirishlar', icon: AlertTriangle, lamp: 'warn' },
 ];
 
-const TILE_BORDER: Record<AuditStatus, string> = {
-  muvaffaqiyatli: 'border-success',
-  xatolik: 'border-danger',
-  ogohlantirish: 'border-warning',
+/** Tanlangan hisoblagichning chap chekkasi — rang emas, ustun bilan. */
+const TILE_MARK: Record<AuditStatus, string> = {
+  muvaffaqiyatli: 'border-s-success',
+  xatolik: 'border-s-danger',
+  ogohlantirish: 'border-s-warning',
+};
+
+const LAMP: Record<AuditStatus, IntelStatus> = {
+  muvaffaqiyatli: 'ok',
+  xatolik: 'alert',
+  ogohlantirish: 'warn',
 };
 
 const COLUMNS: DataTableColumn<AuditLogEntry>[] = [
-  { key: 'timestamp', header: 'Vaqt', width: '11rem', cell: (row) => <span className="whitespace-nowrap font-mono text-xs text-muted">{formatServerTime(row.timestamp, true) ?? '—'}</span> },
+  { key: 'timestamp', header: 'Vaqt', width: '11rem', cell: (row) => <CodeText className="whitespace-nowrap text-xs text-muted">{formatServerTime(row.timestamp, true) ?? '—'}</CodeText> },
   { key: 'user', header: 'Foydalanuvchi', cell: (row) => <span className="font-medium text-fg">{row.user}</span> },
   { key: 'action', header: 'Amal', cell: (row) => <span className="text-fg">{row.action}</span> },
   { key: 'module', header: 'Modul' },
-  { key: 'status', header: 'Holat', cell: (row) => <Badge tone={STATUS[row.status]?.tone ?? 'neutral'} dot>{STATUS[row.status]?.label ?? row.status}</Badge> },
-  { key: 'ip', header: 'IP manzil', hideOnMobile: true, cell: (row) => <span className="font-mono text-xs text-muted">{row.ip}</span> },
+  {
+    key: 'status',
+    header: 'Holat',
+    cell: (row) => <StatusLamp status={LAMP[row.status] ?? 'idle'} label={STATUS[row.status]?.label ?? row.status} />,
+  },
+  { key: 'ip', header: 'IP manzil', hideOnMobile: true, cell: (row) => <CodeText className="text-xs text-muted">{row.ip}</CodeText> },
 ];
 
 /** "Jurnal" tabi: kim, qachon, nima qildi (audit). */
@@ -157,27 +188,59 @@ export function AuditLogTab({ canExport }: { canExport: boolean }) {
   const activeCount = filterActiveCount(filterFields);
 
   return (
-    <>
-      <section aria-label="Holatlar bo'yicha" className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
+    <div className="flex min-w-0 flex-col gap-3">
+      <DocumentHeader
+        org={branding.orgFullName}
+        title="Amallar jurnali"
+        reference={auditReference(status, module, page)}
+        readouts={[
+          { label: 'Qamrov', value: module || 'Barcha modullar' },
+          { label: 'Holat filtri', value: status ? STATUS[status].label : 'Barchasi' },
+          { label: "Ro'yxatda", value: `${formatNumber(total)} yozuv` },
+          { label: 'Sahifa', value: `${formatNumber(page)} / ${formatNumber(Math.max(1, totalPages))}` },
+        ]}
+      />
+
+      <IntelPanel
+        title="Holatlar bo'yicha"
+        code="JUR-SUM"
+        bodyClassName="grid grid-cols-1 gap-px bg-border sm:grid-cols-3"
+      >
         {TILES.map((tile) => {
           const on = status === tile.id;
+          const pending = !counts && !countsDone;
           return (
-            <StatTile
+            <button
               key={tile.id}
-              // Tanlanganlik faqat ramka rangi bilan ko'rsatilardi — rangni
-              // ajratolmaydigan foydalanuvchi filtr yoqiqligini bilmasdi.
-              label={on ? `${tile.label} · filtr yoqilgan` : tile.label}
-              icon={tile.icon}
-              tone={tile.tone}
-              value={formatNumber(counts?.[tile.id])}
-              loading={!counts && !countsDone}
-              hint={on ? 'Bekor qilish uchun bosing' : 'Faqat shu holatni ko’rish uchun bosing'}
+              type="button"
+              aria-pressed={on}
               onClick={() => toggleStatus(tile.id)}
-              className={on ? TILE_BORDER[tile.id] : undefined}
-            />
+              title={on ? 'Bekor qilish uchun bosing' : 'Faqat shu holatni ko’rish uchun bosing'}
+              className={cn(
+                'min-w-0 border-s-2 bg-surface px-2.5 py-2 text-start hover:bg-surface-2',
+                on ? TILE_MARK[tile.id] : 'border-s-transparent',
+                focusRing,
+              )}
+            >
+              {/* Tanlanganlik faqat ramka rangi bilan ko'rsatilardi — rangni
+                  ajratolmaydigan foydalanuvchi filtr yoqiqligini bilmasdi. */}
+              <span className="flex items-center gap-2">
+                <StatusLamp status={tile.lamp} label={on ? `${tile.label} · filtr yoqilgan` : tile.label} />
+              </span>
+              <span className="mt-0.5 flex items-baseline gap-1.5">
+                <CodeText className="text-[17px] font-semibold leading-tight text-fg">
+                  {pending ? '…' : counts ? formatNumber(counts[tile.id]) : '—'}
+                </CodeText>
+                <MicroLabel className="!text-subtle">yozuv</MicroLabel>
+              </span>
+              {/* Bosiladigan ekani rang bilan emas, MATN bilan aytiladi. */}
+              <span className="mt-0.5 block text-[11px] leading-tight text-muted">
+                {on ? 'Bekor qilish uchun bosing' : 'Faqat shu holatni ko’rish uchun bosing'}
+              </span>
+            </button>
           );
         })}
-      </section>
+      </IntelPanel>
 
       <FilterBar
         fields={filterFields}
@@ -195,6 +258,7 @@ export function AuditLogTab({ canExport }: { canExport: boolean }) {
         }
       />
 
+      <IntelPanel title="Jurnal yozuvlari" code={auditReference(status, module, page)} bodyClassName="min-w-0">
       <DataTable
         ariaLabel="Tizim jurnali"
         columns={COLUMNS}
@@ -210,6 +274,9 @@ export function AuditLogTab({ canExport }: { canExport: boolean }) {
         emptyDescription={activeCount > 0 ? "Filtrlarni o'zgartirib ko'ring." : "Tizimda hali qayd etilgan amal yo'q."}
         footer={<Pager page={page} totalPages={totalPages} total={total} pageSize={PAGE_SIZE} onChange={setPage} />}
       />
-    </>
+      </IntelPanel>
+
+      <DocumentFooter note={<>Jurnal o'zgartirilmaydi: har yozuv tizim tomonidan avtomatik qayd etiladi. Eksport chegarasi — <CodeText>{formatNumber(MAX_EXPORT_ROWS)}</CodeText> yozuv.</>} />
+    </div>
   );
 }

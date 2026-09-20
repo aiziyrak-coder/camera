@@ -6,16 +6,17 @@ type Variant = 'ghost' | 'secondary' | 'primary' | 'danger';
 type Size = 'sm' | 'md' | 'lg';
 
 const VARIANT: Record<Variant, string> = {
-  ghost: 'text-muted hover:bg-surface-2 hover:text-fg',
-  secondary: 'border border-border bg-surface text-muted shadow-sm hover:bg-surface-2 hover:text-fg',
-  primary: 'bg-primary text-primary-fg shadow-sm hover:bg-primary/90',
-  danger: 'text-danger hover:bg-danger-soft',
+  ghost: 'border border-transparent text-muted hover:bg-surface-2 hover:text-fg',
+  secondary: 'border border-border bg-surface text-muted hover:border-border-strong hover:bg-surface-2 hover:text-fg',
+  primary: 'border border-primary bg-primary text-primary-fg hover:bg-primary/90',
+  danger: 'border border-transparent text-danger hover:bg-danger-soft',
 };
 
+/** Tugma balandliklari Button bilan bir xil (28 / 32 / 34 px). */
 const SIZE: Record<Size, { box: string; icon: number }> = {
-  sm: { box: 'h-8 w-8', icon: 16 },
-  md: { box: 'h-9 w-9', icon: 18 },
-  lg: { box: 'h-11 w-11', icon: 20 },
+  sm: { box: 'h-7 w-7', icon: 14 },
+  md: { box: 'h-8 w-8', icon: 16 },
+  lg: { box: 'h-[34px] w-[34px]', icon: 18 },
 };
 
 export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
@@ -58,7 +59,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
     >
       {loading ? <Loader2 size={icon} className="animate-spin" aria-hidden="true" /> : <Icon size={icon} aria-hidden="true" />}
       {badgeText && (
-        <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold tabular-nums leading-none text-danger-fg ring-2 ring-surface">
+        <span className="intel-code absolute -right-1 -top-1 flex h-[15px] min-w-[15px] items-center justify-center rounded-[2px] border border-surface bg-danger px-0.5 text-[10px] font-bold leading-none text-danger-fg">
           {badgeText}
         </span>
       )}

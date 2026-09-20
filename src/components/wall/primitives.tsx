@@ -8,6 +8,7 @@ export function WallPanel({
   title,
   icon,
   aside,
+  code,
   children,
   className,
 }: {
@@ -15,6 +16,8 @@ export function WallPanel({
   title: string;
   icon?: ReactNode;
   aside?: ReactNode;
+  /** O'ng burchakdagi xizmat kodi: "A-01", "KAM". */
+  code?: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
@@ -22,17 +25,53 @@ export function WallPanel({
     <section
       style={{ gridArea: area }}
       className={cn(
-        'relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[1em] border border-border bg-surface p-[1.1em]',
+        'relative flex min-h-0 min-w-0 flex-col overflow-hidden border border-border bg-surface',
         className,
       )}
     >
-      <header className="mb-[0.8em] flex shrink-0 items-center gap-[0.5em]">
-        {icon && <span className="text-muted [&>svg]:h-[1.15em] [&>svg]:w-[1.15em]">{icon}</span>}
-        <h2 className="text-[0.8em] font-semibold uppercase tracking-[0.14em] text-muted">{title}</h2>
-        {aside && <div className="ml-auto flex items-center gap-[0.5em] text-[0.85em] text-muted">{aside}</div>}
+      {/* Burchak qisqichlari — panel chegarasi uzoqdan ham "asbob"
+          ramkasi bo'lib ko'rinadi (ekran 5 metrdan o'qiladi). */}
+      <span aria-hidden="true" className="pointer-events-none absolute left-0 top-0 h-[0.7em] w-[0.7em] border-l-[0.14em] border-t-[0.14em] border-border-strong" />
+      <span aria-hidden="true" className="pointer-events-none absolute right-0 top-0 h-[0.7em] w-[0.7em] border-r-[0.14em] border-t-[0.14em] border-border-strong" />
+      <span aria-hidden="true" className="pointer-events-none absolute bottom-0 left-0 h-[0.7em] w-[0.7em] border-b-[0.14em] border-l-[0.14em] border-border-strong" />
+      <span aria-hidden="true" className="pointer-events-none absolute bottom-0 right-0 h-[0.7em] w-[0.7em] border-b-[0.14em] border-r-[0.14em] border-border-strong" />
+
+      <header className="flex shrink-0 items-center gap-[0.5em] border-b border-border bg-surface-2 px-[0.8em] py-[0.45em]">
+        {icon && <span className="text-muted [&>svg]:h-[1em] [&>svg]:w-[1em]">{icon}</span>}
+        <h2 className="intel-micro !text-[0.62em] !text-fg">{title}</h2>
+        {aside && <div className="ms-auto flex items-center gap-[0.5em] text-[0.7em] text-muted">{aside}</div>}
+        {code && <span className={cn('intel-code text-[0.62em] text-subtle', !aside && 'ms-auto')}>{code}</span>}
       </header>
-      <div className="relative flex min-h-0 flex-1 flex-col">{children}</div>
+      <div className="relative flex min-h-0 flex-1 flex-col p-[0.8em]">{children}</div>
     </section>
+  );
+}
+
+/** Devor uchun katta raqam: monoshrift, tabular, uzoqdan o'qiladi. */
+export function WallReadout({
+  value,
+  label,
+  tone,
+  size = 2.6,
+  className,
+}: {
+  value: ReactNode;
+  label: string;
+  tone?: string;
+  /** Raqam balandligi `em` da. */
+  size?: number;
+  className?: string;
+}) {
+  return (
+    <div className={cn('min-w-0', className)}>
+      <div
+        className={cn('intel-code font-semibold leading-[0.9] tracking-tight', tone ?? 'text-fg')}
+        style={{ fontSize: `${size}em` }}
+      >
+        {value}
+      </div>
+      <div className="intel-micro mt-[0.45em] !text-[0.6em] truncate">{label}</div>
+    </div>
   );
 }
 
@@ -75,11 +114,11 @@ export function WallRing({
         )}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center leading-none">
-        <span className="font-semibold tabular-nums text-fg" style={{ fontSize: `${size * 0.24}em` }}>
+        <span className="intel-code font-semibold text-fg" style={{ fontSize: `${size * 0.26}em` }}>
           {label ?? (has ? `${Math.round(pct)}%` : '—')}
         </span>
         {sublabel && (
-          <span className="mt-[0.3em] text-muted" style={{ fontSize: `${size * 0.1}em` }}>
+          <span className="intel-micro mt-[0.4em]" style={{ fontSize: `${size * 0.1}em` }}>
             {sublabel}
           </span>
         )}
@@ -111,7 +150,7 @@ export function AnimatedNumber({ value, className }: { value: number; className?
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [value]);
-  return <span className={cn('tabular-nums', className)}>{shown.toLocaleString('ru-RU')}</span>;
+  return <span className={cn('intel-code', className)}>{shown.toLocaleString('ru-RU')}</span>;
 }
 
 const STATUS_RING: Record<Tone, string> = {
@@ -142,7 +181,7 @@ export function WallFace({
   return (
     <div
       className={cn(
-        'relative overflow-hidden rounded-[0.6em] bg-surface-2 ring-[0.18em] ring-offset-0',
+        'relative overflow-hidden rounded-[2px] bg-surface-2 ring-[0.18em] ring-offset-0',
         STATUS_RING[tone],
         dim && 'opacity-45 grayscale',
         className,
@@ -151,7 +190,7 @@ export function WallFace({
       {photoUrl && !broken ? (
         <img src={photoUrl} alt="" loading="lazy" onError={() => setBroken(true)} className="h-full w-full object-cover" />
       ) : (
-        <div className="flex h-full w-full items-center justify-center font-semibold text-muted" style={{ fontSize: '1.4em' }}>
+        <div className="intel-code flex h-full w-full items-center justify-center font-semibold text-muted" style={{ fontSize: '1.4em' }}>
           {initials}
         </div>
       )}
@@ -161,5 +200,5 @@ export function WallFace({
 
 export function StatusPip({ status, className }: { status: string; className?: string }) {
   const tone = attendanceMeta(status === 'malumot_yoq' ? 'nomalum' : status).tone;
-  return <span className={cn('inline-block h-[0.6em] w-[0.6em] shrink-0 rounded-full', TONE_SOLID[tone], className)} />;
+  return <span className={cn('inline-block h-[0.6em] w-[0.6em] shrink-0 rounded-[1px]', TONE_SOLID[tone], className)} />;
 }

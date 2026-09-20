@@ -132,7 +132,7 @@ export default function TestMessageModal({
               clearOutcome();
             }}
             autoComplete="off"
-            className="font-mono"
+            className="intel-code"
           />
         </Field>
         <Field label="Matn (ixtiyoriy)" hint={`${text.length} / 500`}>

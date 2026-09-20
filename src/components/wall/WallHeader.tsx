@@ -2,7 +2,7 @@ import { Wifi, WifiOff } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { branding } from '../../lib/branding';
 import { todayInTashkent } from '../../lib/uzDate';
-import { cn } from '../../ui';
+import { CodeText, MicroLabel, cn } from '../../ui';
 
 const WEEKDAYS = ['Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba'];
 const MONTHS = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'];
@@ -71,39 +71,49 @@ function useNow(intervalMs = 1000) {
   return now;
 }
 
-export function WallHeader({ online, updatedAt }: { online: boolean; updatedAt: Date | null }) {
+export function WallHeader({ online, updatedAt, reference }: { online: boolean; updatedAt: Date | null; reference?: string }) {
   const now = useNow();
   const { hh, mm, ss, dateLabel } = tashkentClock(now);
   const conn = connectionState(online, updatedAt, now);
   return (
-    <header className="flex shrink-0 items-center gap-[1.2em] px-[0.4em]">
-      <img src="/favicon.svg" alt="" className="h-[2.8em] w-[2.8em] shrink-0" />
-      <div className="min-w-0">
-        <div className="truncate text-[1.7em] font-semibold leading-tight text-fg">
-          {branding.orgName} <span className="font-normal text-muted">— Situatsion markaz</span>
+    <header className="flex shrink-0 items-stretch gap-[1em] border border-border bg-surface px-[0.9em] py-[0.5em]">
+      <img src="/favicon.svg" alt="" className="h-[2.4em] w-[2.4em] shrink-0 self-center" />
+      <div className="min-w-0 self-center">
+        <MicroLabel>{branding.orgName} · Situatsion markaz</MicroLabel>
+        <div className="truncate text-[1.45em] font-semibold leading-tight tracking-tight text-fg">
+          Davomat va xavfsizlik — jonli holat
         </div>
-        <div className="truncate text-[0.85em] text-muted">Davomat va xavfsizlik — real vaqtda</div>
       </div>
-      <div className="ml-auto flex items-center gap-[1.6em]">
-        {/* Yorliqda yangilangan vaqt allaqachon bor edi — `title` uni
-            ikkinchi marta takrorlardi. Holat o'zgarishi ekran o'quvchiga
-            ham yetib borishi uchun `role="status"`. */}
+
+      <div className="ms-auto flex items-stretch gap-[1.2em]">
+        {reference && (
+          <div className="flex flex-col justify-center border-s border-border ps-[1.2em] text-end">
+            <MicroLabel>Ekran kodi</MicroLabel>
+            <CodeText className="text-[0.85em] font-semibold text-fg">{reference}</CodeText>
+          </div>
+        )}
+        {/* Ulanish chirog'i: rang yolg'iz qolmaydi — matn ham yoziladi. */}
         <div
           role="status"
           className={cn(
-            'flex items-center gap-[0.5em] rounded-full px-[0.9em] py-[0.35em] text-[0.85em] font-medium',
-            conn.ok ? 'bg-success-soft text-success' : 'wall-blink bg-danger-soft text-danger',
+            'flex items-center gap-[0.5em] self-center border px-[0.8em] py-[0.35em]',
+            conn.ok ? 'border-success/50 bg-success-soft' : 'wall-blink border-danger/60 bg-danger-soft',
           )}
         >
-          {conn.ok ? <Wifi className="h-[1.1em] w-[1.1em]" aria-hidden="true" /> : <WifiOff className="h-[1.1em] w-[1.1em]" aria-hidden="true" />}
-          {conn.label}
+          {conn.ok ? (
+            <Wifi className={cn('h-[1em] w-[1em] text-success')} aria-hidden="true" />
+          ) : (
+            <WifiOff className={cn('h-[1em] w-[1em] text-danger')} aria-hidden="true" />
+          )}
+          <span className={cn('intel-micro !text-[0.62em]', conn.ok ? '!text-success' : '!text-danger')}>{conn.label}</span>
         </div>
-        <div className="text-right leading-none">
-          <div className="text-[3em] font-semibold tabular-nums tracking-tight text-fg">
+        <div className="flex flex-col items-end justify-center border-s border-border ps-[1.2em] leading-none">
+          {/* Uzoqdan o'qiladigan asosiy raqam — shuning uchun eng katta. */}
+          <div className="intel-code text-[3.4em] font-semibold leading-[0.85] tracking-tight text-fg">
             {hh}:{mm}
-            <span className="text-[0.5em] text-muted">:{ss}</span>
+            <span className="text-[0.42em] text-subtle">:{ss}</span>
           </div>
-          <div className="mt-[0.3em] text-[0.85em] text-muted">{dateLabel}</div>
+          <MicroLabel className="mt-[0.5em]">{dateLabel}</MicroLabel>
         </div>
       </div>
     </header>

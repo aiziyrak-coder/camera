@@ -84,22 +84,29 @@ export default function TypedConfirmDialog({
         className="flex flex-col gap-4 pt-2"
       >
         <div className="flex gap-3.5">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-danger-soft text-danger">
-            <AlertTriangle size={20} aria-hidden="true" />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center border border-danger/40 bg-danger-soft text-danger">
+            <AlertTriangle size={18} aria-hidden="true" />
           </div>
           <div className="min-w-0 pt-1">
-            <h2 className="text-base font-semibold text-fg">{title}</h2>
-            <p className="mt-1 text-sm text-muted">{message}</p>
+            <h2 className="text-[15px] font-semibold text-fg">{title}</h2>
+            <p className="mt-1 text-[13px] leading-5 text-muted">{message}</p>
           </div>
         </div>
         <Field
           label={
             <>
-              Tasdiqlash uchun <span className="font-mono font-semibold text-fg">{expected}</span> deb yozing
+              Tasdiqlash uchun <span className="intel-code font-semibold text-fg">{expected}</span> deb yozing
             </>
           }
         >
-          <Input value={typed} onChange={(e) => setTyped(e.target.value)} data-autofocus autoComplete="off" invalid={typed !== '' && !matches} />
+          <Input
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            data-autofocus
+            autoComplete="off"
+            className="intel-code"
+            invalid={typed !== '' && !matches}
+          />
         </Field>
         {error && <Notice tone="danger">{error}</Notice>}
       </form>

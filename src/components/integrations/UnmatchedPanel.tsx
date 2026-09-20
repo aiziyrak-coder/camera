@@ -1,7 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Copy, Plus, UserSearch } from 'lucide-react';
-import { Button, DataTable, IconButton, Select, Toolbar, formatNumber, useToast, type DataTableColumn } from '../../ui';
+import {
+  Button,
+  CodeText,
+  DataTable,
+  IconButton,
+  IntelPanel,
+  MicroLabel,
+  Select,
+  Toolbar,
+  formatNumber,
+  useToast,
+  type DataTableColumn,
+} from '../../ui';
 import { Notice } from '../settings/kit';
 import { useAuth } from '../../lib/auth';
 import { formatDateTime, integrationsApi, peopleSearchLink, type UnmatchedCredential } from '../../lib/integrationsApi';
@@ -34,11 +46,14 @@ export default function UnmatchedPanel({
   days = 7,
   deviceCount = null,
   onAddDevice,
+  reference,
 }: {
   days?: number;
   /** Ro'yxatdagi turniket qurilmalari soni; null — hali noma'lum. */
   deviceCount?: number | null;
   onAddDevice?: () => void;
+  /** Sahifaning hujjat raqami — panel sarlavhasining o'ng chetida. */
+  reference?: string;
 }) {
   const { token } = useAuth();
   const toast = useToast();
@@ -68,13 +83,13 @@ export default function UnmatchedPanel({
       key: 'card',
       header: 'Karta raqami',
       sortValue: (i) => i.cardNumber,
-      cell: (i) => <span className="font-mono text-xs text-fg">{i.cardNumber ?? '—'}</span>,
+      cell: (i) => <CodeText className="text-[12px] text-fg">{i.cardNumber ?? '—'}</CodeText>,
     },
     {
       key: 'employeeNo',
       header: 'Xodim raqami',
       sortValue: (i) => i.employeeNo,
-      cell: (i) => <span className="font-mono text-xs text-fg">{i.employeeNo ?? '—'}</span>,
+      cell: (i) => <CodeText className="text-[12px] text-fg">{i.employeeNo ?? '—'}</CodeText>,
     },
     {
       key: 'count',
@@ -83,10 +98,10 @@ export default function UnmatchedPanel({
       sortValue: (i) => i.count,
       sortFirst: 'desc',
       cell: (i) => (
-        <span className="text-[13px]">
+        <CodeText className="text-[13px]">
           {formatNumber(i.count)}
           {i.deniedCount > 0 && <span className="ml-1 text-danger">({formatNumber(i.deniedCount)} rad)</span>}
-        </span>
+        </CodeText>
       ),
     },
     {
@@ -94,7 +109,7 @@ export default function UnmatchedPanel({
       header: 'Oxirgi marta',
       sortValue: (i) => i.lastSeen,
       sortFirst: 'desc',
-      cell: (i) => <span className="whitespace-nowrap text-[13px] tabular-nums text-muted">{formatDateTime(i.lastSeen)}</span>,
+      cell: (i) => <CodeText className="whitespace-nowrap text-[12px] text-muted">{formatDateTime(i.lastSeen)}</CodeText>,
     },
     {
       key: 'device',
@@ -136,8 +151,13 @@ export default function UnmatchedPanel({
   const noDevices = deviceCount === 0;
 
   return (
-    <div className="flex flex-col gap-4">
-      <Notice tone={noDevices ? 'warning' : 'info'}>
+    <IntelPanel
+      title="Biriktirilmagan kartalar"
+      code={reference}
+      right={<MicroLabel>{items ? `${formatNumber(items.length)} ta · oxirgi ${days} kun` : `Oxirgi ${days} kun`}</MicroLabel>}
+      bodyClassName="flex min-w-0 flex-col"
+    >
+      <Notice tone={noDevices ? 'warning' : 'info'} className="m-3 mb-0">
         {noDevices
           ? "Turniket qurilmasi hali qo'shilmagan — hech qanday o'tish yozilmayapti, shuning uchun bu ro'yxat ham bo'sh."
           : 'Raqamni nusxalang va reestrda egasining “Karta raqami” maydoniga kiriting — shundan keyin u bu ro’yxatdan chiqadi.'}
@@ -165,8 +185,9 @@ export default function UnmatchedPanel({
         }
         ariaLabel="Biriktirilmagan kartalar"
         maxHeight="none"
-        footer={items && items.length > 0 ? <span className="text-[13px] tabular-nums text-muted">Jami: {formatNumber(items.length)} ta</span> : undefined}
+        dense
+        footer={items && items.length > 0 ? <CodeText className="text-[12px] text-muted">Jami: {formatNumber(items.length)} ta</CodeText> : undefined}
       />
-    </div>
+    </IntelPanel>
   );
 }

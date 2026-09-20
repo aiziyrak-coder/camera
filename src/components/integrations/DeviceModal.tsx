@@ -109,7 +109,7 @@ export default function DeviceModal({
           <>
             <div className="grid grid-cols-3 gap-4">
               <Field label="IP manzil" required error={errors.ip} className="col-span-2">
-                <Input value={form.ip} onChange={(e) => set('ip', e.target.value)} placeholder="192.168.1.50" className="font-mono" />
+                <Input value={form.ip} onChange={(e) => set('ip', e.target.value)} placeholder="192.168.1.50" className="intel-code" />
               </Field>
               <Field label="Port" error={errors.port}>
                 <Input value={form.port} onChange={(e) => set('port', e.target.value)} inputMode="numeric" placeholder="80" />

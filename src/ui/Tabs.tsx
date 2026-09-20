@@ -41,8 +41,8 @@ export function Tabs<T extends string>({ tabs, value, onChange, variant = 'under
       aria-label={ariaLabel}
       className={cn(
         underline
-          ? 'no-scrollbar -mb-px flex gap-1 overflow-x-auto border-b border-border sm:gap-4'
-          : 'no-scrollbar inline-flex max-w-full gap-0.5 overflow-x-auto rounded-control border border-border bg-surface-2 p-0.5',
+          ? 'no-scrollbar -mb-px flex gap-0.5 overflow-x-auto border-b border-border-strong sm:gap-3'
+          : 'no-scrollbar inline-flex max-w-full overflow-x-auto rounded-control border border-border bg-surface-2',
         className,
       )}
     >
@@ -65,28 +65,35 @@ export function Tabs<T extends string>({ tabs, value, onChange, variant = 'under
             onClick={() => onChange(tab.id)}
             onKeyDown={(event) => onKeyDown(event, index)}
             className={cn(
-              'relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+              // Yorliqlar bosh harfli mikro-yorliq: bu bo'lim nomlari.
+              // Yo'naltiruvchi yorliq — mikro-yorliqdan bir oz kattaroq (11px),
+              // chunki bu o'qiladigan navigatsiya, ustun sarlavhasi emas.
+              'intel-micro relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap !text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-40',
               focusRing,
               underline
                 ? cn(
-                    'rounded-t-control border-b-2 px-2 sm:px-1',
-                    size === 'sm' ? 'h-9 text-[13px]' : 'h-11 text-sm',
-                    active ? 'border-primary text-fg' : 'border-transparent text-muted hover:border-border-strong hover:text-fg',
+                    'border-b-2 px-2',
+                    size === 'sm' ? 'h-8' : 'h-9',
+                    active ? 'border-primary !text-fg' : 'border-transparent hover:border-border-strong hover:!text-fg',
                   )
                 : cn(
-                    'rounded-[6px] px-3',
-                    size === 'sm' ? 'h-7 text-xs' : 'h-8 text-[13px]',
-                    active ? 'bg-surface text-fg shadow-sm' : 'text-muted hover:text-fg',
+                    'border-r border-border px-2.5 last:border-r-0',
+                    size === 'sm' ? 'h-7' : 'h-8',
+                    active ? 'bg-primary !text-primary-fg' : 'hover:bg-surface-3 hover:!text-fg',
                   ),
             )}
           >
-            {Icon && <Icon size={size === 'sm' ? 14 : 16} aria-hidden="true" className={active ? 'text-primary' : undefined} />}
+            {Icon && <Icon size={13} aria-hidden="true" className="shrink-0" />}
             {tab.label}
             {tab.count !== undefined && tab.count !== null && (
               <span
                 className={cn(
-                  'rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums leading-none',
-                  active ? 'bg-primary-soft text-primary' : 'bg-surface-3 text-muted',
+                  'intel-code rounded-[2px] border px-1 text-[10px] font-bold leading-[14px] tracking-normal',
+                  active && !underline
+                    ? 'border-transparent bg-primary-fg/20 text-primary-fg'
+                    : active
+                      ? 'border-primary/30 bg-primary-soft text-primary'
+                      : 'border-border bg-surface-2 text-muted',
                 )}
               >
                 {tab.count.toLocaleString('ru-RU')}

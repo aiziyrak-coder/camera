@@ -5,12 +5,8 @@ export type ThemeName = 'light' | 'dark';
 const STORAGE_KEY = 'ui-theme';
 
 export function readStoredTheme(): ThemeName {
-  try {
-    const value = localStorage.getItem(STORAGE_KEY);
-    if (value === 'light' || value === 'dark') return value;
-  } catch {
-    /* storage yopiq (maxfiy oyna) — standart yorug' mavzu */
-  }
+  // Tizim faqat yorug' ishlaydi (2026-09-21) — saqlangan eski tanlov
+  // e'tiborsiz qoldiriladi.
   return 'light';
 }
 

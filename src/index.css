@@ -8,46 +8,50 @@
  * Dizayn tokenlari. Qiymatlar "R G B" — Tailwind `bg-primary/10` kabi
  * shaffoflikni shu orqali quradi (tailwind.config.js).
  *
- * Yorug' mavzu — standart. Qorong'i mavzu `data-theme="dark"` bilan
- * yoqiladi (taqdimot rejimi va foydalanuvchi tanlovi). Selektorlar
- * ATAYLAB faqat :root'ga bog'lanmagan: istalgan element ichida mavzuni
- * almashtirish mumkin (masalan /sozlamalar/ui uslub qo'llanmasida).
+ * Tizim faqat YORUG' ishlaydi (2026-09-21). Qorong'i mavzu olib
+ * tashlandi: hujjat ekranda ham, qog'ozda ham bir xil ko'rinishi kerak,
+ * ikkita palitrani parallel to'g'ri saqlash esa doimiy xato manbai edi.
  * ------------------------------------------------------------------ */
 @layer base {
   :root,
   [data-theme='light'] {
     color-scheme: light;
 
-    --c-bg: 245 246 248;
+    /* Sovuq qog'oz — panellar oq, fon bir oz to'qroq: hujjat stolda
+       yotgandek ko'rinsin. */
+    --c-bg: 238 240 243;
     --c-surface: 255 255 255;
-    --c-surface-2: 243 244 247;
-    --c-surface-3: 232 235 240;
-    --c-border: 226 229 235;
-    --c-border-strong: 205 210 219;
+    --c-surface-2: 246 247 249;
+    --c-surface-3: 234 237 241;
+    --c-border: 214 218 224;
+    --c-border-strong: 156 164 175;
 
-    --c-fg: 17 24 39;
-    --c-muted: 99 107 121;
-    --c-subtle: 148 155 168;
+    --c-fg: 15 20 26;
+    --c-muted: 88 96 108;
+    --c-subtle: 134 142 153;
 
-    --c-primary: 37 99 235;
+    /* Idoraviy ko'k — jiddiy, o'yinchoq emas. */
+    --c-primary: 18 58 107;
     --c-primary-fg: 255 255 255;
-    --c-primary-soft: 235 241 254;
+    --c-primary-soft: 232 238 246;
 
-    --c-success: 21 128 61;
+    /* Svetofor: yashil / sariq / qizil. To'yingan emas — bosma hujjatda
+       ham xunuk ko'rinmasin. */
+    --c-success: 26 111 68;
     --c-success-fg: 255 255 255;
-    --c-success-soft: 231 246 236;
+    --c-success-soft: 230 243 236;
 
-    --c-warning: 180 83 9;
+    --c-warning: 166 108 0;
     --c-warning-fg: 255 255 255;
-    --c-warning-soft: 254 243 226;
+    --c-warning-soft: 252 243 226;
 
-    --c-danger: 220 38 38;
+    --c-danger: 168 37 30;
     --c-danger-fg: 255 255 255;
-    --c-danger-soft: 254 236 236;
+    --c-danger-soft: 251 233 232;
 
-    --c-info: 14 116 144;
+    --c-info: 15 98 122;
     --c-info-fg: 255 255 255;
-    --c-info-soft: 228 245 249;
+    --c-info-soft: 229 243 247;
 
     /* Grafik seriyalari (kategoriyalar) — src/ui/chartTheme.ts o'qiydi. */
     --c-chart-1: 37 99 235;
@@ -57,62 +61,20 @@
     --c-chart-5: 219 39 119;
     --c-chart-6: 100 116 139;
 
-    --shadow-card: 0 1px 2px 0 rgb(16 24 40 / 0.04), 0 1px 3px 0 rgb(16 24 40 / 0.04);
+    /* Turg'un sirtlarda soya YO'Q — ajratish 1px chiziq bilan bo'ladi.
+       Soya faqat suzuvchi qatlamlarda (menyu, oyna) qoladi. */
+    --shadow-card: none;
     --shadow-pop: 0 16px 40px -12px rgb(16 24 40 / 0.22), 0 4px 10px -4px rgb(16 24 40 / 0.08);
-    /* Bosiladigan kartaning hover holati: yumshoq ko'tarilish. */
-    --shadow-hover: 0 1px 2px 0 rgb(16 24 40 / 0.04), 0 8px 24px -8px rgb(16 24 40 / 0.14);
+    /* Bosiladigan katak ustiga kelganda — ko'tarilish emas, qirra. */
+    --shadow-hover: inset 0 0 0 1px rgb(var(--c-primary) / 0.35);
     /* Qorong'ida sirtning ustki 1px yorug' qirrasi (yorug'da yo'q). */
     --edge-highlight: inset 0 0 0 0 transparent;
     --shimmer: 255 255 255;
   }
 
-  [data-theme='dark'] {
-    color-scheme: dark;
-
-    --c-bg: 10 13 20;
-    --c-surface: 17 22 32;
-    --c-surface-2: 24 30 43;
-    --c-surface-3: 33 41 57;
-    --c-border: 37 45 61;
-    --c-border-strong: 56 66 86;
-
-    --c-fg: 229 233 240;
-    --c-muted: 146 155 171;
-    --c-subtle: 103 113 131;
-
-    --c-primary: 77 124 255;
-    --c-primary-fg: 255 255 255;
-    --c-primary-soft: 26 38 72;
-
-    --c-success: 52 199 123;
-    --c-success-fg: 6 20 13;
-    --c-success-soft: 17 45 33;
-
-    --c-warning: 245 172 55;
-    --c-warning-fg: 24 16 4;
-    --c-warning-soft: 52 38 15;
-
-    --c-danger: 248 104 104;
-    --c-danger-fg: 24 6 6;
-    --c-danger-soft: 58 24 28;
-
-    --c-info: 48 190 222;
-    --c-info-fg: 4 16 20;
-    --c-info-soft: 14 43 54;
-
-    --c-chart-1: 96 140 255;
-    --c-chart-2: 45 212 191;
-    --c-chart-3: 167 139 250;
-    --c-chart-4: 251 191 36;
-    --c-chart-5: 244 114 182;
-    --c-chart-6: 148 163 184;
-
-    --edge-highlight: inset 0 1px 0 0 rgb(255 255 255 / 0.045);
-    --shadow-card: var(--edge-highlight), 0 1px 2px 0 rgb(0 0 0 / 0.35);
-    --shadow-pop: var(--edge-highlight), 0 20px 48px -12px rgb(0 0 0 / 0.7), 0 4px 12px -4px rgb(0 0 0 / 0.5);
-    --shadow-hover: var(--edge-highlight), 0 10px 28px -10px rgb(0 0 0 / 0.75), 0 0 0 1px rgb(255 255 255 / 0.02);
-    --shimmer: 255 255 255;
-  }
+  /* Qorong'i mavzu olib tashlandi (2026-09-21): tizim faqat yorug'
+     ishlaydi — yarim qorong'i ekranlar va ikki xil kontrast muammosi
+     yo'qoldi. `data-theme` atributi zararsiz qoladi. */
 
   html {
     -webkit-tap-highlight-color: transparent;
@@ -191,9 +153,6 @@
     transform: translateX(-100%);
     background: linear-gradient(90deg, transparent, rgb(var(--shimmer) / 0.55), transparent);
     animation: ui-shimmer 1.6s ease-in-out infinite;
-  }
-  [data-theme='dark'] .skeleton-shimmer::after {
-    background: linear-gradient(90deg, transparent, rgb(var(--shimmer) / 0.06), transparent);
   }
   @media (prefers-reduced-motion: reduce) {
     .skeleton-shimmer::after {

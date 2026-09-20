@@ -24,6 +24,9 @@ export interface NavItem {
   to: string;
   label: string;
   icon: LucideIcon;
+  /** Menyudagi qisqa indeks kodi — yig'ilgan panelda va qidiruvda
+   *  bandni raqamlab turadi (texnik ko'rsatkich kabi, uch harf). */
+  code: string;
   permission?: PermissionKey;
   /** Faqat aniq manzil (masalan "/" — boshqa hamma manzilning boshi). */
   end?: boolean;
@@ -40,46 +43,46 @@ export const NAV_SECTIONS: NavSection[] = [
     id: 'monitoring',
     label: 'Monitoring',
     items: [
-      { to: '/', label: 'Institut holati', icon: LayoutDashboard, end: true },
-      { to: '/videodevor', label: 'Jonli kameralar', icon: MonitorPlay, permission: 'viewLive' },
-      { to: '/hodisalar', label: 'Hodisalar', icon: Siren, permission: 'reviewEvents' },
+      { to: '/', code: 'HOL', label: 'Institut holati', icon: LayoutDashboard, end: true },
+      { to: '/videodevor', code: 'KAM', label: 'Jonli kameralar', icon: MonitorPlay, permission: 'viewLive' },
+      { to: '/hodisalar', code: 'HOD', label: 'Hodisalar', icon: Siren, permission: 'reviewEvents' },
     ],
   },
   {
     id: 'davomat',
     label: 'Davomat',
     items: [
-      { to: '/talabalar', label: 'Talabalar', icon: GraduationCap, permission: 'manageAttendance' },
-      { to: '/oqituvchilar', label: 'Xodimlar', icon: BookUser, permission: 'manageAttendance' },
+      { to: '/talabalar', code: 'TLB', label: 'Talabalar', icon: GraduationCap, permission: 'manageAttendance' },
+      { to: '/oqituvchilar', code: 'XOD', label: 'Xodimlar', icon: BookUser, permission: 'manageAttendance' },
     ],
   },
   {
     id: 'tahlil',
     label: 'Tahlil',
-    items: [{ to: '/hisobotlar', label: 'Hisobotlar', icon: ChartColumn, permission: 'viewReports' }],
+    items: [{ to: '/hisobotlar', code: 'HIS', label: 'Hisobotlar', icon: ChartColumn, permission: 'viewReports' }],
   },
   {
     id: 'malumotlar',
     label: "Ma'lumotlar",
     items: [
-      { to: '/reestr', label: 'Shaxslar reestri', icon: Contact, permission: 'registerPeople' },
+      { to: '/reestr', code: 'RST', label: 'Shaxslar reestri', icon: Contact, permission: 'registerPeople' },
       // Ruxsatsiz: o'qish hammaga ochiq, o'zgartirish tugmalari sahifaning
       // o'zida manageOrgStructure bo'yicha yashiriladi.
-      { to: '/tuzilma', label: 'Tashkiliy tuzilma', icon: Network },
+      { to: '/tuzilma', code: 'TUZ', label: 'Tashkiliy tuzilma', icon: Network },
     ],
   },
   {
     id: 'sozlamalar',
     label: 'Sozlamalar',
     items: [
-      { to: '/sozlamalar/kameralar', label: 'Kameralar', icon: Cctv, permission: 'editCameraLocation' },
-      { to: '/sozlamalar/ish-vaqti', label: 'Ish vaqti', icon: Clock, permission: 'manageAttendance' },
-      { to: '/sozlamalar/ai', label: 'AI modullar', icon: BrainCircuit, permission: 'configureAi' },
-      { to: '/sozlamalar/bildirishnomalar', label: 'Bildirishnomalar', icon: BellRing, permission: 'manageNotifications' },
-      { to: '/sozlamalar/integratsiyalar', label: 'Integratsiyalar', icon: PlugZap, permission: 'manageIntegrations' },
-      { to: '/sozlamalar/foydalanuvchilar', label: 'Foydalanuvchilar', icon: ShieldCheck, permission: 'manageRoles' },
-      { to: '/sozlamalar/maxfiylik', label: 'Maxfiylik', icon: Lock, permission: 'managePrivacy' },
-      { to: '/sozlamalar/tizim', label: 'Tizim holati', icon: ServerCog, permission: 'systemSettings' },
+      { to: '/sozlamalar/kameralar', code: 'SKM', label: 'Kameralar', icon: Cctv, permission: 'editCameraLocation' },
+      { to: '/sozlamalar/ish-vaqti', code: 'SIV', label: 'Ish vaqti', icon: Clock, permission: 'manageAttendance' },
+      { to: '/sozlamalar/ai', code: 'SAI', label: 'AI modullar', icon: BrainCircuit, permission: 'configureAi' },
+      { to: '/sozlamalar/bildirishnomalar', code: 'SBL', label: 'Bildirishnomalar', icon: BellRing, permission: 'manageNotifications' },
+      { to: '/sozlamalar/integratsiyalar', code: 'SIN', label: 'Integratsiyalar', icon: PlugZap, permission: 'manageIntegrations' },
+      { to: '/sozlamalar/foydalanuvchilar', code: 'SFD', label: 'Foydalanuvchilar', icon: ShieldCheck, permission: 'manageRoles' },
+      { to: '/sozlamalar/maxfiylik', code: 'SMX', label: 'Maxfiylik', icon: Lock, permission: 'managePrivacy' },
+      { to: '/sozlamalar/tizim', code: 'STZ', label: 'Tizim holati', icon: ServerCog, permission: 'systemSettings' },
     ],
   },
 ];

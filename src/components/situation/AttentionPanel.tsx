@@ -4,7 +4,8 @@ import { AlertTriangle, CameraOff, CheckCircle2, ChevronRight, Clock, ShieldAler
 import type { GroupStat, Lesson } from '../../lib/situationApi';
 import { relativeTime } from '../../lib/uzDate';
 import type { AIEvent } from '../../types';
-import { Avatar, Badge, Card, CardHeader, Skeleton, TONE_SOFT, TONE_TEXT, cn, focusRing, formatNumber, formatPercent, toneForRate, type Tone } from '../../ui';
+import { Avatar, Badge, MicroLabel, Skeleton, TONE_SOFT, TONE_TEXT, cn, focusRing, formatNumber, formatPercent, toneForRate, type Tone } from '../../ui';
+import { RAG_LABEL, RAG_LETTER, RAG_TEXT, RATE_RAG, rag } from '../../ui/rag';
 
 export interface AttentionPanelProps {
   loading: boolean;
@@ -31,7 +32,7 @@ export interface AttentionPanelProps {
 }
 
 function RowLink({ to, children, className }: { to: string | null; children: ReactNode; className?: string }) {
-  const base = cn('flex items-center gap-3 px-4 py-2.5 sm:px-5', className);
+  const base = cn('flex min-h-[34px] items-center gap-3 px-3 py-1.5', className);
   return to ? (
     <Link to={to} className={cn('group hover:bg-surface-2/70', base, focusRing)}>
       {children}
@@ -44,14 +45,36 @@ function RowLink({ to, children, className }: { to: string | null; children: Rea
 
 function IconChip({ icon: Icon, tone }: { icon: LucideIcon; tone: Tone }) {
   return (
-    <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-control', TONE_SOFT[tone])}>
-      <Icon size={17} aria-hidden="true" />
+    <span className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-[2px]', TONE_SOFT[tone])}>
+      <Icon size={15} aria-hidden="true" />
     </span>
   );
 }
 
 function GroupTitle({ children }: { children: ReactNode }) {
-  return <p className="bg-surface-2/60 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted sm:px-5">{children}</p>;
+  return (
+    <p className="border-y border-border bg-surface-2 px-3 py-1 first:border-t-0">
+      <MicroLabel className="intel-micro-wrap">{children}</MicroLabel>
+    </p>
+  );
+}
+
+/** Ro'yxatdagi qatorlar soni — sarlavhadagi raqam ro'yxat bilan bir xil
+ *  bo'lishi uchun sahifa ham shu hisobni ishlatadi. */
+export function countAttentionIssues(input: {
+  events: AttentionPanelProps['events'];
+  cameras: AttentionPanelProps['cameras'];
+  groups: AttentionPanelProps['groups'];
+  teacherLessons: AttentionPanelProps['teacherLessons'];
+}): number {
+  const { events, cameras, groups, teacherLessons } = input;
+  return (
+    (events && events.highOpen > 0 ? 1 : 0) +
+    (events && events.overdue > 0 ? 1 : 0) +
+    (cameras && cameras.offline > 0 ? 1 : 0) +
+    groups.length +
+    teacherLessons.length
+  );
 }
 
 /** "Diqqat talab": muhim ochiq hodisalar, muddati o'tganlar, ishlamayotgan
@@ -64,39 +87,15 @@ export function AttentionPanel({ loading, events, cameras, groups, groupLink, te
   // Sarlavhadagi son ro'yxatdagi qatorlar soni bilan bir xil bo'lishi
   // kerak: ilgari "muhim hodisa" va "muddati o'tgan" ikki alohida qator
   // bitta deb sanalardi va badge'dagi raqam ro'yxatga to'g'ri kelmasdi.
-  const issues =
-    (events && events.highOpen > 0 ? 1 : 0) +
-    (events && events.overdue > 0 ? 1 : 0) +
-    (hasCameras ? 1 : 0) +
-    groups.length +
-    teacherLessons.length;
+  const issues = countAttentionIssues({ events, cameras, groups, teacherLessons });
 
   return (
-    <Card padding="none" className="flex flex-col">
-      <div className="px-4 pt-4 sm:px-5 sm:pt-5">
-        <CardHeader
-          title={
-            <span className="inline-flex items-center gap-2">
-              Diqqat talab{' '}
-              {!loading && issues > 0 && (
-                // Yalang'och raqam nimani bildirishi tushunarsiz edi.
-                <Badge tone="warning" title={`${formatNumber(issues)} ta holat e'tibor talab qiladi`}>
-                  {formatNumber(issues)} ta
-                </Badge>
-              )}
-            </span>
-          }
-          subtitle="Hozir aralashuv talab qiladigan holatlar"
-          icon={AlertTriangle}
-          className="mb-3"
-        />
-      </div>
-
+    <>
       {loading ? (
-        <ul className="space-y-3 px-4 pb-5 sm:px-5" aria-busy="true" aria-label="Yuklanmoqda">
+        <ul className="divide-y divide-border" aria-busy="true" aria-label="Yuklanmoqda">
           {Array.from({ length: 4 }).map((_, i) => (
-            <li key={i} className="flex items-center gap-3">
-              <Skeleton className="h-9 w-9" />
+            <li key={i} className="flex items-center gap-3 px-3 py-2">
+              <Skeleton className="h-7 w-7" />
               <div className="flex-1 space-y-1.5">
                 <Skeleton className="h-3.5 w-2/3" />
                 <Skeleton className="h-3 w-1/3" />
@@ -105,17 +104,17 @@ export function AttentionPanel({ loading, events, cameras, groups, groupLink, te
           ))}
         </ul>
       ) : issues === 0 ? (
-        <div className="flex items-center gap-3 border-t border-border px-4 py-5 sm:px-5">
+        <div className="flex items-center gap-3 px-3 py-4">
           <IconChip icon={gapNote ? AlertTriangle : CheckCircle2} tone={gapNote ? 'warning' : 'success'} />
           <div>
-            <p className="text-sm font-medium text-fg">{gapNote ? "Holatni to'liq tekshirib bo'lmadi" : 'Hammasi joyida'}</p>
-            <p className="text-xs text-muted">
+            <p className="text-[13px] font-semibold text-fg">{gapNote ? "Holatni to'liq tekshirib bo'lmadi" : 'Hammasi joyida'}</p>
+            <p className="text-[12px] text-muted">
               {gapNote ?? "Muhim hodisa, aloqasiz kamera yoki keskin past davomatli guruh yo'q."}
             </p>
           </div>
         </div>
       ) : (
-        <div className={cn('flex flex-col border-t border-border', big && 'text-base')}>
+        <div className={cn('flex flex-col', big && 'text-[15px]')}>
           {hasEvents && events && (
             <section aria-label="Hodisalar">
               <GroupTitle>Hodisalar</GroupTitle>
@@ -193,7 +192,16 @@ export function AttentionPanel({ loading, events, cameras, groups, groupLink, te
                             {` · ${formatNumber(group.absent)} kelmadi`}
                           </p>
                         </div>
-                        <span className={cn('shrink-0 text-sm font-semibold tabular-nums', TONE_TEXT[tone])}>{formatPercent(group.rate)}</span>
+                        {/* Rang yolg'iz qolmaydi: yonida svetofor harfi. */}
+                        <span className="flex shrink-0 items-baseline gap-1.5">
+                          <span className={cn('intel-code text-[14px] font-semibold', TONE_TEXT[tone])}>{formatPercent(group.rate)}</span>
+                          <span
+                            className={cn('intel-code text-[10px] font-bold', RAG_TEXT[rag(group.rate, RATE_RAG)])}
+                            title={RAG_LABEL[rag(group.rate, RATE_RAG)]}
+                          >
+                            {RAG_LETTER[rag(group.rate, RATE_RAG)]}
+                          </span>
+                        </span>
                       </RowLink>
                     </li>
                   );
@@ -231,10 +239,10 @@ export function AttentionPanel({ loading, events, cameras, groups, groupLink, te
           )}
 
           {gapNote && (
-            <p className="border-t border-border px-4 py-2.5 text-xs text-warning sm:px-5">{gapNote}</p>
+            <p className="border-t border-border px-3 py-2 text-[12px] text-warning">{gapNote}</p>
           )}
         </div>
       )}
-    </Card>
+    </>
   );
 }

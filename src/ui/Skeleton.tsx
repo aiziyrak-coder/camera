@@ -2,7 +2,7 @@ import { cn } from './cn';
 
 /** Yuklanish joy egallovchisi — spinner o'rniga shakl: sahifa sakramaydi. */
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={cn('skeleton-shimmer rounded-control bg-surface-3/80', className)} aria-hidden="true" />;
+  return <div className={cn('skeleton-shimmer rounded-[1px] bg-surface-3', className)} aria-hidden="true" />;
 }
 
 export function SkeletonText({ lines = 3, className }: { lines?: number; className?: string }) {
@@ -18,12 +18,12 @@ export function SkeletonText({ lines = 3, className }: { lines?: number; classNa
 /** StatTile'lar qatori shaklida. */
 export function SkeletonTiles({ count = 4, className }: { count?: number; className?: string }) {
   return (
-    <div className={cn('grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4', className)} aria-busy="true" aria-label="Yuklanmoqda">
+    <div className={cn('grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4', className)} aria-busy="true" aria-label="Yuklanmoqda">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="rounded-card border border-border bg-surface p-4 shadow-card">
-          <Skeleton className="h-3 w-1/2" />
-          <Skeleton className="mt-3 h-7 w-1/3" />
-          <Skeleton className="mt-3 h-2 w-full" />
+        <div key={i} className="rounded-card border border-border bg-surface p-3">
+          <Skeleton className="h-2.5 w-1/2" />
+          <Skeleton className="mt-2.5 h-6 w-1/3" />
+          <Skeleton className="mt-2.5 h-1.5 w-full" />
         </div>
       ))}
     </div>
@@ -32,7 +32,7 @@ export function SkeletonTiles({ count = 4, className }: { count?: number; classN
 
 export function SkeletonCard({ className, lines = 4 }: { className?: string; lines?: number }) {
   return (
-    <div className={cn('rounded-card border border-border bg-surface p-5', className)} aria-busy="true" aria-label="Yuklanmoqda">
+    <div className={cn('rounded-card border border-border bg-surface p-3', className)} aria-busy="true" aria-label="Yuklanmoqda">
       <Skeleton className="h-4 w-40" />
       <SkeletonText lines={lines} className="mt-4" />
     </div>
@@ -54,7 +54,7 @@ export function SkeletonCards({
   className?: string;
 }) {
   return (
-    <div className={cn('grid gap-3 sm:gap-4', className)} aria-busy="true" aria-label="Yuklanmoqda">
+    <div className={cn('grid gap-2', className)} aria-busy="true" aria-label="Yuklanmoqda">
       {Array.from({ length: count }).map((_, i) => (
         <Skeleton key={i} className={cn(height, 'rounded-card')} />
       ))}
@@ -66,15 +66,15 @@ export function SkeletonTable({ rows = 6, columns = 5, className }: { rows?: num
   const grid = { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` };
   return (
     <div className={cn('overflow-hidden rounded-card border border-border bg-surface', className)} aria-busy="true" aria-label="Yuklanmoqda">
-      <div className="grid gap-4 border-b border-border bg-surface-2 px-4 py-3" style={grid}>
+      <div className="grid gap-3 border-b-2 border-border-strong bg-surface-2 px-2.5 py-2" style={grid}>
         {Array.from({ length: columns }).map((_, i) => (
-          <Skeleton key={i} className="h-3 w-2/3" />
+          <Skeleton key={i} className="h-2.5 w-2/3" />
         ))}
       </div>
       {Array.from({ length: rows }).map((_, r) => (
-        <div key={r} className="grid gap-4 border-b border-border px-4 py-3.5 last:border-b-0" style={grid}>
+        <div key={r} className="grid gap-3 border-b border-border px-2.5 py-2 last:border-b-0" style={grid}>
           {Array.from({ length: columns }).map((_, c) => (
-            <Skeleton key={c} className={cn('h-3.5', c === 0 ? 'w-5/6' : 'w-1/2')} />
+            <Skeleton key={c} className={cn('h-3', c === 0 ? 'w-5/6' : 'w-1/2')} />
           ))}
         </div>
       ))}
@@ -86,10 +86,10 @@ export function SkeletonTable({ rows = 6, columns = 5, className }: { rows?: num
 export function PageSkeleton() {
   return (
     <div aria-busy="true" aria-label="Sahifa yuklanmoqda">
-      <Skeleton className="h-7 w-56" />
-      <Skeleton className="mt-2 h-4 w-80 max-w-full" />
-      <SkeletonTiles className="mt-6" />
-      <SkeletonTable className="mt-6" />
+      <Skeleton className="h-5 w-56" />
+      <Skeleton className="mt-2 h-3 w-80 max-w-full" />
+      <SkeletonTiles className="mt-4" />
+      <SkeletonTable className="mt-4" />
     </div>
   );
 }

@@ -1,11 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Check, CheckCircle2, Clock, IdCard, RotateCcw, ScanFace, UserCheck, UserPlus } from 'lucide-react';
+import { CheckCircle2, Clock, IdCard, RotateCcw, ScanFace, UserCheck, UserPlus } from 'lucide-react';
 import EnrollmentConsent from '../../components/public/EnrollmentConsent';
 import EnrollmentFaceCapture from '../../components/public/EnrollmentFaceCapture';
 import EnrollmentRegisterForm from '../../components/public/EnrollmentRegisterForm';
 import { Notice, Segmented } from '../../components/settings/kit';
-import { Avatar, Button, Card, Field, Input, cn } from '../../ui';
+import { Avatar, Button, CodeText, DocumentHeader, Field, Input, IntelPanel, MicroLabel, StatusLamp, cn, type IntelStatus } from '../../ui';
+import { formNumber } from '../../components/public/formNumber';
 import { ApiError } from '../../lib/apiClient';
 import { branding } from '../../lib/branding';
 import { ENROLL_CODE_LENGTH, isEnrollCodeComplete, normalizeEnrollCode } from '../../lib/enrollCode';
@@ -81,19 +82,33 @@ function userMessage(err: unknown, fallback: string): string {
   return err.message;
 }
 
+/** Bosqich holati — RANG emas, SO'Z: bajarilgan / joriy / navbatda. */
+const STEP_STATE = { done: 'OK', active: 'JORIY', todo: 'NAVBAT' } as const;
+
 function StepProgress({ current }: { current: number }) {
   return (
-    <ol className="grid grid-cols-4 gap-2" aria-label="Ro'yxatdan o'tish bosqichlari">
+    <ol
+      className="grid grid-cols-4 divide-x divide-border border-b border-border"
+      aria-label="Ro'yxatdan o'tish bosqichlari"
+    >
       {PROGRESS.map((label, index) => {
         const done = index < current;
         const active = index === current;
         return (
-          <li key={label} className="min-w-0" aria-current={active ? 'step' : undefined}>
-            <div className={cn('h-1 rounded-full transition-colors', done ? 'bg-success' : active ? 'bg-primary' : 'bg-surface-3')} />
-            <p className={cn('mt-1.5 flex items-center gap-1 truncate text-xs', active ? 'font-semibold text-fg' : done ? 'text-success' : 'text-subtle')}>
-              {done && <Check size={12} aria-hidden="true" className="shrink-0" />}
-              <span className="truncate">{label}</span>
-            </p>
+          <li key={label} className="min-w-0 px-2 py-1.5" aria-current={active ? 'step' : undefined}>
+            <span className="flex items-center gap-1.5">
+              <span
+                aria-hidden="true"
+                className={cn('h-1.5 w-1.5 shrink-0 rounded-full', done ? 'bg-success' : active ? 'bg-primary' : 'bg-surface-3')}
+              />
+              <CodeText className="text-[10px] text-subtle">B{index + 1}</CodeText>
+            </span>
+            <span className={cn('mt-0.5 block truncate text-[12px] leading-4', active ? 'font-semibold text-fg' : done ? 'text-fg' : 'text-subtle')}>
+              {label}
+            </span>
+            <MicroLabel className={cn('block truncate', done && '!text-success', active && '!text-primary')}>
+              {done ? STEP_STATE.done : active ? STEP_STATE.active : STEP_STATE.todo}
+            </MicroLabel>
           </li>
         );
       })}
@@ -237,257 +252,331 @@ export default function EnrollmentPage() {
   // serverdan "topilmadi" javobini olardi va odam sababini bilmasdi.
   const pinflShort = method === 'pinfl' && pinfl.length > 0 && pinfl.length < PINFL_LENGTH;
 
+  const current = progressIndex(step);
+
+  /** Blank raqami — forma HOLATIDAN hisoblanadi (vaqtdan yoki render
+   *  sonidan emas): bitta telefonda bir xil bosqichda doim bir xil
+   *  raqam chiqadi, shuning uchun odam uni dekanatga aytishi mumkin.
+   *  JSHSHIR va pasport raqami raqamga QO'SHILMAYDI. */
+  const reference = formNumber({
+    kind: 'royxat',
+    step: Math.min(current + 1, PROGRESS.length),
+    of: PROGRESS.length,
+    parts: [method, code, groupHint],
+  });
+
+  // Holat — rang emas, SO'Z.
+  const lamp: { status: IntelStatus; label: string } =
+    step === 'success'
+      ? awaitingApproval
+        ? { status: 'warn', label: 'Tasdiq kutilmoqda' }
+        : { status: 'ok', label: 'Saqlandi' }
+      : error || captureError
+        ? { status: 'alert', label: 'Xato' }
+        : loading
+          ? { status: 'warn', label: 'Yuborilmoqda' }
+          : { status: 'idle', label: "To'ldirilmoqda" };
+
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col gap-5 pb-10">
-      <header className="flex items-start gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-primary-soft text-primary">
-          <ScanFace size={20} aria-hidden="true" />
-        </span>
-        <div className="min-w-0">
-          <h1 className="text-lg font-semibold tracking-tight text-fg sm:text-xl">Yuzni ro'yxatdan o'tkazish</h1>
-          <p className="mt-0.5 text-sm text-muted">Kameralar sizni tanishi va davomat avtomatik belgilanishi uchun.</p>
-        </div>
-      </header>
+    <div className="mx-auto flex w-full max-w-md flex-col gap-4 pb-10">
+      <DocumentHeader
+        org={branding.orgName}
+        title="Ro'yxatdan o'tish"
+        reference={reference}
+        readouts={[
+          { label: 'Qamrov', value: 'Shaxsiy yozuv' },
+          { label: 'Guruh', value: groupHint || '—' },
+          { label: 'Usul', value: method === 'pinfl' ? 'JSHSHIR' : 'Pasport' },
+          { label: 'Bosqich', value: `${Math.min(current + 1, PROGRESS.length)}/${PROGRESS.length}` },
+        ]}
+      />
 
-      <StepProgress current={progressIndex(step)} />
+      <IntelPanel title="Yuzni ro'yxatga olish" right={<StatusLamp status={lamp.status} label={lamp.label} pulse={loading} />}>
+        <StepProgress current={current} />
+        <div className="flex flex-col gap-4 p-4 [&_button]:min-h-11">
+          {error && <Notice tone="danger">{error}</Notice>}
+          {groupHint && step !== 'success' && (
+            <Notice tone="info" title={`Guruh: ${groupHint}`}>
+              {step === 'register'
+                ? `«Guruh» maydoniga «${groupHint}» deb yozing.`
+                : codeHint
+                  ? "Bu havola guruhingiz uchun berilgan va guruh kodi ham unga kiritilgan. JSHSHIR bilan o'zingizni toping va yuzingizni skanerlang."
+                  : "Bu havola guruhingiz uchun berilgan. JSHSHIR va guruh kodi bilan o'zingizni toping."}
+            </Notice>
+          )}
 
-      <Card padding="lg" className="flex flex-col gap-4">
-        {error && <Notice tone="danger">{error}</Notice>}
-        {groupHint && step !== 'success' && (
-          <Notice tone="info" title={`Guruh: ${groupHint}`}>
-            {step === 'register'
-              ? `«Guruh» maydoniga «${groupHint}» deb yozing.`
-              : codeHint
-                ? "Bu havola guruhingiz uchun berilgan va guruh kodi ham unga kiritilgan. JSHSHIR bilan o'zingizni toping va yuzingizni skanerlang."
-                : "Bu havola guruhingiz uchun berilgan. JSHSHIR va guruh kodi bilan o'zingizni toping."}
-          </Notice>
-        )}
+          {step === 'identify' && (
+            <form onSubmit={handleLookup} className="flex flex-col gap-4">
+              <div>
+                <MicroLabel>Bosqich 1 — Aniqlash</MicroLabel>
+                <h2 className="mt-0.5 text-[15px] font-semibold text-fg">Shaxsingizni aniqlaymiz</h2>
+                <p className="mt-1 text-[13px] leading-relaxed text-muted">
+                  Tizimdagi yozuvingizni topish uchun JSHSHIR raqamingizni kiriting. U pasportingizning ma&apos;lumot sahifasida, 14
+                  raqamdan iborat.
+                </p>
+              </div>
 
-        {step === 'identify' && (
-          <form onSubmit={handleLookup} className="flex flex-col gap-4">
-            <div>
-              <h2 className="text-base font-semibold text-fg">Shaxsingizni aniqlaymiz</h2>
-              <p className="mt-1 text-sm leading-relaxed text-muted">
-                Tizimdagi yozuvingizni topish uchun JSHSHIR raqamingizni kiriting. U pasportingizning ma&apos;lumot sahifasida, 14
-                raqamdan iborat.
-              </p>
-            </div>
+              <Segmented
+                ariaLabel="Aniqlash usuli"
+                value={method}
+                onChange={(value) => {
+                  setMethod(value);
+                  setError(null);
+                }}
+                options={METHOD_OPTIONS}
+                size="lg"
+              />
 
-            <Segmented
-              ariaLabel="Aniqlash usuli"
-              value={method}
-              onChange={(value) => {
-                setMethod(value);
-                setError(null);
-              }}
-              options={METHOD_OPTIONS}
-              size="lg"
-            />
-
-            {method === 'pinfl' ? (
-              <Field
-                label={`JSHSHIR (${PINFL_LENGTH} raqam)`}
-                hint={`Kiritilgan: ${pinfl.length}/${PINFL_LENGTH} raqam`}
-                required
-              >
-                <Input
-                  value={pinfl}
-                  onChange={(e) => setPinfl(e.target.value.replace(/\D/g, '').slice(0, PINFL_LENGTH))}
-                  placeholder="30302654150047"
-                  inputMode="numeric"
-                  autoComplete="off"
+              {method === 'pinfl' ? (
+                <Field
+                  label={`JSHSHIR (${PINFL_LENGTH} raqam)`}
+                  hint={`Kiritilgan: ${pinfl.length}/${PINFL_LENGTH} raqam`}
                   required
-                  // Birinchi maydon — kursor darhol shu yerda bo'lsin.
-                  autoFocus
-                  minLength={PINFL_LENGTH}
-                  maxLength={PINFL_LENGTH}
-                  size="lg"
-                  invalid={pinflShort}
-                  className="[&_input]:text-base [&_input]:font-mono [&_input]:tracking-wide [&_input::placeholder]:font-sans [&_input::placeholder]:tracking-normal"
-                />
-              </Field>
-            ) : (
-              <div className="grid grid-cols-3 gap-3">
-                <Field label="Seriya" required>
+                >
                   <Input
-                    value={series}
-                    onChange={(e) => setSeries(e.target.value.toUpperCase())}
-                    placeholder="AD"
-                    maxLength={4}
-                    autoComplete="off"
-                    autoCapitalize="characters"
-                    required
-                    size="lg"
-                    className="[&_input]:text-base [&_input]:uppercase"
-                  />
-                </Field>
-                <Field label="Raqam" required className="col-span-2">
-                  <Input
-                    value={number}
-                    onChange={(e) => setNumber(e.target.value.replace(/\D/g, ''))}
-                    placeholder="1234567"
-                    maxLength={10}
+                    value={pinfl}
+                    onChange={(e) => setPinfl(e.target.value.replace(/\D/g, '').slice(0, PINFL_LENGTH))}
+                    placeholder="30302654150047"
                     inputMode="numeric"
                     autoComplete="off"
                     required
+                    // Birinchi maydon — kursor darhol shu yerda bo'lsin.
+                    autoFocus
+                    minLength={PINFL_LENGTH}
+                    maxLength={PINFL_LENGTH}
                     size="lg"
-                    className="[&_input]:text-base"
+                    invalid={pinflShort}
+                    className="[&_input]:min-h-11 [&_input]:text-base [&_input]:font-mono [&_input]:tracking-wide [&_input::placeholder]:font-sans [&_input::placeholder]:tracking-normal"
                   />
                 </Field>
-              </div>
-            )}
+              ) : (
+                <div className="grid grid-cols-3 gap-3">
+                  <Field label="Seriya" required>
+                    <Input
+                      value={series}
+                      onChange={(e) => setSeries(e.target.value.toUpperCase())}
+                      placeholder="AD"
+                      maxLength={4}
+                      autoComplete="off"
+                      autoCapitalize="characters"
+                      required
+                      size="lg"
+                      className="[&_input]:min-h-11 [&_input]:text-base [&_input]:uppercase"
+                    />
+                  </Field>
+                  <Field label="Raqam" required className="col-span-2">
+                    <Input
+                      value={number}
+                      onChange={(e) => setNumber(e.target.value.replace(/\D/g, ''))}
+                      placeholder="1234567"
+                      maxLength={10}
+                      inputMode="numeric"
+                      autoComplete="off"
+                      required
+                      size="lg"
+                      className="[&_input]:min-h-11 [&_input]:text-base"
+                    />
+                  </Field>
+                </div>
+              )}
 
-            <Field
-              label={`Guruh kodi (${ENROLL_CODE_LENGTH} belgi)`}
-              hint={
-                codeConfusable
-                  ? // Terilgan belgi ekranga chiqmagani — dastur sinmagani
-                    // emas, kod alifbosida O, I, 0, 1 yo'qligi uchun.
-                    // Buni aytmasak odam qayta-qayta tergani bilan
-                    // maydonda 5 ta belgi qolaverardi.
-                    "Kodda «O» va «I» harflari, «0» va «1» raqamlari ishlatilmaydi — shuning uchun ular qabul qilinmadi. Kartadagi belgi «0» ga o'xshasa, u aslida «Q» yoki «D» bo'lishi mumkin."
-                  : `Kiritilgan: ${code.length}/${ENROLL_CODE_LENGTH}. Kod guruh sardorida yoki dekanatda bo'ladi. Unda O, I harflari va 0, 1 raqamlari yo'q.`
-              }
-              required
-            >
-              <Input
-                value={code}
-                onChange={(e) => {
-                  const raw = e.target.value;
-                  setCode(normalizeEnrollCode(raw));
-                  setCodeConfusable(CONFUSABLE_CODE_CHARS.test(raw));
-                }}
-                placeholder="K7M2XR"
-                autoComplete="one-time-code"
-                autoCapitalize="characters"
-                autoCorrect="off"
-                spellCheck={false}
-                // Kodda raqam ham, harf ham bor — telefonda to'liq
-                // klaviatura kerak, lekin avtomatik tuzatishsiz.
-                inputMode="text"
-                // maxLength ATAYLAB qo'yilmagan: "K7M2-XR" ni ko'chirib
-                // qo'yganda brauzer avval 6 belgigacha kesib tashlaydi
-                // ("K7M2-X") va chiziqcha tozalangandan keyin kod
-                // to'liqsiz qolardi. Uzunlikni normalizeEnrollCode
-                // ortiqcha belgilarni olib tashlagandan KEYIN cheklaydi.
+              <Field
+                label={`Guruh kodi (${ENROLL_CODE_LENGTH} belgi)`}
+                hint={
+                  codeConfusable
+                    ? // Terilgan belgi ekranga chiqmagani — dastur sinmagani
+                      // emas, kod alifbosida O, I, 0, 1 yo'qligi uchun.
+                      // Buni aytmasak odam qayta-qayta tergani bilan
+                      // maydonda 5 ta belgi qolaverardi.
+                      "Kodda «O» va «I» harflari, «0» va «1» raqamlari ishlatilmaydi — shuning uchun ular qabul qilinmadi. Kartadagi belgi «0» ga o'xshasa, u aslida «Q» yoki «D» bo'lishi mumkin."
+                    : `Kiritilgan: ${code.length}/${ENROLL_CODE_LENGTH}. Kod guruh sardorida yoki dekanatda bo'ladi. Unda O, I harflari va 0, 1 raqamlari yo'q.`
+                }
                 required
-                size="lg"
-                className="[&_input]:text-base [&_input]:font-mono [&_input]:uppercase [&_input]:tracking-[0.3em]"
-              />
-            </Field>
+              >
+                <Input
+                  value={code}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    setCode(normalizeEnrollCode(raw));
+                    setCodeConfusable(CONFUSABLE_CODE_CHARS.test(raw));
+                  }}
+                  placeholder="K7M2XR"
+                  autoComplete="one-time-code"
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  // Kodda raqam ham, harf ham bor — telefonda to'liq
+                  // klaviatura kerak, lekin avtomatik tuzatishsiz.
+                  inputMode="text"
+                  // maxLength ATAYLAB qo'yilmagan: "K7M2-XR" ni ko'chirib
+                  // qo'yganda brauzer avval 6 belgigacha kesib tashlaydi
+                  // ("K7M2-X") va chiziqcha tozalangandan keyin kod
+                  // to'liqsiz qolardi. Uzunlikni normalizeEnrollCode
+                  // ortiqcha belgilarni olib tashlagandan KEYIN cheklaydi.
+                  required
+                  size="lg"
+                  className="[&_input]:min-h-11 [&_input]:text-base [&_input]:font-mono [&_input]:uppercase [&_input]:tracking-[0.3em]"
+                />
+              </Field>
 
-            <Button
-              type="submit"
-              variant="primary"
-              size="lg"
-              icon={IdCard}
-              loading={loading}
-              disabled={!isEnrollCodeComplete(code)}
-              fullWidth
-            >
-              {loading ? 'Qidirilmoqda...' : 'Davom etish'}
-            </Button>
-
-            {notFound && (
               <Button
-                type="button"
-                variant="ghost"
-                icon={UserPlus}
-                onClick={() => {
-                  setError(null);
-                  setNotFound(false);
-                  setStep('register');
-                }}
+                type="submit"
+                variant="primary"
+                size="lg"
+                icon={IdCard}
+                loading={loading}
+                disabled={!isEnrollCodeComplete(code)}
                 fullWidth
               >
-                Ro&apos;yxatda yo&apos;qman — o&apos;zimni qo&apos;shish
+                {loading ? 'Qidirilmoqda...' : 'Davom etish'}
               </Button>
-            )}
-          </form>
-        )}
 
-        {step === 'confirm' && found && (
-          <div className="flex flex-col gap-4">
-            <h2 className="text-base font-semibold text-fg">Bu sizmi?</h2>
-            <div className="flex items-center gap-3 rounded-control border border-border bg-surface-2 p-3.5">
-              <Avatar name={found.fullName} size="md" />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-fg">{found.fullName}</p>
-                <p className="text-[13px] text-muted">
-                  {found.typeLabel} · {found.groupOrPosition}
-                </p>
+              {notFound && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  icon={UserPlus}
+                  onClick={() => {
+                    setError(null);
+                    setNotFound(false);
+                    setStep('register');
+                  }}
+                  fullWidth
+                >
+                  Ro&apos;yxatda yo&apos;qman — o&apos;zimni qo&apos;shish
+                </Button>
+              )}
+            </form>
+          )}
+
+          {step === 'confirm' && found && (
+            <div className="flex flex-col gap-4">
+              <div>
+                <MicroLabel>Bosqich 2 — Tasdiqlash</MicroLabel>
+                <h2 className="mt-0.5 text-[15px] font-semibold text-fg">Bu sizmi?</h2>
               </div>
-              <UserCheck size={20} className="shrink-0 text-success" aria-hidden="true" />
+              <div className="rounded-control border border-border">
+                <div className="flex items-center gap-2 border-b border-border bg-surface-2 px-3 py-1.5">
+                  <MicroLabel>Topilgan yozuv</MicroLabel>
+                  <span className="ms-auto">
+                    <StatusLamp
+                      status={found.alreadyEnrolled ? 'ok' : found.awaitingApproval ? 'warn' : 'idle'}
+                      label={found.alreadyEnrolled ? "Ro'yxatda" : found.awaitingApproval ? 'Tasdiq kutilmoqda' : 'Yangi'}
+                    />
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 p-3">
+                  <Avatar name={found.fullName} size="md" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-fg">{found.fullName}</p>
+                    <p className="text-[13px] text-muted">
+                      {found.typeLabel} · {found.groupOrPosition}
+                    </p>
+                  </div>
+                  <UserCheck size={20} className="shrink-0 text-success" aria-hidden="true" />
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 border-t border-border px-3 py-2">
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <MicroLabel>Guruh kodi</MicroLabel>
+                    <CodeText className="truncate text-[13px] font-semibold text-fg">{code}</CodeText>
+                  </span>
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <MicroLabel>Blank</MicroLabel>
+                    <CodeText className="truncate text-[13px] font-semibold text-fg">{reference}</CodeText>
+                  </span>
+                </div>
+              </div>
+
+              {found.alreadyEnrolled ? (
+                <Notice tone="warning">Siz allaqachon ro&apos;yxatdan o&apos;tgansiz. O&apos;zgartirish kerak bo&apos;lsa, administratorga murojaat qiling.</Notice>
+              ) : found.awaitingApproval ? (
+                <>
+                  <Notice tone="warning" icon={Clock}>
+                    Yuzingiz qabul qilingan va administrator tasdig&apos;ini kutmoqda. Rasmni almashtirmoqchi bo&apos;lsangiz, qayta skanerlashingiz
+                    mumkin.
+                  </Notice>
+                  <Button size="lg" icon={ScanFace} onClick={() => setStep('consent')} fullWidth>
+                    Qayta skanerlash
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-muted">Bu siz ekanligingizni tasdiqlab, yuzingizni skanerlashga o&apos;ting.</p>
+                  <Button variant="primary" size="lg" icon={ScanFace} onClick={() => setStep('consent')} fullWidth>
+                    Ha, bu men — davom etish
+                  </Button>
+                </>
+              )}
+              <Button variant="ghost" icon={RotateCcw} onClick={restartIdentify} fullWidth>
+                Boshqa ma&apos;lumot bilan qayta urinish
+              </Button>
             </div>
+          )}
 
-            {found.alreadyEnrolled ? (
-              <Notice tone="warning">Siz allaqachon ro&apos;yxatdan o&apos;tgansiz. O&apos;zgartirish kerak bo&apos;lsa, administratorga murojaat qiling.</Notice>
-            ) : found.awaitingApproval ? (
-              <>
-                <Notice tone="warning" icon={Clock}>
-                  Yuzingiz qabul qilingan va administrator tasdig&apos;ini kutmoqda. Rasmni almashtirmoqchi bo&apos;lsangiz, qayta skanerlashingiz
-                  mumkin.
-                </Notice>
-                <Button size="lg" icon={ScanFace} onClick={() => setStep('consent')} fullWidth>
-                  Qayta skanerlash
-                </Button>
-              </>
-            ) : (
-              <>
-                <p className="text-sm text-muted">Bu siz ekanligingizni tasdiqlab, yuzingizni skanerlashga o&apos;ting.</p>
-                <Button variant="primary" size="lg" icon={ScanFace} onClick={() => setStep('consent')} fullWidth>
-                  Ha, bu men — davom etish
-                </Button>
-              </>
-            )}
-            <Button variant="ghost" icon={RotateCcw} onClick={restartIdentify} fullWidth>
-              Boshqa ma&apos;lumot bilan qayta urinish
-            </Button>
+          {step === 'register' && (
+            <EnrollmentRegisterForm
+              pinfl={method === 'pinfl' ? pinfl : undefined}
+              passportSeries={method === 'passport' ? series : undefined}
+              passportNumber={method === 'passport' ? number : undefined}
+              initialGroup={groupHint}
+              onSubmit={handleRegister}
+              onCancel={restartIdentify}
+              submitting={loading}
+            />
+          )}
+
+          {step === 'consent' && (
+            <EnrollmentConsent
+              onContinue={(agreed) => {
+                setConsent(agreed);
+                setCaptureError(null);
+                setStep('photo');
+              }}
+              onBack={() => setStep('confirm')}
+            />
+          )}
+
+          {step === 'photo' && <EnrollmentFaceCapture onSubmit={handleFramesSubmit} submitting={loading} externalError={captureError} />}
+
+          {step === 'success' && found && (
+            <div className="flex flex-col gap-3 py-2" role="status">
+              <div className="flex items-center gap-3">
+                <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-control border', awaitingApproval ? 'border-warning/35 bg-warning-soft text-warning' : 'border-success/35 bg-success-soft text-success')}>
+                  {awaitingApproval ? <Clock size={18} aria-hidden="true" /> : <CheckCircle2 size={18} aria-hidden="true" />}
+                </span>
+                <div className="min-w-0">
+                  <StatusLamp
+                    status={awaitingApproval ? 'warn' : 'ok'}
+                    label={awaitingApproval ? 'Tasdiq kutilmoqda' : 'Saqlandi'}
+                  />
+                  <p className="mt-0.5 text-[15px] font-semibold text-fg">
+                    {awaitingApproval ? 'Qabul qilindi' : "Muvaffaqiyatli saqlandi"}
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 border-y border-border py-2">
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <MicroLabel>Blank</MicroLabel>
+                  <CodeText className="truncate text-[13px] font-semibold text-fg">{reference}</CodeText>
+                </span>
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <MicroLabel>Guruh kodi</MicroLabel>
+                  <CodeText className="truncate text-[13px] font-semibold text-fg">{code}</CodeText>
+                </span>
+              </div>
+              <p className="text-[13px] leading-relaxed text-muted">
+                {awaitingApproval
+                  ? `${found.fullName}, ma'lumotlaringiz qabul qilindi. Siz institut ro'yxatida yo'q edingiz, shuning uchun administrator tasdiqlagandan keyin kameralar sizni taniy boshlaydi.`
+                  : `${found.fullName}, yuzingiz endi kameralar orqali tanib olinadi.`}
+              </p>
+            </div>
+          )}
           </div>
-        )}
+      </IntelPanel>
 
-        {step === 'register' && (
-          <EnrollmentRegisterForm
-            pinfl={method === 'pinfl' ? pinfl : undefined}
-            passportSeries={method === 'passport' ? series : undefined}
-            passportNumber={method === 'passport' ? number : undefined}
-            initialGroup={groupHint}
-            onSubmit={handleRegister}
-            onCancel={restartIdentify}
-            submitting={loading}
-          />
-        )}
-
-        {step === 'consent' && (
-          <EnrollmentConsent
-            onContinue={(agreed) => {
-              setConsent(agreed);
-              setCaptureError(null);
-              setStep('photo');
-            }}
-            onBack={() => setStep('confirm')}
-          />
-        )}
-
-        {step === 'photo' && <EnrollmentFaceCapture onSubmit={handleFramesSubmit} submitting={loading} externalError={captureError} />}
-
-        {step === 'success' && found && (
-          <div className="flex flex-col items-center gap-3 py-6 text-center" role="status">
-            <span className={cn('flex h-14 w-14 items-center justify-center rounded-full', awaitingApproval ? 'bg-warning-soft text-warning' : 'bg-success-soft text-success')}>
-              {awaitingApproval ? <Clock size={28} aria-hidden="true" /> : <CheckCircle2 size={28} aria-hidden="true" />}
-            </span>
-            <p className="text-base font-semibold text-fg">{awaitingApproval ? 'Qabul qilindi' : 'Muvaffaqiyatli saqlandi!'}</p>
-            <p className="text-sm leading-relaxed text-muted">
-              {awaitingApproval
-                ? `${found.fullName}, ma'lumotlaringiz qabul qilindi. Siz institut ro'yxatida yo'q edingiz, shuning uchun administrator tasdiqlagandan keyin kameralar sizni taniy boshlaydi.`
-                : `${found.fullName}, yuzingiz endi kameralar orqali tanib olinadi.`}
-            </p>
-          </div>
-        )}
-      </Card>
-
-      <p className="text-center text-xs leading-relaxed text-subtle">
-        Ma&apos;lumotlaringiz faqat davomat va bino xavfsizligi uchun ishlatiladi. Rozilikni istalgan vaqtda qaytarib olishingiz mumkin.
+      <p className="px-1 text-[12px] leading-relaxed text-subtle">
+        Kameralar sizni tanishi va davomat avtomatik belgilanishi uchun. Ma&apos;lumotlaringiz faqat davomat va bino
+        xavfsizligi uchun ishlatiladi; rozilikni istalgan vaqtda qaytarib olishingiz mumkin.
       </p>
     </div>
   );

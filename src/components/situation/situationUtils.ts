@@ -1,6 +1,7 @@
 import type { LiveAttendanceMessage } from '../../lib/realtime';
-import type { Counts, GroupStat, LastArrival, Lesson, Overview } from '../../lib/situationApi';
+import type { Counts, FacultyCounts, GroupStat, KafedraStat, LastArrival, Lesson, Overview } from '../../lib/situationApi';
 import type { ProgressSegment } from '../../ui';
+import { RATE_RAG, rag, type Rag, type RagThresholds } from '../../ui/rag';
 
 export type ArrivalItem = LastArrival;
 
@@ -246,4 +247,130 @@ export function rankUnits<T extends RankableUnit>(units: readonly T[], n = 5, mi
   const rest = eligible.slice(top.length);
   const bottom = rest.slice(-n).reverse();
   return { top, bottom, ranked: eligible.length };
+}
+
+/* ------------------------------------------------------------------
+ * Hujjat raqami va holat taxtasi — "Institut holati" ekrani uchun.
+ *
+ * Raqam RENDER paytiga emas, ekran HOLATIGA bog'langan: bir xil kun va
+ * bir xil kesim — doim bir xil kod. Shuning uchun tartib raqami
+ * sanagichdan emas, tanlovning o'zidan (FNV-1a) chiqadi va testda
+ * tekshiriladi.
+ * ---------------------------------------------------------------- */
+
+/** Tashkilot kodi — boshqa muassasaga o'rnatishda almashtiriladi. */
+export const SITUATION_ORG_CODE = 'FERMI';
+
+export type SituationMode = 'xodimlar' | 'talabalar';
+
+const SITUATION_SECTION_CODE: Record<SituationMode, string> = { xodimlar: 'XDM', talabalar: 'TLB' };
+
+function referenceSerial(parts: readonly (string | null | undefined)[]): string {
+  const key = parts.map((p) => (p ?? '').trim()).filter(Boolean).join('|');
+  if (!key) return '0001';
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < key.length; i += 1) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return String((hash % 9998) + 2).padStart(4, '0');
+}
+
+/**
+ * Ekran hujjat raqami: `FERMI/SIT/20260920/XDM-0001`.
+ *   TASHKILOT / EKRAN TURI / KUN / KESIM-TARTIB
+ * Bugungi (tugallanmagan) kun va yakunlangan kun bir xil kod olmaydi —
+ * chop etilgan varaqda qaysi holat ekani ko'rinib tursin.
+ */
+export function situationReference(input: {
+  date: string;
+  mode: SituationMode;
+  /** Bugun — kun hali tugamagan; tartib raqami boshqacha bo'ladi. */
+  isToday?: boolean;
+  org?: string;
+}): string {
+  const org = (input.org ?? SITUATION_ORG_CODE).toUpperCase();
+  const period = input.date.replace(/-/g, '');
+  const serial = referenceSerial([input.isToday ? 'jonli' : '', input.mode === 'talabalar' ? 'tlb' : '']);
+  return `${org}/SIT/${period}/${SITUATION_SECTION_CODE[input.mode]}-${serial}`;
+}
+
+/** Foizni taxta katagi uchun yaxlitlash (null — o'lchanmagan). */
+function boardRate(rate: number | null): number | null {
+  return rate === null || !Number.isFinite(rate) ? null : Math.round(rate * 10) / 10;
+}
+
+export interface SituationBoardItem {
+  id: string;
+  code: string;
+  name: string;
+  value: number | null;
+  unit: string;
+  detail: string | null;
+  headcount: number | null;
+}
+
+const n = (value: number) => value.toLocaleString('ru-RU');
+
+/**
+ * Bo'linmalar (kafedra/dekanat/bo'lim) — holat taxtasi kataklari.
+ * Kodlar ro'yxat tartibidan emas, NOM bo'yicha barqaror tartibdan
+ * chiqadi: kun davomida foiz o'zgarganda katakning kodi sakramasin.
+ */
+export function unitBoardItems(units: readonly KafedraStat[] | null): SituationBoardItem[] {
+  const rows = (units ?? []).filter((u) => !u.unassigned);
+  const order = [...rows].sort((a, b) => a.name.localeCompare(b.name, 'uz')).map((u) => u.id);
+  return rows.map((u) => {
+    const expected = u.present + u.absent + u.notYet;
+    const measured = u.enrolled > 0 && expected > 0;
+    return {
+      id: u.id,
+      code: `BOL-${String(order.indexOf(u.id) + 1).padStart(2, '0')}`,
+      name: u.name,
+      value: measured ? boardRate(u.rate) : null,
+      unit: '%',
+      detail: measured
+        ? `${n(u.present)}/${n(expected)} keldi${u.late > 0 ? ` · ${n(u.late)} kech` : ''}`
+        : u.staffTotal === 0
+          ? "Xodim biriktirilmagan"
+          : `Yuzi ro'yxatdan o'tgani ${n(u.enrolled)}/${n(u.staffTotal)} — o'lchab bo'lmaydi`,
+      headcount: u.staffTotal > 0 ? u.staffTotal : null,
+    };
+  });
+}
+
+/** Fakultetlar — o'sha taxta uchun kataklar (talabalar kesimi). */
+export function facultyBoardItems(faculties: readonly FacultyCounts[] | null): SituationBoardItem[] {
+  const rows = faculties ?? [];
+  const order = [...rows].sort((a, b) => a.name.localeCompare(b.name, 'uz')).map((f) => f.id ?? f.name);
+  return rows.map((f) => {
+    const key = f.id ?? f.name;
+    const expected = f.present + f.absent + f.notYet;
+    const measured = f.total > 0 && expected > 0;
+    return {
+      id: f.id ?? f.name,
+      code: `FAK-${String(order.indexOf(key) + 1).padStart(2, '0')}`,
+      name: f.name,
+      value: measured ? boardRate(f.rate) : null,
+      unit: '%',
+      detail: measured
+        ? `${n(f.present)}/${n(expected)} keldi${f.late > 0 ? ` · ${n(f.late)} kech` : ''}`
+        : f.total === 0
+          ? "Talaba biriktirilmagan"
+          : "Bu kuni davomat yozuvi yo'q — o'lchanmagan",
+      headcount: f.total > 0 ? f.total : null,
+    };
+  });
+}
+
+/** Yomoni birinchi: qizil → sariq → yashil → o'lchanmagan, ichida esa
+ *  past foiz oldinda. Hukm — tizim bo'ylab yagona `rag()` qoidasidan,
+ *  bu yerda chegaralar qaytadan yozilmaydi. */
+export function worstFirst<T extends { value: number | null; unit: string }>(
+  items: readonly T[],
+  thresholds: RagThresholds = RATE_RAG,
+): T[] {
+  const order: Record<Rag, number> = { qizil: 0, sariq: 1, yashil: 2, yoq: 3 };
+  const band = (item: T): number => order[item.unit === '%' ? rag(item.value, thresholds) : 'yoq'];
+  return [...items].sort((a, b) => band(a) - band(b) || (a.value ?? Infinity) - (b.value ?? Infinity));
 }

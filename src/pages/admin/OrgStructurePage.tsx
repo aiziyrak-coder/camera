@@ -1,7 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BookOpen, Building2, Landmark, Pencil, Plus, Trash2, Users2 } from 'lucide-react';
-import { Badge, Button, ConfirmDialog, DataTable, ErrorState, FilterBar, filterActiveCount, formatNumber, IconButton, Page, useToast, useUrlTab, type DataTableColumn, type FilterFieldEntry, type TabItem } from '../../ui';
+import {
+  Button,
+  CodeText,
+  ConfirmDialog,
+  DataTable,
+  DocumentFooter,
+  DocumentHeader,
+  ErrorState,
+  FilterBar,
+  IntelPanel,
+  MicroLabel,
+  StatusLamp,
+  filterActiveCount,
+  formatNumber,
+  IconButton,
+  Page,
+  useToast,
+  useUrlTab,
+  type DataTableColumn,
+  type FilterFieldEntry,
+  type TabItem,
+} from '../../ui';
+import { buildReference, unitCode } from '../../components/admin/registryCodes';
+import { branding } from '../../lib/branding';
 import AddBuildingModal from '../../components/admin/AddBuildingModal';
 import AddDepartmentModal from '../../components/admin/AddDepartmentModal';
 import AddFacultyModal from '../../components/admin/AddFacultyModal';
@@ -115,18 +138,32 @@ function RowActions({ children }: { children: ReactNode }) {
   );
 }
 
-function NameCell({ icon: Icon, name, hint }: { icon: typeof Building2; name: string; hint?: ReactNode }) {
+function NameCell({ code, name, hint }: { code: string; name: string; hint?: ReactNode }) {
   return (
-    <span className="flex min-w-0 items-center gap-2.5">
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-control bg-primary-soft text-primary">
-        <Icon size={15} aria-hidden="true" />
-      </span>
+    <span className="flex min-w-0 items-baseline gap-2">
+      {/* Xizmat kodi — bo'linmani nomini takrorlamasdan ko'rsatish uchun. */}
+      <CodeText className="shrink-0 text-[11px] text-subtle">{code}</CodeText>
       <span className="min-w-0">
-        <span className="block truncate font-medium text-fg">{name}</span>
-        {hint && <span className="block truncate text-xs text-muted">{hint}</span>}
+        <span className="block truncate text-[13px] font-medium text-fg">{name}</span>
+        {hint && <span className="block truncate text-[11px] text-muted">{hint}</span>}
       </span>
     </span>
   );
+}
+
+/** Sanoq ustuni — monoshrift, tabulyatsiyali: ustma-ust raqamlar tekis turadi. */
+function Count({ value }: { value: number | null | undefined }) {
+  if (value === null || value === undefined) return <span className="text-subtle">kiritilmagan</span>;
+  return <CodeText className="text-[12px] text-fg">{formatNumber(value)}</CodeText>;
+}
+
+/** Hujjat qachon ekranga chiqarilgani. */
+function stamp(): string {
+  try {
+    return new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Tashkent' }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 16).replace('T', ' ');
+  }
 }
 
 export default function OrgStructurePage() {
@@ -241,6 +278,28 @@ export default function OrgStructurePage() {
     [groups],
   );
 
+  /**
+   * Bo'linma kodlari — BIN-01, FAK-02, GUR-03, KAF-04.
+   *
+   * Tartib FILTRDAN EMAS, butun ro'yxatdan (nom bo'yicha) olinadi:
+   * shuning uchun qidiruv yozilganda ham «FAK-03» o'sha fakultet
+   * bo'lib qoladi va ikki nusxadagi kod bir-biriga mos tushadi.
+   */
+  const codes = useMemo(() => {
+    const map = new Map<string, string>();
+    const assign = (prefix: string, items: { id: string; name: string }[]) => {
+      [...items]
+        .sort((a, b) => a.name.localeCompare(b.name, 'uz'))
+        .forEach((item, index) => map.set(`${prefix}:${item.id}`, unitCode(prefix, index)));
+    };
+    assign('BIN', buildings);
+    assign('FAK', faculties);
+    assign('GUR', groups);
+    assign('KAF', departments);
+    return map;
+  }, [buildings, faculties, groups, departments]);
+  const codeOf = useCallback((prefix: string, id: string) => codes.get(`${prefix}:${id}`) ?? `${prefix}-??`, [codes]);
+
   async function confirmDelete() {
     if (!deleteTarget) return;
     const { kind, item } = deleteTarget;
@@ -279,14 +338,14 @@ export default function OrgStructurePage() {
     {
       key: 'name',
       header: 'Korpus',
-      cell: (b) => <NameCell icon={Building2} name={b.name} />,
+      cell: (b) => <NameCell code={codeOf('BIN', b.id)} name={b.name} />,
       sortValue: (b) => b.sortOrder ?? b.name,
     },
     {
       key: 'floors',
       header: 'Qavatlar',
       align: 'right',
-      cell: (b) => (b.floors ? formatNumber(b.floors) : <span className="text-subtle">kiritilmagan</span>),
+      cell: (b) => <Count value={b.floors ?? null} />,
       sortValue: (b) => b.floors ?? null,
       sortFirst: 'desc',
     },
@@ -294,7 +353,7 @@ export default function OrgStructurePage() {
       key: 'cameras',
       header: 'Kameralar',
       align: 'right',
-      cell: (b) => formatNumber(b.cameraCount),
+      cell: (b) => <Count value={b.cameraCount} />,
       sortValue: (b) => b.cameraCount,
       sortFirst: 'desc',
     },
@@ -318,18 +377,18 @@ export default function OrgStructurePage() {
   ];
 
   const facultyColumns: DataTableColumn<Faculty>[] = [
-    { key: 'name', header: 'Fakultet', cell: (f) => <NameCell icon={BookOpen} name={f.name} />, sortValue: (f) => f.name },
-    { key: 'courses', header: 'Kurslar', align: 'right', cell: (f) => formatNumber(f.courseCount), sortValue: (f) => f.courseCount, sortFirst: 'desc' },
+    { key: 'name', header: 'Fakultet', cell: (f) => <NameCell code={codeOf('FAK', f.id)} name={f.name} />, sortValue: (f) => f.name },
+    { key: 'courses', header: 'Kurslar', align: 'right', cell: (f) => <Count value={f.courseCount} />, sortValue: (f) => f.courseCount, sortFirst: 'desc' },
     {
       key: 'groups',
       header: 'Guruhlar',
       align: 'right',
-      cell: (f) => formatNumber(groups.filter((g) => g.faculty === f.name).length),
+      cell: (f) => <Count value={groups.filter((g) => g.faculty === f.name).length} />,
       sortValue: (f) => groups.filter((g) => g.faculty === f.name).length,
       sortFirst: 'desc',
       hideOnMobile: true,
     },
-    { key: 'students', header: 'Talabalar', align: 'right', cell: (f) => formatNumber(f.studentCount), sortValue: (f) => f.studentCount, sortFirst: 'desc' },
+    { key: 'students', header: 'Talabalar', align: 'right', cell: (f) => <Count value={f.studentCount} />, sortValue: (f) => f.studentCount, sortFirst: 'desc' },
     ...(canEdit
       ? [
           {
@@ -345,10 +404,15 @@ export default function OrgStructurePage() {
   ];
 
   const groupColumns: DataTableColumn<StudentGroup>[] = [
-    { key: 'name', header: 'Guruh', cell: (g) => <NameCell icon={Users2} name={g.name} />, sortValue: (g) => g.name },
-    { key: 'faculty', header: 'Fakultet', cell: (g) => g.faculty || <span className="text-subtle">—</span>, sortValue: (g) => g.faculty },
-    { key: 'course', header: 'Kurs', cell: (g) => <Badge>{g.course}-kurs</Badge>, sortValue: (g) => g.course },
-    { key: 'students', header: 'Talabalar', align: 'right', cell: (g) => formatNumber(g.studentCount), sortValue: (g) => g.studentCount, sortFirst: 'desc' },
+    { key: 'name', header: 'Guruh', cell: (g) => <NameCell code={codeOf('GUR', g.id)} name={g.name} />, sortValue: (g) => g.name },
+    {
+      key: 'faculty',
+      header: 'Fakultet',
+      cell: (g) => <span className="text-[13px] text-muted">{g.faculty || <span className="text-subtle">—</span>}</span>,
+      sortValue: (g) => g.faculty,
+    },
+    { key: 'course', header: 'Kurs', width: '5rem', mono: true, cell: (g) => <CodeText className="text-[12px] text-fg">{g.course}-kurs</CodeText>, sortValue: (g) => g.course },
+    { key: 'students', header: 'Talabalar', align: 'right', cell: (g) => <Count value={g.studentCount} />, sortValue: (g) => g.studentCount, sortFirst: 'desc' },
     ...(canEdit
       ? [
           {
@@ -364,14 +428,22 @@ export default function OrgStructurePage() {
   ];
 
   const departmentColumns: DataTableColumn<Department>[] = [
-    { key: 'name', header: 'Kafedra', cell: (d) => <NameCell icon={Landmark} name={d.name} />, sortValue: (d) => d.name },
+    { key: 'name', header: 'Kafedra', cell: (d) => <NameCell code={codeOf('KAF', d.id)} name={d.name} />, sortValue: (d) => d.name },
     {
       key: 'building',
       header: 'Bino',
-      cell: (d) => d.buildingName || <Badge tone="warning">ko&apos;rsatilmagan</Badge>,
+      cell: (d) =>
+        d.buildingName ? (
+          <span className="flex min-w-0 items-baseline gap-2">
+            <CodeText className="shrink-0 text-[11px] text-subtle">{d.buildingId ? codeOf('BIN', d.buildingId) : 'BIN-??'}</CodeText>
+            <span className="min-w-0 truncate text-[13px] text-muted">{d.buildingName}</span>
+          </span>
+        ) : (
+          <StatusLamp status="warn" label="Bino ko'rsatilmagan" />
+        ),
       sortValue: (d) => d.buildingName || null,
     },
-    { key: 'cameras', header: 'Kameralar', align: 'right', cell: (d) => formatNumber(d.cameraCount), sortValue: (d) => d.cameraCount, sortFirst: 'desc' },
+    { key: 'cameras', header: 'Kameralar', align: 'right', cell: (d) => <Count value={d.cameraCount} />, sortValue: (d) => d.cameraCount, sortFirst: 'desc' },
     ...(canEdit
       ? [
           {
@@ -437,7 +509,26 @@ export default function OrgStructurePage() {
       </Button>
     ) : undefined;
 
-  const common = { loading, loadingRows: 5 } as const;
+  const common = { loading, loadingRows: 5, dense: true, maxHeight: 'none' } as const;
+
+  // Tuzilma varag'ining raqami — bo'lim va filtrlardan, vaqtdan emas.
+  const reference = useMemo(
+    () => buildReference('TUZ', [tab], [query, facultyFilter, courseFilter]),
+    [tab, query, facultyFilter, courseFilter],
+  );
+  const generatedAt = useMemo(stamp, [reference, buildings, faculties, groups, departments]);
+
+  const SECTION: Record<TabId, { title: string; shown: number; total: number }> = {
+    binolar: { title: "O'quv korpuslari", shown: shownBuildings.length, total: buildings.length },
+    fakultetlar: { title: 'Fakultetlar', shown: shownFaculties.length, total: faculties.length },
+    guruhlar: { title: 'Guruhlar', shown: shownGroups.length, total: groups.length },
+    kafedralar: { title: 'Kafedralar', shown: shownDepartments.length, total: departments.length },
+  };
+  const section = SECTION[tab];
+
+  const sectionRight = (
+    <MicroLabel>{loading ? 'Yuklanmoqda' : `${formatNumber(section.shown)} / ${formatNumber(section.total)} ta`}</MicroLabel>
+  );
 
   return (
     <Page
@@ -465,11 +556,26 @@ export default function OrgStructurePage() {
       }
       toolbar={error ? undefined : toolbar}
     >
+      {/* 1. Hujjat blanki: institut tuzilmasi, qaysi bo'lim, nechta birlik. */}
+      <DocumentHeader
+        org={branding.orgFullName}
+        title="Tashkiliy tuzilma"
+        reference={reference}
+        generatedAt={generatedAt}
+        readouts={[
+          { label: "Bo'lim", value: section.title },
+          { label: 'Binolar', value: loading ? '—' : `${formatNumber(buildings.length)} ta` },
+          { label: 'Fakultet / guruh', value: loading ? '—' : `${formatNumber(faculties.length)} / ${formatNumber(groups.length)}` },
+          { label: 'Kafedralar', value: loading ? '—' : `${formatNumber(departments.length)} ta` },
+        ]}
+      />
+
       {error ? (
-        <ErrorState variant="block" message={error} onRetry={reload} className="rounded-card border border-border bg-surface" />
+        <ErrorState variant="block" message={error} onRetry={reload} className="border border-border bg-surface" />
       ) : (
         <>
           {tab === 'binolar' && (
+            <IntelPanel title={section.title} code={reference} right={sectionRight} brackets={false}>
             <DataTable
               {...common}
               ariaLabel="O'quv korpuslari"
@@ -481,9 +587,11 @@ export default function OrgStructurePage() {
               emptyDescription={query ? "Qidiruv so'zini o'zgartiring." : "Kameralarni joylashtirish uchun avval o'quv korpuslarini kiriting."}
               emptyAction={emptyAction('binolar')}
             />
+            </IntelPanel>
           )}
 
           {tab === 'fakultetlar' && (
+            <IntelPanel title={section.title} code={reference} right={sectionRight} brackets={false}>
             <DataTable
               {...common}
               ariaLabel="Fakultetlar"
@@ -495,9 +603,11 @@ export default function OrgStructurePage() {
               emptyTitle={query ? 'Fakultet topilmadi' : "Hozircha fakultet qo'shilmagan"}
               emptyAction={emptyAction('fakultetlar')}
             />
+            </IntelPanel>
           )}
 
           {tab === 'guruhlar' && (
+            <IntelPanel title={section.title} code={reference} right={sectionRight} brackets={false}>
             <DataTable
               {...common}
               ariaLabel="Guruhlar"
@@ -510,14 +620,16 @@ export default function OrgStructurePage() {
               emptyDescription={filtersActive ? "Filtrlarni o'zgartiring yoki tozalang." : undefined}
               emptyAction={emptyAction('guruhlar')}
             />
+            </IntelPanel>
           )}
 
           {tab === 'kafedralar' && (
             <>
-              <p className="text-[13px] leading-relaxed text-muted">
+              <p className="border border-border bg-surface px-3 py-2 text-[13px] leading-relaxed text-fg">
                 Kafedra — bino ichidagi tashkiliy birlik. Monitoringda kameralar avval bino, so&apos;ngra kafedra bo&apos;yicha
                 filtrlanadi, shuning uchun har bir kafedrani o&apos;z binosiga biriktirish ma&apos;qul.
               </p>
+              <IntelPanel title={section.title} code={reference} right={sectionRight} brackets={false}>
               <DataTable
                 {...common}
                 ariaLabel="Kafedralar"
@@ -529,8 +641,12 @@ export default function OrgStructurePage() {
                 emptyTitle={query ? 'Kafedra topilmadi' : "Hozircha kafedra qo'shilmagan"}
                 emptyAction={emptyAction('kafedralar')}
               />
+              </IntelPanel>
             </>
           )}
+          <DocumentFooter
+            note={`Xizmat uchun. Varaq ${reference} raqami bilan tizimda tuzilgan. Kodlar (BIN-…, FAK-…, GUR-…, KAF-…) butun ro'yxatdan, nom bo'yicha beriladi — filtr ularni o'zgartirmaydi.`}
+          />
         </>
       )}
 

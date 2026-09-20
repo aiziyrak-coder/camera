@@ -1,7 +1,18 @@
-import { Camera, Cpu, HardDrive, MemoryStick, Radio, ShieldAlert } from 'lucide-react';
+import { ShieldAlert } from 'lucide-react';
 import { api, buildQuery, type Page } from '../../lib/apiClient';
+import { branding } from '../../lib/branding';
 import type { AIModule, Building, CameraConfig } from '../../types';
-import { StatTile, formatNumber } from '../../ui';
+import {
+  CodeText,
+  DocumentFooter,
+  DocumentHeader,
+  IntelPanel,
+  MicroLabel,
+  RAG_LABEL,
+  formatNumber,
+  rag,
+  type Rag,
+} from '../../ui';
 import { useLiveResource } from '../situation/useLiveResource';
 import { AiModulesCard } from './AiModulesCard';
 import { AiRuntimeCard } from './AiRuntimeCard';
@@ -9,7 +20,16 @@ import { CameraNetworkCard } from './CameraNetworkCard';
 import { CampusCamerasCard, type CampusCameras } from './CampusCamerasCard';
 import { ServerResourcesCard } from './ServerResourcesCard';
 import { StreamsCard } from './StreamsCard';
-import { resourceTone, type SystemAiStatus, type SystemCameraNetwork, type SystemResources, type SystemStreamStatus } from './systemTypes';
+import { Metric, clockTime } from './parts';
+import {
+  COVERAGE_RAG,
+  RESOURCE_RAG,
+  systemReference,
+  type SystemAiStatus,
+  type SystemCameraNetwork,
+  type SystemResources,
+  type SystemStreamStatus,
+} from './systemTypes';
 
 const CAMERA_PAGE_SIZE = 500;
 /** Barcha kameralar — bekor qilinadigan sahifalab olish. */
@@ -27,6 +47,12 @@ async function fetchCamerasPaged(signal: AbortSignal): Promise<CameraConfig[]> {
   return all;
 }
 
+/** Eng yomon hukm — umumiy holat shundan chiqadi. */
+const RAG_ORDER: Record<Rag, number> = { qizil: 0, sariq: 1, yashil: 2, yoq: 3 };
+function worst(verdicts: Rag[]): Rag {
+  return verdicts.reduce<Rag>((acc, v) => (RAG_ORDER[v] < RAG_ORDER[acc] ? v : acc), 'yoq');
+}
+
 interface Props {
   tick: number;
   canAi: boolean;
@@ -34,7 +60,13 @@ interface Props {
   canResync: boolean;
 }
 
-/** "Holat" tabi: server, AI, oqimlar va kamera tarmog'i. */
+/**
+ * "Holat" tabi — asboblar paneli.
+ *
+ * Yuqorida hujjat blanki (kim, nima, qaysi raqam ostida, qachon
+ * o'lchangan), ostida qisqa o'lchov satri, keyin har biri alohida
+ * o'lchov bloki: server, AI, oqimlar, kamera tarmog'i.
+ */
 export function SystemHealthTab({ tick, canAi, canCameras, canResync }: Props) {
   const resources = useLiveResource('resources', (signal) => api.get<SystemResources>('/api/system/resources', undefined, { signal }), tick);
   const ai = useLiveResource('ai', (signal) => api.get<SystemAiStatus>('/api/system/ai-status', undefined, { signal }), tick);
@@ -65,45 +97,94 @@ export function SystemHealthTab({ tick, canAi, canCameras, canResync }: Props) {
   const net = network.data;
   const st = streams.data;
 
+  const online = net && net.faolCameras > 0 ? (net.reachableCameras / net.faolCameras) * 100 : null;
+  const streamCover = st && st.faolCameras > 0 ? (st.registeredStreams / st.faolCameras) * 100 : null;
+  // Tugun umuman bo'lmasa `some()` false qaytarib, buzuq holat yashil ko'rinardi.
+  const shardsBroken = st ? st.shards.length === 0 || st.shards.some((s) => !s.reachable) : false;
+
+  const overall = worst([
+    rag(r?.cpu ?? null, RESOURCE_RAG),
+    rag(r?.ram ?? null, RESOURCE_RAG),
+    rag(r?.disk ?? null, RESOURCE_RAG),
+    rag(online, COVERAGE_RAG),
+    shardsBroken ? 'qizil' : rag(streamCover, COVERAGE_RAG),
+  ]);
+
+  // O'lchov vaqti — eng so'nggi muvaffaqiyatli javob vaqti, render vaqti emas.
+  const measuredAt = clockTime(
+    Math.max(resources.updatedAt ?? 0, network.updatedAt ?? 0, streams.updatedAt ?? 0, ai.updatedAt ?? 0) || null,
+  );
+
   return (
-    <>
+    <div className="flex min-w-0 flex-col gap-3">
+      <DocumentHeader
+        org={branding.orgFullName}
+        title="Tizim holati bayonnomasi"
+        reference={systemReference('holat', net?.faolCameras ?? null)}
+        generatedAt={measuredAt ?? undefined}
+        readouts={[
+          { label: 'Qamrov', value: branding.orgName, title: 'Butun kampus uskunalari' },
+          {
+            label: 'Kuzatuvda',
+            value: net ? `${formatNumber(net.faolCameras)} kamera` : '—',
+            title: 'Faol holatdagi kameralar soni',
+          },
+          { label: "O'lchov davri", value: 'har 30 s', title: "Holat har 30 soniyada qayta o'lchanadi" },
+          { label: 'Umumiy holat', value: RAG_LABEL[overall], title: "Eng yomon ko'rsatkich bo'yicha" },
+        ]}
+      />
+
       {security.map((alert) => (
-        <div key={alert.message} role="alert" className="flex items-start gap-3 rounded-card border border-danger/30 bg-danger-soft px-4 py-3">
+        <div key={alert.message} role="alert" className="flex items-start gap-3 border border-danger/40 bg-danger-soft px-3 py-2">
           <ShieldAlert size={18} className="mt-0.5 shrink-0 text-danger" aria-hidden="true" />
-          <div>
-            <p className="text-sm font-semibold text-fg">Xavfsizlik ogohlantirishi</p>
-            <p className="text-[13px] text-fg/80">{alert.message}</p>
+          <div className="min-w-0">
+            <MicroLabel className="!text-danger">Xavfsizlik ogohlantirishi</MicroLabel>
+            <p className="text-[13px] text-fg">{alert.message}</p>
           </div>
         </div>
       ))}
 
-      <section aria-label="Qisqa holat" className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
-        <StatTile label="Protsessor" icon={Cpu} value={r ? r.cpu : '—'} unit="%" tone={r ? resourceTone(r.cpu) : 'neutral'} progress={r?.cpu} loading={resources.loading} hint={failHint(resources)} />
-        <StatTile label="Xotira" icon={MemoryStick} value={r ? r.ram : '—'} unit="%" tone={r ? resourceTone(r.ram) : 'neutral'} progress={r?.ram} loading={resources.loading} hint={failHint(resources)} />
-        <StatTile label="Disk" icon={HardDrive} value={r ? r.disk : '—'} unit="%" tone={r ? resourceTone(r.disk) : 'neutral'} progress={r?.disk} loading={resources.loading} hint={failHint(resources)} />
-        <StatTile
+      {/* Qisqa o'lchov satri: chegarasi bor ko'rsatkichlar svetofor bilan,
+          chegarasiz sanoqlar betaraf. */}
+      <IntelPanel title="Qisqa holat" code="SYS-000" bodyClassName="grid grid-cols-2 gap-px bg-border lg:grid-cols-5">
+        <Metric
+          label="Protsessor"
+          value={r ? formatNumber(r.cpu, 1) : '—'}
+          unit="%"
+          verdict={rag(r?.cpu ?? null, RESOURCE_RAG)}
+          hint={failHint(resources) ?? 'Joriy yuklama'}
+        />
+        <Metric
+          label="Xotira"
+          value={r ? formatNumber(r.ram, 1) : '—'}
+          unit="%"
+          verdict={rag(r?.ram ?? null, RESOURCE_RAG)}
+          hint={failHint(resources) ?? 'Joriy yuklama'}
+        />
+        <Metric
+          label="Disk"
+          value={r ? formatNumber(r.disk, 1) : '—'}
+          unit="%"
+          verdict={rag(r?.disk ?? null, RESOURCE_RAG)}
+          hint={failHint(resources) ?? "Band bo'lgan joy"}
+        />
+        <Metric
           label="Kameralar onlayn"
-          icon={Camera}
-          value={net ? formatNumber(net.reachableCameras) : '—'}
-          unit={net ? `/ ${formatNumber(net.faolCameras)}` : undefined}
-          tone={net ? (net.offlineCameras > 0 ? 'warning' : 'success') : 'neutral'}
+          value={net ? `${formatNumber(net.reachableCameras)} / ${formatNumber(net.faolCameras)}` : '—'}
+          unit={online === null ? 'ta' : `${formatNumber(online, 0)}%`}
+          verdict={rag(online, COVERAGE_RAG)}
           hint={net ? (net.offlineCameras > 0 ? `${net.offlineCameras} ta aloqada emas` : 'Hammasi aloqada') : failHint(network)}
-          loading={network.loading}
         />
-        <StatTile
-          className="col-span-2 lg:col-span-1"
+        <Metric
           label="Video oqimlar"
-          icon={Radio}
-          value={st ? formatNumber(st.registeredStreams) : '—'}
-          unit={st ? `/ ${formatNumber(st.faolCameras)}` : undefined}
-          // Tugun umuman bo'lmasa `some()` false qaytarib, buzuq holat yashil ko'rinardi.
-          tone={st ? (st.shards.length === 0 || st.shards.some((s) => !s.reachable) ? 'danger' : st.registeredStreams < st.faolCameras ? 'warning' : 'success') : 'neutral'}
-          hint={st ? (st.shards.length === 0 ? "Tugun topilmadi" : `${st.shards.filter((s) => s.reachable).length}/${st.shards.length} tugun ishlayapti`) : failHint(streams)}
-          loading={streams.loading}
+          value={st ? `${formatNumber(st.registeredStreams)} / ${formatNumber(st.faolCameras)}` : '—'}
+          unit={streamCover === null ? 'ta' : `${formatNumber(streamCover, 0)}%`}
+          verdict={shardsBroken ? 'qizil' : rag(streamCover, COVERAGE_RAG)}
+          hint={st ? (st.shards.length === 0 ? 'Tugun topilmadi' : `${st.shards.filter((s) => s.reachable).length}/${st.shards.length} tugun ishlayapti`) : failHint(streams)}
         />
-      </section>
+      </IntelPanel>
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid gap-3 lg:grid-cols-2">
         <ServerResourcesCard resource={resources} />
         <AiRuntimeCard resource={ai} />
         <StreamsCard resource={streams} canResync={canResync} />
@@ -111,7 +192,7 @@ export function SystemHealthTab({ tick, canAi, canCameras, canResync }: Props) {
       </div>
 
       {(canCameras || canAi) && (
-        <div className={canCameras && canAi ? 'grid gap-5 xl:grid-cols-3' : 'grid gap-5'}>
+        <div className={canCameras && canAi ? 'grid gap-3 xl:grid-cols-3' : 'grid gap-3'}>
           {canCameras && (
             <div className={canAi ? 'min-w-0 xl:col-span-2' : 'min-w-0'}>
               <CampusCamerasCard resource={campus} />
@@ -120,6 +201,16 @@ export function SystemHealthTab({ tick, canAi, canCameras, canResync }: Props) {
           {canAi && <AiModulesCard resource={modules} />}
         </div>
       )}
-    </>
+
+      <DocumentFooter
+        note={
+          <>
+            Hujjat raqami <CodeText>{systemReference('holat', net?.faolCameras ?? null)}</CodeText>. Ko'rsatkichlar{' '}
+            <CodeText>{measuredAt ?? '—'}</CodeText> holatiga. Svetofor: Y — talab bajarilgan, S — chegarada, Q — chora kerak.
+            Chegarasi yo'q sanoqlar (jarayonlar, tugunlar) hukmsiz beriladi.
+          </>
+        }
+      />
+    </div>
   );
 }

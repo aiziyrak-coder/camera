@@ -2,9 +2,37 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Building2, Camera } from 'lucide-react';
 import type { Building, CameraConfig } from '../../types';
-import { Badge, Card, CardHeader, Drawer, EmptyState, KeyValue, TONE_SOLID, cn, focusRing, type Tone } from '../../ui';
+import {
+  CodeText,
+  Drawer,
+  EmptyState,
+  IntelPanel,
+  KeyValue,
+  MicroLabel,
+  RAG_LETTER,
+  RAG_LABEL,
+  RAG_TEXT,
+  StatusLamp,
+  TONE_SOLID,
+  cn,
+  focusRing,
+  rag,
+  type IntelStatus,
+  type Tone,
+} from '../../ui';
 import type { LiveResource } from '../situation/useLiveResource';
-import { ResourceBody } from './parts';
+import { MeasuredAt, ResourceBody } from './parts';
+import { COVERAGE_RAG } from './systemTypes';
+
+/** Kamera holati -> chirog'i (rang yolg'iz qolmaydi, yonida so'z turadi). */
+const CAMERA_LAMP: Record<Tone, IntelStatus> = {
+  success: 'ok',
+  danger: 'alert',
+  warning: 'warn',
+  neutral: 'idle',
+  info: 'idle',
+  primary: 'idle',
+} as Record<Tone, IntelStatus>;
 
 export interface CampusCameras {
   buildings: Building[];
@@ -43,40 +71,52 @@ export function CampusCamerasCard({ resource }: { resource: LiveResource<CampusC
   const state = selected ? cameraState(selected) : null;
 
   return (
-    <Card>
-      <CardHeader
-        title="Binolar bo'yicha kameralar"
-        subtitle="Har bir katak — bitta kamera"
-        icon={Building2}
-        actions={
-          <ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted" aria-label="Rang izohi">
+    <IntelPanel
+      title="Binolar bo'yicha kameralar"
+      code="SYS-CAM"
+      right={
+        <span className="flex items-center gap-3">
+          <ul className="hidden flex-wrap gap-x-3 gap-y-1 sm:flex" aria-label="Rang izohi">
             {LEGEND.map((item) => (
               <li key={item.label} className="inline-flex items-center gap-1.5">
-                <span className={cn('h-2.5 w-2.5 rounded-sm', TONE_SOLID[item.tone])} aria-hidden="true" />
-                {item.label}
+                <span className={cn('h-2 w-2', TONE_SOLID[item.tone])} aria-hidden="true" />
+                <MicroLabel>{item.label}</MicroLabel>
               </li>
             ))}
           </ul>
-        }
-      />
+          <MeasuredAt resource={resource} />
+        </span>
+      }
+    >
       <ResourceBody resource={resource}>
         {() =>
           groups.length === 0 ? (
-            <EmptyState compact bordered={false} icon={Building2} title="Binolar yo'q" description="Tashkiliy tuzilmada bino va kameralar qo'shilgach shu yerda ko'rinadi." />
+            <div className="p-3">
+              <EmptyState compact bordered={false} icon={Building2} title="Binolar yo'q" description="Tashkiliy tuzilmada bino va kameralar qo'shilgach shu yerda ko'rinadi." />
+            </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {groups.map((group) => {
-                const offline = group.cameras.filter((c) => c.status === 'faol' && !c.isReachable).length;
+            <div className="grid gap-px bg-border sm:grid-cols-2 xl:grid-cols-3">
+              {groups.map((group, index) => {
+                const faol = group.cameras.filter((c) => c.status === 'faol');
+                const offline = faol.filter((c) => !c.isReachable).length;
+                // Aloqa ULUSHI — chegarasi bor ko'rsatkich, shuning uchun hukm bilan.
+                const online = faol.length > 0 ? ((faol.length - offline) / faol.length) * 100 : null;
+                const verdict = rag(online, COVERAGE_RAG);
                 return (
-                  <section key={group.name} className="rounded-control border border-border p-3" aria-label={group.name}>
-                    <div className="mb-2.5 flex items-center justify-between gap-2">
-                      <p className="truncate text-[13px] font-semibold text-fg">{group.name}</p>
-                      <span className="shrink-0 text-xs tabular-nums text-muted">
-                        {group.cameras.length} ta{offline > 0 && <span className="font-semibold text-danger"> · {offline} offline</span>}
+                  <section key={group.name} className="bg-surface p-2.5" aria-label={group.name}>
+                    <div className="mb-2 flex items-center gap-2">
+                      <CodeText className="shrink-0 text-[11px] text-subtle">BIN-{String(index + 1).padStart(2, '0')}</CodeText>
+                      <p className="min-w-0 flex-1 truncate text-[13px] font-semibold text-fg">{group.name}</p>
+                      <span className="flex shrink-0 items-baseline gap-1" title={`${RAG_LABEL[verdict]} — aloqadagi faol kameralar`}>
+                        <CodeText className={cn('text-[12px] font-semibold', RAG_TEXT[verdict])}>
+                          {faol.length - offline}/{faol.length}
+                        </CodeText>
+                        <CodeText className={cn('text-[10px] font-bold', RAG_TEXT[verdict])}>{RAG_LETTER[verdict]}</CodeText>
+                        <span className="sr-only">{RAG_LABEL[verdict]} — aloqadagi faol kameralar</span>
                       </span>
                     </div>
                     {group.cameras.length === 0 ? (
-                      <p className="text-xs text-subtle">Kamera biriktirilmagan</p>
+                      <MicroLabel>Kamera biriktirilmagan</MicroLabel>
                     ) : (
                       <div className="-m-0.5 flex flex-wrap">
                         {group.cameras.map((camera) => {
@@ -90,9 +130,9 @@ export function CampusCamerasCard({ resource }: { resource: LiveResource<CampusC
                               onClick={() => setSelected(camera)}
                               title={`${camera.name} · ${camera.zone} · ${s.label}`}
                               aria-label={`${camera.name}, ${s.label}`}
-                              className={cn('m-0.5 inline-flex h-6 w-6 items-center justify-center rounded-[6px] transition-transform hover:scale-125', focusRing)}
+                              className={cn('m-0.5 inline-flex h-6 w-6 items-center justify-center transition-transform hover:scale-125', focusRing)}
                             >
-                              <span className={cn('h-4 w-4 rounded-[4px]', TONE_SOLID[s.tone])} aria-hidden="true" />
+                              <span className={cn('h-4 w-4', TONE_SOLID[s.tone])} aria-hidden="true" />
                             </button>
                           );
                         })}
@@ -120,19 +160,22 @@ export function CampusCamerasCard({ resource }: { resource: LiveResource<CampusC
         {selected && state && (
           <KeyValue
             items={[
-              { label: 'Holat', value: <Badge tone={state.tone} dot>{state.label}</Badge> },
-              { label: 'IP manzil', value: <span className="font-mono text-[13px]">{`${selected.ip}:${selected.port}`}</span> },
+              { label: 'Holat', value: <StatusLamp status={CAMERA_LAMP[state.tone]} label={state.label} /> },
+              { label: 'IP manzil', value: <CodeText className="text-[13px]">{`${selected.ip}:${selected.port}`}</CodeText> },
               { label: 'Bino', value: selected.building || '—' },
-              { label: 'Qavat', value: selected.floor ?? '—' },
+              { label: 'Qavat', value: <CodeText className="text-[13px]">{selected.floor ?? '—'}</CodeText> },
               { label: 'Zona', value: selected.zone || '—' },
               { label: 'Kafedra', value: selected.department || '—' },
               // "Ruxsat" (= permission) noto'g'ri tarjima edi; ilovaning qolgan qismida "Tasvir sifati".
-              { label: 'Tasvir sifati', value: `${selected.resolution || '—'}${selected.fps ? ` · ${selected.fps} fps` : ''}` },
+              {
+                label: 'Tasvir sifati',
+                value: <CodeText className="text-[13px]">{`${selected.resolution || '—'}${selected.fps ? ` · ${selected.fps} fps` : ''}`}</CodeText>,
+              },
               { label: 'Kirish kamerasi', value: selected.isEntrance ? 'Ha' : "Yo'q" },
             ]}
           />
         )}
       </Drawer>
-    </Card>
+    </IntelPanel>
   );
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Check, Copy, KeyRound } from 'lucide-react';
-import { Button, Modal, cn } from '../../ui';
+import { Button, MicroLabel, Modal, cn } from '../../ui';
 import { Notice } from '../settings/kit';
 import { webhookUrl } from '../../lib/integrationsApi';
 import { copyText } from './clipboard';
@@ -14,11 +14,11 @@ function CopyRow({ label, value, secret = false }: { label: string; value: strin
   const [failed, setFailed] = useState(false);
   return (
     <div className="flex flex-col gap-1.5">
-      <p className="text-[13px] font-medium text-fg">{label}</p>
+      <MicroLabel>{label}</MicroLabel>
       <div className="flex items-center gap-2">
         <code
           className={cn(
-            'min-w-0 flex-1 break-all rounded-control border border-border bg-surface-2 px-3 py-2 font-mono text-xs',
+            'intel-code min-w-0 flex-1 break-all border border-border bg-surface-2 px-3 py-2 text-xs',
             secret ? 'text-primary' : 'text-fg',
           )}
         >
@@ -89,9 +89,9 @@ export default function ApiKeyDialog({
         </Notice>
         <CopyRow label="Webhook manzili (POST)" value={url} />
         <CopyRow label="X-Api-Key sarlavhasi" value={apiKey} secret />
-        <div className="rounded-control border border-border bg-surface-2 px-3 py-2.5 text-xs text-muted">
-          <p className="mb-1 font-medium text-fg">So'rov namunasi:</p>
-          <pre className="overflow-x-auto whitespace-pre font-mono text-[11px] text-fg">{`POST ${url}
+        <div className="border border-border bg-surface-2 px-3 py-2.5 text-xs text-muted">
+          <p className="mb-1"><MicroLabel>So&apos;rov namunasi</MicroLabel></p>
+          <pre className="intel-code overflow-x-auto whitespace-pre text-[11px] text-fg">{`POST ${url}
 X-Api-Key: <kalit>
 Content-Type: application/json
 

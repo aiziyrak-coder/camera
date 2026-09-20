@@ -74,8 +74,8 @@ export default function ParentNotifyFields({
   }
 
   return (
-    <fieldset className="flex min-w-0 flex-col gap-3 rounded-card border border-border bg-surface-2/60 p-3.5">
-      <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-muted">{isStudent ? 'Ota-ona va turniket' : 'Turniket'}</legend>
+    <fieldset className="flex min-w-0 flex-col gap-3 border border-border bg-surface-2/60 p-3">
+      <legend className="intel-micro px-1">{isStudent ? 'Ota-ona va turniket' : 'Turniket'}</legend>
       {isStudent && (
         <>
           <Field label="Ota-ona telefoni" error={errors?.parentPhone}>
@@ -107,7 +107,7 @@ export default function ParentNotifyFields({
               bog'langan Telegram. Ilgari bu JIMGINA saqlanardi va ota-ona
               hech qachon xabar olmasdi — sababini hech kim bilmasdi. */}
           {value.parentNotifyEnabled && !telegramLinked && !normalizeUzPhone(value.parentPhone) && (
-            <p role="alert" className="rounded-control border border-warning/30 bg-warning-soft px-2.5 py-2 text-xs font-medium text-warning">
+            <p role="alert" className="border border-warning/40 bg-warning-soft px-2.5 py-2 text-xs font-medium text-warning">
               Xabar yuborish yoqilgan, lekin manzil yo&apos;q: yaroqli telefon raqami (+998XXXXXXXXX) kiriting yoki ota-ona Telegramini
               bog&apos;lang — aks holda hech qanday xabar bormaydi.
             </p>
@@ -118,7 +118,7 @@ export default function ParentNotifyFields({
           {personId && (
             <div className="flex flex-col gap-2">
               {telegramLinked ? (
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-control bg-success-soft px-3 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 border border-success/30 bg-success-soft px-3 py-2">
                   <span className="text-xs font-semibold text-success">Ota-ona Telegrami bog&apos;langan</span>
                   {/* `disabled` (forma saqlanmoqda / faqat o'qish) uzish
                       tugmasiga ham tegishli — ilgari faqat bog'lash tugmasida

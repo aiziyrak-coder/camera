@@ -1,6 +1,21 @@
 import { useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
-import { Badge, Button, DataTable, Drawer, FilterBar, KeyValue, Section, type DataTableColumn, type Tone } from '../../ui';
+import {
+  Button,
+  CodeText,
+  DataTable,
+  Drawer,
+  FilterBar,
+  IntelPanel,
+  KeyValue,
+  MicroLabel,
+  Section,
+  StatusLamp,
+  type DataTableColumn,
+  type IntelStatus,
+} from '../../ui';
+import { RAG_LABEL, RAG_TEXT, RATE_RAG, rag } from '../../ui/rag';
+import { RagChip } from '../hisobot/board';
 import { Notice, pagerFooter } from '../settings/kit';
 import { useServerPage } from '../../lib/useServerPage';
 import {
@@ -13,10 +28,10 @@ import {
   type NotificationLogStatus,
 } from '../../lib/notificationsApi';
 
-const STATUS_TONE: Record<NotificationLogStatus, Tone> = {
-  yuborildi: 'success',
-  xato: 'danger',
-  otkazildi: 'neutral',
+const STATUS_LAMP: Record<NotificationLogStatus, IntelStatus> = {
+  yuborildi: 'ok',
+  xato: 'alert',
+  otkazildi: 'idle',
 };
 
 /** Server yangi holat qo'shsa (masalan 'navbatda'), `STATUS_LABELS` da u
@@ -26,8 +41,8 @@ const STATUS_TONE: Record<NotificationLogStatus, Tone> = {
 function statusLabel(status: NotificationLogStatus): string {
   return STATUS_LABELS[status] ?? status;
 }
-function statusTone(status: NotificationLogStatus): Tone {
-  return STATUS_TONE[status] ?? 'neutral';
+function statusLamp(status: NotificationLogStatus): IntelStatus {
+  return STATUS_LAMP[status] ?? 'idle';
 }
 
 const STATUS_OPTIONS = (Object.keys(STATUS_LABELS) as NotificationLogStatus[]).map((s) => ({ value: s, label: STATUS_LABELS[s] }));
@@ -85,14 +100,19 @@ const COLUMNS: DataTableColumn<NotificationLogEntry>[] = [
   {
     key: 'time',
     header: 'Vaqt',
-    cell: (r) => <span className="whitespace-nowrap text-[13px] tabular-nums text-muted">{formatLogTime(r.createdAt)}</span>,
+    cell: (r) => <CodeText className="whitespace-nowrap text-[12px] text-muted">{formatLogTime(r.createdAt)}</CodeText>,
   },
   { key: 'kind', header: 'Turi', cell: (r) => <span className="whitespace-nowrap text-[13px]">{kindLabel(r.kind)}</span> },
-  { key: 'channel', header: 'Kanal', hideOnMobile: true, cell: (r) => <span className="text-[13px]">{CHANNEL_LABELS[r.channel] ?? r.channel}</span> },
+  {
+    key: 'channel',
+    header: 'Kanal',
+    hideOnMobile: true,
+    cell: (r) => <MicroLabel>{CHANNEL_LABELS[r.channel] ?? r.channel}</MicroLabel>,
+  },
   {
     key: 'recipient',
     header: 'Qabul qiluvchi',
-    cell: (r) => <span className="whitespace-nowrap font-mono text-xs text-fg">{r.recipient}</span>,
+    cell: (r) => <CodeText className="whitespace-nowrap text-[12px] text-fg">{r.recipient}</CodeText>,
   },
   {
     key: 'text',
@@ -101,28 +121,33 @@ const COLUMNS: DataTableColumn<NotificationLogEntry>[] = [
     width: '36%',
     cell: (r) => (
       <div className="min-w-0 max-w-md">
-        <p className="line-clamp-2 whitespace-pre-line text-[13px] text-muted" title={r.text}>
+        <p className="line-clamp-2 whitespace-pre-line text-[13px] leading-[1.35] text-muted" title={r.text}>
           {r.text}
         </p>
-        {r.error && <p className="mt-0.5 line-clamp-1 text-xs font-medium text-danger">{r.error}</p>}
+        {r.error && <p className="mt-0.5 line-clamp-1 text-[12px] font-medium text-danger">{r.error}</p>}
       </div>
     ),
   },
   {
     key: 'status',
     header: 'Holat',
-    cell: (r) => (
-      <Badge tone={statusTone(r.status)} dot>
-        {statusLabel(r.status)}
-      </Badge>
-    ),
+    cell: (r) => <StatusLamp status={statusLamp(r.status)} label={statusLabel(r.status)} />,
   },
 ];
 
 /** Yetkazish jurnali — "nega xabar kelmadi?" savoliga javob. `refreshKey`
  *  o'zgarsa (masalan sinov xabari yuborilgach) qayta yuklanadi. Qatorni
  *  bosish — to'liq matn va xato panelda. */
-export default function NotificationLogTable({ refreshKey, filters = EMPTY_LOG_FILTERS }: { refreshKey: number; filters?: LogFilters }) {
+export default function NotificationLogTable({
+  refreshKey,
+  filters = EMPTY_LOG_FILTERS,
+  reference,
+}: {
+  refreshKey: number;
+  filters?: LogFilters;
+  /** Sahifaning hujjat raqami — panel sarlavhasining o'ng chetida. */
+  reference?: string;
+}) {
   const [openId, setOpenId] = useState<string | null>(null);
   const { items, page, setPage, totalPages, total, pageSize, loading, error, reload } = useServerPage<NotificationLogEntry>(
     '/api/notifications/log',
@@ -142,8 +167,29 @@ export default function NotificationLogTable({ refreshKey, filters = EMPTY_LOG_F
   const open = items.find((r) => r.id === openId) ?? null;
   const filtered = Object.values(filters).some((v) => v.trim() !== '');
 
+  // Yetkazilgan ulush — FAQAT shu sahifadagi qatorlar bo'yicha (server
+  // umumiy yig'indini bermaydi). Shuning uchun yorliqda ham "shu
+  // sahifada" deb aytiladi: hukm ko'rinayotgan narsaga tegishli.
+  // "O'tkazildi" hisobga olinmaydi — u yuborishga urinish emas.
+  const attempted = items.filter((r) => r.status === 'yuborildi' || r.status === 'xato');
+  const deliveredRate = attempted.length ? (attempted.filter((r) => r.status === 'yuborildi').length / attempted.length) * 100 : null;
+  const deliveredTone = rag(deliveredRate, RATE_RAG);
+
   return (
-    <>
+    <IntelPanel
+      title="Yetkazish jurnali"
+      code={reference}
+      right={
+        <span className="flex items-center gap-2">
+          <MicroLabel>Shu sahifada yetkazilgan</MicroLabel>
+          <CodeText className={`text-[13px] font-semibold ${RAG_TEXT[deliveredTone]}`}>
+            {deliveredRate === null ? '—' : `${Math.round(deliveredRate)}%`}
+          </CodeText>
+          <RagChip tone={deliveredTone} />
+          <MicroLabel>{RAG_LABEL[deliveredTone]}</MicroLabel>
+        </span>
+      }
+    >
       <DataTable
         columns={COLUMNS}
         rows={items}
@@ -159,6 +205,7 @@ export default function NotificationLogTable({ refreshKey, filters = EMPTY_LOG_F
         mobileTitleKey="recipient"
         ariaLabel="Yetkazish jurnali"
         maxHeight="none"
+        dense
         footer={pagerFooter({ page, totalPages, total, pageSize, onChange: setPage })}
       />
 
@@ -167,11 +214,11 @@ export default function NotificationLogTable({ refreshKey, filters = EMPTY_LOG_F
           <div className="flex flex-col gap-5">
             <KeyValue
               items={[
-                { label: 'Holat', value: <Badge tone={statusTone(open.status)} dot>{statusLabel(open.status)}</Badge> },
+                { label: 'Holat', value: <StatusLamp status={statusLamp(open.status)} label={statusLabel(open.status)} /> },
                 { label: 'Turi', value: kindLabel(open.kind) },
-                { label: 'Kanal', value: CHANNEL_LABELS[open.channel] ?? open.channel },
-                { label: 'Qabul qiluvchi', value: <span className="font-mono text-xs">{open.recipient}</span> },
-                { label: 'Vaqt', value: <span className="tabular-nums">{formatLogTime(open.createdAt)}</span> },
+                { label: 'Kanal', value: <MicroLabel>{CHANNEL_LABELS[open.channel] ?? open.channel}</MicroLabel> },
+                { label: 'Qabul qiluvchi', value: <CodeText className="text-xs">{open.recipient}</CodeText> },
+                { label: 'Vaqt', value: <CodeText>{formatLogTime(open.createdAt)}</CodeText> },
               ]}
             />
             {open.error && (
@@ -180,11 +227,11 @@ export default function NotificationLogTable({ refreshKey, filters = EMPTY_LOG_F
               </Notice>
             )}
             <Section title="Xabar matni">
-              <p className="whitespace-pre-line break-words rounded-control border border-border bg-surface-2 px-3 py-2.5 text-[13px] text-fg">{open.text}</p>
+              <p className="whitespace-pre-line break-words border border-border bg-surface-2 px-3 py-2.5 text-[13px] leading-5 text-fg">{open.text}</p>
             </Section>
           </div>
         )}
       </Drawer>
-    </>
+    </IntelPanel>
   );
 }

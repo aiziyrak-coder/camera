@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, FlaskConical, ImageOff, UserCheck, X } from 'lucide-react';
-import { Badge, Button, StatusBadge, cn } from '../../ui';
+import { Badge, Button, CodeText, MicroLabel, StatusBadge, cn } from '../../ui';
+import { eventCode } from './eventCodes';
 import SlaBadge from './SlaBadge';
 import { SEVERITY_STRIPE } from '../../lib/eventLabels';
 import { relativeTime } from '../../lib/uzDate';
@@ -57,7 +58,7 @@ export default function ReviewCard({
   onReview: (decision: Decision) => void;
 }) {
   return (
-    <article className="flex flex-col overflow-hidden rounded-card border border-border bg-surface shadow-card">
+    <article className="flex flex-col overflow-hidden border border-border bg-surface">
       <div className={cn('h-1', SEVERITY_STRIPE[event.severity])} aria-hidden="true" />
       <button
         type="button"
@@ -74,16 +75,21 @@ export default function ReviewCard({
             </Badge>
           )}
         </span>
-        <span className="absolute bottom-2 right-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[11px] tabular-nums text-white" title={event.timestamp}>
+        <span className="intel-code absolute bottom-1.5 right-1.5 bg-black/70 px-1.5 py-0.5 text-[11px] text-white" title={event.timestamp}>
           {event.occurredAt ? relativeTime(event.occurredAt) : event.timestamp}
         </span>
       </button>
-      <div className="flex flex-1 flex-col p-3.5">
-        <p className="font-semibold text-fg">{event.moduleName}</p>
+      <div className="flex flex-1 flex-col px-3 py-2.5">
+        {/* Kartaning xizmat kodi — jurnaldagi qator bilan bir xil. */}
+        <p className="flex items-center gap-2">
+          <CodeText className="text-[11px] text-subtle">{eventCode(event.id)}</CodeText>
+          <MicroLabel className="ms-auto">Ishonch {event.confidence}%</MicroLabel>
+        </p>
+        <p className="mt-0.5 font-semibold text-fg">{event.moduleName}</p>
         {event.personName && <p className="text-[13px] text-fg">{event.personName}</p>}
         <p className="text-xs text-muted">
           {cameraLabel(event)}
-          {event.building ? ` · ${event.building}` : ''} · ishonch <span className="tabular-nums">{event.confidence}%</span>
+          {event.building ? ` · ${event.building}` : ''}
         </p>
         {event.details?.reason && (
           <p className="mt-1.5 line-clamp-2 text-xs text-muted" title={event.details.reason}>
@@ -102,7 +108,7 @@ export default function ReviewCard({
             )}
           </div>
         )}
-        <div className="mt-auto grid grid-cols-2 gap-2 pt-3">
+        <div className="mt-auto grid grid-cols-2 gap-1.5 pt-3">
           <Button icon={X} onClick={() => onReview('rad_etilgan')} disabled={busy}>
             Rad etish
           </Button>

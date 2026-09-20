@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { TrendingUp } from 'lucide-react';
 import type { Overview } from '../../lib/situationApi';
-import { Card, CardHeader, EmptyState, Skeleton, cn, formatNumber, useChartTheme } from '../../ui';
+import { CodeText, EmptyState, MicroLabel, Skeleton, cn, formatNumber, useChartTheme } from '../../ui';
 import { peakHour } from './situationUtils';
 
 // Barqaror havola: har renderda yangi obyekt recharts'ni qayta chizardi.
@@ -32,28 +32,25 @@ export function ArrivalsChart({ rows, loading, currentHour, isToday = true, big 
   const height = big ? 300 : 240;
 
   return (
-    <Card className="flex flex-col">
-      <CardHeader
-        title="Odamlar soat nechada keldi"
-        subtitle={
-          peak
-            ? `Har bir ustun — o'sha soatda birinchi marta ko'ringan odamlar soni. Eng gavjum vaqt: ${pad(peak.hour)}–${pad(peak.hour + 1)}, ${formatNumber(peak.total)} kishi`
-            : "Har bir ustun — o'sha soatda birinchi marta ko'ringan odamlar soni"
-        }
-        icon={TrendingUp}
-        actions={
-          <ul className="flex items-center gap-3 text-xs text-muted" aria-label="Rang izohi">
-            <li className="inline-flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-sm" style={{ background: theme.series[0] }} aria-hidden="true" />
-              Talabalar
-            </li>
-            <li className="inline-flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-sm" style={{ background: theme.series[1] }} aria-hidden="true" />
-              Xodimlar
-            </li>
-          </ul>
-        }
-      />
+    <>
+      {/* Izoh satri — panel ramkasi ostida, zich: rang kaliti va eng
+          gavjum soat. Sarlavha sahifadagi panel ramkasida turadi. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border px-3 py-1.5">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2 w-2 shrink-0 rounded-[1px]" style={{ background: theme.series[0] }} aria-hidden="true" />
+          <MicroLabel>Talabalar</MicroLabel>
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2 w-2 shrink-0 rounded-[1px]" style={{ background: theme.series[1] }} aria-hidden="true" />
+          <MicroLabel>Xodimlar</MicroLabel>
+        </span>
+        <span className="ms-auto flex items-center gap-2">
+          <MicroLabel>Eng gavjum</MicroLabel>
+          <CodeText className="text-[12px] font-semibold text-fg">
+            {peak ? `${pad(peak.hour)}–${pad(peak.hour + 1)} · ${formatNumber(peak.total)} kishi` : '—'}
+          </CodeText>
+        </span>
+      </div>
       {loading ? (
         <Skeleton className={cn('w-full', big ? 'h-[300px]' : 'h-[240px]')} />
       ) : total === 0 ? (
@@ -92,6 +89,6 @@ export function ArrivalsChart({ rows, loading, currentHour, isToday = true, big 
           </ResponsiveContainer>
         </div>
       )}
-    </Card>
+    </>
   );
 }

@@ -1,7 +1,31 @@
 import type { ReactNode } from 'react';
 import { AlertTriangle } from 'lucide-react';
-import { ErrorState, SkeletonText, TONE_SOLID, TONE_TEXT, cn, type Tone } from '../../ui';
+import {
+  CodeText,
+  ErrorState,
+  MicroLabel,
+  RAG_LETTER,
+  RAG_LABEL,
+  RAG_TEXT,
+  RAG_SOLID,
+  SkeletonText,
+  TONE_SOLID,
+  TONE_TEXT,
+  cn,
+  type Rag,
+  type Tone,
+} from '../../ui';
 import type { LiveResource } from '../situation/useLiveResource';
+
+/**
+ * "Asboblar paneli" qismlari.
+ *
+ * Har ko'rsatkich — o'lchov: yorliq (bosh harf), monoshrift qiymat,
+ * OCHIQ o'lchov birligi va — chegara haqiqatan mavjud bo'lsa — svetofor
+ * hukmi (rang + harf). Chegarasi yo'q sanoqlar (ffmpeg jarayonlari,
+ * shard soni) betaraf qoladi: ular ko'p yoki kam bo'lgani o'z-o'zidan
+ * yaxshi yoki yomon emas.
+ */
 
 /** Millisekund → "14:03". Noma'lum bo'lsa null. */
 export function clockTime(ms: number | null | undefined): string | null {
@@ -20,22 +44,67 @@ export function formatServerTime(value: string | null | undefined, withSeconds =
   return `${d}.${m}.${y} ${hh}:${mm}${withSeconds && ss ? `:${ss}` : ''}`;
 }
 
-/** Kichik ko'rsatkich: yorliq ustida, qiymat pastda. */
-export function Metric({ label, value, hint, tone }: { label: ReactNode; value: ReactNode; hint?: ReactNode; tone?: Tone }) {
+/** Svetofor belgisi: rang + HARF (rang yolg'iz qolmaydi). */
+export function RagMark({ verdict, className }: { verdict: Rag; className?: string }) {
+  if (verdict === 'yoq') return null;
   return (
-    <div className="min-w-0 rounded-control bg-surface-2/70 px-3 py-2.5">
-      <p className="truncate text-xs text-muted">{label}</p>
-      <p className={cn('mt-0.5 text-lg font-semibold tabular-nums leading-tight', tone ? TONE_TEXT[tone] : 'text-fg')}>{value}</p>
-      {hint && <p className="mt-0.5 truncate text-[11px] text-muted">{hint}</p>}
+    <span
+      className={cn('inline-flex items-center gap-1', className)}
+      title={RAG_LABEL[verdict]}
+    >
+      <span aria-hidden="true" className={cn('h-1.5 w-1.5 shrink-0', RAG_SOLID[verdict])} />
+      <CodeText className={cn('text-[10px] font-bold', RAG_TEXT[verdict])}>{RAG_LETTER[verdict]}</CodeText>
+      <span className="sr-only">{RAG_LABEL[verdict]}</span>
+    </span>
+  );
+}
+
+/**
+ * Bitta o'lchov bloki: YORLIQ / qiymat + birlik / izoh.
+ * `verdict` berilgandagina svetofor chiqadi.
+ */
+export function Metric({
+  label,
+  value,
+  unit,
+  hint,
+  tone,
+  verdict,
+  title,
+}: {
+  label: ReactNode;
+  value: ReactNode;
+  unit?: ReactNode;
+  hint?: ReactNode;
+  tone?: Tone;
+  verdict?: Rag;
+  title?: string;
+}) {
+  return (
+    <div className="min-w-0 border-s-2 border-border-strong bg-surface-2/60 px-2.5 py-1.5" title={title}>
+      <MicroLabel className="block truncate">{label}</MicroLabel>
+      <p className="mt-0.5 flex items-baseline gap-1.5">
+        <CodeText
+          className={cn(
+            'text-[15px] font-semibold leading-tight',
+            verdict && verdict !== 'yoq' ? RAG_TEXT[verdict] : tone ? TONE_TEXT[tone] : 'text-fg',
+          )}
+        >
+          {value}
+        </CodeText>
+        {unit && <MicroLabel className="!text-subtle">{unit}</MicroLabel>}
+        {verdict && <RagMark verdict={verdict} className="ms-auto" />}
+      </p>
+      {hint && <p className="mt-0.5 truncate text-[11px] leading-tight text-muted">{hint}</p>}
     </div>
   );
 }
 
-/** Holat qatori: rangli nuqta + matn (rangga yolg'iz tayanmaydi). */
+/** Holat qatori: rangli belgi + matn (rangga yolg'iz tayanmaydi). */
 export function StatusLine({ tone, children }: { tone: Tone; children: ReactNode }) {
   return (
-    <p className="flex items-start gap-2 text-[13px] leading-5 text-fg">
-      <span className={cn('mt-1.5 h-2 w-2 shrink-0 rounded-full', TONE_SOLID[tone])} aria-hidden="true" />
+    <p className="flex items-start gap-2 px-2.5 py-1.5 text-[13px] leading-5 text-fg">
+      <span className={cn('mt-1.5 h-2 w-2 shrink-0', TONE_SOLID[tone])} aria-hidden="true" />
       <span className="min-w-0">{children}</span>
     </p>
   );
@@ -44,7 +113,27 @@ export function StatusLine({ tone, children }: { tone: Tone; children: ReactNode
 /** Tavsiya (backend matni) — kichik, ikkinchi darajali. */
 export function Recommendation({ children }: { children: ReactNode }) {
   if (!children) return null;
-  return <p className="rounded-control border border-border bg-surface-2/50 px-3 py-2 text-xs leading-relaxed text-muted">{children}</p>;
+  return (
+    <p className="border-t border-border bg-surface-2/50 px-2.5 py-2 text-xs leading-relaxed text-muted">
+      <MicroLabel className="me-2">Tavsiya</MicroLabel>
+      {children}
+    </p>
+  );
+}
+
+/** Panel sarlavhasidagi "o'lchangan vaqt" tamg'asi. */
+export function MeasuredAt({ resource }: { resource: { updatedAt: number | null; fetching?: boolean } }) {
+  const at = clockTime(resource.updatedAt);
+  return (
+    <MicroLabel>
+      {"O'lchandi"}: {at ?? '—'}
+    </MicroLabel>
+  );
+}
+
+/** Ustunli ruled qatorlar uchun ingichka ajratgich ro'yxati. */
+export function RuledList({ children, className }: { children: ReactNode; className?: string }) {
+  return <ul className={cn('divide-y divide-border', className)}>{children}</ul>;
 }
 
 /** Karta tanasi: yuklanish / xato / ma'lumot.
@@ -58,7 +147,7 @@ export function ResourceBody<T>({ resource, children, lines = 4 }: { resource: L
     return (
       <>
         {resource.error && (
-          <p role="status" className="mb-3 flex items-start gap-2 rounded-control border border-warning/30 bg-warning-soft px-3 py-2 text-xs leading-relaxed text-fg">
+          <p role="status" className="flex items-start gap-2 border-b border-warning/40 bg-warning-soft px-2.5 py-2 text-xs leading-relaxed text-fg">
             <AlertTriangle size={14} className="mt-0.5 shrink-0 text-warning" aria-hidden="true" />
             <span className="min-w-0">
               Yangilanmadi — {at ? `${at} dagi` : 'eski'} ma'lumot ko'rsatilmoqda. {resource.error}
@@ -69,6 +158,6 @@ export function ResourceBody<T>({ resource, children, lines = 4 }: { resource: L
       </>
     );
   }
-  if (resource.error) return <ErrorState message={resource.error} onRetry={resource.reload} />;
-  return <SkeletonText lines={lines} />;
+  if (resource.error) return <div className="p-3"><ErrorState message={resource.error} onRetry={resource.reload} /></div>;
+  return <div className="p-3"><SkeletonText lines={lines} /></div>;
 }

@@ -89,7 +89,7 @@ export default function CameraConfigDetailModal({
       {camera && (
         <div className="flex flex-col gap-6">
           {/* Video maydoni mavzudan qat'i nazar qora — kadr shunday ko'rinadi. */}
-          <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-card bg-black">
+          <div className="relative flex aspect-video items-center justify-center overflow-hidden border border-border-strong bg-black">
             {camera.status === 'faol' && (
               /* `priority`: yakka pleyer umumiy HLS navbatini (streamLoadQueue,
                  MAX 8) chetlab o'tadi. Busiz, boshqa ekranda ochiq turgan

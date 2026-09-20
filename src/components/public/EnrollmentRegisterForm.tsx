@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, UserPlus } from 'lucide-react';
-import { Button, Field, Input, Select } from '../../ui';
+import { Button, CodeText, Field, Input, MicroLabel, Select, StatusLamp } from '../../ui';
 import { Notice, Segmented } from '../settings/kit';
 import { type EnrollmentFaculty, type EnrollmentRegisterInput, listEnrollmentFaculties } from '../../lib/enrollment';
 
@@ -65,7 +65,7 @@ export default function EnrollmentRegisterForm({
   }, []);
 
   // Telefonda 16px dan kichik shrift iOS'da maydonni kattalashtirib yuboradi.
-  const mobileText = '[&_input]:text-base';
+  const mobileText = '[&_input]:min-h-11 [&_input]:text-base';
 
   // Brauzerning `required` va `minLength` tekshiruvi bo'sh joylarni ham
   // belgi deb sanaydi: " a " uzunligi 3 bo'lgani uchun o'tib ketardi,
@@ -93,7 +93,8 @@ export default function EnrollmentRegisterForm({
       className="flex flex-col gap-4"
     >
       <div>
-        <h2 className="text-base font-semibold text-fg">Ma&apos;lumotlaringizni kiriting</h2>
+        <MicroLabel>Bosqich 1 — Yangi yozuv</MicroLabel>
+        <h2 className="mt-0.5 text-[15px] font-semibold text-fg">Ma&apos;lumotlaringizni kiriting</h2>
         <Notice tone="warning" className="mt-2">
           Bu raqam bo&apos;yicha tizimda yozuv topilmadi. Ma&apos;lumotlaringizni kiriting — ro&apos;yxatdan o&apos;tkazamiz.
         </Notice>
@@ -113,7 +114,7 @@ export default function EnrollmentRegisterForm({
       </Field>
 
       <fieldset className="flex flex-col gap-1.5">
-        <legend className="mb-1.5 text-[13px] font-medium text-fg">Kim sifatida</legend>
+        <legend className="intel-micro mb-1.5 !text-fg">Kim sifatida</legend>
         <Segmented ariaLabel="Kim sifatida" value={type} onChange={setType} options={TYPE_OPTIONS} size="lg" />
       </fieldset>
 
@@ -136,15 +137,28 @@ export default function EnrollmentRegisterForm({
             placeholder="Tanlanmagan"
             options={faculties.map((f) => ({ value: f.id, label: f.name }))}
             size="lg"
-            className="sm:!w-full [&_select]:text-base"
+            className="sm:!w-full [&_select]:min-h-11 [&_select]:text-base"
           />
         </Field>
       )}
 
-      <p className="rounded-control border border-border bg-surface-2 px-3.5 py-2.5 text-[13px] text-muted">
-        {pinfl ? 'JSHSHIR: ' : 'Pasport: '}
-        <span className="font-mono font-semibold text-fg">{pinfl || `${passportSeries} ${passportNumber}`}</span>
-      </p>
+      {/* Qidiruvda kiritilgan identifikator — rekvizit satri sifatida
+          ko'rinib turadi, chunki yozuv aynan shu raqam bilan yaratiladi. */}
+      <div className="flex items-center gap-3 rounded-control border border-border bg-surface-2 px-3 py-2">
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <MicroLabel>{pinfl ? 'JSHSHIR' : 'Pasport'}</MicroLabel>
+          <CodeText className="truncate text-[13px] font-semibold text-fg">
+            {pinfl || `${passportSeries} ${passportNumber}`}
+          </CodeText>
+        </span>
+        <span className="ms-auto shrink-0">
+          <StatusLamp
+            status={submitting ? 'warn' : valid ? 'idle' : 'alert'}
+            label={submitting ? 'Yuborilmoqda' : valid ? 'Tayyor' : "To'ldirilmagan"}
+            pulse={submitting}
+          />
+        </span>
+      </div>
 
       <Button type="submit" variant="primary" size="lg" icon={UserPlus} loading={submitting} disabled={!valid} fullWidth>
         {submitting ? 'Saqlanmoqda...' : "Ro'yxatdan o'tish"}

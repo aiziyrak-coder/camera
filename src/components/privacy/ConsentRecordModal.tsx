@@ -70,7 +70,7 @@ export default function ConsentRecordModal({ person, token, consentVersion, onCl
     >
       {person && (
         <form id="consent-record-form" onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div className="flex items-center gap-3 rounded-control border border-border bg-surface-2 p-3">
+          <div className="flex items-center gap-3 border border-border bg-surface-2 px-3 py-2.5">
             <Avatar name={person.fullName} size="sm" />
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-fg">{person.fullName}</p>
@@ -79,7 +79,7 @@ export default function ConsentRecordModal({ person, token, consentVersion, onCl
           </div>
 
           <fieldset className="flex flex-col gap-2">
-            <legend className="mb-1.5 text-[13px] font-medium text-fg">Rozilik qanday olingan</legend>
+            <legend className="intel-micro !text-fg mb-1.5 block">Rozilik qanday olingan</legend>
             <ChoiceCards name="consent-source" value={source} onChange={setSource} options={SOURCES} columns={1} />
           </fieldset>
 

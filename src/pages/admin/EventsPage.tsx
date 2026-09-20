@@ -8,13 +8,11 @@ import {
   CheckCircle2,
   Download,
   FlaskConical,
-  Gauge,
   Inbox,
   ListChecks,
   MessageSquare,
   RefreshCw,
   Shuffle,
-  Timer,
   UserCheck,
   UserX,
   X,
@@ -22,30 +20,37 @@ import {
 } from 'lucide-react';
 import {
   Button,
+  CodeText,
   ConfirmDialog,
   DataTable,
+  DocumentFooter,
+  DocumentHeader,
   EmptyState,
   ErrorState,
+  IntelPanel,
+  MicroLabel,
   Page,
   RANGE_PRESET_LABELS,
   FilterBar,
+  Readout,
   filterActiveCount,
   Select,
   Skeleton,
-  StatTile,
   StatusBadge,
+  StatusLamp,
   Toolbar,
   cn,
   controlBase,
   detectPreset,
   rangeForPreset,
-  toneForRate,
   useToast,
   useUrlTab,
   type DataTableColumn,
   type FilterFieldEntry,
+  type IntelStatus,
   type TabItem,
 } from '../../ui';
+import { eventCode, eventsReference } from '../../components/events/eventCodes';
 import { eventQueryParams, type Quick } from '../../components/events/eventQuery';
 import EventDrawer from '../../components/events/EventDrawer';
 import EventsPager from '../../components/events/EventsPager';
@@ -56,12 +61,14 @@ import { ApiError, api, buildQuery, isAbortError, type Page as ApiPage } from '.
 import { exportRowsAsCsv } from '../../lib/csvExport';
 import { EVENT_CSV_HEADERS, eventCsvRow, eventsCsvFilename } from '../../components/events/eventCsv';
 import { useAuth } from '../../lib/auth';
+import { branding } from '../../lib/branding';
 import { usePermissions } from '../../lib/permissions';
 import { SEVERITY_TONE, STATUS_LABEL } from '../../lib/eventLabels';
 import { isEventUpdate, isOpenStatus } from '../../lib/eventWorkflow';
 import type { FixedPreset } from '../../lib/reportPeriods';
 import { useLiveEvents } from '../../lib/realtime';
 import { invalidateServerPageCache, useServerPage } from '../../lib/useServerPage';
+import { RATE_RAG, RAG_LABEL, RAG_LETTER, RAG_TEXT, rag } from '../../ui/rag';
 import { formatCount, formatMinutes, relativeTime, todayInTashkent } from '../../lib/uzDate';
 import type { AIEvent, EventStatus, EventSummary } from '../../types';
 
@@ -87,6 +94,33 @@ const TRIAL_SAMPLE_SIZE = 12;
 const EXPORT_PAGE_SIZE = 500;
 const EXPORT_MAX_ROWS = 5000;
 
+/** Muhimlik — chiroq: rang YOLG'IZ emas, yonida so'z turadi. */
+const SEVERITY_LAMP: Record<AIEvent['severity'], IntelStatus> = {
+  yuqori: 'alert',
+  "o'rta": 'warn',
+  past: 'idle',
+};
+const SEVERITY_LABEL: Record<AIEvent['severity'], string> = {
+  yuqori: 'Yuqori',
+  "o'rta": "O'rta",
+  past: 'Past',
+};
+
+const VIEW_TITLE: Record<View, string> = {
+  navbat: 'Hodisalar navbati',
+  jurnal: 'Hodisalar jurnali',
+  sinov: 'Sinov namunalari',
+};
+
+/** Hujjat qachon ekranga chiqarilgani — chop etilgan nusxada ham turadi. */
+function stamp(): string {
+  try {
+    return new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Tashkent' }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 16).replace('T', ' ');
+  }
+}
+
 function errorText(err: unknown): string {
   return err instanceof ApiError ? err.message : "Tarmoq xatosi — server bilan bog'lanib bo'lmadi";
 }
@@ -95,7 +129,7 @@ function CardsSkeleton() {
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-busy="true" aria-label="Yuklanmoqda">
       {Array.from({ length: 6 }).map((_, index) => (
-        <div key={index} className="overflow-hidden rounded-card border border-border bg-surface">
+        <div key={index} className="overflow-hidden border border-border bg-surface">
           <Skeleton className="aspect-video w-full rounded-none" />
           <div className="space-y-2 p-3.5">
             <Skeleton className="h-4 w-2/3" />
@@ -132,7 +166,7 @@ function QuickChip({
       aria-pressed={active}
       onClick={onClick}
       className={cn(
-        'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/40',
+        'inline-flex h-7 items-center gap-1.5 border px-2.5 text-[12px] font-medium uppercase tracking-[0.06em] transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/40',
         active
           ? 'border-primary/40 bg-primary-soft text-primary'
           : alert
@@ -145,7 +179,7 @@ function QuickChip({
       {/* Sonlar butun sahifada bir xil (formatCount) formatlanadi —
           ilgari bu yerda ru-RU ishlatilgani uchun chiplardagi raqamlar
           qolgan joylardan boshqacha ajratilardi. */}
-      {count !== undefined && <span className="tabular-nums opacity-80">{formatCount(count)}</span>}
+      {count !== undefined && <span className="intel-code opacity-80">{formatCount(count)}</span>}
     </button>
   );
 }
@@ -714,7 +748,7 @@ export default function EventsPage() {
   const columns: DataTableColumn<AIEvent>[] = [
     {
       key: 'select',
-      width: '2.75rem',
+      width: '2.25rem',
       mobileLabel: 'Tanlash',
       header: (
         <input
@@ -728,7 +762,7 @@ export default function EventsPage() {
           aria-label={allOnPageSelected ? 'Sahifadagi tanlovni bekor qilish' : 'Sahifadagi barcha hodisalarni tanlash'}
           checked={allOnPageSelected}
           onChange={() => setSelected(allOnPageSelected ? new Set() : new Set(rows.map((r) => r.id)))}
-          className="h-4 w-4 cursor-pointer rounded accent-primary"
+          className="h-3.5 w-3.5 cursor-pointer rounded-[2px] accent-primary"
         />
       ),
       cell: (event) => (
@@ -739,25 +773,35 @@ export default function EventsPage() {
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
           onChange={() => toggleSelected(event.id)}
-          className="h-4 w-4 cursor-pointer rounded accent-primary"
+          className="h-3.5 w-3.5 cursor-pointer rounded-[2px] accent-primary"
         />
       ),
     },
     {
+      // Hodisaning xizmat kodi: jurnalda, eksportda va og'zaki
+      // ma'ruzada bitta yozuvni ko'rsatishning eng qisqa yo'li.
+      key: 'kod',
+      header: 'Kod',
+      width: '6.5rem',
+      mono: true,
+      cell: (event) => <CodeText className="text-[12px] text-subtle">{eventCode(event.id)}</CodeText>,
+    },
+    {
       key: 'kadr',
       header: 'Kadr',
-      width: '5.5rem',
+      width: '4.25rem',
       hideOnMobile: true,
-      cell: (event) => <EventThumb event={event} className="h-10 w-16 rounded-[6px]" />,
+      cell: (event) => <EventThumb event={event} className="h-8 w-14 rounded-none border border-border" />,
     },
     {
       key: 'vaqt',
       header: 'Vaqt',
       mobileLabel: 'Vaqt',
+      width: '9rem',
       cell: (event) => (
-        <span title={event.timestamp} className="whitespace-nowrap">
-          <span className="block text-fg">{event.occurredAt ? relativeTime(event.occurredAt) : event.timestamp}</span>
-          <span className="hidden font-mono text-[11px] text-subtle md:block">{event.timestamp}</span>
+        <span title={event.timestamp} className="block whitespace-nowrap">
+          <span className="intel-code block text-[12px] text-fg">{event.timestamp}</span>
+          <MicroLabel className="hidden md:block">{event.occurredAt ? relativeTime(event.occurredAt) : ''}</MicroLabel>
         </span>
       ),
     },
@@ -766,8 +810,8 @@ export default function EventsPage() {
       header: 'Kriteriya',
       cell: (event) => (
         <span className="block min-w-0">
-          <span className="block font-medium text-fg">{event.moduleName}</span>
-          {event.personName && <span className="block text-xs text-muted">{event.personName}</span>}
+          <span className="block truncate text-[13px] font-medium text-fg">{event.moduleName}</span>
+          {event.personName && <span className="block truncate text-[12px] text-muted">{event.personName}</span>}
         </span>
       ),
     },
@@ -777,34 +821,51 @@ export default function EventsPage() {
       mobileLabel: 'Kamera',
       cell: (event) => (
         <span className="block min-w-0">
-          <span className={cn('block', event.cameraName?.trim() ? 'text-fg' : 'italic text-subtle')}>{cameraLabel(event)}</span>
-          {event.building && <span className="hidden text-xs text-muted md:block">{event.building}</span>}
+          <span className={cn('block truncate text-[13px]', event.cameraName?.trim() ? 'text-fg' : 'italic text-subtle')}>{cameraLabel(event)}</span>
+          {event.building && <MicroLabel className="hidden md:block">{event.building}</MicroLabel>}
         </span>
       ),
     },
-    { key: 'ishonch', header: 'Ishonch', align: 'right', cell: (event) => <span className="font-medium">{event.confidence}%</span> },
-    { key: 'muhimlik', header: 'Muhimlik', cell: (event) => <StatusBadge kind="severity" status={event.severity} /> },
-    { key: 'holat', header: 'Holat', cell: (event) => <StatusBadge kind="event" status={event.status} /> },
+    {
+      key: 'ishonch',
+      header: 'Ishonch',
+      align: 'right',
+      width: '5rem',
+      mono: true,
+      cell: (event) => <CodeText className="text-[12px] font-semibold text-fg">{event.confidence}%</CodeText>,
+    },
+    {
+      key: 'muhimlik',
+      header: 'Muhimlik',
+      width: '6.5rem',
+      cell: (event) => <StatusLamp status={SEVERITY_LAMP[event.severity]} label={SEVERITY_LABEL[event.severity]} />,
+    },
+    { key: 'holat', header: 'Holat', width: '7.5rem', cell: (event) => <StatusBadge kind="event" status={event.status} /> },
     {
       key: 'masul',
-      header: "Mas'ul / muddat",
+      header: "Mas'ul",
       hideOnMobile: true,
       cell: (event) => (
-        <span className="block">
-          <span className="flex items-center gap-1.5 text-[13px] text-fg">
-            {event.assignedToName ?? <span className="text-subtle">—</span>}
-            {!!event.commentsCount && (
-              <span className="inline-flex items-center gap-0.5 text-xs text-muted" title="Tarix yozuvlari va izohlar">
-                <MessageSquare size={12} aria-hidden="true" />
-                {event.commentsCount}
-              </span>
-            )}
-          </span>
-          <SlaBadge event={event} className="mt-1" />
+        <span className="flex items-center gap-1.5 text-[13px] text-fg">
+          <span className="min-w-0 truncate">{event.assignedToName ?? <span className="text-subtle">—</span>}</span>
+          {!!event.commentsCount && (
+            <span className="intel-code inline-flex items-center gap-0.5 text-[11px] text-muted" title="Tarix yozuvlari va izohlar">
+              <MessageSquare size={11} aria-hidden="true" />
+              {event.commentsCount}
+            </span>
+          )}
         </span>
       ),
     },
+    {
+      // Muddat — sanoq monoshriftda, holati esa svetofor bilan.
+      key: 'muddat',
+      header: 'Muddat',
+      width: '9.5rem',
+      cell: (event) => <SlaBadge event={event} />,
+    },
   ];
+
 
 
   const toolbar = trialView ? (
@@ -844,9 +905,10 @@ export default function EventsPage() {
   );
 
   // --------------------------------------------------------------- tanasi
-  function renderCards() {
+  function renderCards(title: string) {
     return (
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <IntelPanel title={title} code={reference} right={<MicroLabel>{formatCount(rows.length)} ta karta</MicroLabel>} bodyClassName="p-2.5">
+      <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
         {rows.map((event) => (
           <ReviewCard
             key={event.id}
@@ -857,6 +919,7 @@ export default function EventsPage() {
           />
         ))}
       </div>
+      </IntelPanel>
     );
   }
 
@@ -886,7 +949,7 @@ export default function EventsPage() {
         />
       );
     }
-    return renderCards();
+    return renderCards('Sinov namunalari');
   }
 
   function renderQueueBody() {
@@ -905,7 +968,7 @@ export default function EventsPage() {
     return (
       <>
         {error && <ErrorState message={error} onRetry={refreshAll} />}
-        {renderCards()}
+        {renderCards("Ko'rib chiqish navbati")}
       </>
     );
   }
@@ -915,12 +978,16 @@ export default function EventsPage() {
       <>
         {/* Klaviatura bilan belgilaganda tanlovlar soni e'lon qilinsin. */}
         {selected.size > 0 && (
+          /* Buyruq qatori — qalqib turgan tugmalar emas: jadvalning
+             ustida, o'sha kenglikda, ingichka chiziq bilan ajratilgan. */
           <div
             role="status"
             aria-live="polite"
-            className="sticky top-16 z-20 flex flex-wrap items-center gap-2 rounded-card border border-primary/30 bg-primary-soft px-3 py-2 shadow-card"
+            className="sticky top-16 z-20 flex flex-wrap items-center gap-2 border border-border-strong border-b-0 bg-surface-2 px-3 py-1.5"
           >
-            <span className="text-sm font-semibold text-primary">{selected.size} ta tanlandi</span>
+            <MicroLabel>Tanlandi</MicroLabel>
+            <CodeText className="text-[13px] font-semibold text-fg">{formatCount(selected.size)}</CodeText>
+            <span aria-hidden="true" className="h-4 w-px bg-border" />
             <Button size="sm" variant="primary" icon={Check} onClick={() => bulkReview('tasdiqlangan')} disabled={bulkBusy}>
               Tasdiqlash
             </Button>
@@ -930,11 +997,17 @@ export default function EventsPage() {
             <Button size="sm" icon={CheckCircle2} onClick={() => setBulkResolving(true)} disabled={bulkBusy}>
               Hal qilindi
             </Button>
-            <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setSelected(new Set())}>
+            <Button size="sm" variant="ghost" className="ms-auto" onClick={() => setSelected(new Set())}>
               Tanlovni bekor qilish
             </Button>
           </div>
         )}
+        <IntelPanel
+          title="Hodisalar jurnali"
+          code={reference}
+          right={<MicroLabel>{formatCount(total)} ta yozuv</MicroLabel>}
+          brackets={false}
+        >
         <DataTable
           ariaLabel="Hodisalar jurnali"
           columns={columns}
@@ -957,12 +1030,28 @@ export default function EventsPage() {
             totalPages > 1 ? <EventsPager page={page} totalPages={totalPages} total={total} pageSize={pageSize} onChange={setPage} /> : undefined
           }
         />
+        </IntelPanel>
       </>
     );
   }
 
   const staleSerious = summary?.staleSeriousUnreviewed ?? 0;
   const waiting = summary ? summary.unreviewed + (summary.inProgress ?? 0) : null;
+
+  // Varaq raqami — faqat ko'rinish va filtrlardan. Bir xil so'rov bir xil
+  // raqam ostida chop etiladi, ikki nusxani solishtirib bo'ladi.
+  const reference = useMemo(
+    () => eventsReference({ view, severity, status: statusFilter, quick, moduleCode, building, from, to, search }),
+    [view, severity, statusFilter, quick, moduleCode, building, from, to, search],
+  );
+  const generatedAt = useMemo(stamp, [reference, summary, rows]);
+  const periodLabel = from || to ? `${from || '…'} — ${to || '…'}` : 'Barcha vaqt';
+  // Aniqlik — foiz, ya'ni svetofor qo'llanadigan yagona ko'rsatkich.
+  // Qolgan sonlar (bugungi signallar, kutayotganlar) xom sanoq: ular
+  // yaxshimi yoki yomonmi — muassasa hajmini bilmasdan aytib bo'lmaydi.
+  const precision = summary?.recentPrecision ?? null;
+  const precisionRag = rag(precision, RATE_RAG);
+  const overdue = summary?.overdue ?? 0;
 
   return (
     <Page
@@ -987,11 +1076,37 @@ export default function EventsPage() {
       }
       toolbar={toolbar}
     >
+      {/* 1. Hujjat blanki: kim, nima, qaysi davr, qaysi raqam ostida. */}
+      <DocumentHeader
+        org={branding.orgFullName}
+        title={VIEW_TITLE[view]}
+        reference={reference}
+        generatedAt={generatedAt}
+        readouts={[
+          { label: 'Davr', value: periodLabel },
+          { label: 'Muhimlik', value: severity ? SEVERITY_LABEL[severity] : 'Barchasi' },
+          {
+            label: 'Ochiq / jami',
+            value: summary ? `${formatCount(waiting)} / ${formatCount(summary.total)}` : '—',
+            title: "Qaror kutayotgan signallar (yangi + jarayonda) va jurnaldagi jami yozuv",
+          },
+          {
+            label: "Muddati o'tgan",
+            value: (
+              <span className={cn(overdue > 0 && 'text-danger')}>
+                {summary ? formatCount(overdue) : '—'}
+              </span>
+            ),
+            title: 'Hal qilish muddati kechikkan ochiq hodisalar',
+          },
+        ]}
+      />
+
       {trialView ? (
-        <div className="flex gap-3 rounded-card border border-warning/30 bg-warning-soft p-4">
-          <FlaskConical size={20} aria-hidden="true" className="mt-0.5 shrink-0 text-warning" />
-          <div className="text-sm text-fg">
-            <p className="font-semibold">Sinov rejimidagi modullar signallari</p>
+        <div className="flex gap-3 border border-warning/50 bg-warning-soft px-3 py-2.5">
+          <FlaskConical size={18} aria-hidden="true" className="mt-0.5 shrink-0 text-warning" />
+          <div className="text-[13px] text-fg">
+            <p className="intel-micro !text-fg">Sinov rejimidagi modullar signallari</p>
             <p className="mt-1 text-[13px] leading-relaxed text-muted">
               Bu modullar hali kalibrlanmagan, shuning uchun ularning signallari operator navbatiga, ogohlantirishlarga va hisobotlarga
               chiqmaydi. Quyida tasodifiy tanlangan namunalar — kadrga qarab haqqoniy baholang. Modul ishchi rejimga o&apos;tishi uchun
@@ -1000,48 +1115,46 @@ export default function EventsPage() {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <StatTile
-            label="Qaror kutmoqda"
-            icon={Inbox}
-            value={formatCount(waiting)}
-            tone={summary && (summary.unreviewedHigh > 0 || summary.overdue > 0) ? 'danger' : 'primary'}
-            hint={
-              summary
-                ? summary.overdue > 0
-                  ? `${summary.overdue} tasining muddati o'tgan · jarayonda: ${summary.inProgress}`
-                  : `yuqori: ${summary.unreviewedHigh} · jarayonda: ${summary.inProgress}`
-                : summaryError
-                  ? "Ma'lumot yo'q"
-                  : undefined
-            }
-            loading={!summary && !summaryError}
-          />
-          <StatTile
-            label="Bugun"
-            icon={BellRing}
-            value={formatCount(summary?.today)}
-            hint={summary ? `shundan jiddiy: ${summary.todaySerious}` : undefined}
-            loading={!summary && !summaryError}
-          />
-          <StatTile
-            label="Signallar aniqligi (30 kun)"
-            icon={Gauge}
-            value={summary?.recentPrecision == null ? '—' : `${summary.recentPrecision}%`}
-            tone={toneForRate(summary?.recentPrecision ?? null)}
-            progress={summary?.recentPrecision ?? null}
-            hint={summary?.recentPrecision == null ? "kamida 10 ta ko'rib chiqilgan signal kerak" : "tasdiqlangan / ko'rib chiqilgan"}
-            loading={!summary && !summaryError}
-          />
-          <StatTile
-            label="O'rtacha ko'rib chiqish vaqti"
-            icon={Timer}
-            value={formatMinutes(summary?.avgReviewMinutes)}
-            tone={staleSerious > 0 ? 'danger' : 'neutral'}
-            hint={staleSerious > 0 ? `${staleSerious} ta jiddiy signal 24 soatdan beri kutmoqda` : 'signal kelgandan qarorgacha (30 kun)'}
-            loading={!summary && !summaryError}
-          />
-        </div>
+        <IntelPanel
+          title="Navbat holati"
+          code={reference}
+          right={summaryError ? <MicroLabel className="!text-danger">Ko&apos;rsatkichlar yangilanmadi</MicroLabel> : undefined}
+        >
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3 px-3 py-2.5 sm:grid-cols-3 xl:grid-cols-5">
+            <Readout
+              label="Qaror kutmoqda"
+              value={formatCount(waiting)}
+              title={summary ? `yangi: ${summary.unreviewed} · jarayonda: ${summary.inProgress}` : undefined}
+            />
+            <Readout label="Yuqori muhimlikda" value={summary ? formatCount(summary.unreviewedHigh) : '—'} title="Ko'rib chiqilmagan yuqori muhimlikdagi signallar" />
+            <Readout
+              label="Bugun"
+              value={summary ? formatCount(summary.today) : '—'}
+              title={summary ? `shundan jiddiy: ${summary.todaySerious}` : undefined}
+            />
+            <Readout
+              label="Aniqlik (30 kun)"
+              title={`tasdiqlangan / ko'rib chiqilgan · ${RAG_LABEL[precisionRag]}`}
+              value={
+                <span className={cn('inline-flex items-baseline gap-1.5', RAG_TEXT[precisionRag])}>
+                  {precision === null ? '—' : `${precision}%`}
+                  <span className="text-[10px] font-bold">{RAG_LETTER[precisionRag]}</span>
+                </span>
+              }
+            />
+            <Readout
+              label="O'rtacha qaror vaqti"
+              value={formatMinutes(summary?.avgReviewMinutes)}
+              title={staleSerious > 0 ? `${staleSerious} ta jiddiy signal 24 soatdan beri kutmoqda` : 'signal kelgandan qarorgacha (30 kun)'}
+            />
+          </div>
+          {(staleSerious > 0 || overdue > 0) && (
+            <p className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border px-3 py-1.5">
+              {overdue > 0 && <StatusLamp status="alert" label={`Muddati o'tgan: ${formatCount(overdue)}`} pulse />}
+              {staleSerious > 0 && <StatusLamp status="warn" label={`24 soatdan beri kutmoqda: ${formatCount(staleSerious)}`} />}
+            </p>
+          )}
+        </IntelPanel>
       )}
 
       {/* Bitta xabar, bitta amal: ilgari ErrorState va uning tuzatish
@@ -1079,6 +1192,12 @@ export default function EventsPage() {
       {/* Jurnaldagidek: bitta sahifaga sig'sa sahifalagich ortiqcha. */}
       {!trialView && queue && rows.length > 0 && totalPages > 1 && (
         <EventsPager page={page} totalPages={totalPages} total={total} pageSize={pageSize} onChange={setPage} />
+      )}
+
+      {!trialView && (
+        <DocumentFooter
+          note={`Xizmat uchun. Varaq ${reference} raqami bilan tizimda tuzilgan; sonlar ${periodLabel} kesimi uchun. Hodisa kodi (HD-…) bilan har bir yozuv jurnaldan topiladi.`}
+        />
       )}
 
       <EventDrawer

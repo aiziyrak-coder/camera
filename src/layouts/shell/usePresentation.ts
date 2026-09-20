@@ -55,7 +55,7 @@ export function usePresentation() {
 
   useEffect(() => {
     if (!active) return;
-    setForcedTheme('dark');
+    setForcedTheme(null); // qorong'i mavzu olib tashlandi
     document.documentElement.dataset.presentation = 'true';
     return () => {
       setForcedTheme(null);

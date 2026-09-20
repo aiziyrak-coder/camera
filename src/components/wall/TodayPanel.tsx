@@ -2,26 +2,27 @@ import { CalendarCheck2, GraduationCap, ScanFace, Users } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { Counts } from '../../lib/situationApi';
 import type { EnrollCounts } from '../../lib/wallApi';
-import { cn, formatPercent } from '../../ui';
+import { MicroLabel, cn, formatPercent } from '../../ui';
+import { RAG_LETTER, RAG_LABEL, RAG_TEXT, RATE_RAG, rag } from '../../ui/rag';
 import { AnimatedNumber, WallPanel, WallRing } from './primitives';
 
 function Metric({ label, value, tone }: { label: string; value: number; tone: string }) {
   return (
-    <div className="min-w-0">
-      <div className={cn('text-[1.6em] font-semibold leading-none', tone)}>
+    <div className="min-w-0 border-s border-border ps-[0.6em] first:border-s-0 first:ps-0">
+      <div className={cn('intel-code text-[1.9em] font-semibold leading-none', tone)}>
         <AnimatedNumber value={value} />
       </div>
-      <div className="mt-[0.35em] truncate text-[0.75em] text-muted">{label}</div>
+      <MicroLabel className="intel-micro-wrap mt-[0.5em] block !text-[0.6em]">{label}</MicroLabel>
     </div>
   );
 }
 
 function Block({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col justify-center rounded-[0.8em] bg-surface-2 px-[1em] py-[0.8em]">
-      <div className="mb-[0.6em] flex items-center gap-[0.45em] text-[0.9em] font-medium text-fg [&>svg]:h-[1.1em] [&>svg]:w-[1.1em] [&>svg]:text-muted">
+    <div className="flex min-h-0 flex-1 flex-col justify-center border border-border bg-surface-2 px-[0.9em] py-[0.7em]">
+      <div className="mb-[0.6em] flex items-center gap-[0.45em] [&>svg]:h-[1em] [&>svg]:w-[1em] [&>svg]:text-muted">
         {icon}
-        {title}
+        <MicroLabel className="!text-[0.65em] !text-fg">{title}</MicroLabel>
       </div>
       {children}
     </div>
@@ -40,17 +41,27 @@ export function coverageNote(counts: Counts): string | null {
 
 function AttendanceBlock({ counts }: { counts: Counts }) {
   const expected = counts.present + counts.absent + counts.notYet;
+  // Hech kim kutilmagan bo'lsa foiz "0%" emas, O'LCHANMAGAN.
+  const measured = expected > 0 && counts.rate !== null;
+  const tone = rag(measured ? counts.rate : null, RATE_RAG);
   const note = coverageNote(counts);
   return (
     <div>
     <div className="flex items-center gap-[1.1em]">
-      <WallRing value={counts.rate} size={6.2} sublabel="davomat" />
+      {/* Svetofor ustuni: rang + harf (Y/S/Q) — rangni ajratmaydigan
+          odam ham, uzoqdan qaragan odam ham bir xil o'qiydi. */}
+      <div className="flex shrink-0 flex-col items-center gap-[0.35em]">
+        <WallRing value={measured ? counts.rate : null} size={6.2} sublabel="davomat" />
+        <span className={cn('intel-code text-[0.85em] font-bold', RAG_TEXT[tone])} title={RAG_LABEL[tone]}>
+          {RAG_LETTER[tone]} · {RAG_LABEL[tone]}
+        </span>
+      </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-[0.3em] leading-none">
-          <AnimatedNumber value={counts.present} className="text-[2.6em] font-semibold text-fg" />
-          <span className="text-[1.2em] tabular-nums text-muted">/ {expected.toLocaleString('ru-RU')}</span>
+          <AnimatedNumber value={counts.present} className="text-[3.4em] font-semibold leading-[0.85] text-fg" />
+          <span className="intel-code text-[1.3em] text-muted">/ {expected.toLocaleString('ru-RU')}</span>
         </div>
-        <div className="mt-[0.3em] text-[0.75em] text-muted">keldi / kutilgan</div>
+        <MicroLabel className="mt-[0.5em] block !text-[0.6em]">keldi / kutilgan</MicroLabel>
         <div className="mt-[0.8em] grid grid-cols-3 gap-[0.6em]">
           <Metric label="kech keldi" value={counts.late} tone="text-warning" />
           <Metric label="kelmadi" value={counts.absent} tone="text-danger" />
@@ -58,7 +69,7 @@ function AttendanceBlock({ counts }: { counts: Counts }) {
         </div>
       </div>
     </div>
-      {note && <div className="mt-[0.55em] text-[0.72em] leading-snug text-muted">{note}</div>}
+      {note && <div className="mt-[0.55em] border-t border-border pt-[0.4em] text-[0.68em] leading-snug text-muted">{note}</div>}
     </div>
   );
 }
@@ -82,8 +93,8 @@ function EnrollmentBlock({ enroll }: { enroll: EnrollCounts }) {
         </div>
       </div>
       {enroll.pending > 0 && (
-        <div className="mt-[0.5em] text-[0.75em] text-muted">
-          Tekshiruvda: <span className="tabular-nums text-fg">{enroll.pending.toLocaleString('ru-RU')}</span>
+        <div className="mt-[0.5em] text-[0.72em] text-muted">
+          Tekshiruvda: <span className="intel-code text-fg">{enroll.pending.toLocaleString('ru-RU')}</span>
         </div>
       )}
     </div>
@@ -102,7 +113,7 @@ export function TodayPanel({
   studentsEnroll: EnrollCounts;
 }) {
   return (
-    <WallPanel area="A" title="Bugun" icon={<CalendarCheck2 />}>
+    <WallPanel area="A" title="Bugungi davomat" icon={<CalendarCheck2 />} code="A-01">
       <div className="flex min-h-0 flex-1 flex-col gap-[0.8em]">
         <Block icon={<Users />} title="Xodimlar">
           <AttendanceBlock counts={staff} />

@@ -45,6 +45,8 @@ export type { PersonCardProps } from './PersonCard';
 
 export { DataTable } from './DataTable';
 export type { DataTableColumn, DataTableProps } from './DataTable';
+export { rag, ragHint, RATE_RAG, LATE_RAG, RAG_LETTER, RAG_LABEL, RAG_TEXT, RAG_FILL, RAG_SOLID } from './rag';
+export type { Rag, RagThresholds } from './rag';
 export { sortRows, compareValues, nextSort } from './tableSort';
 export type { SortState, SortDir, SortValue } from './tableSort';
 

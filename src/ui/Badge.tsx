@@ -38,16 +38,17 @@ export function Badge({ tone = 'neutral', variant = 'soft', size = 'sm', dot, ic
     <span
       title={title}
       className={cn(
-        'inline-flex max-w-full items-center gap-1.5 whitespace-nowrap rounded-full font-medium leading-none',
-        size === 'sm' ? 'h-[22px] px-2 text-xs' : 'h-7 px-2.5 text-[13px]',
-        variant === 'soft' && TONE_SOFT[tone],
-        variant === 'solid' && SOLID_TEXT[tone],
-        variant === 'outline' && cn('border bg-transparent', TONE_BORDER[tone], TONE_TEXT[tone]),
+        // To'rtburchak nishon: monoshrift, ingichka chiziq — "tabletka" emas.
+        'intel-code inline-flex max-w-full items-center gap-1.5 whitespace-nowrap rounded-[2px] border font-medium leading-none',
+        size === 'sm' ? 'h-5 px-1.5 text-[11px]' : 'h-6 px-2 text-[12px]',
+        variant === 'soft' && cn('border-border', TONE_SOFT[tone]),
+        variant === 'solid' && cn('border-transparent', SOLID_TEXT[tone]),
+        variant === 'outline' && cn('bg-transparent', TONE_BORDER[tone], TONE_TEXT[tone]),
         className,
       )}
     >
-      {dot && <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', variant === 'solid' ? 'bg-current' : TONE_SOLID[tone])} aria-hidden="true" />}
-      {Icon && <Icon size={size === 'sm' ? 12 : 14} className="shrink-0" aria-hidden="true" />}
+      {dot && <span className={cn('h-1.5 w-1.5 shrink-0 rounded-[1px]', variant === 'solid' ? 'bg-current' : TONE_SOLID[tone])} aria-hidden="true" />}
+      {Icon && <Icon size={size === 'sm' ? 11 : 12} className="shrink-0" aria-hidden="true" />}
       <span className="truncate">{children}</span>
     </span>
   );
@@ -71,7 +72,7 @@ export function StatusBadge(
   return (
     <Badge tone={meta.tone} dot size={props.size} className={props.className}>
       {meta.label}
-      {props.time && <span className="ml-1 tabular-nums opacity-80">{props.time}</span>}
+      {props.time && <span className="ml-1 font-semibold opacity-80">{props.time}</span>}
     </Badge>
   );
 }
@@ -79,9 +80,9 @@ export function StatusBadge(
 /** Yolg'iz rangli nuqta (masalan jonli holat). `pulse` — jonli signal. */
 export function StatusDot({ tone = 'neutral', pulse = false, className, label }: { tone?: Tone; pulse?: boolean; className?: string; label?: string }) {
   return (
-    <span className={cn('relative inline-flex h-2.5 w-2.5 shrink-0', className)} role={label ? 'img' : undefined} aria-label={label} aria-hidden={label ? undefined : true}>
-      {pulse && <span className={cn('absolute inset-0 animate-ping rounded-full opacity-60', TONE_SOLID[tone])} />}
-      <span className={cn('relative inline-flex h-2.5 w-2.5 rounded-full', TONE_SOLID[tone])} />
+    <span className={cn('relative inline-flex h-2 w-2 shrink-0', className)} role={label ? 'img' : undefined} aria-label={label} aria-hidden={label ? undefined : true}>
+      {pulse && <span className={cn('absolute inset-0 animate-ping rounded-[1px] opacity-60', TONE_SOLID[tone])} />}
+      <span className={cn('relative inline-flex h-2 w-2 rounded-[1px]', TONE_SOLID[tone])} />
     </span>
   );
 }

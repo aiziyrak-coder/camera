@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Loader2, RotateCcw, ScanFace, VideoOff } from 'lucide-react';
-import { Button, cn } from '../../ui';
+import { Button, CodeText, MicroLabel, StatusLamp, cn, type IntelStatus } from '../../ui';
 import { Notice } from '../settings/kit';
 import { type LivenessStep, LIVENESS_STEPS, checkPose } from '../../lib/enrollment';
 
@@ -311,6 +311,12 @@ export default function EnrollmentFaceCapture({
   if (cameraError) {
     return (
       <div className="flex flex-col gap-4">
+        <div className="flex items-center gap-2 border-b border-border pb-2">
+          <MicroLabel>Bosqich 4 — Yuz</MicroLabel>
+          <span className="ms-auto">
+            <StatusLamp status="alert" label="Kamera ochilmadi" />
+          </span>
+        </div>
         <Notice tone="danger" icon={VideoOff} title="Kamera ochilmadi">
           {cameraError}
         </Notice>
@@ -327,14 +333,42 @@ export default function EnrollmentFaceCapture({
   const total = LIVENESS_STEPS.length;
   const ui = finished ? null : STEP_UI[step];
 
+  /** Kamera holati — RANG emas, SO'Z bilan aytiladi. */
+  const camera: { status: IntelStatus; label: string } = submitting
+    ? { status: 'warn', label: 'Yuborilmoqda' }
+    : finished
+      ? { status: 'ok', label: 'Bajarildi' }
+      : !ready
+        ? { status: 'warn', label: 'Ishga tushmoqda' }
+        : matching
+          ? { status: 'ok', label: 'Mos keldi' }
+          : { status: 'idle', label: 'Kutilmoqda' };
+
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h2 className="text-base font-semibold text-fg">Yuzingizni kamera orqali tasdiqlang</h2>
-        <p className="mt-1 text-[13px] leading-relaxed text-muted">
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <MicroLabel>Bosqich 4 — Yuz</MicroLabel>
+          <h2 className="mt-0.5 text-[15px] font-semibold text-fg">Yuzingizni kamera orqali tasdiqlang</h2>
+        </div>
+        <span className="shrink-0 pt-0.5">
+          <StatusLamp status={camera.status} label={camera.label} pulse={camera.status === 'warn'} />
+        </span>
+      </div>
+      <p className="-mt-2 text-[13px] leading-relaxed text-muted">
           Uch bosqich: to&apos;g&apos;riga qarang, so&apos;ng boshingizni chapga va o&apos;ngga
           buring. Yorug&apos; joyda turing, ko&apos;zoynak va niqobni oling.
-        </p>
+      </p>
+
+      {/* Kadr hisobi — rangsiz ham o'qiladigan o'lchov. */}
+      <div className="flex items-center gap-2 border-y border-border py-1.5">
+        <MicroLabel>Olingan kadr</MicroLabel>
+        <CodeText className="text-[13px] font-semibold text-fg">
+          {captured.length}/{total}
+        </CodeText>
+        <span className="ms-auto">
+          <MicroLabel>{finished ? 'Tayyor' : matching ? 'Mos keldi' : 'Yo‘naltirilmoqda'}</MicroLabel>
+        </span>
       </div>
 
       {/* Doira ichidagi jonli tasvir */}
@@ -393,7 +427,10 @@ export default function EnrollmentFaceCapture({
         ) : (
           <>
             <p className="text-[15px] font-semibold text-fg">
-              {stepIndex + 1}/{total} — {ui?.title}
+              <CodeText>
+                {stepIndex + 1}/{total}
+              </CodeText>{' '}
+              — {ui?.title}
             </p>
             <p
               className={cn('mt-1 text-[13px] font-medium transition-colors', matching ? 'text-success' : 'text-muted')}
@@ -418,8 +455,8 @@ export default function EnrollmentFaceCapture({
               {captured[i] ? (
                 <img src={captured[i]} alt="" className="h-full w-full scale-x-[-1] object-cover" />
               ) : (
-                <div className="flex h-full w-full items-center justify-center text-xs text-subtle">
-                  {i + 1}
+                <div className="flex h-full w-full items-center justify-center text-subtle">
+                  <CodeText className="text-[12px]">{i + 1}</CodeText>
                 </div>
               )}
             </div>

@@ -1,13 +1,18 @@
 import { Link, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, BarChart3, Building2, Clock, Trophy } from 'lucide-react';
-import { Page, formatUzDate, relativeDayLabel, useUrlTab, type TabItem } from '../../ui';
+import { useMemo } from 'react';
+import { DocumentFooter, DocumentHeader, Page, formatNumber, formatUzDate, relativeDayLabel, useUrlTab, type TabItem } from '../../ui';
 import { AnalyticsTab } from '../../components/teachers/AnalyticsTab';
 import { ChronicTab } from '../../components/teachers/ChronicTab';
 import { DayTrackingTab } from '../../components/teachers/DayTrackingTab';
 import { RankingTab } from '../../components/teachers/RankingTab';
 import { UnitsTab } from '../../components/teachers/UnitsTab';
 import { useLoader } from '../../components/teachers/useLoader';
+import { stamp } from '../../components/attendance/readout';
+import { dayReference } from '../../components/attendance/references';
+import { branding } from '../../lib/branding';
 import { getKafedras } from '../../lib/situationApi';
+import { summarizeKafedras } from '../../lib/teachersApi';
 import { useAuth } from '../../lib/auth';
 import { usePermissions } from '../../lib/permissions';
 import { useViewDate } from '../../lib/viewDate';
@@ -47,6 +52,11 @@ export default function KafedrasPage() {
   const dayLabel = relativeDayLabel(date, today) ?? formatUzDate(date, { weekday: true });
   const periodTab = tab === 'tahlil' || tab === 'reyting' || tab === 'surunkali';
 
+  const summary = useMemo(() => summarizeKafedras(units.data ?? []), [units.data]);
+  const reference = dayReference('XOD-BOL', date);
+  const generatedAt = useMemo(stamp, [date, units.data]);
+  const tabLabel = tabs.find((t) => t.id === tab)?.label ?? "Bo'linmalar";
+
   return (
     <Page
       title="Xodimlar va o'qituvchilar"
@@ -59,6 +69,25 @@ export default function KafedrasPage() {
       tabs={tabs}
       defaultTab="bolinmalar"
     >
+      {/* Hujjat blanki — qaysi bo'lim, qaysi kun, qancha odam. Davr
+          tablarida davrni tabning o'zi tanlaydi, shuning uchun bu yerda
+          "davr tanlangan bo'limda" deb aytiladi, soxta sana emas. */}
+      <DocumentHeader
+        org={branding.orgFullName}
+        title="Xodimlar davomati — bo'linmalar kesimi"
+        reference={reference}
+        generatedAt={generatedAt}
+        readouts={[
+          { label: "Bo'lim", value: tabLabel },
+          { label: 'Qamrov', value: units.data ? `${units.data.length} ta bo'linma` : '—' },
+          { label: periodTab ? 'Davr' : 'Kun', value: periodTab ? 'Bo\'limda tanlanadi' : dayLabel },
+          {
+            label: "Ro'yxatda",
+            value: units.data ? `${formatNumber(summary.staffTotal)} xodim` : '—',
+          },
+        ]}
+      />
+
       {tab === 'bolinmalar' && <UnitsTab loader={units} date={date} isToday={isToday} withDate={withDate} />}
       {tab === 'tahlil' && <AnalyticsTab />}
       {tab === 'reyting' && <RankingTab />}
@@ -76,6 +105,10 @@ export default function KafedrasPage() {
           .
         </p>
       )}
+
+      <DocumentFooter
+        note={`Xizmat uchun. Hujjat ${reference} raqami bilan tizimda tuzilgan. Foiz faqat holati aniqlangan xodimlar bo'yicha hisoblanadi — yuzi ro'yxatdan o'tmagan xodim "kelmagan" hisoblanmaydi.`}
+      />
     </Page>
   );
 }

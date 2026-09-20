@@ -378,7 +378,7 @@ function Probe() {
 }
 
 async function renderPage(search: string) {
-  const { default: ReportsPage } = await import('../../pages/admin/ReportsPage');
+  const { default: ReportsPage } = await import('../../pages/admin/HisobotPage');
   render(
     <MemoryRouter initialEntries={[`/hisobotlar${search}`]}>
       <ReportsPage />

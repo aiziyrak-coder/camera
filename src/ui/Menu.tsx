@@ -123,14 +123,14 @@ export function Menu({ trigger, items, header, align = 'end', side = 'bottom', c
           role="menu"
           onKeyDown={onMenuKeyDown}
           className={cn(
-            'absolute z-50 animate-pop-in overflow-hidden rounded-card border border-border bg-surface p-1 text-fg shadow-pop',
+            'absolute z-50 animate-pop-in overflow-hidden rounded-card border border-border-strong bg-surface text-fg shadow-pop',
             width,
             align === 'end' ? 'right-0' : 'left-0',
             side === 'bottom' ? 'top-full mt-2' : 'bottom-full mb-2',
           )}
         >
-          {header && <div className="border-b border-border px-3 pb-2.5 pt-2">{header}</div>}
-          <div className={header ? 'pt-1' : undefined}>
+          {header && <div className="border-b border-border bg-surface-2 px-2.5 py-2">{header}</div>}
+          <div className="p-1">
             {items.map((item, index) => {
               if (item === 'separator') return <div key={`sep-${index}`} role="separator" className="my-1 h-px bg-border" />;
               const Icon = item.icon;
@@ -150,13 +150,13 @@ export function Menu({ trigger, items, header, align = 'end', side = 'bottom', c
                     item.onSelect?.();
                   }}
                   className={cn(
-                    'flex w-full items-center gap-2.5 rounded-[6px] px-2.5 py-2 text-left text-sm outline-none transition-colors disabled:opacity-40',
+                    'flex h-7 w-full items-center gap-2 rounded-[2px] px-2 text-left text-[13px] outline-none transition-colors disabled:opacity-40',
                     item.danger ? 'text-danger hover:bg-danger-soft focus:bg-danger-soft' : 'text-fg hover:bg-surface-2 focus:bg-surface-2',
                   )}
                 >
-                  {Icon && <Icon size={16} aria-hidden="true" className={item.danger ? undefined : 'text-muted'} />}
+                  {Icon && <Icon size={14} aria-hidden="true" className={item.danger ? undefined : 'text-muted'} />}
                   <span className="flex-1 truncate">{item.label}</span>
-                  {item.hint && <span className="text-xs text-subtle">{item.hint}</span>}
+                  {item.hint && <span className="intel-code text-[11px] text-subtle">{item.hint}</span>}
                 </button>
               );
             })}

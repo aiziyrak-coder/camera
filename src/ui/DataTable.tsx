@@ -5,6 +5,7 @@ import { EmptyState } from './EmptyState';
 import { ErrorState } from './ErrorState';
 import { Skeleton } from './Skeleton';
 import { TONE_SOLID, type Tone } from './tones';
+import { RAG_FILL, RAG_LABEL, RAG_LETTER, RAG_SOLID, type Rag } from './rag';
 import { nextSort, sortRows, type SortDir, type SortState, type SortValue } from './tableSort';
 
 export interface DataTableColumn<T> {
@@ -24,6 +25,9 @@ export interface DataTableColumn<T> {
   hideOnMobile?: boolean;
   /** Telefondagi kartadagi yorliq (standart: header). */
   mobileLabel?: string;
+  /** Monoshriftni majburlash. O'ngga tekislangan ustunlarda avtomatik —
+   *  bu bayroq markazdagi raqam/kod ustunlari uchun. */
+  mono?: boolean;
 }
 
 export interface DataTableProps<T> {
@@ -35,6 +39,14 @@ export interface DataTableProps<T> {
   selectedKey?: string | null;
   /** Qator chap chetidagi holat chizig'i. */
   rowTone?: (row: T) => Tone | null | undefined;
+  /**
+   * Qatorning svetofori. Berilsa jadval oldiga alohida HOLAT ustuni
+   * qo'shiladi: rangli katak + harf (Y/S/Q) va qatorning chap qirrasi
+   * bo'yaladi. Rang yolg'iz qolmaydi — harf va `title` doim yonida.
+   */
+  rowRag?: (row: T) => Rag | null | undefined;
+  /** HOLAT ustunining sarlavhasi (standart: "Holat"). */
+  ragHeader?: ReactNode;
   loading?: boolean;
   loadingRows?: number;
   error?: string | null;
@@ -51,7 +63,11 @@ export interface DataTableProps<T> {
   /** Jadval ichida aylantirish balandligi — sarlavha yopishib turadi. 'none' — cheklovsiz. */
   maxHeight?: string;
   dense?: boolean;
-  /** Juft/toq qatorlar fonini almashtirish (uzun jadvallarni o'qish osonroq). */
+  /**
+   * ESKI: juft/toq qatorlar foni. Yangi ko'rinishda qatorlar fon bilan
+   * emas, ingichka chiziq bilan ajraladi — bayroq qabul qilinadi, lekin
+   * hech narsa bo'yamaydi (chaqiruvchi kodni sindirmaslik uchun).
+   */
   zebra?: boolean;
   /** Telefonda: 'cards' (standart) — har qator karta; 'scroll' — gorizontal aylantirish. */
   mobile?: 'cards' | 'scroll';
@@ -72,8 +88,25 @@ function defaultCell<T>(row: T, key: string): ReactNode {
   return String(value);
 }
 
-/** Jadval: saralash, qator bosish (klaviatura bilan ham), yopishqoq sarlavha,
- *  yuklanish/bo'sh/xato holatlari; telefonda — kartalar ro'yxati. */
+/** Svetofor belgisi: rangli katak ichida harf + `title` bilan to'liq so'z. */
+function RagMark({ value }: { value: Rag }) {
+  return (
+    <span
+      title={RAG_LABEL[value]}
+      className={cn(
+        'intel-code inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[2px] px-1 text-[11px] font-bold leading-none',
+        RAG_FILL[value],
+      )}
+    >
+      {RAG_LETTER[value]}
+      <span className="sr-only"> — {RAG_LABEL[value]}</span>
+    </span>
+  );
+}
+
+/** Ish jadvali: ingichka to'r, yopishqoq bosh harfli sarlavha, saralash,
+ *  qator bosish (klaviatura bilan ham), svetofor ustuni, yuklanish/bo'sh/
+ *  xato holatlari; telefonda — kartalar ro'yxati. */
 export function DataTable<T>({
   columns,
   rows,
@@ -81,6 +114,8 @@ export function DataTable<T>({
   onRowClick,
   selectedKey,
   rowTone,
+  rowRag,
+  ragHeader = 'Holat',
   loading = false,
   loadingRows = 6,
   error,
@@ -94,7 +129,6 @@ export function DataTable<T>({
   manualSort = false,
   maxHeight = 'min(70vh, 48rem)',
   dense = false,
-  zebra = false,
   mobile = 'cards',
   mobileTitleKey,
   ariaLabel,
@@ -102,7 +136,8 @@ export function DataTable<T>({
   className,
 }: DataTableProps<T>) {
   const [internalSort, setInternalSort] = useState<SortState | null>(defaultSort);
-  // Aylantirilganda yopishqoq sarlavha ostida soya — mazmun ostidan o'tayotgani ko'rinadi.
+  // Aylantirilganda yopishqoq sarlavha mazmun USTIDA suzadi — shundagina
+  // soya o'rinli (tinch turgan sirtlarda soya yo'q).
   const [scrolled, setScrolled] = useState(false);
   const sort = controlledSort !== undefined ? controlledSort : internalSort;
 
@@ -119,7 +154,9 @@ export function DataTable<T>({
     return sortRows(rows, column.sortValue, sort.dir);
   }, [rows, columns, sort, manualSort]);
 
-  const cellPad = dense ? 'px-3 py-2' : 'px-4 py-3';
+  // Qator balandligi ~32px (zich holatda ~26px).
+  const cellPad = dense ? 'px-2 py-1' : 'px-2.5 py-1.5';
+  const headPad = dense ? 'px-2 py-1.5' : 'px-2.5 py-2';
   const showEmpty = !loading && !error && sortedRows.length === 0;
 
   function rowKeyDown(event: KeyboardEvent<HTMLElement>, row: T) {
@@ -133,6 +170,15 @@ export function DataTable<T>({
   const titleColumn = columns.find((c) => c.key === mobileTitleKey) ?? columns[0];
   const mobileColumns = columns.filter((c) => c !== titleColumn && !c.hideOnMobile);
 
+  /** Ustun matni monoshriftdami: o'ngga tekislangan (raqam) yoki majburlangan. */
+  const isMono = (column: DataTableColumn<T>) => column.mono || column.align === 'right';
+
+  // Yopishqoq sarlavhaning pastki qalin chizig'i — jadval "boshi" aniq ajralsin.
+  const headCell = cn(
+    'sticky top-0 z-10 border-b-2 border-border-strong bg-surface-2 transition-shadow',
+    scrolled && 'shadow-[0_6px_10px_-8px_rgb(16_24_40/0.35)]',
+  );
+
   const tableView = (
     <div
       data-table-scroll=""
@@ -143,53 +189,61 @@ export function DataTable<T>({
         if (next !== scrolled) setScrolled(next);
       }}
     >
-      <table className="w-full border-separate border-spacing-0 text-sm" aria-label={ariaLabel} aria-busy={loading || undefined}>
+      <table
+        className="w-full border-separate border-spacing-0 text-[13px]"
+        aria-label={ariaLabel}
+        aria-busy={loading || undefined}
+      >
         <thead>
           <tr>
+            {rowRag && (
+              <th scope="col" style={{ width: '3.5rem' }} className={cn(headCell, headPad, 'text-center')}>
+                <span className="intel-micro intel-micro-wrap !text-fg">{ragHeader}</span>
+              </th>
+            )}
             {columns.map((column) => {
               const sortable = Boolean(column.sortValue);
               const active = sort?.key === column.key;
               const SortIcon = active ? (sort?.dir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
+              const align = column.align ?? 'left';
               return (
                 <th
                   key={column.key}
                   scope="col"
                   style={column.width ? { width: column.width } : undefined}
                   aria-sort={active ? (sort?.dir === 'asc' ? 'ascending' : 'descending') : sortable ? 'none' : undefined}
-                  className={cn(
-                    'sticky top-0 z-10 whitespace-nowrap border-b border-border bg-surface-2 text-xs font-semibold text-muted transition-shadow',
-                    scrolled && 'shadow-[0_8px_12px_-10px_rgb(16_24_40/0.25)]',
-                    dense ? 'px-3 py-2' : 'px-4 py-2.5',
-                    ALIGN[column.align ?? 'left'],
-                  )}
+                  className={cn(headCell, headPad, 'border-r border-r-border last:border-r-0', ALIGN[align])}
                 >
                   {sortable ? (
                     <button
                       type="button"
                       onClick={() => toggleSort(column)}
-                      className={cn('-mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5 hover:text-fg', active && 'text-fg', focusRing, JUSTIFY[column.align ?? 'left'])}
+                      className={cn('-mx-1 inline-flex max-w-full items-center gap-1 rounded-[2px] px-1 py-0.5', focusRing, JUSTIFY[align])}
                     >
-                      {column.header}
-                      <SortIcon size={13} aria-hidden="true" className={active ? 'text-primary' : 'opacity-40'} />
+                      <span className={cn('intel-micro intel-micro-wrap', active ? '!text-fg' : '!text-muted')}>{column.header}</span>
+                      <SortIcon size={11} aria-hidden="true" className={cn('shrink-0', active ? 'text-primary' : 'text-subtle opacity-60')} />
                     </button>
                   ) : (
-                    column.header
+                    <span className="intel-micro intel-micro-wrap">{column.header}</span>
                   )}
                 </th>
               );
             })}
-            {onRowClick && (
-              <th aria-hidden="true" className={cn('sticky top-0 z-10 w-8 border-b border-border bg-surface-2 transition-shadow', scrolled && 'shadow-[0_8px_12px_-10px_rgb(16_24_40/0.25)]')} />
-            )}
+            {onRowClick && <th aria-hidden="true" className={cn(headCell, 'w-7')} />}
           </tr>
         </thead>
         <tbody>
           {loading &&
             Array.from({ length: loadingRows }).map((_, r) => (
               <tr key={`sk-${r}`}>
+                {rowRag && (
+                  <td className={cn(cellPad, 'border-b border-r border-border')}>
+                    <Skeleton className="mx-auto h-3.5 w-4" />
+                  </td>
+                )}
                 {columns.map((column, c) => (
-                  <td key={column.key} className={cn(cellPad, 'border-b border-border')}>
-                    <Skeleton className={cn('h-3.5', c === 0 ? 'w-3/4' : 'w-1/2', column.align === 'right' && 'ml-auto')} />
+                  <td key={column.key} className={cn(cellPad, 'border-b border-r border-border last:border-r-0')}>
+                    <Skeleton className={cn('h-3', c === 0 ? 'w-3/4' : 'w-1/2', column.align === 'right' && 'ml-auto')} />
                   </td>
                 ))}
                 {onRowClick && <td className="border-b border-border" />}
@@ -199,6 +253,7 @@ export function DataTable<T>({
             sortedRows.map((row, index) => {
               const key = rowKey(row, index);
               const tone = rowTone?.(row);
+              const ragValue = rowRag?.(row);
               const selected = selectedKey === key;
               return (
                 <tr
@@ -209,29 +264,41 @@ export function DataTable<T>({
                   aria-selected={onRowClick ? selected : undefined}
                   className={cn(
                     'group transition-colors',
-                    zebra && 'even:bg-surface-2/50',
-                    onRowClick && 'cursor-pointer hover:bg-surface-2 focus-visible:bg-primary-soft/60 focus-visible:outline-none',
-                    selected && 'bg-primary-soft/70 hover:bg-primary-soft',
+                    // Hover — zaif ko'k tus, fon almashinuvi emas.
+                    onRowClick && 'cursor-pointer hover:bg-primary/[0.045] focus-visible:bg-primary/[0.08] focus-visible:outline-none',
+                    selected && 'bg-primary-soft hover:bg-primary-soft',
                   )}
                 >
+                  {ragValue && (
+                    <td className={cn(cellPad, 'relative border-b border-r border-border text-center align-middle')}>
+                      <span className={cn('absolute inset-y-0 left-0 w-[3px]', RAG_SOLID[ragValue])} aria-hidden="true" />
+                      <RagMark value={ragValue} />
+                    </td>
+                  )}
                   {columns.map((column, c) => (
                     <td
                       key={column.key}
                       className={cn(
                         cellPad,
-                        'relative border-b border-border align-middle text-fg group-last:border-b-0',
+                        'relative border-b border-r border-border align-middle text-fg last:border-r-0',
                         ALIGN[column.align ?? 'left'],
-                        column.align === 'right' && 'tabular-nums',
+                        isMono(column) && 'intel-code',
                         column.className,
                       )}
                     >
-                      {c === 0 && tone && <span className={cn('absolute inset-y-2 left-0 w-[3px] rounded-r', TONE_SOLID[tone])} aria-hidden="true" />}
+                      {c === 0 && !ragValue && tone && (
+                        <span className={cn('absolute inset-y-0 left-0 w-[3px]', TONE_SOLID[tone])} aria-hidden="true" />
+                      )}
                       {column.cell ? column.cell(row, index) : defaultCell(row, column.key)}
                     </td>
                   ))}
                   {onRowClick && (
-                    <td className="border-b border-border pr-3 text-subtle group-last:border-b-0">
-                      <ChevronRight size={16} aria-hidden="true" className="-translate-x-1 opacity-0 transition-[opacity,transform] group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:opacity-100" />
+                    <td className="border-b border-border pr-2 text-subtle">
+                      <ChevronRight
+                        size={14}
+                        aria-hidden="true"
+                        className="-translate-x-1 opacity-0 transition-[opacity,transform] group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:opacity-100"
+                      />
                     </td>
                   )}
                 </tr>
@@ -246,8 +313,8 @@ export function DataTable<T>({
     <ul data-table-cards="" className="divide-y divide-border md:hidden" aria-label={ariaLabel} aria-busy={loading || undefined}>
       {loading &&
         Array.from({ length: Math.min(loadingRows, 4) }).map((_, r) => (
-          <li key={`sk-${r}`} className="space-y-2 p-4">
-            <Skeleton className="h-4 w-2/3" />
+          <li key={`sk-${r}`} className="space-y-2 p-3">
+            <Skeleton className="h-3.5 w-2/3" />
             <Skeleton className="h-3 w-1/2" />
           </li>
         ))}
@@ -255,39 +322,50 @@ export function DataTable<T>({
         sortedRows.map((row, index) => {
           const key = rowKey(row, index);
           const tone = rowTone?.(row);
+          const ragValue = rowRag?.(row);
           const content = (
             <>
               <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1 font-medium text-fg">{titleColumn.cell ? titleColumn.cell(row, index) : defaultCell(row, titleColumn.key)}</div>
-                {onRowClick && <ChevronRight size={16} className="mt-0.5 shrink-0 text-subtle" aria-hidden="true" />}
+                <div className="min-w-0 flex-1 text-[13px] font-semibold text-fg">
+                  {titleColumn.cell ? titleColumn.cell(row, index) : defaultCell(row, titleColumn.key)}
+                </div>
+                {ragValue && <RagMark value={ragValue} />}
+                {onRowClick && <ChevronRight size={14} className="mt-0.5 shrink-0 text-subtle" aria-hidden="true" />}
               </div>
               {mobileColumns.length > 0 && (
-                <dl className="mt-2 flex flex-col gap-1 text-[13px]">
+                <dl className="mt-1.5 flex flex-col gap-1">
                   {mobileColumns.map((column) => (
                     <div key={column.key} className="flex min-w-0 items-center justify-between gap-3">
-                      <dt className="shrink-0 text-muted">{column.mobileLabel ?? column.header}</dt>
-                      <dd className="min-w-0 truncate text-right tabular-nums text-fg">{column.cell ? column.cell(row, index) : defaultCell(row, column.key)}</dd>
+                      <dt className="intel-micro shrink-0">{column.mobileLabel ?? column.header}</dt>
+                      <dd className="intel-code min-w-0 truncate text-right text-[12px] text-fg">
+                        {column.cell ? column.cell(row, index) : defaultCell(row, column.key)}
+                      </dd>
                     </div>
                   ))}
                 </dl>
               )}
             </>
           );
+          const edge = ragValue ? RAG_SOLID[ragValue] : tone ? TONE_SOLID[tone] : null;
           return (
             <li key={key} className="relative">
-              {tone && <span className={cn('absolute inset-y-3 left-0 w-[3px] rounded-r', TONE_SOLID[tone])} aria-hidden="true" />}
+              {edge && <span className={cn('absolute inset-y-0 left-0 w-[3px]', edge)} aria-hidden="true" />}
               {onRowClick ? (
                 <div
                   role="button"
                   tabIndex={0}
                   onClick={() => onRowClick(row)}
                   onKeyDown={(event) => rowKeyDown(event, row)}
-                  className={cn('block w-full p-4 text-left transition-colors hover:bg-surface-2', selectedKey === key && 'bg-primary-soft/70', focusRing)}
+                  className={cn(
+                    'block w-full p-3 text-left transition-colors hover:bg-primary/[0.045]',
+                    selectedKey === key && 'bg-primary-soft',
+                    focusRing,
+                  )}
                 >
                   {content}
                 </div>
               ) : (
-                <div className="p-4">{content}</div>
+                <div className="p-3">{content}</div>
               )}
             </li>
           );
@@ -296,7 +374,7 @@ export function DataTable<T>({
   );
 
   return (
-    <div className={cn('min-w-0 overflow-hidden rounded-card border border-border bg-surface shadow-card', className)}>
+    <div className={cn('min-w-0 overflow-hidden rounded-card border border-border bg-surface', className)}>
       {error ? (
         <ErrorState variant="block" message={error} onRetry={onRetry} />
       ) : (
@@ -308,7 +386,7 @@ export function DataTable<T>({
           )}
         </>
       )}
-      {footer && <div className="border-t border-border px-4 py-3">{footer}</div>}
+      {footer && <div className="border-t border-border px-3 py-2">{footer}</div>}
     </div>
   );
 }

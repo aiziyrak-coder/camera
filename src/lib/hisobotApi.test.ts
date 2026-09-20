@@ -166,9 +166,18 @@ describe('Hujjat raqami', () => {
     expect(one).not.toBe(two);
   });
 
-  it('tahlil ko\'rinishida davr — oraliq, turi ANL', () => {
+  it('holat taxtasida davr — oraliq, turi HLT', () => {
     const state = readState(new URLSearchParams('bolim=xodimlar&davr=today'), TODAY);
-    expect(documentReference(state)).toMatch(/^FERMI\/ANL\/20260919-20260919\/XDM-\d{4}$/);
+    expect(documentReference(state)).toMatch(/^FERMI\/HLT\/20260919-20260919\/XDM-\d{4}$/);
+  });
+
+  it("ro'yxat ko'rinishi alohida turga ega (RYX)", () => {
+    const state = readState(new URLSearchParams('bolim=xodimlar&korinish=royxat&davr=today'), TODAY);
+    expect(documentReference(state)).toMatch(/^FERMI\/RYX\//);
+  });
+
+  it('eski `tahlil` havolasi holat taxtasiga tushadi', () => {
+    expect(readState(new URLSearchParams('korinish=tahlil'), TODAY).view).toBe('taxta');
   });
 
   it('tashkilot kodi almashtiriladi va bosh harfga keltiriladi', () => {

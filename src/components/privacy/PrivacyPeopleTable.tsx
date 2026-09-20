@@ -1,6 +1,20 @@
 import type { ReactNode } from 'react';
 import { Download, ExternalLink, FileSignature, FileX2, ScanFace, UserCheck, UserX, type LucideIcon } from 'lucide-react';
-import { Avatar, Badge, Button, ButtonLink, DataTable, Drawer, IconButton, KeyValue, Section, type DataTableColumn } from '../../ui';
+import {
+  Avatar,
+  Button,
+  ButtonLink,
+  CodeText,
+  DataTable,
+  Drawer,
+  IconButton,
+  IntelPanel,
+  KeyValue,
+  MicroLabel,
+  Section,
+  StatusLamp,
+  type DataTableColumn,
+} from '../../ui';
 import { Notice } from '../settings/kit';
 import { CONSENT_SOURCE_LABELS, consentState, daysUntil, formatUzDate, type PrivacyPerson } from '../../lib/privacyApi';
 
@@ -31,26 +45,33 @@ function personLine(person: PrivacyPerson): string {
 }
 
 function StatusCell({ person }: { person: PrivacyPerson }) {
-  if (person.active) return <Badge tone="success" dot>Faol</Badge>;
+  if (person.active) return <StatusLamp status="ok" label="Faol" />;
   return (
     <span className="inline-flex flex-col items-start gap-0.5 max-md:items-end">
-      <Badge tone="neutral" dot>Faol emas</Badge>
-      {person.deactivatedAt && <span className="text-xs text-muted">{formatUzDate(person.deactivatedAt)} dan</span>}
+      <StatusLamp status="idle" label="Faol emas" />
+      {person.deactivatedAt && <CodeText className="text-[11px] text-muted">{formatUzDate(person.deactivatedAt)} dan</CodeText>}
     </span>
   );
 }
 
 function BiometricsCell({ person }: { person: PrivacyPerson }) {
-  if (!person.hasBiometrics) return <span className="text-[13px] text-subtle">Saqlanmagan</span>;
+  if (!person.hasBiometrics) return <MicroLabel>Saqlanmagan</MicroLabel>;
   const left = daysUntil(person.biometricPurgeAt);
   return (
     <span className="inline-flex flex-col items-start gap-0.5 max-md:items-end">
-      <Badge tone={person.biometricsStatus === 'tasdiqlangan' ? 'primary' : 'neutral'}>
-        {person.biometricsStatus === 'tasdiqlangan' ? 'Tasdiqlangan' : 'Kutilmoqda'}
-      </Badge>
+      <StatusLamp
+        status={person.biometricsStatus === 'tasdiqlangan' ? 'ok' : 'idle'}
+        label={person.biometricsStatus === 'tasdiqlangan' ? 'Tasdiqlangan' : 'Kutilmoqda'}
+      />
       {person.biometricPurgeAt && (
-        <span className="text-xs font-medium text-warning">
-          {left !== null && left <= 0 ? "Keyingi tozalashda o'chadi" : `${formatUzDate(person.biometricPurgeAt)} da o'chadi`}
+        <span className="text-[11px] font-medium text-warning">
+          {left !== null && left <= 0 ? (
+            "Keyingi tozalashda o'chadi"
+          ) : (
+            <>
+              <CodeText>{formatUzDate(person.biometricPurgeAt)}</CodeText> da o&apos;chadi
+            </>
+          )}
         </span>
       )}
     </span>
@@ -59,17 +80,18 @@ function BiometricsCell({ person }: { person: PrivacyPerson }) {
 
 function ConsentCell({ person }: { person: PrivacyPerson }) {
   const state = consentState(person);
-  if (state === 'not_needed') return <span className="text-[13px] text-subtle">Kerak emas</span>;
-  if (state === 'missing') return <Badge tone="danger" dot>Rozilik yo'q</Badge>;
+  if (state === 'not_needed') return <MicroLabel>Kerak emas</MicroLabel>;
+  if (state === 'missing') return <StatusLamp status="alert" label="Rozilik yo'q" />;
   return (
     <span className="inline-flex flex-col items-start gap-0.5 max-md:items-end">
-      <Badge tone={state === 'current' ? 'success' : 'warning'} dot>
-        {state === 'current' ? 'Berilgan' : `Eski versiya (${person.consentVersion ?? '—'})`}
-      </Badge>
-      <span className="text-xs text-muted">
+      <StatusLamp
+        status={state === 'current' ? 'ok' : 'warn'}
+        label={state === 'current' ? 'Berilgan' : `Eski versiya (${person.consentVersion ?? '—'})`}
+      />
+      <CodeText className="text-[11px] text-muted">
         {formatUzDate(person.consentGivenAt)}
         {person.consentSource ? ` · ${CONSENT_SOURCE_LABELS[person.consentSource] ?? person.consentSource}` : ''}
-      </span>
+      </CodeText>
     </span>
   );
 }
@@ -87,6 +109,10 @@ interface PrivacyPeopleTableProps {
   onRetry?: () => void;
   emptyDescription?: ReactNode;
   footer?: ReactNode;
+  /** Sahifaning hujjat raqami — panel sarlavhasining o'ng chetida. */
+  reference?: string;
+  /** Jami topilgan shaxslar (server sahifalash). */
+  total?: number;
 }
 
 export default function PrivacyPeopleTable({
@@ -100,6 +126,8 @@ export default function PrivacyPeopleTable({
   onRetry,
   emptyDescription,
   footer,
+  reference,
+  total,
 }: PrivacyPeopleTableProps) {
   const columns: DataTableColumn<PrivacyPerson>[] = [
     {
@@ -109,8 +137,8 @@ export default function PrivacyPeopleTable({
         <div className="flex min-w-0 items-center gap-3">
           <Avatar name={person.fullName} size="sm" className="hidden sm:inline-flex" />
           <div className="min-w-0">
-            <p className="truncate font-medium text-fg">{person.fullName}</p>
-            <p className="truncate text-xs font-normal text-muted">{personLine(person)}</p>
+            <p className="truncate text-[13px] font-medium text-fg">{person.fullName}</p>
+            <p className="truncate text-[12px] font-normal leading-4 text-muted">{personLine(person)}</p>
           </div>
         </div>
       ),
@@ -147,21 +175,28 @@ export default function PrivacyPeopleTable({
   ];
 
   return (
-    <DataTable
-      columns={columns}
-      rows={people}
-      rowKey={(person) => person.id}
-      onRowClick={onOpen}
-      selectedKey={selectedId}
-      rowTone={(person) => (consentState(person) === 'missing' ? 'danger' : null)}
-      loading={loading}
-      error={error}
-      onRetry={onRetry}
-      emptyTitle="Hech kim topilmadi"
-      emptyDescription={emptyDescription}
-      ariaLabel="Shaxslar ro'yxati"
-      footer={footer}
-    />
+    <IntelPanel
+      title="Shaxslar"
+      code={reference}
+      right={<MicroLabel>{total === undefined ? `${people.length} ta` : `${total.toLocaleString('ru-RU')} ta`}</MicroLabel>}
+    >
+      <DataTable
+        columns={columns}
+        rows={people}
+        rowKey={(person) => person.id}
+        onRowClick={onOpen}
+        selectedKey={selectedId}
+        rowTone={(person) => (consentState(person) === 'missing' ? 'danger' : null)}
+        loading={loading}
+        error={error}
+        onRetry={onRetry}
+        dense
+        emptyTitle="Hech kim topilmadi"
+        emptyDescription={emptyDescription}
+        ariaLabel="Shaxslar ro'yxati"
+        footer={footer}
+      />
+    </IntelPanel>
   );
 }
 

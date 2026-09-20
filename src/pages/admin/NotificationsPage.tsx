@@ -1,20 +1,51 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BellRing, History, MessageSquare, Pencil, Plus, Radio, Send, Trash2 } from 'lucide-react';
-import { Badge, Button, ConfirmDialog, DataTable, IconButton, Page, useToast, useUrlTab, type DataTableColumn, type TabItem } from '../../ui';
+import { BellRing, History, Pencil, Plus, Radio, Send, Trash2 } from 'lucide-react';
+import {
+  Button,
+  CodeText,
+  ConfirmDialog,
+  DataTable,
+  DocumentFooter,
+  DocumentHeader,
+  IconButton,
+  IntelPanel,
+  MicroLabel,
+  Page,
+  StatusLamp,
+  useToast,
+  useUrlTab,
+  type DataTableColumn,
+  type TabItem,
+} from '../../ui';
 import { Notice, Switch } from '../../components/settings/kit';
 import NotificationRuleModal from '../../components/notifications/NotificationRuleModal';
 import NotificationStatusCard from '../../components/notifications/NotificationStatusCard';
 import NotificationLogTable, { NotificationLogToolbar, type LogFilters } from '../../components/notifications/NotificationLogTable';
 import MyTelegramCard from '../../components/notifications/MyTelegramCard';
 import TestMessageModal from '../../components/notifications/TestMessageModal';
+import { notificationsReference } from '../../components/notifications/reference';
 import { ApiError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
+import { branding } from '../../lib/branding';
 import { useAiModules } from '../../lib/useAiModules';
 import { useApiResource } from '../../lib/useApiResource';
 import { useBuildings } from '../../lib/useBuildings';
 import { describeRuleFilters, kindLabel, notificationsApi, type NotificationRule, type NotificationStatus } from '../../lib/notificationsApi';
 
 type Tab = 'qoidalar' | 'kanallar' | 'jurnal';
+
+/** Hujjat tuzilgan payt — hisobot sahifasidagi bilan bir xil shaklda. */
+function stamp(): string {
+  try {
+    return new Intl.DateTimeFormat('ru-RU', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+      timeZone: 'Asia/Tashkent',
+    }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 16).replace('T', ' ');
+  }
+}
 
 export default function NotificationsPage() {
   const { token } = useAuth();
@@ -91,6 +122,8 @@ export default function NotificationsPage() {
   async function toggleEnabled(rule: NotificationRule) {
     setTogglingId(rule.id);
     try {
+      // Server tasdiqlagandan KEYIN ro'yxat yangilanadi — tugma "yoqildi"
+      // deb ko'rsatib, aslida hech narsa o'zgarmagan holat bo'lmasin.
       const saved = await notificationsApi.updateRule(rule.id, { enabled: !rule.enabled }, token);
       setRules((list) => list.map((r) => (r.id === saved.id ? saved : r)));
     } catch (err) {
@@ -109,43 +142,55 @@ export default function NotificationsPage() {
   }
 
   const noChannel = status && !status.telegramConfigured && !status.smsConfigured;
+  const enabledCount = rules.filter((r) => r.enabled).length;
+
+  // Hujjat raqami — bo'lim va (jurnalda) filtrlardan. Vaqtdan mustaqil.
+  const reference = useMemo(
+    () =>
+      notificationsReference({
+        tab,
+        parts: tab === 'jurnal' ? [logFilters.status, logFilters.channel, logFilters.kind, logFilters.search.trim()] : [],
+      }),
+    [tab, logFilters],
+  );
+  const generatedAt = useMemo(stamp, [tab, rules, status]);
+
+  /** Kanal holati — chiroq + SO'Z (rang yolg'iz ma'no tashimaydi). */
+  const channelLamp = (configured: boolean | undefined) =>
+    status ? (
+      <StatusLamp status={configured ? 'ok' : 'idle'} label={configured ? 'Sozlangan' : 'Sozlanmagan'} />
+    ) : (
+      <StatusLamp status="idle" label={statusError ? "Noma'lum" : 'Yuklanmoqda'} />
+    );
 
   const columns: DataTableColumn<NotificationRule>[] = [
     {
       key: 'name',
       header: 'Qoida',
       sortValue: (r) => r.name,
-      cell: (rule) => {
-        const ChannelIcon = rule.channel === 'telegram' ? Send : MessageSquare;
-        return (
-          <div className="flex min-w-0 items-start gap-3">
-            <span
-              className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-control ${rule.enabled ? 'bg-primary-soft text-primary' : 'bg-surface-2 text-muted'}`}
-            >
-              <ChannelIcon size={15} aria-hidden="true" />
-            </span>
-            <div className="min-w-0">
-              <p className={`truncate font-medium ${rule.enabled ? 'text-fg' : 'text-muted'}`}>{rule.name}</p>
-              <p className="truncate font-mono text-xs text-muted" title={rule.recipients.join(', ')}>
-                {rule.channel === 'telegram' ? 'Telegram' : 'SMS'} · {rule.recipients.join(', ')}
-              </p>
-            </div>
-          </div>
-        );
-      },
+      cell: (rule) => (
+        <div className="min-w-0">
+          <p className={`truncate text-[13px] font-medium ${rule.enabled ? 'text-fg' : 'text-muted'}`}>{rule.name}</p>
+          <p className="truncate" title={rule.recipients.join(', ')}>
+            <CodeText className="text-[11px] text-subtle">
+              {rule.channel === 'telegram' ? 'TG' : 'SMS'} · {rule.recipients.join(', ')}
+            </CodeText>
+          </p>
+        </div>
+      ),
     },
     {
       key: 'kinds',
       header: 'Signal turlari',
       mobileLabel: 'Signallar',
       cell: (rule) => (
-        <div className="flex flex-wrap justify-end gap-1 md:justify-start">
+        <ul className="flex flex-wrap justify-end gap-x-2 gap-y-0.5 md:justify-start">
           {rule.kinds.map((kind) => (
-            <Badge key={kind} tone="info">
+            <li key={kind} className="intel-micro !text-fg">
               {kindLabel(kind)}
-            </Badge>
+            </li>
           ))}
-        </div>
+        </ul>
       ),
     },
     {
@@ -155,7 +200,7 @@ export default function NotificationsPage() {
       cell: (rule) => {
         const filters = describeRuleFilters(rule, moduleName, buildingName);
         return filters.length ? (
-          <ul className="max-w-xs space-y-0.5 text-xs text-muted">
+          <ul className="max-w-xs space-y-0.5 text-[12px] leading-4 text-muted">
             {filters.map((f) => (
               <li key={f} className="line-clamp-2">
                 {f}
@@ -163,7 +208,7 @@ export default function NotificationsPage() {
             ))}
           </ul>
         ) : (
-          <span className="text-xs text-subtle">Hammasi</span>
+          <MicroLabel>Hammasi</MicroLabel>
         );
       },
     },
@@ -179,7 +224,10 @@ export default function NotificationsPage() {
             onChange={() => void toggleEnabled(rule)}
             label={`${rule.name}: ${rule.enabled ? "o'chirish" : 'yoqish'}`}
           />
-          <span className={`text-[13px] ${rule.enabled ? 'text-fg' : 'text-muted'}`}>{rule.enabled ? 'Yoqilgan' : "O'chiq"}</span>
+          <StatusLamp
+            status={togglingId === rule.id ? 'idle' : rule.enabled ? 'ok' : 'idle'}
+            label={togglingId === rule.id ? 'Saqlanmoqda' : rule.enabled ? 'Yoqilgan' : "O'chiq"}
+          />
         </div>
       ),
     },
@@ -200,7 +248,6 @@ export default function NotificationsPage() {
   return (
     <Page
       title="Bildirishnomalar"
-      subtitle="AI hodisalari, kamera holati va turniket signallari — Telegram va SMS orqali"
       breadcrumbs={[{ label: 'Sozlamalar' }, { label: 'Bildirishnomalar' }]}
       actions={
         <>
@@ -219,44 +266,86 @@ export default function NotificationsPage() {
         ) : undefined
       }
     >
-      {noChannel && tab !== 'jurnal' && (
-        <Notice tone="warning" title="Hech bir kanal sozlanmagan">
-          Qoidalar saqlanadi, lekin xabar yuborilmaydi. Server .env faylida <code className="font-mono">TELEGRAM_BOT_TOKEN</code> yoki Eskiz
-          sozlamalarini kiriting.
-        </Notice>
-      )}
-
-      {tab === 'qoidalar' && (
-        <DataTable
-          columns={columns}
-          rows={rules}
-          rowKey={(r) => r.id}
-          onRowClick={openEdit}
-          rowTone={(r) => (r.enabled ? null : 'neutral')}
-          loading={rulesLoading && rules.length === 0}
-          loadingRows={3}
-          error={rulesError}
-          onRetry={() => void loadRules()}
-          emptyTitle="Hali qoida yo'q"
-          emptyDescription="Qoida kim, qaysi kanal orqali va qanday signallar haqida xabar olishini belgilaydi. Masalan: yuqori darajali AI hodisalari — navbatchilar Telegram guruhiga."
-          emptyAction={
-            <Button variant="primary" icon={Plus} onClick={openCreate}>
-              Birinchi qoidani qo'shish
-            </Button>
-          }
-          ariaLabel="Bildirishnoma qoidalari"
-          maxHeight="none"
+      <div className="flex min-w-0 flex-col gap-3">
+        {/* 1. Hujjat blanki: kim, nima, qaysi raqam ostida, qaysi holatda. */}
+        <DocumentHeader
+          org={branding.orgFullName}
+          title="Bildirishnoma rejimi"
+          reference={reference}
+          generatedAt={generatedAt}
+          readouts={[
+            { label: 'Qamrov', value: tab === 'qoidalar' ? 'Qoidalar' : tab === 'kanallar' ? 'Kanallar' : 'Yetkazish jurnali' },
+            {
+              label: 'Qoidalar',
+              value: rulesLoading && rules.length === 0 ? '—' : `${enabledCount} / ${rules.length}`,
+              title: "Yoqilgan / jami. Bu — xom son: yaxshi yoki yomonligi tashkilot ehtiyojiga bog'liq, shuning uchun svetofor qo'yilmaydi.",
+            },
+            { label: 'Telegram', value: channelLamp(status?.telegramConfigured) },
+            { label: 'SMS', value: channelLamp(status?.smsConfigured) },
+            {
+              label: 'Ota-onaga xabar',
+              value: status ? (
+                <StatusLamp
+                  status={status.parentArrivalEnabled || status.parentAbsenceEnabled ? 'ok' : 'idle'}
+                  label={status.parentArrivalEnabled || status.parentAbsenceEnabled ? 'Yoqilgan' : "O'chiq"}
+                />
+              ) : (
+                <StatusLamp status="idle" label="Yuklanmoqda" />
+              ),
+            },
+          ]}
         />
-      )}
 
-      {tab === 'kanallar' && (
-        <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
-          <NotificationStatusCard status={status} loading={statusLoading} error={statusError} onRetry={reloadStatus} onTest={() => setTestOpen(true)} />
-          <MyTelegramCard />
-        </div>
-      )}
+        {noChannel && tab !== 'jurnal' && (
+          <Notice tone="warning" title="Hech bir kanal sozlanmagan">
+            Qoidalar saqlanadi, lekin xabar yuborilmaydi. Server .env faylida <code className="font-mono">TELEGRAM_BOT_TOKEN</code> yoki Eskiz
+            sozlamalarini kiriting.
+          </Notice>
+        )}
 
-      {tab === 'jurnal' && <NotificationLogTable refreshKey={logRefresh} filters={logFilters} />}
+        {tab === 'qoidalar' && (
+          <IntelPanel
+            title="Bildirishnoma qoidalari"
+            code={reference}
+            right={<MicroLabel>{rulesLoading && rules.length === 0 ? '—' : `${rules.length} ta`}</MicroLabel>}
+          >
+            <DataTable
+              columns={columns}
+              rows={rules}
+              rowKey={(r) => r.id}
+              onRowClick={openEdit}
+              rowTone={(r) => (r.enabled ? null : 'neutral')}
+              loading={rulesLoading && rules.length === 0}
+              loadingRows={3}
+              error={rulesError}
+              onRetry={() => void loadRules()}
+              dense
+              emptyTitle="Hali qoida yo'q"
+              emptyDescription="Qoida kim, qaysi kanal orqali va qanday signallar haqida xabar olishini belgilaydi. Masalan: yuqori darajali AI hodisalari — navbatchilar Telegram guruhiga."
+              emptyAction={
+                <Button variant="primary" icon={Plus} onClick={openCreate}>
+                  Birinchi qoidani qo'shish
+                </Button>
+              }
+              ariaLabel="Bildirishnoma qoidalari"
+              maxHeight="none"
+            />
+          </IntelPanel>
+        )}
+
+        {tab === 'kanallar' && (
+          <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
+            <NotificationStatusCard status={status} loading={statusLoading} error={statusError} onRetry={reloadStatus} onTest={() => setTestOpen(true)} />
+            <MyTelegramCard />
+          </div>
+        )}
+
+        {tab === 'jurnal' && <NotificationLogTable refreshKey={logRefresh} filters={logFilters} reference={reference} />}
+
+        <DocumentFooter
+          note={`Xizmat uchun. Hujjat ${reference} raqami bilan tizimda tuzilgan; kanal sozlamalari serverning .env faylidan o'qiladi.`}
+        />
+      </div>
 
       <NotificationRuleModal open={modalOpen} rule={editing} status={status} onClose={() => setModalOpen(false)} onSaved={handleSaved} />
       <TestMessageModal open={testOpen} status={status} onClose={() => setTestOpen(false)} onSent={() => setLogRefresh((n) => n + 1)} />

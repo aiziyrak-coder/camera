@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Check, MessageSquare, Send } from 'lucide-react';
-import { Button, Field, Input, Modal, Select, cn, focusRing } from '../../ui';
+import { Button, CodeText, Field, Input, Modal, Select, cn, focusRing } from '../../ui';
 import { Checkbox, ChoiceCards, Notice } from '../settings/kit';
 import RecipientChipsInput from './RecipientChipsInput';
 import { ApiError } from '../../lib/apiClient';
@@ -63,7 +63,8 @@ function toForm(rule: NotificationRule | null): FormState {
 
 type Errors = Partial<Record<'name' | 'recipients' | 'kinds' | 'form', string>>;
 
-const legendClass = 'mb-2 text-[13px] font-medium text-fg';
+/** Maydon guruhlari sarlavhasi — bosh harfli mikro-yorliq. */
+const legendClass = 'intel-micro !text-fg mb-2 block';
 
 /** Qoida yaratish/tahrirlash. `rule` = null — yangi qoida. */
 export default function NotificationRuleModal({
@@ -209,7 +210,7 @@ export default function NotificationRuleModal({
             label="Yoqilgan"
             checked={form.enabled}
             onChange={(e) => set('enabled', e.target.checked)}
-            className="rounded-control border border-border px-3 py-2 sm:mb-0"
+            className="border border-border px-3 py-2 sm:mb-0"
           />
         </div>
 
@@ -230,7 +231,7 @@ export default function NotificationRuleModal({
         {droppedRecipients.length > 0 && (
           <Notice tone="warning">
             {`Kanal almashtirilgani uchun ${droppedRecipients.length} ta qabul qiluvchi olib tashlandi: `}
-            <span className="font-mono">{droppedRecipients.join(', ')}</span>
+            <span className="intel-code">{droppedRecipients.join(', ')}</span>
             {` — ular ${form.channel === 'sms' ? 'SMS' : 'Telegram'} uchun yaroqsiz.`}
           </Notice>
         )}
@@ -269,7 +270,7 @@ export default function NotificationRuleModal({
                   if (next.length) clearError('kinds');
                 }}
                 className={cn(
-                  'rounded-control border px-3 py-2.5 transition-colors',
+                  'border px-3 py-2 transition-colors',
                   form.kinds.includes(kind.value) ? 'border-primary/40 bg-primary-soft/50' : 'border-border hover:border-border-strong',
                 )}
               />
@@ -297,12 +298,12 @@ export default function NotificationRuleModal({
                 AI modullari{' '}
                 <span className="font-normal text-muted">({form.moduleCodes.length ? `${form.moduleCodes.length} ta tanlangan` : 'hammasi'})</span>
               </legend>
-              <div className="max-h-44 space-y-0.5 overflow-y-auto rounded-control border border-border bg-surface-2 p-1.5">
-                {sortedModules.length === 0 && <p className="px-1.5 py-1 text-xs text-muted">Modullar yuklanmoqda...</p>}
+              <div className="max-h-44 divide-y divide-border overflow-y-auto border border-border bg-surface-2">
+                {sortedModules.length === 0 && <p className="px-2 py-1 text-xs text-muted">Modullar yuklanmoqda…</p>}
                 {sortedModules.map((m) => (
                   <label
                     key={m.code}
-                    className="flex cursor-pointer items-center gap-2 rounded-[6px] px-1.5 py-1 text-[13px] hover:bg-surface"
+                    className="flex cursor-pointer items-center gap-2 px-2 py-1 text-[13px] hover:bg-surface"
                   >
                     <input
                       type="checkbox"
@@ -310,7 +311,7 @@ export default function NotificationRuleModal({
                       onChange={() => set('moduleCodes', toggle(form.moduleCodes, m.code))}
                       className={cn('h-3.5 w-3.5 shrink-0 rounded accent-primary', focusRing)}
                     />
-                    <span className="font-mono text-[11px] text-subtle">#{m.code}</span>
+                    <CodeText className="text-[11px] text-subtle">#{m.code}</CodeText>
                     <span className="truncate text-fg">{m.name}</span>
                   </label>
                 ))}
@@ -335,7 +336,7 @@ export default function NotificationRuleModal({
                     aria-pressed={active}
                     onClick={() => set('buildingIds', toggle(form.buildingIds, b.id))}
                     className={cn(
-                      'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-colors',
+                      'inline-flex h-7 items-center gap-1.5 border px-2.5 text-[13px] transition-colors',
                       active ? 'border-primary bg-primary-soft text-primary' : 'border-border bg-surface text-muted hover:border-border-strong hover:text-fg',
                       focusRing,
                     )}

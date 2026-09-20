@@ -105,9 +105,12 @@ export interface HisobotFilterOptions {
   unit_kinds: { id: string; label: string }[];
 }
 
-/** Sahifaning ikki ko'rinishi: 'tahlil' — ko'rsatkichlar va ro'yxatlar,
+/** Sahifa ko'rinishlari: 'taxta' — holat taxtasi, 'royxat' — batafsil,
  *  'tabel' — oylik davomat varag'i (qog'ozga bosiladigan hujjat). */
-export type HisobotView = 'tahlil' | 'tabel';
+/** Uch ko'rinish: holat taxtasi (rahbar uchun), ro'yxat (batafsil) va
+ *  oylik tabel (imzolanadigan hujjat). Eski havolalardagi `tahlil`
+ *  taxtaga tushadi. */
+export type HisobotView = 'taxta' | 'royxat' | 'tabel';
 
 /** URL'dagi holat — havola bilan ulashiladi, "orqaga" ishlaydi. */
 export interface HisobotState {
@@ -125,6 +128,12 @@ export interface HisobotState {
   unitKind: string;
   unit: string;
   q: string;
+}
+
+function readView(raw: string | null): HisobotView {
+  if (raw === 'tabel') return 'tabel';
+  if (raw === 'royxat') return 'royxat';
+  return 'taxta'; // 'tahlil' — eski nom, shu yerga tushadi
 }
 
 export const SECTION_KIND: Record<HisobotSection, HisobotKind> = { xodimlar: 'xodim', talabalar: 'talaba' };
@@ -148,7 +157,7 @@ export function readState(params: URLSearchParams, today: string = todayInTashke
   }
   return {
     section,
-    view: params.get('korinish') === 'tabel' ? 'tabel' : 'tahlil',
+    view: readView(params.get('korinish')),
     month: isMonth(params.get('oy')) ? (params.get('oy') as string) : monthOf(today),
     preset,
     from: range.from,
@@ -330,7 +339,7 @@ export function drillPatch(state: HisobotState, rowId: string): Partial<HisobotS
 /** Tashkilot kodi — boshqa muassasaga o'rnatishda almashtiriladi. */
 export const DOCUMENT_ORG_CODE = 'FERMI';
 
-const DOCUMENT_VIEW_CODE: Record<HisobotView, string> = { tabel: 'TBL', tahlil: 'ANL' };
+const DOCUMENT_VIEW_CODE: Record<HisobotView, string> = { tabel: 'TBL', taxta: 'HLT', royxat: 'RYX' };
 const DOCUMENT_SECTION_CODE: Record<HisobotSection, string> = { xodimlar: 'XDM', talabalar: 'TLB' };
 
 /** Tanlovdan deterministik 4 xonali tartib raqami (0002–9999).

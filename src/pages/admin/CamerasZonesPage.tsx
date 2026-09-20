@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Cpu, DoorOpen, Eye, FileUp, Layers, MapPin, MapPinned, Plus, ScanFace, Settings2, Video, VideoOff, Wrench, type LucideIcon } from 'lucide-react';
+import { Cpu, DoorOpen, Eye, FileUp, MapPin, MapPinned, Plus, ScanFace, Settings2, Video, type LucideIcon } from 'lucide-react';
 import AddCameraModal from '../../components/admin/AddCameraModal';
 import CameraImportModal from '../../components/admin/CameraImportModal';
 import CameraConfigDetailModal from '../../components/admin/CameraConfigDetailModal';
@@ -11,13 +11,16 @@ import CameraRolesImportModal from '../../components/admin/CameraRolesImportModa
 import { AttendanceCamerasPanel } from '../../components/admin/AttendanceCamerasPanel';
 import { Checkbox, pagerFooter } from '../../components/settings/kit';
 import {
-  Badge,
   Button,
-  Card,
+  CodeText,
   DataTable,
+  DocumentFooter,
+  DocumentHeader,
+  IntelPanel,
+  MicroLabel,
   Page,
-  StatTile,
-  StatusDot,
+  Readout,
+  StatusLamp,
   TONE_TEXT,
   FilterBar,
   filterActiveCount,
@@ -28,11 +31,15 @@ import {
   useToast,
   useUrlTab,
   type DataTableColumn,
+  type IntelStatus,
   type TabItem,
   type FilterFieldEntry,
   type Tone,
 } from '../../ui';
+import { buildReference, locationCode, recordCode } from './../../components/admin/registryCodes';
 import { api } from '../../lib/apiClient';
+import { branding } from '../../lib/branding';
+import { RAG_LABEL, RAG_LETTER, RAG_TEXT, RATE_RAG, rag } from '../../ui/rag';
 import { formatModuleSummary } from '../../lib/cameraModules';
 import { ROOM_TYPE_LABELS, ROOM_TYPE_OPTIONS } from '../../lib/cameraRoles';
 import { useAuth } from '../../lib/auth';
@@ -43,11 +50,21 @@ import { useBuildings } from '../../lib/useBuildings';
 import { useCameraZones } from '../../lib/useCameraZones';
 import type { CameraConfig, CameraSummary } from '../../types';
 
-const CAMERA_STATUS_TONE: Record<CameraConfig['status'], Tone> = {
-  faol: 'success',
-  nofaol: 'neutral',
-  tamirda: 'warning',
+/** Holat chirog'i: rang yolg'iz emas — yonida doim so'z turadi. */
+const CAMERA_STATUS_LAMP: Record<CameraConfig['status'], IntelStatus> = {
+  faol: 'ok',
+  nofaol: 'idle',
+  tamirda: 'warn',
 };
+
+/** Hujjat qachon ekranga chiqarilgani. */
+function stamp(): string {
+  try {
+    return new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Tashkent' }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 16).replace('T', ' ');
+  }
+}
 
 const CAMERA_STATUS_LABEL: Record<CameraConfig['status'], string> = {
   faol: 'Faol',
@@ -372,41 +389,50 @@ export default function CamerasZonesPage() {
       ),
     },
     {
+      // Qurilma kodi — reestrdagi asbobni nomisiz ko'rsatish uchun.
+      key: 'code',
+      header: 'Kod',
+      width: '6.5rem',
+      mono: true,
+      cell: (c) => <CodeText className="text-[12px] text-subtle">{recordCode('KM', c.id)}</CodeText>,
+    },
+    {
       key: 'name',
       header: 'Kamera / IP',
       cell: (c) => (
         <div className="min-w-0">
-          <p className="truncate font-medium text-fg">{c.name}</p>
-          <p className="truncate font-mono text-xs text-muted">{c.ip}</p>
+          <p className="truncate text-[13px] font-medium text-fg">{c.name}</p>
+          <CodeText className="block truncate text-[11px] text-muted">{c.ip}</CodeText>
         </div>
       ),
     },
     {
-      key: 'building',
-      header: 'Bino',
+      // Joylashuv kodi: bino belgisi + qavat (2OQ·Q03). Qavati yo'q
+      // kamera bino sxemasida ko'rinmaydi — shuning uchun u yerda
+      // kodning o'rniga to'g'rilash havolasi turadi.
+      key: 'location',
+      header: 'Joylashuv',
+      width: '11rem',
       cell: (c) => (
-        <span className="block max-w-[10rem] truncate text-muted" title={c.building || undefined}>
-          {c.building || '—'}
+        <span className="flex min-w-0 flex-col gap-0.5">
+          {c.floor === null || c.floor === undefined ? (
+            <CellLink tone="warning" title="Qavatni belgilash" onClick={() => setEditing(c)}>
+              Qavat belgilanmagan
+            </CellLink>
+          ) : (
+            <CodeText className="text-[12px] text-fg">{locationCode(c.building, c.floor)}</CodeText>
+          )}
+          <span className="max-w-[10rem] truncate text-[11px] text-muted" title={c.building || undefined}>
+            {c.building || "Bino ko'rsatilmagan"}
+          </span>
         </span>
       ),
-    },
-    {
-      key: 'floor',
-      header: 'Qavat',
-      cell: (c) =>
-        c.floor === null || c.floor === undefined ? (
-          <CellLink tone="warning" title="Qavatni belgilash" onClick={() => setEditing(c)}>
-            belgilanmagan
-          </CellLink>
-        ) : (
-          <span className="whitespace-nowrap tabular-nums text-muted">{c.floor}-qavat</span>
-        ),
     },
     {
       key: 'zone',
       header: 'Zona',
       cell: (c) => (
-        <span className="block max-w-[9rem] truncate text-muted" title={c.zone || undefined}>
+        <span className="block max-w-[9rem] truncate text-[13px] text-muted" title={c.zone || undefined}>
           {c.zone || '—'}
         </span>
       ),
@@ -448,21 +474,23 @@ export default function CamerasZonesPage() {
       key: 'video',
       header: 'Tasvir sifati',
       hideOnMobile: true,
+      mono: true,
       cell: (c) => (
-        <span className="whitespace-nowrap tabular-nums text-muted">
+        <CodeText className="whitespace-nowrap text-[12px] text-muted">
           {c.resolution} / {c.fps ? `${c.fps} fps` : '—'}
-        </span>
+        </CodeText>
       ),
     },
     {
       key: 'status',
       header: 'Holati va aloqasi',
       mobileLabel: 'Holat',
+      width: '10rem',
       cell: (c) => (
-        <div className="inline-flex flex-col items-end gap-1 md:items-start">
-          <Badge tone={CAMERA_STATUS_TONE[c.status]} dot>
-            {CAMERA_STATUS_LABEL[c.status]}
-          </Badge>
+        <div className="inline-flex flex-col items-end gap-0.5 md:items-start">
+          <StatusLamp status={CAMERA_STATUS_LAMP[c.status]} label={CAMERA_STATUS_LABEL[c.status]} />
+          {/* «Faol» — operator NIYATI; javob berish esa oxirgi
+              tekshiruvdagi HAQIQAT. Ikkinchisi svetofor bilan. */}
           {c.status === 'faol' && (
             <span
               title={
@@ -470,10 +498,8 @@ export default function CamerasZonesPage() {
                   ? 'Oxirgi tekshiruvda kamera javob berdi'
                   : "Kamera javob bermayapti — kabel uzilgan, elektr yo'q yoki tarmoq sozlamasi noto'g'ri bo'lishi mumkin"
               }
-              className={cn('inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium', c.isReachable ? 'text-success' : 'text-danger')}
             >
-              <StatusDot tone={c.isReachable ? 'success' : 'danger'} className="scale-75" />
-              {c.isReachable ? 'Ulangan' : "Javob yo'q"}
+              <StatusLamp status={c.isReachable ? 'ok' : 'alert'} pulse={!c.isReachable} label={c.isReachable ? 'Ulangan' : "Javob yo'q"} />
             </span>
           )}
         </div>
@@ -533,6 +559,21 @@ export default function CamerasZonesPage() {
   ];
 
   const withoutFloor = summary?.withoutFloor ?? 0;
+  // Ishlayotgan kameralarning ULUSHI — foiz, ya'ni svetofor qo'llanadi.
+  // Xom sanoqlar (nofaol, ta'mirda, qavatsiz) hukmsiz qoladi: ular
+  // yaxshimi yoki yomonmi, parkning hajmini bilmasdan aytib bo'lmaydi.
+  const reachablePercent = summary && summary.faol > 0 ? Math.round((summary.reachable / summary.faol) * 100) : null;
+  const reachableRag = rag(reachablePercent, RATE_RAG);
+
+  // Reestr varag'ining raqami — filtrlardan, vaqtdan emas.
+  const reference = buildReference('KAM', [tab, buildingFilter || 'BARCHA'], [
+    statusFilter,
+    floorFilter,
+    zoneFilter,
+    roomTypeFilter,
+    search.trim(),
+  ]);
+  const generatedAt = stamp();
 
   return (
     <Page
@@ -566,56 +607,100 @@ export default function CamerasZonesPage() {
         <AttendanceCamerasPanel />
       ) : (
         <>
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        {/* «Faol» — operator NIYATI, `reachable` esa oxirgi tekshiruvda
-            kamera haqiqatan javob bergani. Ilgari bu yerda faqat niyat
-            ko'rinardi: 40 ta kamera soatlab javob bermayotgan bo'lsa ham
-            katak yashil turib, "hammasi joyida" degan taassurot berardi. */}
-        <StatTile
-          icon={Video}
-          tone={summary && summary.reachable < summary.faol ? 'warning' : 'success'}
-          label="Ishlatilayotgan kameralar"
-          value={formatNumber(summary?.faol ?? 0)}
-          hint={
-            summary && summary.reachable < summary.faol
-              ? `${formatNumber(summary.faol - summary.reachable)} tasi oxirgi tekshiruvda javob bermadi`
-              : 'Tizim ulardan tasvir oladi'
-          }
-          loading={!summary}
-        />
-        <StatTile icon={VideoOff} tone="neutral" label="O'chirib qo'yilgan" value={formatNumber(summary?.nofaol ?? 0)} hint="Tizim ularga umuman ulanmaydi" loading={!summary} />
-        <StatTile icon={Wrench} tone="warning" label="Ta'mirda turgan" value={formatNumber(summary?.tamirda ?? 0)} hint="Vaqtincha ishlatilmaydi" loading={!summary} />
-        <StatTile
-          icon={Layers}
-          tone={withoutFloor > 0 ? 'warning' : 'neutral'}
-          label="Qavati ko'rsatilmagan"
-          value={formatNumber(withoutFloor)}
-          hint={
-            floorFilter === UNASSIGNED_FLOOR
-              ? "Quyidagi ro'yxatda faqat shular ko'rsatilmoqda — filtrni olib tashlash uchun bosing"
-              : "Bunday kameralar bino sxemasida ko'rinmaydi. Ro'yxatni ochish uchun bosing"
-          }
-          loading={!summary}
-          // Bosish filtrni YOQADI VA O'CHIRADI: ilgari uni orqaga qaytarish
-          // uchun filtr panelidan qidirish kerak edi.
-          onClick={() => setFloorFilter(floorFilter === UNASSIGNED_FLOOR ? '' : UNASSIGNED_FLOOR)}
-        />
-      </div>
+      {/* 1. Hujjat blanki: qurilma reestri, qaysi kesim, qanday holatda. */}
+      <DocumentHeader
+        org={branding.orgFullName}
+        title="Kameralar reestri"
+        reference={reference}
+        generatedAt={generatedAt}
+        readouts={[
+          { label: 'Qamrov', value: buildingFilter || 'Barcha binolar', title: buildingFilter || undefined },
+          { label: 'Ekranda', value: `${formatNumber(total)} ta kamera`, title: 'Joriy filtrga mos qurilmalar' },
+          {
+            label: 'Ishlatilmoqda',
+            value: summary ? `${formatNumber(summary.faol)} ta` : '—',
+            title: 'Operator «Faol» deb belgilagan kameralar',
+          },
+          {
+            label: 'Aloqa',
+            title: `Oxirgi tekshiruvda javob bergan faol kameralar ulushi — ${RAG_LABEL[reachableRag]}`,
+            value: (
+              <span className={cn('inline-flex items-baseline gap-1.5', RAG_TEXT[reachableRag])}>
+                {reachablePercent === null ? '—' : `${reachablePercent}%`}
+                <span className="text-[10px] font-bold">{RAG_LETTER[reachableRag]}</span>
+              </span>
+            ),
+          },
+        ]}
+      />
+
+      <IntelPanel
+        title="Park holati"
+        code={reference}
+        right={
+          summary && summary.reachable < summary.faol ? (
+            <StatusLamp status="alert" pulse label={`${formatNumber(summary.faol - summary.reachable)} ta javob bermadi`} />
+          ) : undefined
+        }
+      >
+        <div className="grid grid-cols-2 gap-x-6 gap-y-3 px-3 py-2.5 sm:grid-cols-3 xl:grid-cols-5">
+          {/* «Faol» — operator NIYATI, `reachable` esa oxirgi tekshiruvda
+              kamera haqiqatan javob bergani. Ikkalasi alohida turadi:
+              ilgari faqat niyat ko'rinardi va 40 ta kamera soatlab
+              javob bermasa ham katak yashil turardi. */}
+          <Readout label="Ishlatilmoqda" value={summary ? formatNumber(summary.faol) : '—'} title="Tizim ulardan tasvir oladi" />
+          <Readout
+            label="Javob bermoqda"
+            title={`Oxirgi tekshiruv — ${RAG_LABEL[reachableRag]}`}
+            value={
+              <span className={cn('inline-flex items-baseline gap-1.5', RAG_TEXT[reachableRag])}>
+                {summary ? formatNumber(summary.reachable) : '—'}
+                <span className="text-[10px] font-bold">{RAG_LETTER[reachableRag]}</span>
+              </span>
+            }
+          />
+          <Readout label="O'chirib qo'yilgan" value={summary ? formatNumber(summary.nofaol) : '—'} title="Tizim ularga umuman ulanmaydi" />
+          <Readout label="Ta'mirda" value={summary ? formatNumber(summary.tamirda) : '—'} title="Vaqtincha ishlatilmaydi" />
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <MicroLabel>Qavati ko&apos;rsatilmagan</MicroLabel>
+            {/* Bosish filtrni YOQADI VA O'CHIRADI: ilgari uni orqaga
+                qaytarish uchun filtr panelidan qidirish kerak edi. */}
+            <button
+              type="button"
+              onClick={() => setFloorFilter(floorFilter === UNASSIGNED_FLOOR ? '' : UNASSIGNED_FLOOR)}
+              title={
+                floorFilter === UNASSIGNED_FLOOR
+                  ? "Quyidagi ro'yxatda faqat shular ko'rsatilmoqda — filtrni olib tashlash uchun bosing"
+                  : "Bunday kameralar bino sxemasida ko'rinmaydi. Ro'yxatni ochish uchun bosing"
+              }
+              className={cn(
+                'intel-code w-fit text-[13px] font-semibold underline decoration-dotted underline-offset-2',
+                withoutFloor > 0 ? 'text-warning' : 'text-fg',
+                focusRing,
+              )}
+            >
+              {summary ? formatNumber(withoutFloor) : '—'}
+            </button>
+          </div>
+        </div>
+      </IntelPanel>
 
       {selected.size > 0 && (
-        <Card padding="sm" className="flex flex-wrap items-center gap-3">
-          <span className="text-sm font-medium text-fg">
-            <span className="tabular-nums">{selected.size}</span> ta kamera tanlandi
-          </span>
+        /* Buyruq qatori — qalqib turgan tugmalar emas. */
+        <div role="status" className="flex flex-wrap items-center gap-2 border border-border-strong bg-surface-2 px-3 py-1.5">
+          <MicroLabel>Tanlandi</MicroLabel>
+          <CodeText className="text-[13px] font-semibold text-fg">{formatNumber(selected.size)}</CodeText>
+          <span aria-hidden="true" className="h-4 w-px bg-border" />
           <Button size="sm" variant="primary" icon={MapPin} onClick={() => setLocationOpen(true)}>
             Bino/qavat belgilash
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+          <Button size="sm" variant="ghost" className="ms-auto" onClick={() => setSelected(new Set())}>
             Bekor qilish
           </Button>
-        </Card>
+        </div>
       )}
 
+      <IntelPanel title="Qurilmalar ro'yxati" code={reference} right={<MicroLabel>{formatNumber(total)} ta yozuv</MicroLabel>} brackets={false}>
       <DataTable
         ariaLabel="Kameralar"
         columns={columns}
@@ -651,6 +736,11 @@ export default function CamerasZonesPage() {
           ) : undefined
         }
         footer={pagerFooter({ page, totalPages, total, pageSize, onChange: setPage })}
+      />
+      </IntelPanel>
+
+      <DocumentFooter
+        note={`Xizmat uchun. Varaq ${reference} raqami bilan tizimda tuzilgan. Qurilma kodi (KM-…) va joylashuv kodi (bino·qavat) ro'yxatdagi kamerani nomisiz ko'rsatadi.`}
       />
         </>
       )}

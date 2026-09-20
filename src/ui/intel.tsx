@@ -15,15 +15,22 @@ import { cn } from './cn';
  */
 
 /** Kichik bosh harfli yorliq: "QAMROV", "DAVR", "HOLAT". */
-export function MicroLabel({ children, className }: { children: ReactNode; className?: string }) {
+export function MicroLabel({ children, className, title }: { children: ReactNode; className?: string; title?: string }) {
   return (
-    <span className={cn('intel-micro', className)}>{children}</span>
+    <span className={cn('intel-micro', className)} title={title}>
+      {children}
+    </span>
   );
 }
 
-/** Monoshrift kod: hujjat raqami, kamera indeksi, koordinata. */
-export function CodeText({ children, className }: { children: ReactNode; className?: string }) {
-  return <span className={cn('intel-code', className)}>{children}</span>;
+/** Monoshrift kod: hujjat raqami, kamera indeksi, koordinata.
+ *  `title` — qisqartirilgan kodning to'liq shakli (sichqoncha ostida). */
+export function CodeText({ children, className, title }: { children: ReactNode; className?: string; title?: string }) {
+  return (
+    <span className={cn('intel-code', className)} title={title}>
+      {children}
+    </span>
+  );
 }
 
 /** Yorliq + qiymat juftligi (yuqoridagi ma'lumot satri uchun). */

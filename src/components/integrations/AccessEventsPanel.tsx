@@ -1,6 +1,19 @@
 import { Link } from 'react-router-dom';
 import { ArrowDownLeft, ArrowUpRight, Plus } from 'lucide-react';
-import { Badge, Button, DataTable, FilterBar, Input, cn, focusRing, type DataTableColumn, type FilterFieldEntry } from '../../ui';
+import {
+  Button,
+  CodeText,
+  DataTable,
+  FilterBar,
+  Input,
+  IntelPanel,
+  MicroLabel,
+  StatusLamp,
+  cn,
+  focusRing,
+  type DataTableColumn,
+  type FilterFieldEntry,
+} from '../../ui';
 import { pagerFooter } from '../settings/kit';
 import { useServerPage } from '../../lib/useServerPage';
 import { formatDateTime, peopleSearchLink, type AccessDevice, type AccessEventItem } from '../../lib/integrationsApi';
@@ -101,17 +114,17 @@ export function AccessEventsToolbar({
 function Direction({ value }: { value: string | null }) {
   if (value === 'kirish') {
     return (
-      <span className="inline-flex items-center gap-1 text-[13px] text-success">
-        <ArrowDownLeft size={13} aria-hidden="true" />
-        Kirish
+      <span className="inline-flex items-center gap-1 text-success">
+        <ArrowDownLeft size={12} aria-hidden="true" />
+        <MicroLabel className="!text-success">Kirish</MicroLabel>
       </span>
     );
   }
   if (value === 'chiqish') {
     return (
-      <span className="inline-flex items-center gap-1 text-[13px] text-warning">
-        <ArrowUpRight size={13} aria-hidden="true" />
-        Chiqish
+      <span className="inline-flex items-center gap-1 text-warning">
+        <ArrowUpRight size={12} aria-hidden="true" />
+        <MicroLabel className="!text-warning">Chiqish</MicroLabel>
       </span>
     );
   }
@@ -122,7 +135,7 @@ const COLUMNS: DataTableColumn<AccessEventItem>[] = [
   {
     key: 'time',
     header: 'Vaqt',
-    cell: (e) => <span className="whitespace-nowrap text-[13px] tabular-nums">{formatDateTime(e.occurredAt, true)}</span>,
+    cell: (e) => <CodeText className="whitespace-nowrap text-[12px]">{formatDateTime(e.occurredAt, true)}</CodeText>,
   },
   {
     key: 'person',
@@ -133,17 +146,17 @@ const COLUMNS: DataTableColumn<AccessEventItem>[] = [
           <Link
             to={peopleSearchLink(e.personName)}
             onClick={(event) => event.stopPropagation()}
-            className={cn('rounded font-medium text-fg hover:text-primary hover:underline', focusRing)}
+            className={cn('rounded-[2px] text-[13px] font-medium text-fg hover:text-primary hover:underline', focusRing)}
           >
             {e.personName}
           </Link>
-          <p className="truncate text-xs text-muted">
+          <p className="truncate text-[12px] leading-4 text-muted">
             {e.personType === 'xodim' ? 'Xodim' : 'Talaba'}
             {e.personUnit ? ` · ${e.personUnit}` : ''}
           </p>
         </div>
       ) : (
-        <span className="text-[13px] text-muted">Aniqlanmagan</span>
+        <MicroLabel>Aniqlanmagan</MicroLabel>
       ),
   },
   {
@@ -157,25 +170,16 @@ const COLUMNS: DataTableColumn<AccessEventItem>[] = [
     header: 'Karta / raqam',
     hideOnMobile: true,
     cell: (e) => (
-      <span className="font-mono text-xs text-muted">
+      <CodeText className="text-[11px] text-muted">
         {e.cardNumber ?? '—'}
         {e.employeeNo && <span className="block">№ {e.employeeNo}</span>}
-      </span>
+      </CodeText>
     ),
   },
   {
     key: 'granted',
     header: 'Natija',
-    cell: (e) =>
-      e.granted ? (
-        <Badge tone="success" dot>
-          Ruxsat
-        </Badge>
-      ) : (
-        <Badge tone="danger" dot>
-          Rad etildi
-        </Badge>
-      ),
+    cell: (e) => <StatusLamp status={e.granted ? 'ok' : 'alert'} label={e.granted ? 'Ruxsat' : 'Rad etildi'} />,
   },
 ];
 
@@ -184,11 +188,14 @@ export default function AccessEventsPanel({
   filters,
   deviceCount = null,
   onAddDevice,
+  reference,
 }: {
   filters: AccessEventFilters;
   /** Qo'shilgan turniket qurilmalari soni; null — hali noma'lum. */
   deviceCount?: number | null;
   onAddDevice?: () => void;
+  /** Sahifaning hujjat raqami — panel sarlavhasining o'ng chetida. */
+  reference?: string;
 }) {
   const { items, page, setPage, totalPages, total, pageSize, loading, error, reload } = useServerPage<AccessEventItem>(
     '/api/access/events',
@@ -207,8 +214,22 @@ export default function AccessEventsPanel({
   // topilmadi, qurilma ulanganini tekshiring" emas, aniq sabab aytiladi.
   const noDevices = deviceCount === 0 && !filtered;
 
+  // Rad etilgan o'tishlar SONI neytral ko'rsatiladi: rad etish o'z-o'zidan
+  // nosozlik emas (begona karta ham shu yerga tushadi), shuning uchun
+  // bu songa svetofor qo'yilmaydi.
+  const deniedOnPage = items.filter((e) => !e.granted).length;
+
   return (
-    <DataTable
+    <IntelPanel
+      title="Kirish jurnali"
+      code={reference}
+      right={
+        <MicroLabel>
+          {total.toLocaleString('ru-RU')} ta · shu sahifada rad etilgan: {deniedOnPage}
+        </MicroLabel>
+      }
+    >
+      <DataTable
       columns={COLUMNS}
       rows={items}
       rowKey={(e) => e.id}
@@ -234,7 +255,9 @@ export default function AccessEventsPanel({
       mobileTitleKey="person"
       ariaLabel="Kirish hodisalari jurnali"
       maxHeight="none"
+      dense
       footer={pagerFooter({ page, totalPages, total, pageSize, onChange: setPage })}
-    />
+      />
+    </IntelPanel>
   );
 }

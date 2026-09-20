@@ -4,14 +4,16 @@ import { ArrowLeft, CalendarCheck, LayoutGrid, RefreshCw, Rows3, ScanFace, Searc
 import {
   Button,
   ButtonLink,
-  Card,
+  CodeText,
   DataTable,
+  DocumentFooter,
+  DocumentHeader,
   EmptyState,
   ErrorState,
   IconButton,
+  IntelPanel,
+  MicroLabel,
   Page,
-  ProgressBar,
-  ProgressRing,
   SearchInput,
   Select,
   Skeleton,
@@ -25,12 +27,15 @@ import {
   type DataTableColumn,
   type TabItem,
 } from '../../ui';
+import { RATE_RAG, rag } from '../../ui/rag';
+import { RagLegend, StatusBoard, type BoardItem } from '../../components/hisobot/board';
+import { KpiReadout, RateCell, RuledSection, StaleNote, stamp, worstFirst } from '../../components/attendance/readout';
+import { dayReference, idToken, unitCode } from '../../components/attendance/references';
+import { branding } from '../../lib/branding';
 import { NO_FACULTY_ID, getFaculty, getGroups, situationPaths, type CourseBlock, type Counts, type GroupStat } from '../../lib/situationApi';
 import { courseLabel, enrolledPct, groupsToCourses, hasAttendanceData, normalizeText, sortGroups, sumCounts, type GroupSortKey } from '../../lib/studentAttendance';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { useViewDate } from '../../lib/viewDate';
-import { CountsBar, CountsLegend } from '../../components/students/CountsBreakdown';
-import { GroupCard } from '../../components/students/UnitCards';
 import { useAsyncData } from '../../components/students/useAsyncData';
 import { EnrollmentCampaign } from '../../components/students/EnrollmentCampaign';
 
@@ -50,9 +55,9 @@ interface FacultyView {
 }
 
 const SORTS: { value: GroupSortKey; label: string }[] = [
-  { value: 'name', label: 'Nomi bo\'yicha' },
   { value: 'rate-asc', label: 'Avval past davomat' },
   { value: 'rate-desc', label: 'Avval yuqori davomat' },
+  { value: 'name', label: 'Nomi bo\'yicha' },
 ];
 
 async function loadFaculty(id: string, date: string, signal: AbortSignal): Promise<FacultyView> {
@@ -63,6 +68,12 @@ async function loadFaculty(id: string, date: string, signal: AbortSignal): Promi
   }
   const detail = await getFaculty(id, date, { signal });
   return { name: detail.name, totals: detail.totals, courses: detail.courses };
+}
+
+/** Guruh o'lchangan davomatga egami: bo'sh guruhda ham, yuzlar yig'ilmagan
+ *  guruhda ham foiz bor, lekin u hukm chiqarishga yaramaydi. */
+function measured(g: GroupStat): boolean {
+  return g.total > 0 && hasAttendanceData(g);
 }
 
 /** Fakultet: kurslar bo'yicha guruhlar va ularning shu kungi davomati. */
@@ -108,7 +119,9 @@ export default function FacultyPage() {
       ),
     [setParams],
   );
-  const [sort, setSort] = usePersistedState<GroupSortKey>('talabalar.fakultet.saralash', 'name');
+  // Standart tartib — YOMONI BIRINCHI: rahbar ekranni ochganda avval chora
+  // kerak bo'lgan guruhni ko'radi. Tanlov saqlanadi (ilgari ham shunday edi).
+  const [sort, setSort] = usePersistedState<GroupSortKey>('talabalar.fakultet.saralash', 'rate-asc');
   const [view, setView] = usePersistedState<'cards' | 'table'>('talabalar.fakultet.korinish', 'cards');
   // Talabasi yo'q fakultet "Yuz topshirish" bilan ochilmaydi — yig'iladigan
   // yuz ham yo'q, foydalanuvchi bo'sh kampaniya ko'rinishiga tushib qolardi.
@@ -124,6 +137,15 @@ export default function FacultyPage() {
   );
   const [course, setCourse] = useUrlTab(courseTabs, { param: COURSE_PARAM, defaultTab: 'all' });
 
+  // Xizmat kodi — serverdan kelgan tartibda, bir marta. Ekranda saralash
+  // yoki qidiruv kodni ko'chirmaydi: GUR-07 doim o'sha guruh.
+  const codes = useMemo(() => {
+    const map = new Map<string, string>();
+    let index = 0;
+    for (const c of data?.courses ?? []) for (const g of c.groups) map.set(g.name, unitCode('GUR', index++));
+    return map;
+  }, [data]);
+
   const blocks = useMemo(() => {
     const needle = normalizeText(query);
     return (data?.courses ?? [])
@@ -138,15 +160,52 @@ export default function FacultyPage() {
       });
   }, [data, course, query, sort]);
   const flat = useMemo(() => sortGroups(blocks.flatMap((b) => b.groups), sort), [blocks, sort]);
-  // Qidiruv faol bo'lganda yuqoridagi umumiy karta ham FAQAT ko'rinayotgan
-  // guruhlardan hisoblanadi — ilgari halqa butun fakultetni ko'rsatib,
-  // pastdagi bitta topilgan guruh bilan zid chiqardi.
+  // Jadvalda saralash ustun sarlavhalari orqali bo'ladi, tanlagich esa
+  // ko'rsatilmaydi — shuning uchun boshlang'ich tartib doim nom bo'yicha.
+  // Ikkita raqobatdosh saralash bir-birini bekor qilardi.
+  const tableRows = useMemo(() => sortGroups(blocks.flatMap((b) => b.groups), 'name'), [blocks]);
+  // Qidiruv faol bo'lganda yuqoridagi umumiy ko'rsatkichlar ham FAQAT
+  // ko'rinayotgan guruhlardan hisoblanadi — ilgari foiz butun fakultetni
+  // ko'rsatib, pastdagi bitta topilgan guruh bilan zid chiqardi.
   const searching = normalizeText(query).length > 0;
   const summary = searching ? (flat.length ? sumCounts(flat) : undefined) : course === 'all' ? data?.totals : blocks[0]?.totals;
   const groupCount = data?.courses.reduce((n, c) => n + c.groups.length, 0) ?? 0;
 
+  const title = data?.name ?? (facultyId === NO_FACULTY_ID ? 'Fakultetsiz' : 'Fakultet');
+  const reference = dayReference(`FAK-${idToken(facultyId)}`, date);
+  const generatedAt = useMemo(stamp, [date, data]);
+  const scopeLabel = searching ? "Topilgan guruhlar bo'yicha" : course === 'all' ? "Fakultet bo'yicha" : (blocks[0]?.label ?? 'Kurs bo\'yicha');
+
+  /** Guruhlar → holat taxtasi kataklari. */
+  const boardOf = useCallback(
+    (groups: GroupStat[]): BoardItem[] =>
+      groups.map((g) => ({
+        id: g.name,
+        code: codes.get(g.name) ?? 'GUR-00',
+        name: g.name,
+        value: measured(g) ? g.rate : null,
+        unit: '%',
+        detail:
+          g.total === 0
+            ? "Guruhga hali talaba biriktirilmagan"
+            : measured(g)
+              ? `${formatNumber(g.present)} / ${formatNumber(g.present + g.absent + g.notYet)} keldi`
+              : `Yuzi ro'yxatda ${formatPercent(enrolledPct(g))} — davomat hali o'lchanmaydi`,
+        headcount: g.total,
+      })),
+    [codes],
+  );
+
   const columns: DataTableColumn<GroupStat>[] = [
-    { key: 'name', header: 'Guruh', cell: (g) => <span className="font-medium text-fg">{g.name}</span>, sortValue: (g) => g.name },
+    {
+      key: 'code',
+      header: 'Kod',
+      width: '5.5rem',
+      mono: true,
+      sortValue: (g) => codes.get(g.name) ?? '',
+      cell: (g) => <CodeText className="text-[12px] text-subtle">{codes.get(g.name)}</CodeText>,
+    },
+    { key: 'name', header: 'Guruh', cell: (g) => <span className="text-[13px] font-medium text-fg">{g.name}</span>, sortValue: (g) => g.name },
     // Ilgari kursi ko'rsatilmagan guruhda izohsiz "—" turardi — endi sababi yoziladi.
     { key: 'course', header: 'Kurs', cell: (g) => courseLabel(g.course), sortValue: (g) => g.course, hideOnMobile: true },
     { key: 'total', header: 'Jami talaba', align: 'right', cell: (g) => formatNumber(g.total), sortValue: (g) => g.total },
@@ -158,7 +217,7 @@ export default function FacultyPage() {
       sortValue: (g) => enrolledPct(g),
       cell: (g) => (
         <span
-          className={hasAttendanceData(g) ? 'tabular-nums' : 'tabular-nums font-medium text-warning'}
+          className={hasAttendanceData(g) ? undefined : 'font-semibold text-warning'}
           title="Kamera faqat yuzi ro'yxatdan o'tgan talabani taniy oladi"
         >
           {formatPercent(enrolledPct(g))}
@@ -170,48 +229,44 @@ export default function FacultyPage() {
     { key: 'late', header: 'Kech keldi', align: 'right', cell: (g) => formatNumber(g.late), sortValue: (g) => g.late },
     { key: 'absent', header: 'Kelmadi', align: 'right', cell: (g) => formatNumber(g.absent), sortValue: (g) => g.absent },
     // O'tgan kunda "hali kelmagan" bo'lmaydi (server pending=false) — o'rniga
-    // kamera taniy olmagan (yuzi yo'q) talabalar soni ko'rsatiladi.
+    // kamera taniy olmagan (yuzi yo'q) va dam olish kunlari ko'rsatiladi.
     isToday
       ? { key: 'notYet', header: 'Hali kelmagan', align: 'right' as const, cell: (g: GroupStat) => formatNumber(g.notYet), sortValue: (g: GroupStat) => g.notYet }
       : {
           key: 'noData',
           header: "Ma'lumot yo'q",
           align: 'right' as const,
-          cell: (g: GroupStat) => formatNumber(g.noData + g.dayOff),
+          cell: (g: GroupStat) => (
+            <span title={g.dayOff > 0 ? `Kamera tanimagan ${g.noData} · dam olish kuni ${g.dayOff}` : 'Kamera tanimagan'}>
+              {formatNumber(g.noData + g.dayOff)}
+            </span>
+          ),
           sortValue: (g: GroupStat) => g.noData + g.dayOff,
           hideOnMobile: true,
         },
     {
       key: 'rate',
       header: 'Kelganlar ulushi',
-      width: '11rem',
+      align: 'right',
+      width: '9rem',
       sortValue: (g) => g.rate,
       sortFirst: 'asc',
       // Bo'sh guruhda sabab boshqa: yuz kam emas, talabaning o'zi yo'q.
-      cell: (g) => g.total === 0 ? (
-        <span className="text-xs text-muted" title="Guruhga talaba biriktirilmagan">
-          talaba yo'q
-        </span>
-      ) : !hasAttendanceData(g) ? (
-        <span className="text-xs text-muted" title="Guruhda yuzini ro'yxatdan o'tkazgan talaba juda kam">
-          hisoblab bo'lmaydi
-        </span>
-      ) : (
-        <div className="flex items-center gap-2">
-          <ProgressBar value={g.rate} size="xs" className="flex-1" />
-          <span className="w-12 text-right font-semibold tabular-nums">{formatPercent(g.rate)}</span>
-        </div>
+      cell: (g) => (
+        <RateCell
+          value={measured(g) ? g.rate : null}
+          digits={1}
+          note={g.total === 0 ? "talaba yo'q" : 'yuzlar yetarli emas'}
+        />
       ),
     },
   ];
 
-  const name = data?.name ?? (facultyId === NO_FACULTY_ID ? 'Fakultetsiz' : 'Fakultet');
-
   return (
     <Page
-      title={name}
+      title={title}
       subtitle={`Fakultetdagi har bir guruhda ${isToday ? 'bugun' : 'shu kuni'} nechta talaba kelgani${data ? ` · ${groupCount} guruh, ${formatNumber(data.totals.total)} talaba` : ''} · ${formatUzDate(date, { weekday: true })}`}
-      breadcrumbs={[{ label: 'Talabalar', to: withDate(situationPaths.faculties) }, { label: name }]}
+      breadcrumbs={[{ label: 'Talabalar', to: withDate(situationPaths.faculties) }, { label: title }]}
       actions={<IconButton icon={RefreshCw} label="Yangilash" variant="secondary" onClick={faculty.reload} loading={faculty.refreshing} />}
       tabs={data ? VIEWS : undefined}
       defaultTab={defaultMode}
@@ -221,35 +276,68 @@ export default function FacultyPage() {
         <EnrollmentCampaign facultyId={facultyId} today={today} withDate={withDate} />
       ) : faculty.loading ? (
         <>
-          <Skeleton className="h-32 rounded-card" />
+          <Skeleton className="h-32" />
           <SkeletonCards count={8} height="h-36" className="sm:grid-cols-2 xl:grid-cols-4" />
         </>
       ) : faculty.error && !data ? (
-        <Card padding="none">
+        <div className="border border-border bg-surface">
           <ErrorState variant="block" title={/topilmadi/i.test(faculty.error) ? 'Fakultet topilmadi' : undefined} message={faculty.error} onRetry={faculty.reload} />
           <div className="flex justify-center pb-8">
             <ButtonLink to={withDate(situationPaths.faculties)} icon={ArrowLeft} variant="ghost">
               Fakultetlarga qaytish
             </ButtonLink>
           </div>
-        </Card>
+        </div>
       ) : data ? (
-        <>
+        <div className="flex min-w-0 flex-col gap-3">
+          {/* 1. Hujjat blanki — qaysi bo'linma, qaysi kun, qancha odam. */}
+          <DocumentHeader
+            org={branding.orgFullName}
+            title={`${title} — guruhlar kesimi`}
+            reference={reference}
+            generatedAt={generatedAt}
+            readouts={[
+              { label: 'Kun', value: formatUzDate(date, { weekday: true }) },
+              { label: 'Kurslar', value: `${data.courses.length} ta` },
+              { label: 'Guruhlar', value: `${groupCount} ta` },
+              { label: 'Talabalar', value: `${formatNumber(data.totals.total)} ta` },
+              { label: 'Umumiy holat', value: formatPercent(data.totals.rate, 1) },
+            ]}
+          />
+
+          {faculty.error && <StaleNote message={faculty.error} onRetry={faculty.reload} />}
+
           <Tabs tabs={courseTabs} value={course} onChange={setCourse} ariaLabel="Kurslar" />
+
           {summary && (
-            <Card className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
-              <ProgressRing value={summary.rate} size={88} sublabel="davomat" />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-fg">
-                  {searching ? 'Topilgan guruhlar bo\'yicha' : course === 'all' ? 'Fakultet bo\'yicha' : blocks[0]?.label}
-                  <span className="ml-2 font-normal text-muted">
-                    {formatNumber(summary.present)} / {formatNumber(summary.present + summary.absent + summary.notYet)} keldi
-                  </span>
-                </p>
-                <CountsBar counts={summary} size="md" className="mt-3" />
-                <CountsLegend counts={summary} size="md" className="mt-3" />
-              </div>
-            </Card>
+            <IntelPanel title="Tanlangan qamrov" code={reference}>
+              {/* Qamrov nomi va foiz maxraji BITTA qatorda: "nimadan" degan
+                  savol ekranni tark etmasin. */}
+              <p className="border-b border-border px-3 py-1.5 text-[13px] font-medium text-fg">
+                {scopeLabel}
+                <span className="intel-code ms-2 font-normal text-muted">
+                  {formatNumber(summary.present)} / {formatNumber(summary.present + summary.absent + summary.notYet)} keldi
+                </span>
+              </p>
+              <KpiReadout
+                className="lg:grid-cols-5"
+                items={[
+                  { label: 'Kelganlar ulushi', value: formatPercent(summary.rate, 1), rate: summary.rate },
+                  { label: "O'z vaqtida", value: formatNumber(Math.max(0, summary.present - summary.late)), unit: 'talaba' },
+                  { label: 'Kech keldi', value: formatNumber(summary.late), unit: 'talaba' },
+                  { label: 'Kelmadi', value: formatNumber(summary.absent), unit: 'talaba' },
+                  {
+                    label: isToday ? 'Hali kelmagan' : "Ma'lumot yo'q",
+                    value: formatNumber(isToday ? summary.notYet : summary.noData + summary.dayOff),
+                    unit: 'talaba',
+                    hint:
+                      !isToday && summary.dayOff > 0
+                        ? `Kamera tanimagan ${formatNumber(summary.noData)} · dam olish kuni ${formatNumber(summary.dayOff)}`
+                        : undefined,
+                  },
+                ]}
+              />
+            </IntelPanel>
           )}
 
           <Toolbar
@@ -265,7 +353,7 @@ export default function FacultyPage() {
                   value={view}
                   onChange={setView}
                   tabs={[
-                    { id: 'cards', label: 'Kartalar', icon: LayoutGrid },
+                    { id: 'cards', label: 'Taxta', icon: LayoutGrid },
                     { id: 'table', label: 'Jadval', icon: Rows3 },
                   ]}
                 />
@@ -294,37 +382,54 @@ export default function FacultyPage() {
               }
             />
           ) : view === 'table' ? (
-            <DataTable
-              ariaLabel="Guruhlar"
-              columns={columns}
-              rows={flat}
-              rowKey={(g) => g.name}
-              onRowClick={(g) => navigate(withDate(situationPaths.group(g.name)))}
-              rowTone={(g) => (g.rate === null || !hasAttendanceData(g) ? null : g.rate >= 85 ? 'success' : g.rate >= 70 ? 'warning' : 'danger')}
-            />
+            <IntelPanel title="Guruhlar — batafsil" code={`${tableRows.length} qator`}>
+              <DataTable
+                ariaLabel="Guruhlar"
+                columns={columns}
+                rows={tableRows}
+                rowKey={(g) => g.name}
+                onRowClick={(g) => navigate(withDate(situationPaths.group(g.name)))}
+                rowRag={(g) => (measured(g) ? rag(g.rate, RATE_RAG) : 'yoq')}
+                dense
+              />
+            </IntelPanel>
           ) : (
-            blocks
-              .filter((b) => b.groups.length > 0)
-              .map((block) => (
-                <section key={block.label} className="flex flex-col gap-3">
-                  {course === 'all' && (
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <h2 className="text-base font-semibold text-fg">{block.label}</h2>
-                      <span className="text-[13px] text-muted">
+            <IntelPanel
+              title="Guruhlar holati"
+              code={`${flat.length} ta`}
+              right={<MicroLabel>{sort === 'rate-asc' ? 'Yomoni birinchi' : sort === 'rate-desc' ? 'Yaxshisi birinchi' : 'Nomi bo\'yicha'}</MicroLabel>}
+              bodyClassName="flex flex-col"
+            >
+              {/* Kurs bloklari — suzib yurgan kartalar emas, chiziq bilan
+                  ajratilgan bo'limlar. */}
+              {blocks
+                .filter((b) => b.groups.length > 0)
+                .map((block) => (
+                  <RuledSection
+                    key={block.label}
+                    title={course === 'all' ? block.label : `${block.label} — tanlangan kurs`}
+                    code={`${block.groups.length} ta`}
+                    meta={
+                      <span className="intel-code text-[11px] text-muted">
                         {block.groups.length} guruh · {formatNumber(block.totals.total)} talaba · davomat{' '}
-                        <span className="font-semibold tabular-nums text-fg">{formatPercent(block.totals.rate)}</span>
+                        <span className="font-semibold text-fg">{formatPercent(block.totals.rate)}</span>
                       </span>
-                    </div>
-                  )}
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-                    {block.groups.map((g) => (
-                      <GroupCard key={g.name} group={g} to={withDate(situationPaths.group(g.name))} />
-                    ))}
-                  </div>
-                </section>
-              ))
+                    }
+                  >
+                    <StatusBoard
+                      items={sort === 'name' ? boardOf(block.groups) : worstFirst(boardOf(block.groups))}
+                      onOpen={(groupName) => navigate(withDate(situationPaths.group(groupName)))}
+                    />
+                  </RuledSection>
+                ))}
+              <RagLegend />
+            </IntelPanel>
           )}
-        </>
+
+          <DocumentFooter
+            note={`Xizmat uchun. Hujjat ${reference} raqami bilan tizimda tuzilgan; sonlar ${formatUzDate(date, { weekday: true })} kuni uchun. Yuzi ro'yxatdan o'tmagan talaba foizga kirmaydi.`}
+          />
+        </div>
       ) : null}
     </Page>
   );

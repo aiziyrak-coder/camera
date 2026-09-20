@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { CalendarClock } from 'lucide-react';
 import type { Lesson } from '../../lib/situationApi';
-import { Badge, Card, CardHeader, EmptyState, ErrorState, ProgressBar, Skeleton, cn, formatNumber, type Tone } from '../../ui';
+import { Badge, EmptyState, ErrorState, MicroLabel, ProgressBar, Skeleton, cn, formatNumber, type Tone } from '../../ui';
 import { lessonSlots, type LessonSlot } from './situationUtils';
 
 interface Props {
@@ -42,16 +42,14 @@ export function LessonsTimeline({ lessons, loading, error, onRetry, isToday, big
     : 'Juftliklar bo\'yicha';
 
   return (
-    <Card className="flex flex-col">
-      <CardHeader
-        title={isToday ? 'Bugungi darslar' : 'Shu kungi darslar'}
-        subtitle={subtitle}
-        icon={CalendarClock}
-      />
+    <>
+      <div className="border-b border-border px-3 py-1.5">
+        <MicroLabel className="intel-micro-wrap">{subtitle}</MicroLabel>
+      </div>
       {loading ? (
-        <div className="flex gap-3 overflow-hidden" aria-busy="true" aria-label="Yuklanmoqda">
+        <div className="flex gap-3 overflow-hidden p-3" aria-busy="true" aria-label="Yuklanmoqda">
           {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-32 w-48 shrink-0 rounded-card" />
+            <Skeleton key={i} className="h-28 w-44 shrink-0" />
           ))}
         </div>
       ) : error ? (
@@ -71,7 +69,7 @@ export function LessonsTimeline({ lessons, loading, error, onRetry, isToday, big
           }
         />
       ) : (
-        <ol ref={scroller} className={cn('-mx-1 grid snap-x grid-flow-col gap-3 overflow-x-auto px-1 pb-1', big ? 'auto-cols-[minmax(15rem,1fr)]' : 'auto-cols-[minmax(12.5rem,1fr)]')} aria-label="Juftliklar">
+        <ol ref={scroller} className={cn('grid snap-x grid-flow-col gap-3 overflow-x-auto p-3', big ? 'auto-cols-[minmax(15rem,1fr)]' : 'auto-cols-[minmax(12.5rem,1fr)]')} aria-label="Juftliklar">
           {slots.map((slot, index) => {
             const meta = STATE[slot.state];
             const checked = slot.onTime + slot.late + slot.missed;
@@ -80,8 +78,8 @@ export function LessonsTimeline({ lessons, loading, error, onRetry, isToday, big
               <li
                 key={slot.start}
                 className={cn(
-                  'relative flex min-w-0 snap-start flex-col rounded-card border bg-surface p-3.5',
-                  ongoing ? 'border-primary shadow-pop ring-1 ring-primary/30' : 'border-border',
+                  'relative flex min-w-0 snap-start flex-col border bg-surface p-3',
+                  ongoing ? 'border-primary ring-1 ring-primary/30' : 'border-border',
                   slot.state === 'finished' && 'bg-surface-2/50',
                 )}
               >
@@ -128,6 +126,6 @@ export function LessonsTimeline({ lessons, loading, error, onRetry, isToday, big
           })}
         </ol>
       )}
-    </Card>
+    </>
   );
 }

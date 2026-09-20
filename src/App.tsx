@@ -33,7 +33,7 @@ const StyleGuidePage = lazyPage(() => import('./pages/settings/StyleGuidePage'))
 
 // Mavjud sahifalar — yangi manzillarda, 2-bosqichda dizayn tizimiga ko'chiriladi.
 const EventsPage = lazyPage(() => import('./pages/admin/EventsPage'));
-const ReportsPage = lazyPage(() => import('./pages/admin/ReportsPage'));
+const HisobotPage = lazyPage(() => import('./pages/admin/HisobotPage'));
 const VideoWallPage = lazyPage(() => import('./pages/admin/VideoWallPage'));
 const StudentsStaffPage = lazyPage(() => import('./pages/admin/StudentsStaffPage'));
 const OrgStructurePage = lazyPage(() => import('./pages/admin/OrgStructurePage'));
@@ -149,7 +149,7 @@ export default function App() {
                 <Route path="/hodisalar" element={<EventsPage />} />
               </Route>
               <Route element={<RequirePermission permission="viewReports" />}>
-                <Route path="/hisobotlar" element={<ReportsPage />} />
+                <Route path="/hisobotlar" element={<HisobotPage />} />
               </Route>
               <Route element={<RequirePermission permission="registerPeople" />}>
                 <Route path="/reestr" element={<StudentsStaffPage />} />

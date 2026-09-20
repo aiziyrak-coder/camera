@@ -1,23 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, CalendarDays, Clock, Footprints, GraduationCap, LogIn, MapPin, RefreshCw, ScanFace, UserX, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, CalendarDays, Footprints, GraduationCap, MapPin, RefreshCw } from 'lucide-react';
 import {
   Badge,
   Button,
   ButtonLink,
-  Card,
-  CardHeader,
+  CodeText,
   DataTable,
   DateRangePicker,
+  DocumentFooter,
+  DocumentHeader,
   EmptyState,
   ErrorState,
   IconButton,
+  IntelPanel,
+  MicroLabel,
   Page,
-  ProgressRing,
   Skeleton,
   SkeletonTiles,
-  StatTile,
-  StatusBadge,
+  StatusLamp,
   Tabs,
   Toolbar,
   cn,
@@ -25,6 +26,7 @@ import {
   formatNumber,
   formatPercent,
   formatUzDate,
+  formatUzRange,
   isIsoDate,
   rangeForPreset,
   detectPreset,
@@ -66,6 +68,9 @@ import { ArrivalTimeChart } from '../../components/students/TrendCharts';
 import { errorText, useAsyncData } from '../../components/students/useAsyncData';
 import { GroupEnrollDrawer, type EnrollDrawerTarget } from '../../components/students/GroupEnrollDrawer';
 import { EnrollCta, StaffKpis, WeekdayPatternCard } from '../../components/attendance/PersonInsights';
+import { KpiReadout, StaleNote, StatusMark, stamp } from '../../components/attendance/readout';
+import { idToken, periodReference } from '../../components/attendance/references';
+import { branding } from '../../lib/branding';
 
 type TabId = 'davomat' | 'darslar' | 'harakatlar';
 const PRESETS = ['week', 'month', 'last30', 'lastMonth'] as const;
@@ -164,11 +169,16 @@ function readRange(params: URLSearchParams, today: string): DateRangeValue {
   return rangeForPreset('month', today);
 }
 
+/** Hujjatdagi bitta "maydon": ustida kichik bosh harfli yorliq, ostida
+ *  qiymat. Qiymat odam nomi yoki joy nomi bo'lishi mumkin — u proza,
+ *  shuning uchun sans shriftda qoladi. */
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="text-xs text-muted">{label}</dt>
-      <dd className="mt-0.5 truncate text-sm font-medium text-fg">{children}</dd>
+      <dt>
+        <MicroLabel>{label}</MicroLabel>
+      </dt>
+      <dd className="mt-0.5 truncate text-[13px] font-medium text-fg">{children}</dd>
     </div>
   );
 }
@@ -351,6 +361,13 @@ export default function PersonPage() {
         ]
     : [{ label: 'Shaxs' }];
 
+  // Hujjat raqami — SOF holatdan: shaxs va davr. Bir xil havola bir xil
+  // raqamni beradi, chop etilgan qog'oz ekran bilan mos keladi.
+  const serviceCode = `SHX-${idToken(personId)}`;
+  const reference = periodReference(serviceCode, range.from, range.to);
+  const generatedAt = useMemo(stamp, [personId, range.from, range.to, data]);
+  const enrollment = biometricsMeta(person?.biometricsStatus);
+
   function afterEdit(date: string, update: (days: AttendanceDay[]) => AttendanceDay[]) {
     months.apply(date, update);
     profile.reload();
@@ -372,75 +389,115 @@ export default function PersonPage() {
     >
       {profile.loading ? (
         <>
-          <Skeleton className="h-48 rounded-card" />
+          <Skeleton className="h-40" />
           <SkeletonTiles count={5} className="xl:grid-cols-5" />
         </>
       ) : profile.error && !data ? (
-        <Card padding="none">
+        <div className="border border-border bg-surface">
           <ErrorState variant="block" title={/topilmadi/i.test(profile.error) ? 'Shaxs topilmadi' : undefined} message={profile.error} onRetry={profile.reload} />
           <div className="flex justify-center pb-8">
             <ButtonLink to={withDate(situationPaths.faculties)} icon={ArrowLeft} variant="ghost">
               Talabalarga qaytish
             </ButtonLink>
           </div>
-        </Card>
+        </div>
       ) : data && person ? (
-        <>
-          {/* Sarlavha kartasi */}
-          <Card className="flex flex-col gap-5 md:flex-row md:items-center">
-            <PersonPhoto name={person.fullName} src={person.photoUrl} tone={statusMeta(todayStatus === 'nomalum' ? 'malumot_yoq' : todayStatus).tone} className="h-40 w-32 self-start md:self-center" textClassName="text-4xl" />
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge tone="primary">{isStudent ? 'Talaba' : 'Xodim'}</Badge>
-                {!person.active && <Badge tone="danger">Faol emas</Badge>}
-                <Badge tone={biometricsMeta(person.biometricsStatus).tone} icon={ScanFace}>
-                  {biometricsMeta(person.biometricsStatus).label}
-                </Badge>
+        <div className="flex min-w-0 flex-col gap-3">
+          {/* 1. Hujjat blanki — kim, qaysi davr, qanday hukm. */}
+          <DocumentHeader
+            org={branding.orgFullName}
+            title={`${person.fullName} — davomat dalolatnomasi`}
+            reference={reference}
+            generatedAt={generatedAt}
+            readouts={[
+              { label: isStudent ? 'Guruh' : "Bo'linma", value: (isStudent ? person.group : person.department) ?? 'Biriktirilmagan' },
+              { label: 'Davr', value: formatUzRange(data.dateFrom, data.dateTo) },
+              // Foizning MAXRAJI blankka chiqadi: "75%" ni ko'rgan odam
+              // uning nechta kundan chiqqanini izlab yurmasin.
+              { label: 'Yozuv bor kunlar', value: `${formatNumber(data.totals.present + data.totals.absent)} kun` },
+              { label: 'Umumiy holat', value: formatPercent(data.totals.rate, 1) },
+            ]}
+          />
+
+          {/* 2. Shaxsiyat bloki — surat, kim ekani, xizmat kodi. */}
+          <IntelPanel
+            title="Shaxs"
+            code={serviceCode}
+            right={<StatusLamp status={person.active ? 'ok' : 'alert'} label={person.active ? 'Faol' : 'Faol emas'} />}
+          >
+            <div className="flex flex-col gap-4 p-3 md:flex-row md:items-start">
+              <PersonPhoto
+                name={person.fullName}
+                src={person.photoUrl}
+                tone={statusMeta(todayStatus === 'nomalum' ? 'malumot_yoq' : todayStatus).tone}
+                className="h-36 w-28 self-start"
+                textClassName="text-4xl"
+              />
+              <div className="min-w-0 flex-1">
+                {/* Ism sahifa sarlavhasida va hujjat blankida turibdi —
+                    bu yerda uni uchinchi marta takrorlash shovqin bo'lardi.
+                    Bu blok "kim ekani" ni aytadi: turi, xizmat kodi, yuz
+                    ro'yxati holati. */}
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <MicroLabel>{isStudent ? 'Talaba' : 'Xodim'}</MicroLabel>
+                  <CodeText className="text-[11px] text-subtle">{serviceCode}</CodeText>
+                  <span
+                    className={cn(
+                      'intel-micro',
+                      enrollment.tone === 'success' ? '!text-success' : enrollment.tone === 'warning' ? '!text-warning' : '!text-muted',
+                    )}
+                  >
+                    {enrollment.label}
+                  </span>
+                </div>
+                <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2.5 lg:grid-cols-4">
+                  {isStudent ? (
+                    <>
+                      <Fact label="Fakultet">
+                        <Link to={withDate(situationPaths.faculty(person.facultyId))} className={linkClass}>
+                          {person.faculty ?? 'Fakultetsiz'}
+                        </Link>
+                      </Fact>
+                      <Fact label="Guruh">
+                        {person.group ? (
+                          <Link to={withDate(situationPaths.group(person.group))} className={linkClass}>
+                            {person.group}
+                          </Link>
+                        ) : (
+                          'Biriktirilmagan'
+                        )}
+                      </Fact>
+                      <Fact label="Kurs">{person.course ? `${person.course}-kurs` : "Ko'rsatilmagan"}</Fact>
+                    </>
+                  ) : (
+                    <>
+                      <Fact label="Kafedra">
+                        {person.departmentId ? (
+                          <Link to={withDate(situationPaths.kafedra(person.departmentId))} className={linkClass}>
+                            {person.department}
+                          </Link>
+                        ) : (
+                          'Biriktirilmagan'
+                        )}
+                      </Fact>
+                      <Fact label="Lavozim / bo'lim">{person.unit || "Ko'rsatilmagan"}</Fact>
+                      <Fact label="Fakultet">{person.faculty ?? "Ko'rsatilmagan"}</Fact>
+                    </>
+                  )}
+                  <Fact label="Bugun">
+                    <span className="flex items-center gap-2">
+                      <StatusMark
+                        status={todayStatus === 'nomalum' ? 'malumot_yoq' : todayStatus}
+                        label={statusMeta(todayStatus === 'nomalum' ? 'malumot_yoq' : todayStatus).label}
+                        showLabel
+                      />
+                      {todayCell?.checkIn && <CodeText className="text-[12px] text-fg">{todayCell.checkIn}</CodeText>}
+                    </span>
+                  </Fact>
+                </dl>
               </div>
-              <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 lg:grid-cols-4">
-                {isStudent ? (
-                  <>
-                    <Fact label="Fakultet">
-                      <Link to={withDate(situationPaths.faculty(person.facultyId))} className={linkClass}>
-                        {person.faculty ?? 'Fakultetsiz'}
-                      </Link>
-                    </Fact>
-                    <Fact label="Guruh">
-                      {person.group ? (
-                        <Link to={withDate(situationPaths.group(person.group))} className={linkClass}>
-                          {person.group}
-                        </Link>
-                      ) : (
-                        '—'
-                      )}
-                    </Fact>
-                    <Fact label="Kurs">{person.course ? `${person.course}-kurs` : '—'}</Fact>
-                  </>
-                ) : (
-                  <>
-                    <Fact label="Kafedra">
-                      {person.departmentId ? (
-                        <Link to={withDate(situationPaths.kafedra(person.departmentId))} className={linkClass}>
-                          {person.department}
-                        </Link>
-                      ) : (
-                        'Biriktirilmagan'
-                      )}
-                    </Fact>
-                    <Fact label="Lavozim / bo'lim">{person.unit || '—'}</Fact>
-                    <Fact label="Fakultet">{person.faculty ?? '—'}</Fact>
-                  </>
-                )}
-                <Fact label="Bugun">
-                  <StatusBadge status={todayStatus} time={todayCell?.checkIn ?? null} />
-                </Fact>
-              </dl>
             </div>
-            <div className="flex items-center gap-4 border-t border-border pt-4 md:flex-col md:gap-1 md:border-l md:border-t-0 md:pl-6 md:pt-0">
-              <ProgressRing value={data.totals.rate} size={92} sublabel="davomat" />
-              <p className="text-xs text-muted md:text-center">{formatUzDate(data.dateFrom, { year: false })} – {formatUzDate(data.dateTo, { year: false })}</p>
-            </div>
-          </Card>
+          </IntelPanel>
 
           {person.biometricsStatus !== 'tasdiqlangan' && (
             <EnrollCta
@@ -456,87 +513,76 @@ export default function PersonPage() {
           <Toolbar>
             <DateRangePicker value={range} onChange={setRange} presets={PRESETS} />
           </Toolbar>
-          {profile.error && <ErrorState title="Yangilab bo'lmadi" message={profile.error} onRetry={profile.reload} />}
+          {profile.error && <StaleNote message={profile.error} onRetry={profile.reload} />}
 
           {tab === 'davomat' && (
             <>
-              {isStaff && kpis ? (
-                <>
+              {/* 3. Ko'rsatkichlar lentasi. */}
+              <IntelPanel title="Davr ko'rsatkichlari" code={reference}>
+                {isStaff && kpis ? (
                   <StaffKpis current={kpis} previous={prevKpis} days={daysBetween(range.from, range.to) + 1} lateCutoff={lateCutoff} />
-                  <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]">
-                    <Card>
-                      <CardHeader
-                        title="Har kuni soat nechada kelgan"
-                        subtitle={
-                          cutoffKnown
-                            ? `Har bir nuqta — bir kun. To'q sariq nuqta — soat ${lateLabel} dan keyin kelgan, ya'ni kech kelgan kun`
-                            : "Har bir nuqta — bir kun. To'q sariq nuqta — kech kelgan kun"
-                        }
-                        icon={LogIn}
-                      />
-                      {data.calendar.some((d) => d.checkIn) ? (
-                        <ArrivalTimeChart points={arrivalSeries(data.calendar)} threshold={lateCutoff} average={kpis.avgArrivalMinutes} height={240} />
-                      ) : (
-                        <EmptyState
-                          compact
-                          bordered={false}
-                          title="Kelish vaqti qayd etilmagan"
-                          description="Bu davrda kameralar bu xodimni birorta kun ham tanimagan."
-                        />
-                      )}
-                    </Card>
-                    <WeekdayPatternCard rows={weekdays} lateCutoff={lateCutoff} />
-                  </div>
-                </>
-              ) : (
-              // Foiz = kelgan / (kelgan + kelmagan); izoh ham AYNAN shu ikki
-              // sondan yoziladi. Ilgari u butun davrdagi kunlar sonini (dam
-              // olish kunlari bilan) "ish kuni" deb ko'rsatardi.
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-                <StatTile
-                  label="Kelgan kunlari ulushi"
-                  value={formatPercent(data.totals.rate, 1)}
-                  progress={data.totals.rate}
-                  hint={`Yozuv bor ${data.totals.present + data.totals.absent} kundan ${data.totals.present} tasida kelgan`}
-                />
-                <StatTile label="O'z vaqtida kelgan" value={`${data.totals.present - data.totals.late} kun`} icon={CheckCircle2} tone="success" hint={cutoffKnown ? `Soat ${lateLabel} gacha` : 'Ish boshlanish vaqtidan oldin kelgan kunlar'} />
-                <StatTile label="Kech kelgan" value={`${data.totals.late} kun`} icon={Clock} tone="warning" hint={cutoffKnown ? `Soat ${lateLabel} dan keyin` : 'Ish boshlanish vaqtidan keyin kelgan kunlar'} />
-                <StatTile label="Kelmagan" value={`${data.totals.absent} kun`} icon={UserX} tone="danger" hint="Hech bir kamerada ko'rinmagan" />
-                <StatTile
-                  label="Odatda kelish vaqti"
-                  value={data.totals.avgArrival ?? '—'}
-                  icon={LogIn}
-                  tone="info"
-                  hint={data.totals.noData ? `${data.totals.noData} kunda yozuv yo'q` : "Kelgan kunlaridagi o'rtacha vaqt"}
-                />
-              </div>
-              )}
-              <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
-                <Card>
-                  <CardHeader
-                    title="Kunlar kalendari"
-                    subtitle="Har bir katak — bir kun. Kunni bosing: o'sha kuni qaysi kameralarda ko'ringani, darslari va kerak bo'lsa qo'lda tuzatish"
-                    icon={CalendarDays}
+                ) : (
+                  // Foiz = kelgan / (kelgan + kelmagan); izoh ham AYNAN shu ikki
+                  // sondan yoziladi. Ilgari u butun davrdagi kunlar sonini (dam
+                  // olish kunlari bilan) "ish kuni" deb ko'rsatardi.
+                  <KpiReadout
+                    className="lg:grid-cols-5"
+                    items={[
+                      {
+                        label: 'Kelgan kunlari ulushi',
+                        value: formatPercent(data.totals.rate, 1),
+                        rate: data.totals.rate,
+                        hint: `Yozuv bor ${data.totals.present + data.totals.absent} kundan ${data.totals.present} tasida kelgan`,
+                      },
+                      {
+                        label: "O'z vaqtida kelgan",
+                        value: `${data.totals.present - data.totals.late} kun`,
+                        hint: cutoffKnown ? `Soat ${lateLabel} gacha` : 'Ish boshlanish vaqtidan oldin kelgan kunlar',
+                      },
+                      {
+                        label: 'Kech kelgan',
+                        value: `${data.totals.late} kun`,
+                        hint: cutoffKnown ? `Soat ${lateLabel} dan keyin` : 'Ish boshlanish vaqtidan keyin kelgan kunlar',
+                      },
+                      { label: 'Kelmagan', value: `${data.totals.absent} kun`, hint: "Hech bir kamerada ko'rinmagan" },
+                      {
+                        label: 'Odatda kelish vaqti',
+                        value: data.totals.avgArrival ?? '—',
+                        hint: data.totals.noData ? `${data.totals.noData} kunda yozuv yo'q` : "Kelgan kunlaridagi o'rtacha vaqt",
+                      },
+                    ]}
                   />
-                  <div className={cn('grid gap-6', calendarMonths.length > 1 && '2xl:grid-cols-2')}>
+                )}
+              </IntelPanel>
+
+              {/* 4. Kalendar — aniq to'r, kaliti bilan. */}
+              <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_22rem]">
+                <IntelPanel
+                  title="Kunlar kalendari"
+                  code={formatUzRange(data.dateFrom, data.dateTo)}
+                  right={<MicroLabel>Kunni bosing — o&apos;sha kunning tafsiloti</MicroLabel>}
+                >
+                  <div className={cn('grid gap-3 p-3', calendarMonths.length > 1 && '2xl:grid-cols-2')}>
                     {calendarMonths.map((m) => (
-                      <MonthCalendar
-                        key={m}
-                        month={m}
-                        cells={cellsByMonth[m] ?? null}
-                        workingWeekdays={workingWeekdays}
-                        selectedDate={selectedDate}
-                        onOpen={setSelectedDate}
-                        range={range}
-                      />
+                      <div key={m} className="border border-border">
+                        <MonthCalendar
+                          month={m}
+                          cells={cellsByMonth[m] ?? null}
+                          workingWeekdays={workingWeekdays}
+                          selectedDate={selectedDate}
+                          onOpen={setSelectedDate}
+                          range={range}
+                        />
+                      </div>
                     ))}
                   </div>
                   {/* Oy yozuvlari kelmasa kalendar bo'sh kataklar bilan
                       qolib ketmasin — sabab va qayta urinish ko'rsatiladi. */}
-                  {months.error && <ErrorState className="mt-4" title="Kalendar yuklanmadi" message={months.error} onRetry={() => months.reload()} />}
-                  <CalendarLegend className="mt-4 border-t border-border pt-3" />
-                </Card>
-                <div className="flex flex-col gap-5">
+                  {months.error && <ErrorState className="mx-3 mb-3" title="Kalendar yuklanmadi" message={months.error} onRetry={() => months.reload()} />}
+                  <CalendarLegend className="border-t border-border" />
+                </IntelPanel>
+
+                <div className="flex min-w-0 flex-col gap-3">
                   {summary.data ? (
                     <MonthTrend
                       months={summary.data.months}
@@ -551,40 +597,46 @@ export default function PersonPage() {
                   ) : summary.error ? (
                     <ErrorState message={summary.error} onRetry={summary.reload} />
                   ) : (
-                    <Skeleton className="h-72 rounded-card" />
+                    <Skeleton className="h-72" />
                   )}
-                  {!isStaff && (
-                    <Card>
-                      <CardHeader
-                        title="Har kuni soat nechada kelgan"
-                        subtitle={
-                          cutoffKnown
-                            ? `Har bir nuqta — bir kun. To'q sariq nuqta — soat ${lateLabel} dan keyin kelgan kun`
-                            : "Har bir nuqta — bir kun. To'q sariq nuqta — kech kelgan kun"
-                        }
-                        icon={LogIn}
+                  {isStaff && <WeekdayPatternCard rows={weekdays} lateCutoff={lateCutoff} />}
+                  <IntelPanel
+                    title="Har kuni soat nechada kelgan"
+                    right={<MicroLabel>{cutoffKnown ? `chegara ${lateLabel}` : 'kechikish chegarasi'}</MicroLabel>}
+                    bodyClassName="p-3"
+                  >
+                    {data.calendar.some((d) => d.checkIn) ? (
+                      <ArrivalTimeChart
+                        points={arrivalSeries(data.calendar)}
+                        threshold={lateCutoff}
+                        average={isStaff ? (kpis?.avgArrivalMinutes ?? null) : null}
+                        height={isStaff ? 240 : undefined}
                       />
-                      {data.calendar.some((d) => d.checkIn) ? (
-                        <ArrivalTimeChart points={arrivalSeries(data.calendar)} threshold={lateCutoff} />
-                      ) : (
-                        <EmptyState
-                          compact
-                          bordered={false}
-                          title="Kelish vaqti qayd etilmagan"
-                          description="Bu davrda kameralar bu odamni birorta kun ham tanimagan."
-                        />
-                      )}
-                    </Card>
-                  )}
+                    ) : (
+                      <EmptyState
+                        compact
+                        bordered={false}
+                        title="Kelish vaqti qayd etilmagan"
+                        description="Bu davrda kameralar bu odamni birorta kun ham tanimagan."
+                      />
+                    )}
+                    <p className="mt-2 text-[11px] leading-snug text-muted">
+                      Har bir nuqta — bir kun. To&apos;q sariq nuqta — {cutoffKnown ? `soat ${lateLabel} dan keyin kelgan, ya'ni ` : ''}kech kelgan kun.
+                    </p>
+                  </IntelPanel>
                 </div>
               </div>
             </>
           )}
 
-          {tab === 'darslar' && <LessonsTab lessons={data.lessons} isStudent={isStudent} onOpen={setLesson} withDate={withDate} />}
+          {tab === 'darslar' && (
+            <IntelPanel title="Darslar" code={`${data.lessons.length} ta`}>
+              <LessonsTab lessons={data.lessons} isStudent={isStudent} onOpen={setLesson} withDate={withDate} />
+            </IntelPanel>
+          )}
 
-          {tab === 'harakatlar' && (
-            data.recentVisits.length === 0 ? (
+          {tab === 'harakatlar' &&
+            (data.recentVisits.length === 0 ? (
               <EmptyState
                 icon={Footprints}
                 title="Hech bir kamerada ko'rinmagan"
@@ -595,48 +647,57 @@ export default function PersonPage() {
                 }
               />
             ) : (
-              <div className="flex flex-col gap-4">
-                <p className="text-[13px] text-muted">
-                  Bu odam qaysi kunlari, soat nechada va qaysi kamerada ko'ringani — yangisi birinchi.{' '}
+              <IntelPanel
+                title="Qayerda ko'ringan"
+                code={visitsCapped ? `so'nggi ${RECENT_VISITS_LIMIT}` : `${data.recentVisits.length} ta`}
+                right={<MicroLabel>Yangisi birinchi</MicroLabel>}
+              >
+                {/* Ro'yxat CHEKLANGAN bo'lsa buni ochiq aytamiz: "20" —
+                    davrdagi tashriflar soni emas, faqat server chegarasi. */}
+                <p className="border-b border-border bg-surface-2 px-3 py-1.5 text-[11px] leading-snug text-muted">
                   {visitsCapped
                     ? `Bu ro'yxatda eng so'nggi ${RECENT_VISITS_LIMIT} ta yozuvgina ko'rsatiladi — davrda undan ko'p bo'lishi mumkin. To'liq kun uchun kalendardan kunni oching.`
                     : `Tanlangan davrda ${data.recentVisits.length} ta yozuv.`}
                 </p>
-                {visitsByDate(data.recentVisits).map((day) => (
-                  <Card key={day.date} padding="sm">
-                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
-                      <h3 className="text-sm font-semibold text-fg">
-                        {formatUzDate(day.date, { weekday: true })}
-                        <span className="ml-2 font-normal text-muted">
-                          {day.visits.length} marta ko'ringan · binoda {formatMinutes(day.minutes)}
+                <div className="flex flex-col">
+                  {visitsByDate(data.recentVisits).map((day) => (
+                    <section key={day.date}>
+                      <header className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border-strong bg-surface-2 px-3 py-1">
+                        <CodeText className="text-[12px] font-semibold text-fg">{day.date}</CodeText>
+                        <h3 className="intel-micro !text-fg">{formatUzDate(day.date, { weekday: true })}</h3>
+                        <span className="intel-code text-[11px] text-muted">
+                          {day.visits.length} marta ko&apos;ringan · binoda {formatMinutes(day.minutes)}
                         </span>
-                      </h3>
-                      <Button size="sm" variant="ghost" icon={CalendarDays} onClick={() => setSelectedDate(day.date)}>
-                        Kunni ochish
-                      </Button>
-                    </div>
-                    <ol className="flex flex-col divide-y divide-border">
-                      {day.visits.map((v) => (
-                        <li key={v.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 py-2 text-[13px]">
-                          <span className="w-24 font-semibold tabular-nums text-fg">
-                            {v.firstSeen === v.lastSeen ? v.firstSeen : `${v.firstSeen}–${v.lastSeen}`}
-                          </span>
-                          <span className="inline-flex min-w-0 flex-1 items-center gap-1.5 text-fg">
-                            <MapPin size={14} className="shrink-0 text-muted" aria-hidden="true" />
-                            <span className="truncate">{[v.camera, v.zone, v.building].filter(Boolean).join(' · ')}</span>
-                          </span>
-                          <span className="text-muted tabular-nums">
-                            {formatMinutes(v.durationMinutes)} · {formatNumber(v.sightings)} marta
-                          </span>
-                        </li>
-                      ))}
-                    </ol>
-                  </Card>
-                ))}
-              </div>
-            )
-          )}
-        </>
+                        <Button size="sm" variant="ghost" icon={CalendarDays} className="ms-auto" onClick={() => setSelectedDate(day.date)}>
+                          Kunni ochish
+                        </Button>
+                      </header>
+                      <ol className="divide-y divide-border">
+                        {day.visits.map((v) => (
+                          <li key={v.id} className="flex flex-wrap items-center gap-x-4 gap-y-0.5 px-3 py-1 text-[13px]">
+                            <CodeText className="w-28 shrink-0 font-semibold text-fg">
+                              {v.firstSeen === v.lastSeen ? v.firstSeen : `${v.firstSeen}–${v.lastSeen}`}
+                            </CodeText>
+                            <span className="inline-flex min-w-0 flex-1 items-center gap-1.5 text-fg">
+                              <MapPin size={13} className="shrink-0 text-subtle" aria-hidden="true" />
+                              <span className="truncate">{[v.camera, v.zone, v.building].filter(Boolean).join(' · ')}</span>
+                            </span>
+                            <CodeText className="text-[12px] text-muted">
+                              {formatMinutes(v.durationMinutes)} · {formatNumber(v.sightings)} marta
+                            </CodeText>
+                          </li>
+                        ))}
+                      </ol>
+                    </section>
+                  ))}
+                </div>
+              </IntelPanel>
+            ))}
+
+          <DocumentFooter
+            note={`Xizmat uchun. Hujjat ${reference} raqami bilan tizimda tuzilgan; sonlar ${formatUzRange(data.dateFrom, data.dateTo)} davri uchun. Foiz yozuvi bor kunlardan hisoblanadi — dam olish va yozuvsiz kunlar "kelmagan" hisoblanmaydi.`}
+          />
+        </div>
       ) : null}
 
       <DayDrawer
@@ -727,6 +788,7 @@ function LessonsTab({
         if (isStudent) return l.attendanceStatus ? LESSON_ATTENDANCE_META[l.attendanceStatus].tone : null;
         return l.teacherStatus === 'kelmadi' ? 'danger' : l.teacherStatus === 'kechikdi' ? 'warning' : l.teacherStatus === 'oz_vaqtida' ? 'success' : null;
       }}
+      dense
       emptyTitle="Bu davrda dars yo'q"
       emptyDescription={
         isStudent

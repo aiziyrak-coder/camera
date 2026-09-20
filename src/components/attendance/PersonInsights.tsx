@@ -1,6 +1,7 @@
-import { CalendarDays, Clock, Flame, LogIn, QrCode, ScanFace, UserX } from 'lucide-react';
-import { ButtonLink, Button, Card, CardHeader, StatTile, cn, formatPercent, type StatDelta } from '../../ui';
+import { QrCode, ScanFace } from 'lucide-react';
+import { ButtonLink, Button, MicroLabel, CodeText, IntelPanel, cn, formatPercent } from '../../ui';
 import { LATE_CUTOFF_MINUTES, type PersonKpis, type WeekdayStat } from '../../lib/studentAttendance';
+import { KpiReadout, type KpiItem } from './readout';
 
 function minutesClock(m: number | null | undefined): string {
   if (m === null || m === undefined) return '—';
@@ -8,10 +9,13 @@ function minutesClock(m: number | null | undefined): string {
   return `${String(h).padStart(2, '0')}:${String(Math.round(m % 60)).padStart(2, '0')}`;
 }
 
-function delta(cur: number | null, prev: number | null | undefined, better: StatDelta['better'], unit = ''): StatDelta | null {
+/** Oldingi davrga nisbatan o'zgarish — izoh matni sifatida.
+ *  Oldingi davrda yozuv bo'lmasa taqqoslash umuman yozilmaydi: "+14"
+ *  yo'qdan paydo bo'lgandek ko'rinardi. */
+function deltaText(cur: number | null, prev: number | null | undefined, unit: string): string | null {
   if (cur === null || prev === null || prev === undefined) return null;
   const v = Math.round((cur - prev) * 10) / 10;
-  return { value: v, better, display: `${v > 0 ? '+' : ''}${v.toLocaleString('ru-RU')}${unit}` };
+  return `Oldingi davrga nisbatan ${v > 0 ? '+' : ''}${v.toLocaleString('ru-RU')}${unit}`;
 }
 
 /** Xodim uchun davr KPI'lari: oldingi xuddi shunday davrga nisbatan o'zgarish bilan. */
@@ -28,50 +32,41 @@ export function StaffKpis({
   lateCutoff?: number;
 }) {
   const arrivalLate = current.avgArrivalMinutes !== null && current.avgArrivalMinutes > lateCutoff;
-  return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-      <StatTile
-        label="Davomat"
-        value={formatPercent(current.rate, 1)}
-        progress={current.rate}
-        delta={delta(current.rate, previous?.rate, 'up', ' pp')}
-        hint={`${current.presentDays} / ${current.presentDays + current.absentDays} ish kuni`}
-      />
-      <StatTile
-        label="O'rtacha kelish"
-        value={minutesClock(current.avgArrivalMinutes)}
-        icon={LogIn}
-        tone={arrivalLate ? 'warning' : 'info'}
-        delta={delta(current.avgArrivalMinutes, previous?.avgArrivalMinutes, 'down', ' daq')}
-        hint={arrivalLate ? `${minutesClock(lateCutoff)} dan kech` : `chegara ${minutesClock(lateCutoff)}`}
-      />
-      <StatTile
-        label="Kech kelgan kunlar"
-        value={current.lateDays}
-        unit="kun"
-        icon={Clock}
-        tone="warning"
-        delta={delta(current.lateDays, previous?.lateDays, 'down')}
-        hint={current.punctualPct !== null ? `${formatPercent(current.punctualPct)} o'z vaqtida` : undefined}
-      />
-      <StatTile
-        label="Kelmagan kunlar"
-        value={current.absentDays}
-        unit="kun"
-        icon={UserX}
-        tone="danger"
-        delta={delta(current.absentDays, previous?.absentDays, 'down')}
-      />
-      <StatTile
-        label="O'z vaqtida seriya"
-        value={current.onTimeStreak}
-        unit="kun"
-        icon={Flame}
-        tone={current.onTimeStreak >= 5 ? 'success' : 'neutral'}
-        hint={previous ? `ketma-ket · Δ — oldingi ${days} kunga nisbatan` : 'ketma-ket, kechikmasdan'}
-      />
-    </div>
-  );
+  const items: KpiItem[] = [
+    {
+      label: 'Davomat',
+      value: formatPercent(current.rate, 1),
+      rate: current.rate,
+      hint: `${current.presentDays} / ${current.presentDays + current.absentDays} yozuv bor kun${
+        deltaText(current.rate, previous?.rate, ' pp') ? ` · ${deltaText(current.rate, previous?.rate, ' pp')}` : ''
+      }`,
+    },
+    {
+      label: "O'rtacha kelish",
+      value: minutesClock(current.avgArrivalMinutes),
+      // Vaqt — foiz emas: unga davomat svetofori qo'yilmaydi, chegaradan
+      // o'tgani so'z bilan aytiladi.
+      hint: `${arrivalLate ? `${minutesClock(lateCutoff)} chegarasidan kech` : `chegara ${minutesClock(lateCutoff)}`}${
+        deltaText(current.avgArrivalMinutes, previous?.avgArrivalMinutes, ' daq') ? ` · ${deltaText(current.avgArrivalMinutes, previous?.avgArrivalMinutes, ' daq')}` : ''
+      }`,
+    },
+    {
+      label: 'Kech kelgan kunlar',
+      value: `${current.lateDays} kun`,
+      hint: current.punctualPct !== null ? `${formatPercent(current.punctualPct)} o'z vaqtida` : undefined,
+    },
+    {
+      label: 'Kelmagan kunlar',
+      value: `${current.absentDays} kun`,
+      hint: deltaText(current.absentDays, previous?.absentDays, '') ?? undefined,
+    },
+    {
+      label: "O'z vaqtida seriya",
+      value: `${current.onTimeStreak} kun`,
+      hint: previous ? `ketma-ket, kechikmasdan · oldingi ${days} kunga nisbatan` : 'ketma-ket, kechikmasdan',
+    },
+  ];
+  return <KpiReadout className="lg:grid-cols-5" items={items} />;
 }
 
 /** Hafta kunlari naqshi: o'rtacha kelish va kechikishlar — qaysi kun "og'ir". */
@@ -83,33 +78,37 @@ export function WeekdayPatternCard({ rows, lateCutoff = LATE_CUTOFF_MINUTES }: {
   const hi = 600;
   const pos = (m: number) => `${Math.min(100, Math.max(0, ((m - lo) / (hi - lo)) * 100))}%`;
   return (
-    <Card>
-      <CardHeader
-        title="Hafta kunlari"
-        subtitle={worst && worst.late + worst.absent > 0 ? `Eng og'ir kun — ${worst.label}: ${worst.late} kech, ${worst.absent} kelmagan` : "O'rtacha kelish vaqti va kechikishlar"}
-        icon={CalendarDays}
-      />
+    <IntelPanel
+      title="Hafta kunlari"
+      right={<MicroLabel>shkala 07:30–10:00</MicroLabel>}
+      code={minutesClock(lateCutoff)}
+    >
+      {worst && worst.late + worst.absent > 0 && (
+        <p className="border-b border-border px-3 py-1.5 text-[12px] text-muted">
+          Eng og&apos;ir kun — <span className="font-medium text-fg">{worst.label}</span>: {worst.late} kech, {worst.absent} kelmagan
+        </p>
+      )}
       {withData.length === 0 ? (
-        <p className="py-6 text-center text-sm text-muted">Bu davrda yozuv yo&apos;q</p>
+        <p className="px-3 py-6 text-center text-[13px] text-muted">Bu davrda yozuv yo&apos;q</p>
       ) : (
-        <ul className="flex flex-col gap-2.5">
+        <ul className="divide-y divide-border">
           {rows.map((r) => (
-            <li key={r.weekday} className="grid grid-cols-[2.5rem_minmax(0,1fr)_3.5rem_5.5rem] items-center gap-3 text-[13px]">
+            <li key={r.weekday} className="grid grid-cols-[2.5rem_minmax(0,1fr)_3.5rem_5.5rem] items-center gap-3 px-3 py-1.5 text-[13px]">
               <span className={cn('font-medium', r === worst && r.late + r.absent > 0 ? 'text-warning' : 'text-fg')}>{r.label}</span>
-              <div className="relative h-2 rounded-full bg-surface-2" aria-hidden="true">
+              <div className="relative h-2 bg-surface-2" aria-hidden="true">
                 <span className="absolute inset-y-[-3px] w-px bg-warning" style={{ left: pos(lateCutoff) }} />
                 {r.avgArrivalMinutes !== null && (
                   <span
                     className={cn(
-                      'absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-surface',
+                      'absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 border border-surface',
                       r.avgArrivalMinutes > lateCutoff ? 'bg-warning' : 'bg-primary',
                     )}
                     style={{ left: pos(r.avgArrivalMinutes) }}
                   />
                 )}
               </div>
-              <span className="text-right font-semibold tabular-nums text-fg">{minutesClock(r.avgArrivalMinutes)}</span>
-              <span className="text-right text-xs tabular-nums text-muted">
+              <CodeText className="text-right font-semibold text-fg">{minutesClock(r.avgArrivalMinutes)}</CodeText>
+              <span className="intel-code text-right text-[11px] text-muted">
                 {r.days === 0 ? '—' : (
                   <>
                     <span className={r.late ? 'font-semibold text-warning' : undefined}>{r.late}</span> kech
@@ -121,10 +120,10 @@ export function WeekdayPatternCard({ rows, lateCutoff = LATE_CUTOFF_MINUTES }: {
           ))}
         </ul>
       )}
-      <p className="mt-3 flex items-center gap-1.5 text-xs text-muted">
-        <span className="h-3 w-px bg-warning" aria-hidden="true" /> {minutesClock(lateCutoff)} chegara · shkala 07:30–10:00
+      <p className="border-t border-border px-3 py-1.5 text-[11px] text-muted">
+        Vertikal chiziq — {minutesClock(lateCutoff)} kechikish chegarasi.
       </p>
-    </Card>
+    </IntelPanel>
   );
 }
 
@@ -132,13 +131,11 @@ export function WeekdayPatternCard({ rows, lateCutoff = LATE_CUTOFF_MINUTES }: {
 export function EnrollCta({ student, group, pending, onOpenGroup, registryLink }: { student: boolean; group: string | null; pending: boolean; onOpenGroup?: () => void; registryLink: string }) {
   const enrollLink = `/royxatdan-otish${group ? `?guruh=${encodeURIComponent(group)}` : ''}`;
   return (
-    <div className="flex flex-col gap-4 rounded-card border border-dashed border-primary/40 bg-primary-soft/40 p-4 sm:flex-row sm:items-center sm:p-5">
-      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary">
-        <ScanFace size={22} aria-hidden="true" />
-      </span>
+    <div className="flex flex-col gap-3 border border-primary/40 bg-primary-soft px-3 py-2.5 sm:flex-row sm:items-center">
+      <ScanFace size={20} aria-hidden="true" className="shrink-0 text-primary" />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-fg">{pending ? 'Yuzi tasdiq kutmoqda' : "Yuzi hali topshirilmagan"}</p>
-        <p className="mt-0.5 text-[13px] leading-relaxed text-muted">
+        <MicroLabel>{pending ? 'Yuzi tasdiq kutmoqda' : "Yuzi hali topshirilmagan"}</MicroLabel>
+        <p className="mt-0.5 text-[13px] leading-relaxed text-fg">
           Kameralar bu {student ? 'talabani' : 'xodimni'} taniy olmaydi — davomat avtomatik yozilmaydi, bo&apos;sh kunlar «kelmagan» degani emas.
           {student ? ' Talaba telefonida QR orqali 1 daqiqada topshiradi.' : ' Yuzni «Reestr» bo‘limida qo‘shing.'}
         </p>

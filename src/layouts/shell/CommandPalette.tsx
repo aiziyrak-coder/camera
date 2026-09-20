@@ -25,6 +25,8 @@ interface ResultItem {
   subtitle?: string;
   to: string;
   icon: LucideIcon;
+  /** Chapdagi monoshrift indeks ustuni: sahifa kodi yoki tur kodi. */
+  code: string;
   ranges: MatchRange[];
 }
 
@@ -41,6 +43,16 @@ const KIND_ICON: Record<Exclude<Kind, 'recent'>, LucideIcon> = {
   unit: Building2,
   person: UserRound,
   camera: Cctv,
+};
+
+/** Tur kodi — natija qatorining chap ustunida turadi. */
+const KIND_CODE: Record<Kind, string> = {
+  recent: 'SNG',
+  page: 'SAH',
+  group: 'GRP',
+  unit: 'BLM',
+  person: 'SHX',
+  camera: 'KMR',
 };
 
 const GROUP_LABEL: Record<Kind, string> = {
@@ -146,7 +158,7 @@ function PaletteDialog({ onClose, sections, can, role }: Omit<CommandPaletteProp
   const pages = useMemo(
     () =>
       sections.flatMap((section) =>
-        section.items.map((item) => ({ id: item.to, title: item.label, keywords: [section.label], section: section.label, icon: item.icon, to: item.to })),
+        section.items.map((item) => ({ id: item.to, title: item.label, keywords: [section.label], section: section.label, icon: item.icon, to: item.to, code: item.code })),
       ),
     [sections],
   );
@@ -154,7 +166,7 @@ function PaletteDialog({ onClose, sections, can, role }: Omit<CommandPaletteProp
   const groups: ResultGroup[] = useMemo(() => {
     const q = query.trim();
     const out: ResultGroup[] = [];
-    const mk = (kind: Exclude<Kind, 'recent'>, id: string, title: string, to: string, subtitle?: string, icon?: LucideIcon): ResultItem => ({
+    const mk = (kind: Exclude<Kind, 'recent'>, id: string, title: string, to: string, subtitle?: string, icon?: LucideIcon, code?: string): ResultItem => ({
       key: `${kind}:${id}`,
       kind,
       recentKind: kind,
@@ -163,6 +175,7 @@ function PaletteDialog({ onClose, sections, can, role }: Omit<CommandPaletteProp
       subtitle,
       to,
       icon: icon ?? KIND_ICON[kind],
+      code: code ?? KIND_CODE[kind],
       ranges: q ? (matchText(q, title)?.ranges ?? []) : [],
     });
 
@@ -180,16 +193,17 @@ function PaletteDialog({ onClose, sections, can, role }: Omit<CommandPaletteProp
             subtitle: r.subtitle,
             to: r.to,
             icon: Clock,
+            code: KIND_CODE[r.kind in KIND_ICON ? (r.kind as Kind) : 'page'],
             ranges: [],
           })),
         });
       }
-      out.push({ kind: 'page', label: GROUP_LABEL.page, items: pages.map((p) => mk('page', p.id, p.title, p.to, p.section, p.icon)) });
+      out.push({ kind: 'page', label: GROUP_LABEL.page, items: pages.map((p) => mk('page', p.id, p.title, p.to, p.section, p.icon, p.code)) });
       return out;
     }
 
     const pageHits = rankItems(q, pages, 6);
-    if (pageHits.length) out.push({ kind: 'page', label: GROUP_LABEL.page, items: pageHits.map(({ item: p }) => mk('page', p.id, p.title, p.to, p.section, p.icon)) });
+    if (pageHits.length) out.push({ kind: 'page', label: GROUP_LABEL.page, items: pageHits.map(({ item: p }) => mk('page', p.id, p.title, p.to, p.section, p.icon, p.code)) });
 
     if (canDavomat) {
       const units = rankItems(
@@ -309,16 +323,16 @@ function PaletteDialog({ onClose, sections, can, role }: Omit<CommandPaletteProp
         aria-label="Global qidiruv"
         tabIndex={-1}
         onKeyDown={onKeyDown}
-        className="relative flex max-h-[min(34rem,78vh)] w-full max-w-xl animate-pop-in flex-col overflow-hidden rounded-card border border-border bg-surface text-fg shadow-pop outline-none"
+        className="intel-brackets relative flex max-h-[min(34rem,78vh)] w-full max-w-xl animate-pop-in flex-col overflow-hidden rounded-[2px] border border-border-strong bg-surface text-fg outline-none"
       >
-        <div className="flex items-center gap-3 border-b border-border px-4">
+        <div className="flex items-center gap-3 border-b border-border-strong px-3">
           {anyLoading ? <Loader2 size={18} className="shrink-0 animate-spin text-muted" aria-hidden="true" /> : <Search size={18} className="shrink-0 text-muted" aria-hidden="true" />}
           <input
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Sahifa, guruh, bo'linma, shaxs yoki kamera…"
-            className="h-14 min-w-0 flex-1 bg-transparent text-[15px] text-fg outline-none placeholder:text-subtle"
+            className="h-12 min-w-0 flex-1 bg-transparent text-[14px] text-fg outline-none placeholder:text-subtle"
             role="combobox"
             aria-expanded="true"
             aria-controls={listId}
@@ -327,13 +341,13 @@ function PaletteDialog({ onClose, sections, can, role }: Omit<CommandPaletteProp
             autoComplete="off"
             spellCheck={false}
           />
-          <kbd className="hidden rounded border border-border bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-muted sm:inline">Esc</kbd>
+          <kbd className="intel-code hidden border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-muted sm:inline">ESC</kbd>
         </div>
 
-        <div ref={listRef} id={listId} role="listbox" aria-label="Natijalar" className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
+        <div ref={listRef} id={listId} role="listbox" aria-label="Natijalar" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           {groups.length === 0 && !anyLoading && (
             <div className="flex flex-col items-center px-6 py-10 text-center">
-              <span className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-surface-2 text-muted">
+              <span className="mb-3 flex h-10 w-10 items-center justify-center border border-border bg-surface-2 text-muted">
                 <SearchX size={18} aria-hidden="true" />
               </span>
               <p className="text-sm font-semibold text-fg">“{q}” bo'yicha hech narsa topilmadi</p>
@@ -341,15 +355,17 @@ function PaletteDialog({ onClose, sections, can, role }: Omit<CommandPaletteProp
             </div>
           )}
           {groups.map((group) => (
-            <div key={group.kind} role="group" aria-label={group.label} className="mb-1 last:mb-0">
-              <p className="flex items-center gap-2 px-2.5 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-subtle">
-                {group.label}
-                {group.loading && <Loader2 size={11} className="animate-spin" aria-hidden="true" />}
+            <div key={group.kind} role="group" aria-label={group.label} className="border-b border-border last:border-b-0">
+              <p className="intel-micro flex items-center gap-2 border-b border-border bg-surface-2 px-3 py-1.5">
+                <span>{group.label}</span>
+                {group.loading && <Loader2 size={10} className="animate-spin" aria-hidden="true" />}
+                <span className="h-px flex-1 bg-border" aria-hidden="true" />
+                <span className="intel-code text-[10px] text-subtle">{String(group.items.length).padStart(2, '0')}</span>
               </p>
               {group.loading && group.items.length === 0 && (
-                <div className="space-y-1 px-2.5 py-1" aria-hidden="true">
-                  <div className="skeleton-shimmer h-8 rounded-control bg-surface-2" />
-                  <div className="skeleton-shimmer h-8 w-4/5 rounded-control bg-surface-2" />
+                <div className="space-y-1 px-3 py-2" aria-hidden="true">
+                  <div className="skeleton-shimmer h-7 bg-surface-2" />
+                  <div className="skeleton-shimmer h-7 w-4/5 bg-surface-2" />
                 </div>
               )}
               {group.items.map((item) => {
@@ -367,25 +383,23 @@ function PaletteDialog({ onClose, sections, can, role }: Omit<CommandPaletteProp
                     onMouseMove={() => active !== i && setActive(i)}
                     onClick={() => choose(item)}
                     className={cn(
-                      'flex cursor-pointer items-center gap-3 rounded-control px-2.5 py-2 text-sm transition-colors',
-                      selected ? 'bg-primary-soft text-fg' : 'text-fg',
+                      'relative flex cursor-pointer items-center gap-2.5 px-3 py-1.5 text-[13px] transition-colors',
+                      selected ? 'bg-primary-soft text-primary' : 'text-fg',
                     )}
                   >
-                    <span
-                      className={cn(
-                        'flex h-8 w-8 shrink-0 items-center justify-center rounded-control border',
-                        selected ? 'border-primary/30 bg-surface text-primary' : 'border-border bg-surface-2 text-muted',
-                      )}
-                    >
-                      <Icon size={16} aria-hidden="true" />
+                    {/* Tanlangan qator — to'q ko'k yo'l chizig'i bilan. */}
+                    <span className={cn('absolute inset-y-0 left-0 w-[3px]', selected ? 'bg-primary' : 'bg-transparent')} aria-hidden="true" />
+                    <span className={cn('intel-code w-[26px] shrink-0 text-[10px]', selected ? 'text-primary' : 'text-subtle')} aria-hidden="true">
+                      {item.code}
                     </span>
+                    <Icon size={15} className={cn('shrink-0', selected ? 'text-primary' : 'text-muted')} aria-hidden="true" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-medium">
                         <Highlighted text={item.title} ranges={item.ranges} />
                       </span>
-                      {item.subtitle && <span className="block truncate text-xs text-muted">{item.subtitle}</span>}
+                      {item.subtitle && <span className="intel-micro block truncate">{item.subtitle}</span>}
                     </span>
-                    {selected && <CornerDownLeft size={14} className="shrink-0 text-muted" aria-hidden="true" />}
+                    {selected && <CornerDownLeft size={13} className="shrink-0 text-primary" aria-hidden="true" />}
                   </div>
                 );
               })}
@@ -393,7 +407,7 @@ function PaletteDialog({ onClose, sections, can, role }: Omit<CommandPaletteProp
           ))}
         </div>
 
-        <div className="hidden items-center gap-4 border-t border-border bg-surface-2/60 px-4 py-2 text-[11px] text-muted sm:flex">
+        <div className="intel-micro hidden items-center gap-4 border-t border-border-strong bg-surface-2 px-3 py-1.5 sm:flex">
           <span className="inline-flex items-center gap-1">
             <Kbd>↑</Kbd>
             <Kbd>↓</Kbd> tanlash
@@ -411,7 +425,7 @@ function PaletteDialog({ onClose, sections, can, role }: Omit<CommandPaletteProp
 }
 
 function Kbd({ children }: { children: ReactNode }) {
-  return <kbd className="rounded border border-border bg-surface px-1 py-px font-sans text-[10.5px] font-medium text-muted">{children}</kbd>;
+  return <kbd className="intel-code border border-border bg-surface px-1 py-px text-[10px] font-medium text-muted">{children}</kbd>;
 }
 
 function Highlighted({ text, ranges }: { text: string; ranges: MatchRange[] }) {
@@ -419,7 +433,7 @@ function Highlighted({ text, ranges }: { text: string; ranges: MatchRange[] }) {
     <>
       {highlight(text, ranges).map((part, i) =>
         part.match ? (
-          <mark key={i} className="rounded-[3px] bg-primary/15 px-px text-primary">
+          <mark key={i} className="bg-primary/15 px-px font-semibold text-primary">
             {part.text}
           </mark>
         ) : (

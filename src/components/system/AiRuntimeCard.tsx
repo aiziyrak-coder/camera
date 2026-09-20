@@ -1,25 +1,36 @@
-import { ChevronDown, Cpu } from 'lucide-react';
-import { Badge, Card, CardHeader, cn, formatNumber, type Tone } from '../../ui';
+import { ChevronDown } from 'lucide-react';
+import { CodeText, IntelPanel, MicroLabel, StatusLamp, cn, formatNumber, rag, type IntelStatus } from '../../ui';
 import { formatDuration } from '../../lib/integrationsApi';
 import type { LiveResource } from '../situation/useLiveResource';
-import { Metric, Recommendation, ResourceBody, StatusLine, formatServerTime } from './parts';
+import { MeasuredAt, Metric, Recommendation, ResourceBody, StatusLine, formatServerTime } from './parts';
 import { sweepLabel, type SweepStatus, type SystemAiStatus } from './systemTypes';
 
-function sweepState(sweep: SweepStatus): { label: string; tone: Tone } {
-  if (sweep.lastError) return { label: 'Xato', tone: 'danger' };
-  if (sweep.lagging) return { label: 'Kechikmoqda', tone: 'warning' };
-  if (sweep.paused) return { label: 'Pauzada', tone: 'info' };
-  if (sweep.running) return { label: 'Ishlamoqda', tone: 'primary' };
-  return { label: 'Normal', tone: 'success' };
+/** Navbat chuqurligi — chegarasi bor: bo'sh navbat yashil, 4 tagacha
+ *  sariq, undan ortiq qizil (teskari shkala: kam bo'lgani yaxshi). */
+const QUEUE_RAG = { ok: 0, warn: 4 };
+/** Slot bandligi (%) — 80% gacha yashil, to'lib ketsa qizil. */
+const SLOT_RAG = { ok: 80, warn: 100 };
+
+function sweepState(sweep: SweepStatus): { label: string; status: IntelStatus } {
+  if (sweep.lastError) return { label: 'Xato', status: 'alert' };
+  if (sweep.lagging) return { label: 'Kechikmoqda', status: 'warn' };
+  if (sweep.paused) return { label: 'Pauzada', status: 'idle' };
+  if (sweep.running) return { label: 'Ishlamoqda', status: 'ok' };
+  return { label: 'Normal', status: 'ok' };
 }
 
 const seconds = (value: number) => `${formatNumber(value, 1)} s`;
 
-/** AI infratuzilma: GPU, rejalashtiruvchi, parallel slotlar va fon vazifalari. */
+/**
+ * AI infratuzilma — o'lchov bloki.
+ *
+ * Navbat chuqurligi va slot bandligi uchun chegara bor — svetofor bilan.
+ * "Oxirgi siklda N modul" — sanoq: modul soni sozlamaga bog'liq, ko'p
+ * yoki kam bo'lgani o'z-o'zidan yaxshi yoki yomon emas, betaraf qoladi.
+ */
 export function AiRuntimeCard({ resource }: { resource: LiveResource<SystemAiStatus> }) {
   return (
-    <Card>
-      <CardHeader title="AI infratuzilma" subtitle="GPU, rejalashtiruvchi va fon vazifalari" icon={Cpu} />
+    <IntelPanel title="AI infratuzilma" code="SYS-AI" right={<MeasuredAt resource={resource} />}>
       <ResourceBody resource={resource} lines={6}>
         {(ai) => {
           const sweeps = ai.sweeps ?? [];
@@ -28,7 +39,7 @@ export function AiRuntimeCard({ resource }: { resource: LiveResource<SystemAiSta
           const failing = sweeps.filter((s) => s.lastError);
           const paused = sweeps.filter((s) => s.paused);
           const gpuActive = ai.gpu.faceGpuActive || ai.gpu.objectGpuActive;
-          // Rozet yashil bo'lib, yozuvda "CPU ishlatilmoqda" turishi mumkin edi: rang
+          // Chiroq yashil bo'lib, yozuvda "CPU ishlatilmoqda" turishi mumkin edi: rang
           // face||object bo'yicha, yozuv esa faqat face bo'yicha hisoblanardi.
           const gpuParts = [ai.gpu.faceGpuActive ? 'yuz' : null, ai.gpu.objectGpuActive ? 'obyekt' : null].filter(Boolean);
           const gpuLabel = !ai.gpu.cudaAvailable
@@ -39,51 +50,60 @@ export function AiRuntimeCard({ resource }: { resource: LiveResource<SystemAiSta
           const tickAt = formatServerTime(ai.lastTick.finishedAt);
           const pollSeconds = ai.schedulerPollSeconds ?? 0;
           const gate = ai.faceInferenceGate;
+          const slotLoad = ai.sweepSlots.max > 0 ? (ai.sweepSlots.inUse / ai.sweepSlots.max) * 100 : null;
           return (
-            <div className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                <Badge tone={gpuActive ? 'success' : 'neutral'} dot>
-                  GPU: {gpuLabel}
-                </Badge>
-                <Badge tone="primary">Rejalashtiruvchi: {ai.schedulerEnabled ? 'parallel' : 'ketma-ket'}</Badge>
+            <div>
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 border-b border-border px-2.5 py-2">
+                <StatusLamp status={gpuActive ? 'ok' : 'idle'} label={`GPU: ${gpuLabel}`} />
+                <StatusLamp
+                  status="ok"
+                  label={`Rejalashtiruvchi: ${ai.schedulerEnabled ? 'parallel' : 'ketma-ket'}`}
+                />
               </div>
 
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              <div className="grid grid-cols-2 gap-px border-b border-border bg-border sm:grid-cols-3">
+                {/* Modul soni — sozlamaga bog'liq sanoq, hukmsiz. */}
                 <Metric
                   label={pollSeconds > 0 ? `Oxirgi siklda (har ${formatDuration(pollSeconds)})` : 'Oxirgi siklda'}
-                  value={`${formatNumber(ai.lastTick.modulesRan)} modul`}
+                  value={formatNumber(ai.lastTick.modulesRan)}
+                  unit="modul"
                   hint={`${formatNumber(ai.lastTick.criticalRan)} kritik · ${formatNumber(ai.lastTick.standardRan)} standart${tickAt ? ` · ${tickAt}` : ''}`}
                 />
                 <Metric
                   label="Parallel slotlar"
                   value={`${ai.sweepSlots.inUse} / ${ai.sweepSlots.max}`}
-                  // max = 0 bo'lsa 0 >= 0 rost bo'lib, bo'sh navbat sariq ko'rinardi.
-                  tone={ai.sweepSlots.max > 0 && ai.sweepSlots.inUse >= ai.sweepSlots.max ? 'warning' : undefined}
-                  hint="Band / jami"
+                  unit="band/jami"
+                  // max = 0 bo'lsa 0 >= 0 rost bo'lib, bo'sh navbat sariq ko'rinardi:
+                  // o'lchanmagan slot hukmsiz ("yoq") qoladi.
+                  verdict={rag(slotLoad, SLOT_RAG)}
+                  hint={slotLoad === null ? "Slot sozlanmagan" : `${formatNumber(slotLoad, 0)}% band`}
                 />
                 <Metric
                   label="Yuz tanish navbati"
                   value={`${gate.inUse} / ${gate.max}`}
-                  tone={gate.waiting > 0 ? 'warning' : undefined}
+                  unit="band/jami"
+                  verdict={rag(gate.waiting, QUEUE_RAG)}
                   hint={gate.waiting > 0 ? `${gate.waiting} ta kutmoqda` : "Navbat yo'q"}
                 />
               </div>
 
-              <div className="space-y-1.5">
+              <div className="divide-y divide-border border-b border-border">
                 {(ai.entranceWatchers ?? 0) > 0 ? (
                   <StatusLine tone="success">
-                    Kirish/chiqish davomati: {ai.entranceWatchers} ta kamera doimiy kuzatuvda — har yangi kadr tahlil qilinadi
+                    Kirish/chiqish davomati: <CodeText>{ai.entranceWatchers}</CodeText> ta kamera doimiy kuzatuvda — har yangi kadr tahlil qilinadi
                   </StatusLine>
                 ) : (
                   entrance && (
                     <StatusLine tone="success">
-                      Kirish/chiqish davomati: har {formatDuration(entrance.intervalSeconds)}, oxirgisi {seconds(entrance.lastDurationSeconds)} davom etdi ({formatNumber(entrance.runs)} marta)
+                      Kirish/chiqish davomati: har <CodeText>{formatDuration(entrance.intervalSeconds)}</CodeText>, oxirgisi{' '}
+                      <CodeText>{seconds(entrance.lastDurationSeconds)}</CodeText> davom etdi (<CodeText>{formatNumber(entrance.runs)}</CodeText> marta)
                     </StatusLine>
                   )
                 )}
                 {ai.lastTick.modulesRan > 0 && (
                   <StatusLine tone={ai.lastTick.skippedOverlap ? 'warning' : 'neutral'}>
-                    Eng uzun modul {seconds(ai.lastTick.durationSeconds)} ishladi{ai.lastTick.skippedOverlap ? ' — ustma-ust tushgani uchun bir sikl o\'tkazib yuborildi' : ''}
+                    Eng uzun modul <CodeText>{seconds(ai.lastTick.durationSeconds)}</CodeText> ishladi
+                    {ai.lastTick.skippedOverlap ? " — ustma-ust tushgani uchun bir sikl o'tkazib yuborildi" : ''}
                   </StatusLine>
                 )}
                 {paused.length > 0 && <StatusLine tone="info">Tirband soat — davomat ustuvor, pauzada: {paused.map((s) => sweepLabel(s.name)).join(', ')}</StatusLine>}
@@ -92,19 +112,23 @@ export function AiRuntimeCard({ resource }: { resource: LiveResource<SystemAiSta
               </div>
 
               {sweeps.length > 0 && (
-                <details className="group rounded-control border border-border">
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-[13px] font-medium text-fg [&::-webkit-details-marker]:hidden">
-                    Fon vazifalari ({sweeps.length})
-                    <ChevronDown size={16} className="text-subtle transition-transform group-open:rotate-180" aria-hidden="true" />
+                <details className="group border-b border-border">
+                  <summary className="flex cursor-pointer list-none items-center gap-2 bg-surface-2/60 px-2.5 py-1.5 [&::-webkit-details-marker]:hidden">
+                    <MicroLabel className="!text-fg">Fon vazifalari</MicroLabel>
+                    <CodeText className="text-[11px] text-subtle">{sweeps.length}</CodeText>
+                    <ChevronDown size={14} className="ms-auto text-subtle transition-transform group-open:rotate-180" aria-hidden="true" />
                   </summary>
                   <ul className="divide-y divide-border border-t border-border">
-                    {sweeps.map((sweep) => {
+                    {sweeps.map((sweep, index) => {
                       const state = sweepState(sweep);
                       return (
-                        <li key={sweep.name} className="flex items-center gap-3 px-3 py-2" title={sweep.lastError ?? undefined}>
+                        <li key={sweep.name} className="flex items-center gap-3 px-2.5 py-1.5" title={sweep.lastError ?? undefined}>
+                          <CodeText className="w-[52px] shrink-0 text-[11px] text-subtle">
+                            VAZ-{String(index + 1).padStart(2, '0')}
+                          </CodeText>
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-[13px] font-medium text-fg">{sweepLabel(sweep.name)}</p>
-                            <p className="truncate text-xs tabular-nums text-muted">
+                            <p className="truncate text-[13px] text-fg">{sweepLabel(sweep.name)}</p>
+                            <p className="intel-code truncate text-[11px] text-muted">
                               {sweep.tier === 'critical' ? 'Kritik' : 'Standart'} · har {formatDuration(sweep.intervalSeconds)} · oxirgisi {seconds(sweep.lastDurationSeconds)} ·{' '}
                               {formatNumber(sweep.runs)} marta
                               {sweep.failures > 0 ? ` · ${formatNumber(sweep.failures)} xato` : ''}
@@ -113,9 +137,7 @@ export function AiRuntimeCard({ resource }: { resource: LiveResource<SystemAiSta
                             {/* Xato matni faqat `title`da edi — sichqonchasiz va klaviaturada ko'rinmasdi. */}
                             {sweep.lastError && <p className="mt-0.5 break-words text-xs text-danger">Xato: {sweep.lastError}</p>}
                           </div>
-                          <Badge tone={state.tone} dot className={cn('shrink-0')}>
-                            {state.label}
-                          </Badge>
+                          <StatusLamp className={cn('shrink-0')} status={state.status} label={state.label} pulse={sweep.running} />
                         </li>
                       );
                     })}
@@ -128,6 +150,6 @@ export function AiRuntimeCard({ resource }: { resource: LiveResource<SystemAiSta
           );
         }}
       </ResourceBody>
-    </Card>
+    </IntelPanel>
   );
 }

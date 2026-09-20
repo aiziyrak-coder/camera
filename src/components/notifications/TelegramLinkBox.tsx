@@ -34,8 +34,8 @@ export default function TelegramLinkBox({ link, hint }: { link: TelegramLink; hi
   }
 
   return (
-    <div className="rounded-card border border-info/25 bg-info-soft p-3">
-      <p className="mb-2 text-xs font-medium text-fg">{hint ?? "Havolani oching va Telegram'da «Start» tugmasini bosing."}</p>
+    <div className="border border-info/30 bg-info-soft px-3 py-2.5">
+      <p className="mb-2 text-[13px] leading-5 text-fg">{hint ?? "Havolani oching va Telegram'da «Start» tugmasini bosing."}</p>
       <div className="flex flex-wrap items-center gap-2">
         <input
           ref={inputRef}
@@ -43,7 +43,7 @@ export default function TelegramLinkBox({ link, hint }: { link: TelegramLink; hi
           value={link.deepLink}
           onFocus={(e) => e.currentTarget.select()}
           aria-label="Bog'lash havolasi"
-          className={`${controlBase} h-8 min-w-0 flex-1 basis-40 px-2.5 font-mono text-xs`}
+          className={`${controlBase} intel-code h-8 min-w-0 flex-1 basis-40 px-2.5 text-xs`}
         />
         <Button size="sm" icon={copied ? Check : Copy} onClick={copy} aria-live="polite">
           {copied ? 'Nusxalandi' : 'Nusxalash'}
@@ -58,7 +58,9 @@ export default function TelegramLinkBox({ link, hint }: { link: TelegramLink; hi
           Nusxalab bo'lmadi (brauzer ruxsat bermadi) — havola belgilandi, Ctrl+C bilan nusxalang.
         </p>
       )}
-      <p className="mt-2 text-[11px] text-muted">Bot: @{link.botUsername}. Havola bir martalik — ishlatilgach yangisini yarating.</p>
+      <p className="mt-2 text-[11px] text-muted">
+        Bot: <span className="intel-code">@{link.botUsername}</span>. Havola bir martalik — ishlatilgach yangisini yarating.
+      </p>
     </div>
   );
 }

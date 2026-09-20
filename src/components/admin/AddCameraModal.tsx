@@ -89,7 +89,7 @@ const PTZ_PROTOCOL_OPTIONS = [
 const PTZ_KEYS: Array<keyof FormState> = ['ptzEnabled', 'ptzProtocol', 'onvifPort'];
 
 function SubHeading({ children }: { children: string }) {
-  return <h3 className="text-[13px] font-semibold uppercase tracking-wide text-muted">{children}</h3>;
+  return <h3 className="intel-micro intel-micro-wrap !text-fg border-b border-border pb-1">{children}</h3>;
 }
 
 export default function AddCameraModal({
@@ -412,7 +412,7 @@ export default function AddCameraModal({
           />
         </fieldset>
 
-        <fieldset className="flex flex-col gap-4 rounded-card border border-border bg-surface-2 p-4">
+        <fieldset className="flex flex-col gap-3 border border-border bg-surface-2 px-3 py-2.5">
           <legend className="sr-only">PTZ boshqaruvi</legend>
           <Checkbox
             checked={form.ptzEnabled}

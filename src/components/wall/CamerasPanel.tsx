@@ -72,15 +72,15 @@ export function CamerasPanel({
 
   if (!has) return null;
   return (
-    <WallPanel area="F" title="Kameralar" icon={<Cctv />}>
+    <WallPanel area="F" title="Jonli kameralar" icon={<Cctv />} code="F-06">
       <div
         className="grid min-h-0 flex-1 gap-[0.6em]"
         style={{ gridTemplateRows: `repeat(${picked.length > 2 ? Math.ceil(picked.length / 2) : picked.length}, minmax(0, 1fr))`, gridTemplateColumns: picked.length > 2 ? '1fr 1fr' : '1fr' }}
       >
         {picked.map((c, i) => (
-          <div key={c.id} className="relative min-h-0 overflow-hidden rounded-[0.7em] bg-surface-3">
+          <div key={c.id} className="intel-grid relative min-h-0 overflow-hidden rounded-[2px] border border-border bg-surface-3">
             <LiveVideoPlayer streamUrl={c.streamUrl} fit="cover" className="absolute inset-0 h-full w-full" startDelayMs={i * 800} />
-            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-[0.7em] pb-[0.4em] pt-[1.2em] text-[0.8em] text-white">
+            <div className="intel-code absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-[0.7em] pb-[0.4em] pt-[1.2em] text-[0.75em] text-white">
               {c.name}
               {c.building ? <span className="opacity-70"> · {c.building}</span> : null}
             </div>

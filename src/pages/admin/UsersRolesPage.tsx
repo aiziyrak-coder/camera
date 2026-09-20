@@ -4,10 +4,16 @@ import {
   Avatar,
   Badge,
   Button,
+  CodeText,
   ConfirmDialog,
   DataTable,
+  DocumentFooter,
+  DocumentHeader,
   IconButton,
+  IntelPanel,
+  MicroLabel,
   Page,
+  cn,
   useToast,
   useUrlTab,
   type DataTableColumn,
@@ -20,6 +26,8 @@ import { Notice, Switch, pagerFooter } from '../../components/settings/kit';
 import { api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { invalidateServerPageCache, useServerPage } from '../../lib/useServerPage';
+import { buildReference, recordCode } from '../../components/admin/registryCodes';
+import { branding } from '../../lib/branding';
 import { PERMISSION_LABELS, usePermissions, type PermissionKey } from '../../lib/permissions';
 import type { AdminUser } from '../../types';
 
@@ -33,6 +41,25 @@ const ROLE_TONE: Record<AdminUser['role'], Tone> = {
 };
 
 type TabId = 'foydalanuvchilar' | 'huquqlar';
+
+/** Ustun sarlavhasi — bosh harfli mikro-yorliq (blankdagi ustun nomi). */
+function ColumnHead({ label, note }: { label: string; note?: string }) {
+  return (
+    <span className="flex flex-col items-center gap-0.5">
+      <MicroLabel className="!text-fg">{label}</MicroLabel>
+      {note && <MicroLabel>{note}</MicroLabel>}
+    </span>
+  );
+}
+
+/** Hujjat qachon ekranga chiqarilgani. */
+function stamp(): string {
+  try {
+    return new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Tashkent' }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 16).replace('T', ' ');
+  }
+}
 
 export default function UsersRolesPage() {
   const toast = useToast();
@@ -95,6 +122,14 @@ export default function UsersRolesPage() {
 
   const userColumns: DataTableColumn<AdminUser>[] = [
     {
+      // Hisob kodi — hujjatda va murojaatda ismni takrorlamaslik uchun.
+      key: 'code',
+      header: 'Kod',
+      width: '6.5rem',
+      mono: true,
+      cell: (u) => <CodeText className="text-[12px] text-subtle">{recordCode('FOY', u.id)}</CodeText>,
+    },
+    {
       key: 'name',
       header: 'Foydalanuvchi',
       sortValue: (u) => u.name,
@@ -103,7 +138,7 @@ export default function UsersRolesPage() {
           <Avatar name={u.name} size="sm" />
           <div className="min-w-0">
             <p className="truncate font-medium text-fg">{u.name}</p>
-            <p className="truncate font-mono text-xs text-muted">{u.login}</p>
+            <CodeText className="block truncate text-[11px] text-muted">{u.login}</CodeText>
           </div>
         </div>
       ),
@@ -127,7 +162,7 @@ export default function UsersRolesPage() {
           <div className="min-w-0 text-[13px]">
             {u.email && <p className="truncate text-fg">{u.email}</p>}
             <p className="flex flex-wrap items-center gap-1.5 text-muted">
-              {u.phone && <span className="tabular-nums">{u.phone}</span>}
+              {u.phone && <CodeText className="text-[12px]">{u.phone}</CodeText>}
               {/* Yalang'och "Telegram" nishoni nimani bildirishi tushunarsiz
                   edi — bu telefon raqami emas, bog'langan Telegram hisobi. */}
               {u.telegramLinked && (
@@ -145,7 +180,8 @@ export default function UsersRolesPage() {
       key: 'lastLogin',
       header: 'Oxirgi kirish',
       sortValue: (u) => u.lastLogin,
-      cell: (u) => <span className="whitespace-nowrap text-[13px] tabular-nums text-muted">{u.lastLogin}</span>,
+      mono: true,
+      cell: (u) => <CodeText className="whitespace-nowrap text-[12px] text-muted">{u.lastLogin}</CodeText>,
     },
     {
       key: 'actions',
@@ -192,13 +228,18 @@ export default function UsersRolesPage() {
   const permissionColumns: DataTableColumn<PermissionKey>[] = [
     {
       key: 'permission',
-      header: 'Huquq / Ruxsat',
+      header: <ColumnHead label="Huquq / ruxsat" />,
       sortValue: (key) => PERMISSION_LABELS[key],
-      cell: (key) => <span className="font-medium text-fg">{PERMISSION_LABELS[key]}</span>,
+      cell: (key, index) => (
+        <span className="flex min-w-0 items-baseline gap-2">
+          <CodeText className="shrink-0 text-[11px] text-subtle">{`HQ-${String(index + 1).padStart(2, '0')}`}</CodeText>
+          <span className="min-w-0 text-[13px] font-medium text-fg">{PERMISSION_LABELS[key]}</span>
+        </span>
+      ),
     },
     {
       key: 'superAdmin',
-      header: 'Super Admin',
+      header: <ColumnHead label="Super Admin" note="Qulflangan" />,
       align: 'center',
       width: '9rem',
       cell: (key) => (
@@ -211,7 +252,7 @@ export default function UsersRolesPage() {
     },
     {
       key: 'admin',
-      header: 'Admin',
+      header: <ColumnHead label="Admin" note={canEdit ? "O'zgartirsa bo'ladi" : "Faqat ko'rish"} />,
       align: 'center',
       width: '9rem',
       cell: (key) => (
@@ -225,7 +266,7 @@ export default function UsersRolesPage() {
     },
     {
       key: 'cameraSteward',
-      header: "Kamera mas'uli",
+      header: <ColumnHead label="Kamera mas'uli" note={canEdit ? "O'zgartirsa bo'ladi" : "Faqat ko'rish"} />,
       align: 'center',
       width: '9rem',
       cell: (key) => (
@@ -239,6 +280,10 @@ export default function UsersRolesPage() {
     },
   ];
 
+  // Varaq raqami — bo'lim va ro'yxat hajmidan; vaqt ishtirok etmaydi.
+  const reference = buildReference('ACL', [tab], [String(total), String(permissionKeys.length), canEdit ? 'tahrir' : 'korish']);
+  const generatedAt = stamp();
+
   return (
     <Page
       title="Foydalanuvchilar"
@@ -251,8 +296,24 @@ export default function UsersRolesPage() {
       }
       tabs={tabs}
     >
+      {/* 1. Hujjat blanki: kim kira oladi va qaysi rol nimaga haqli. */}
+      <DocumentHeader
+        org={branding.orgFullName}
+        title={tab === 'huquqlar' ? 'Rollar huquqlari varag‘i' : 'Tizim foydalanuvchilari'}
+        reference={reference}
+        generatedAt={generatedAt}
+        readouts={[
+          { label: 'Hisoblar', value: loading && users.length === 0 ? '—' : `${total} ta` },
+          { label: 'Rollar', value: '3 ta', title: "Super Admin, Admin, Kamera mas'uli" },
+          { label: 'Huquqlar', value: `${permissionKeys.length} ta` },
+          { label: 'Sizning huquqingiz', value: canEdit ? "O'zgartirish" : "Faqat ko'rish" },
+        ]}
+      />
+
       {tab === 'foydalanuvchilar' ? (
+        <IntelPanel title="Tizim foydalanuvchilari" code={reference} right={<MicroLabel>{total} ta hisob</MicroLabel>} brackets={false}>
         <DataTable
+          dense
           columns={userColumns}
           rows={users}
           rowKey={(u) => u.id}
@@ -270,6 +331,7 @@ export default function UsersRolesPage() {
             </Button>
           }
           ariaLabel="Foydalanuvchilar"
+          maxHeight="none"
           footer={
             error && users.length > 0 ? (
               <Notice tone="danger" action={<Button size="sm" onClick={reload}>Qayta urinish</Button>}>
@@ -280,6 +342,7 @@ export default function UsersRolesPage() {
             )
           }
         />
+        </IntelPanel>
       ) : (
         <div className="flex flex-col gap-3">
           {saveError && (
@@ -306,17 +369,38 @@ export default function UsersRolesPage() {
               cheklaydi.
             </Notice>
           )}
-          <DataTable
-            columns={permissionColumns}
-            rows={permissionKeys}
-            rowKey={(key) => key}
-            emptyTitle="Huquqlar yuklanmadi"
-            emptyDescription="Server huquqlar matritsasini qaytarmadi — sahifani yangilang."
-            maxHeight="none"
-            ariaLabel="Huquqlar matritsasi"
-          />
+          <IntelPanel
+            title="Huquqlar matritsasi"
+            code={reference}
+            right={<MicroLabel>{permissionKeys.length} ta qator · 3 ta rol</MicroLabel>}
+            brackets={false}
+          >
+            <DataTable
+              dense
+              columns={permissionColumns}
+              rows={permissionKeys}
+              rowKey={(key) => key}
+              emptyTitle="Huquqlar yuklanmadi"
+              emptyDescription="Server huquqlar matritsasini qaytarmadi — sahifani yangilang."
+              maxHeight="none"
+              ariaLabel="Huquqlar matritsasi"
+            />
+            {/* Belgilar izohi: qulf nima uchun turganini varaqning o'zi aytadi. */}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-border px-3 py-1.5">
+              <MicroLabel>Belgilar</MicroLabel>
+              <span className="intel-code text-[11px] text-muted">✓ — ruxsat bor</span>
+              <span className="intel-code text-[11px] text-muted">✕ — ruxsat yo&apos;q</span>
+              <span className="intel-code inline-flex items-center gap-1 text-[11px] text-muted">
+                <Lock size={11} aria-hidden="true" /> — qulflangan (Super Admin ustuni o&apos;zgarmaydi)
+              </span>
+            </div>
+          </IntelPanel>
         </div>
       )}
+
+      <DocumentFooter
+        note={`Xizmat uchun. Varaq ${reference} raqami bilan tizimda tuzilgan. Bu yerdagi belgilar navigatsiya menyusi va eksport tugmalarini haqiqatda cheklaydi.`}
+      />
 
       <AddUserModal
         open={modalOpen}
@@ -372,18 +456,27 @@ function PermissionMark({
     );
   }
   return (
-    <span className="inline-flex items-center justify-center gap-1">
+    <span className="inline-flex items-center justify-center gap-1.5">
       <span
         role="img"
         aria-label={`${label}: ${granted ? 'ruxsat bor' : "ruxsat yo'q"}${lockedReason ? `. ${lockedReason}` : ''}`}
         title={lockedReason}
-        className={`inline-flex h-6 w-6 items-center justify-center rounded-full ${granted ? 'bg-success-soft text-success' : 'bg-surface-2 text-subtle'}`}
+        className={cn(
+          'inline-flex h-5 w-5 items-center justify-center border',
+          granted ? 'border-success/40 bg-success-soft text-success' : 'border-border bg-surface-2 text-subtle',
+        )}
       >
-        {granted ? <Check size={14} aria-hidden="true" /> : <X size={14} aria-hidden="true" />}
+        {granted ? <Check size={13} aria-hidden="true" /> : <X size={13} aria-hidden="true" />}
       </span>
       {/* Qulf belgisi ko'rinadigan sabab: ilgari faqat tooltip bor edi va
-          klaviatura bilan yurgan foydalanuvchi uni umuman ko'rmasdi. */}
-      {lockedReason && <Lock size={12} className="text-subtle" aria-hidden="true" />}
+          klaviatura bilan yurgan foydalanuvchi uni umuman ko'rmasdi.
+          Endi qulf yonida so'zi ham turadi — belgi yolg'iz qolmaydi. */}
+      {lockedReason && (
+        <span className="inline-flex items-center gap-1 text-subtle" title={lockedReason}>
+          <Lock size={11} aria-hidden="true" />
+          <MicroLabel>Qulf</MicroLabel>
+        </span>
+      )}
     </span>
   );
 }

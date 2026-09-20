@@ -52,7 +52,7 @@ export function ProgressRing({ value, size = 64, thickness, tone = 'auto', label
             fill="none"
             stroke="currentColor"
             strokeWidth={stroke}
-            strokeLinecap="round"
+            strokeLinecap="butt"
             strokeDasharray={circumference}
             strokeDashoffset={circumference * (1 - pct / 100)}
             className={cn('transition-[stroke-dashoffset] duration-500 ease-out', TONE_TEXT[resolvedTone])}
@@ -60,10 +60,10 @@ export function ProgressRing({ value, size = 64, thickness, tone = 'auto', label
         )}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center text-center leading-none">
-        <span className="font-semibold tabular-nums text-fg" style={{ fontSize }}>
+        <span className="intel-code font-semibold text-fg" style={{ fontSize }}>
           {label ?? (hasValue ? `${Math.round(pct)}%` : '—')}
         </span>
-        {sublabel && <span className="mt-0.5 text-[10px] text-muted">{sublabel}</span>}
+        {sublabel && <span className="intel-micro mt-0.5">{sublabel}</span>}
       </div>
     </div>
   );
@@ -91,7 +91,9 @@ export interface ProgressBarProps {
   className?: string;
 }
 
-const HEIGHT = { xs: 'h-1', sm: 'h-1.5', md: 'h-2.5' } as const;
+// Chegara 1px joy oladi — balandliklar shunga yarasha (ichki to'ldirish
+// eng kichigida ham ko'rinib tursin).
+const HEIGHT = { xs: 'h-1.5', sm: 'h-2', md: 'h-3' } as const;
 
 /** Chiziqli progress. `segments` bilan — bitta chiziqda holatlar ulushi. */
 export function ProgressBar({ value, max = 100, tone = 'auto', segments, size = 'sm', showValue, label, ariaLabel, className }: ProgressBarProps) {
@@ -104,13 +106,16 @@ export function ProgressBar({ value, max = 100, tone = 'auto', segments, size = 
   return (
     <div className={cn('min-w-0', className)}>
       {(label || showValue) && (
-        <div className="mb-1.5 flex items-baseline justify-between gap-2 text-xs">
-          <span className="truncate text-muted">{label}</span>
-          {showValue && !segments && <span className="font-semibold tabular-nums text-fg">{hasValue ? `${Math.round(pct)}%` : '—'}</span>}
+        <div className="mb-1 flex items-baseline justify-between gap-2">
+          <span className="intel-micro truncate">{label}</span>
+          {showValue && !segments && (
+            <span className="intel-code text-[12px] font-semibold text-fg">{hasValue ? `${Math.round(pct)}%` : '—'}</span>
+          )}
         </div>
       )}
+      {/* O'lchov chizig'i — to'rtburchak, chegarasi bilan: shkala kabi. */}
       <div
-        className={cn('flex w-full overflow-hidden rounded-full bg-surface-3', HEIGHT[size])}
+        className={cn('flex w-full overflow-hidden rounded-[1px] border border-border bg-surface-2', HEIGHT[size])}
         role={segments ? 'img' : 'progressbar'}
         aria-label={ariaLabel ?? summary}
         aria-valuemin={segments ? undefined : 0}
@@ -130,7 +135,7 @@ export function ProgressBar({ value, max = 100, tone = 'auto', segments, size = 
               ) : null,
             )
           : hasValue && (
-              <span className={cn('h-full rounded-full transition-[width] duration-500', TONE_SOLID[resolvedTone])} style={{ width: `${pct}%` }} />
+              <span className={cn('h-full transition-[width] duration-500', TONE_SOLID[resolvedTone])} style={{ width: `${pct}%` }} />
             )}
       </div>
     </div>

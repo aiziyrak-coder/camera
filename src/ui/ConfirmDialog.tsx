@@ -72,20 +72,21 @@ export function ConfirmDialog({
         </>
       }
     >
-      <div className="flex gap-3.5 pt-2">
+      <div className="flex gap-3">
         <div
           className={cn(
-            'flex h-10 w-10 shrink-0 items-center justify-center rounded-full',
-            tone === 'danger' ? 'bg-danger-soft text-danger' : 'bg-primary-soft text-primary',
+            'flex h-8 w-8 shrink-0 items-center justify-center rounded-[2px] border',
+            tone === 'danger' ? 'border-danger/40 bg-danger-soft text-danger' : 'border-primary/30 bg-primary-soft text-primary',
           )}
         >
-          <Icon size={20} aria-hidden="true" />
+          <Icon size={16} aria-hidden="true" />
         </div>
-        <div className="min-w-0 pt-1">
-          <h2 className="text-base font-semibold text-fg">{title}</h2>
-          {message && <div className="mt-1 text-sm text-muted">{message}</div>}
+        <div className="min-w-0">
+          {/* Savolning o'zi — proza: odam o'qiydigan gap, bosh harfga aylanmaydi. */}
+          <h2 className="text-[14px] font-semibold leading-5 text-fg">{title}</h2>
+          {message && <div className="mt-1 text-[13px] leading-5 text-muted">{message}</div>}
           {error && (
-            <p role="alert" className="mt-3 rounded-control bg-danger-soft px-3 py-2 text-[13px] font-medium text-danger">
+            <p role="alert" className="intel-code mt-2.5 rounded-control border border-danger/30 border-l-[3px] border-l-danger bg-danger-soft px-2.5 py-1.5 text-[12px] font-medium text-danger">
               {error}
             </p>
           )}

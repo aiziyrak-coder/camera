@@ -36,13 +36,13 @@ export function DateRangePicker({ value, onChange, presets = DEFAULT_PRESETS, al
     else onChange(rangeForPreset(preset, today));
   }
 
-  const inputClass = cn(controlBase, controlSizes[size], 'w-auto min-w-0 tabular-nums');
+  const inputClass = cn('intel-code', controlBase, controlSizes[size], 'w-auto min-w-0');
 
   return (
-    <div className={cn('flex flex-wrap items-center gap-2', className)}>
+    <div className={cn('flex flex-wrap items-center gap-1.5', className)}>
       <Tabs tabs={tabs} value={value.preset} onChange={selectPreset} variant="segmented" size={size} ariaLabel="Davr" />
       {value.preset === 'custom' ? (
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1">
           <label htmlFor={`${id}-from`} className="sr-only">
             Boshlanish sanasi
           </label>
@@ -55,7 +55,7 @@ export function DateRangePicker({ value, onChange, presets = DEFAULT_PRESETS, al
             className={inputClass}
             aria-invalid={Boolean(error) || undefined}
           />
-          <span className="text-muted" aria-hidden="true">
+          <span className="intel-code text-muted" aria-hidden="true">
             –
           </span>
           <label htmlFor={`${id}-to`} className="sr-only">
@@ -72,13 +72,13 @@ export function DateRangePicker({ value, onChange, presets = DEFAULT_PRESETS, al
             aria-invalid={Boolean(error) || undefined}
           />
           {error && (
-            <p className="w-full text-xs font-medium text-danger" role="alert">
+            <p className="w-full text-[12px] font-medium text-danger" role="alert">
               {error}
             </p>
           )}
         </div>
       ) : (
-        showSummary && <span className="text-[13px] tabular-nums text-muted">{formatUzRange(value.from, value.to)}</span>
+        showSummary && <span className="intel-code text-[12px] text-muted">{formatUzRange(value.from, value.to)}</span>
       )}
     </div>
   );

@@ -1,19 +1,21 @@
 import { useState } from 'react';
 import { PlugZap, RefreshCw } from 'lucide-react';
 import {
-  Badge,
   Button,
-  Card,
-  CardHeader,
+  CodeText,
   DataTable,
   Drawer,
   ErrorState,
+  IntelPanel,
   KeyValue,
+  MicroLabel,
   ProgressBar,
   Section,
   SkeletonCard,
+  StatusLamp,
   formatNumber,
   type DataTableColumn,
+  type IntelStatus,
 } from '../../ui';
 import { Notice, pagerFooter } from '../settings/kit';
 import {
@@ -23,6 +25,7 @@ import {
   statsRows,
   statsSummary,
   type SyncRun,
+  type SyncRunStatus,
 } from '../../lib/integrationsApi';
 import type { HemisSync } from './useHemisSync';
 
@@ -32,6 +35,17 @@ const ENTITY_TEST_LABELS: Record<string, string> = {
   groups: 'Guruhlar',
   departments: "Bo'linmalar",
 };
+
+/** Sinxronlash holati — chiroq + SO'Z (rang yolg'iz ma'no tashimaydi). */
+const RUN_LAMP: Record<SyncRunStatus, IntelStatus> = {
+  ishlamoqda: 'warn',
+  muvaffaqiyatli: 'ok',
+  xato: 'alert',
+};
+
+function RunStatusLamp({ status }: { status: SyncRunStatus }) {
+  return <StatusLamp status={RUN_LAMP[status] ?? 'idle'} label={RUN_STATUS_META[status].label} pulse={status === 'ishlamoqda'} />;
+}
 
 /** Sahifa sarlavhasidagi HEMIS tugmalari (o'ng yuqorida). */
 /** Nofaol tugma sababi — sichqoncha ustiga kelganda ko'rinadi. Tugma
@@ -67,21 +81,17 @@ const RUN_COLUMNS: DataTableColumn<SyncRun>[] = [
   {
     key: 'startedAt',
     header: 'Boshlandi',
-    cell: (r) => <span className="whitespace-nowrap tabular-nums">{formatDateTime(r.startedAt)}</span>,
+    cell: (r) => <CodeText className="whitespace-nowrap text-[12px]">{formatDateTime(r.startedAt)}</CodeText>,
   },
   {
     key: 'status',
     header: 'Holat',
-    cell: (r) => (
-      <Badge tone={RUN_STATUS_META[r.status].tone} dot>
-        {RUN_STATUS_META[r.status].label}
-      </Badge>
-    ),
+    cell: (r) => <RunStatusLamp status={r.status} />,
   },
   {
     key: 'duration',
     header: 'Davomiyligi',
-    cell: (r) => <span className="whitespace-nowrap text-[13px] tabular-nums text-muted">{formatDuration(r.durationSeconds)}</span>,
+    cell: (r) => <CodeText className="whitespace-nowrap text-[12px] text-muted">{formatDuration(r.durationSeconds)}</CodeText>,
   },
   { key: 'triggeredBy', header: 'Kim', hideOnMobile: true, cell: (r) => <span className="text-[13px] text-muted">{r.triggeredBy}</span> },
   {
@@ -108,41 +118,40 @@ const NUM_COLUMNS = [
 
 function RunDetails({ run }: { run: SyncRun }) {
   const rows = statsRows(run.stats);
-  const meta = RUN_STATUS_META[run.status];
   return (
     <div className="flex flex-col gap-5">
       <KeyValue
         items={[
-          { label: 'Holat', value: <Badge tone={meta.tone} dot>{meta.label}</Badge> },
-          { label: 'Boshlandi', value: <span className="tabular-nums">{formatDateTime(run.startedAt)}</span> },
-          { label: 'Tugadi', value: <span className="tabular-nums">{formatDateTime(run.finishedAt)}</span> },
-          { label: 'Davomiyligi', value: formatDuration(run.durationSeconds) },
+          { label: 'Holat', value: <RunStatusLamp status={run.status} /> },
+          { label: 'Boshlandi', value: <CodeText>{formatDateTime(run.startedAt)}</CodeText> },
+          { label: 'Tugadi', value: <CodeText>{formatDateTime(run.finishedAt)}</CodeText> },
+          { label: 'Davomiyligi', value: <CodeText>{formatDuration(run.durationSeconds)}</CodeText> },
           { label: 'Kim ishga tushirdi', value: run.triggeredBy },
         ]}
       />
       {run.status === 'xato' && run.error && <Notice tone="danger" title="Xato">{run.error}</Notice>}
       <Section title="Bo'limlar bo'yicha">
         {rows.length > 0 ? (
-          <div className="overflow-x-auto rounded-card border border-border">
+          <div className="overflow-x-auto border border-border">
             <table className="w-full min-w-[34rem] border-separate border-spacing-0 text-[13px]">
               <thead>
                 <tr>
-                  <th scope="col" className="border-b border-border bg-surface-2 px-3 py-2 text-left text-xs font-semibold text-muted">
-                    Bo'lim
+                  <th scope="col" className="border-b border-border bg-surface-2 px-2.5 py-1.5 text-left">
+                    <MicroLabel>Bo&apos;lim</MicroLabel>
                   </th>
                   {NUM_COLUMNS.map((c) => (
-                    <th key={c.key} scope="col" className="border-b border-border bg-surface-2 px-3 py-2 text-right text-xs font-semibold text-muted">
-                      {c.label}
+                    <th key={c.key} scope="col" className="border-b border-border bg-surface-2 px-2.5 py-1.5 text-right">
+                      <MicroLabel>{c.label}</MicroLabel>
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="tabular-nums">
+              <tbody className="intel-code">
                 {rows.map((row) => (
                   <tr key={row.key}>
-                    <td className="border-b border-border px-3 py-2 font-medium text-fg">{row.label}</td>
+                    <td className="border-b border-border px-2.5 py-1.5 font-sans text-[13px] font-medium text-fg">{row.label}</td>
                     {NUM_COLUMNS.map((c) => (
-                      <td key={c.key} className={`border-b border-border px-3 py-2 text-right ${row[c.key] ? c.className || 'text-fg' : 'text-subtle'}`}>
+                      <td key={c.key} className={`border-b border-border px-2.5 py-1.5 text-right ${row[c.key] ? c.className || 'text-fg' : 'text-subtle'}`}>
                         {formatNumber(row[c.key])}
                       </td>
                     ))}
@@ -157,7 +166,7 @@ function RunDetails({ run }: { run: SyncRun }) {
       </Section>
       {run.stats?.messages && run.stats.messages.length > 0 && (
         <Section title="Izohlar" description="O'tkazilgan yozuvlar sababi">
-          <ul className="max-h-64 list-disc space-y-1 overflow-y-auto rounded-control border border-border bg-surface-2 py-2 pl-7 pr-3 text-[13px] text-fg">
+          <ul className="max-h-64 list-disc space-y-1 overflow-y-auto border border-border bg-surface-2 py-2 pl-7 pr-3 text-[13px] text-fg">
             {run.stats.messages.map((message, index) => (
               <li key={index}>{message}</li>
             ))}
@@ -169,7 +178,7 @@ function RunDetails({ run }: { run: SyncRun }) {
 }
 
 /** HEMIS ulanishi holati, sinov natijasi, jarayon va sinxronlash tarixi. */
-export default function HemisPanel({ hemis }: { hemis: HemisSync }) {
+export default function HemisPanel({ hemis, reference }: { hemis: HemisSync; reference?: string }) {
   const [openRunId, setOpenRunId] = useState<string | null>(null);
   const { status, statusError, running, percent, testResult, runs } = hemis;
   const openRun = runs?.items.find((r) => r.id === openRunId) ?? null;
@@ -177,50 +186,57 @@ export default function HemisPanel({ hemis }: { hemis: HemisSync }) {
   let connection;
   if (statusError && !status) {
     connection = (
-      <Card>
+      <IntelPanel title="HEMIS ulanishi" code={reference}>
         <ErrorState variant="block" message={statusError} onRetry={hemis.retryStatus} />
-      </Card>
+      </IntelPanel>
     );
   } else if (!status) {
     connection = <SkeletonCard lines={3} />;
   } else {
     connection = (
-      <Card>
-        <CardHeader
-          icon={PlugZap}
-          title={
-            <span className="flex flex-wrap items-center gap-2">
-              HEMIS ulanishi
-              {status.configured ? (
-                <Badge tone="success" dot>
-                  Sozlangan
-                </Badge>
-              ) : (
-                <Badge tone="warning" dot>
-                  Sozlanmagan
-                </Badge>
-              )}
-            </span>
-          }
-          subtitle={<span className="break-all font-mono text-xs">{status.baseUrl ?? 'Manzil kiritilmagan'}</span>}
-        />
+      <IntelPanel
+        title="HEMIS ulanishi"
+        code={reference}
+        right={
+          <StatusLamp
+            status={running ? 'warn' : status.configured ? 'ok' : 'alert'}
+            label={running ? 'Sinxronlanmoqda' : status.configured ? 'Sozlangan' : 'Sozlanmagan'}
+            pulse={Boolean(running)}
+          />
+        }
+        bodyClassName="px-3 py-3"
+      >
+        <div className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-border pb-2">
+          <MicroLabel>Manzil</MicroLabel>
+          <CodeText className="break-all text-[12px] text-fg">{status.baseUrl ?? 'Manzil kiritilmagan'}</CodeText>
+        </div>
         <KeyValue
           layout="stacked"
           columns={3}
           items={[
             {
               label: 'Avtomatik sinxronlash',
-              value: status.syncIntervalHours > 0 ? `Har ${status.syncIntervalHours} soatda` : "O'chiq (faqat qo'lda)",
+              value:
+                status.syncIntervalHours > 0 ? (
+                  <span>
+                    Har <CodeText className="font-semibold">{status.syncIntervalHours}</CodeText> soatda
+                  </span>
+                ) : (
+                  "O'chiq (faqat qo'lda)"
+                ),
             },
-            { label: "HEMIS'da yo'qlarni faolsizlantirish", value: status.deactivateMissing ? 'Yoqilgan' : "O'chiq" },
-            { label: 'Oxirgi muvaffaqiyatli sinxronlash', value: <span className="tabular-nums">{formatDateTime(status.lastSuccessAt)}</span> },
+            {
+              label: "HEMIS'da yo'qlarni faolsizlantirish",
+              value: <StatusLamp status={status.deactivateMissing ? 'ok' : 'idle'} label={status.deactivateMissing ? 'Yoqilgan' : "O'chiq"} />,
+            },
+            { label: 'Oxirgi muvaffaqiyatli sinxronlash', value: <CodeText>{formatDateTime(status.lastSuccessAt)}</CodeText> },
           ]}
         />
 
         {!status.configured && (
           <Notice tone="warning" className="mt-4" title="HEMIS sozlanmagan">
-            Serverdagi <code className="font-mono">.env</code> faylida <code className="font-mono">HEMIS_BASE_URL</code> (masalan{' '}
-            <code className="font-mono">https://student.universitet.uz/rest</code>) va <code className="font-mono">HEMIS_API_TOKEN</code>{' '}
+            Serverdagi <code className="intel-code">.env</code> faylida <code className="intel-code">HEMIS_BASE_URL</code> (masalan{' '}
+            <code className="intel-code">https://student.universitet.uz/rest</code>) va <code className="intel-code">HEMIS_API_TOKEN</code>{' '}
             (HEMIS admin panelidagi API token) ni kiriting va xizmatni qayta ishga tushiring. Token xavfsizlik uchun faqat serverda
             saqlanadi.
           </Notice>
@@ -261,9 +277,9 @@ export default function HemisPanel({ hemis }: { hemis: HemisSync }) {
               {Object.entries(testResult.entities).map(([key, entity]) => (
                 <li key={key}>
                   {ENTITY_TEST_LABELS[key] ?? key}:{' '}
-                  <span className={entity.ok ? 'font-semibold tabular-nums' : 'font-semibold text-danger'}>
+                  <CodeText className={entity.ok ? 'font-semibold' : 'font-semibold text-danger'}>
                     {entity.ok ? formatNumber(entity.total ?? 0) : (entity.error ?? 'xato')}
-                  </span>
+                  </CodeText>
                 </li>
               ))}
             </ul>
@@ -271,13 +287,13 @@ export default function HemisPanel({ hemis }: { hemis: HemisSync }) {
         )}
 
         {running && (
-          <div className="mt-4 rounded-control border border-border bg-surface-2 px-3 py-3" aria-live="polite">
-            <div className="mb-2 flex justify-between gap-3 text-xs">
-              <span className="font-medium text-fg">{running.stats?.progress?.stage ?? 'Boshlanmoqda'}</span>
+          <div className="mt-3 border border-border bg-surface-2 px-3 py-2.5" aria-live="polite">
+            <div className="mb-2 flex justify-between gap-3">
+              <MicroLabel>{running.stats?.progress?.stage ?? 'Boshlanmoqda'}</MicroLabel>
               {percent !== null && (
-                <span className="tabular-nums text-muted">
+                <CodeText className="text-[12px] text-muted">
                   {formatNumber(running.stats?.progress?.done ?? 0)} / {formatNumber(running.stats?.progress?.total ?? 0)} · {percent}%
-                </span>
+                </CodeText>
               )}
             </div>
             {percent !== null ? (
@@ -289,15 +305,19 @@ export default function HemisPanel({ hemis }: { hemis: HemisSync }) {
             )}
           </div>
         )}
-      </Card>
+      </IntelPanel>
     );
   }
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex min-w-0 flex-col gap-3">
       {connection}
 
-      <Section title="Sinxronlash tarixi" description="Qatorni bosing — bo'limlar bo'yicha natija va izohlar.">
+      <IntelPanel
+        title="Sinxronlash tarixi"
+        code={runs ? `${runs.total} ta` : undefined}
+        right={<MicroLabel>Qatorni bosing — natija va izohlar</MicroLabel>}
+      >
         <DataTable
           columns={RUN_COLUMNS}
           rows={runs?.items ?? []}
@@ -320,13 +340,14 @@ export default function HemisPanel({ hemis }: { hemis: HemisSync }) {
           }
           ariaLabel="Sinxronlash tarixi"
           maxHeight="none"
+          dense
           footer={
             runs
               ? pagerFooter({ page: runs.page, totalPages: runs.totalPages, total: runs.total, pageSize: runs.pageSize, onChange: hemis.setRunsPage })
               : undefined
           }
         />
-      </Section>
+      </IntelPanel>
 
       <Drawer
         open={openRun !== null}

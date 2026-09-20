@@ -19,21 +19,22 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   return (
     <div className={cn('relative w-full', className)}>
       {Icon && (
-        <Icon size={16} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-subtle" />
+        <Icon size={14} aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-subtle" />
       )}
       <input
         ref={ref}
         aria-invalid={invalid || undefined}
         className={cn(
+          'intel-code',
           controlBase,
           controlSizes[size],
-          Icon && 'pl-9',
-          trailing ? 'pr-10' : undefined,
+          Icon && 'pl-8',
+          trailing ? 'pr-9' : undefined,
           invalid && 'border-danger focus:border-danger focus:ring-danger/20',
         )}
         {...rest}
       />
-      {trailing && <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center">{trailing}</div>}
+      {trailing && <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center">{trailing}</div>}
     </div>
   );
 });
@@ -47,7 +48,8 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
       ref={ref}
       rows={rows}
       aria-invalid={invalid || undefined}
-      className={cn(controlBase, 'min-h-[4.5rem] px-3 py-2 text-sm', invalid && 'border-danger focus:border-danger focus:ring-danger/20', className)}
+      // Erkin matn — odam yozadigan gap: sans shriftda qoladi.
+      className={cn(controlBase, 'min-h-[4.5rem] px-2.5 py-1.5 text-[13px]', invalid && 'border-danger focus:border-danger focus:ring-danger/20', className)}
       {...rest}
     />
   );
@@ -74,14 +76,15 @@ export function Field({ label, children, hint, error, required, className }: Fie
     : children;
 
   return (
-    <div className={cn('flex min-w-0 flex-col gap-1.5', className)}>
-      <label htmlFor={childId} className="text-[13px] font-medium text-fg">
+    <div className={cn('flex min-w-0 flex-col gap-1', className)}>
+      {/* Maydon nomi — bosh harfli mikro-yorliq (blankdagi katak nomi). */}
+      <label htmlFor={childId} className="intel-micro intel-micro-wrap !text-fg">
         {label}
-        {required && <span className="ml-0.5 text-danger" aria-hidden="true">*</span>}
+        {required && <span className="ml-0.5 !text-danger" aria-hidden="true">*</span>}
       </label>
       {control}
       {(error || hint) && (
-        <p id={hintId} className={cn('text-xs', error ? 'font-medium text-danger' : 'text-muted')} role={error ? 'alert' : undefined}>
+        <p id={hintId} className={cn('text-[12px] leading-4', error ? 'font-medium text-danger' : 'text-muted')} role={error ? 'alert' : undefined}>
           {error || hint}
         </p>
       )}

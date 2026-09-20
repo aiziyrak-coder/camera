@@ -51,6 +51,25 @@ describe('DataTable', () => {
     expect(onRowClick).toHaveBeenNthCalledWith(2, ROWS[1]);
   });
 
+  it('svetofor ustuni: rang yolg\'iz emas — harf va izoh bilan', () => {
+    render(
+      <DataTable
+        columns={COLUMNS}
+        rows={ROWS}
+        rowKey={(r) => r.name}
+        rowRag={(r) => (r.rate === null ? 'yoq' : r.rate >= 90 ? 'yashil' : 'qizil')}
+        ariaLabel="Guruhlar"
+      />,
+    );
+    // Sarlavhada HOLAT ustuni paydo bo'ladi (matn o'zgarmaydi — faqat CSS bosh harfga o'giradi).
+    expect(screen.getByRole('columnheader', { name: /Holat/ })).toBeInTheDocument();
+    // Har qatorda harf + to'liq hukm so'zi: rangni ajratmaydigan o'quvchi ham o'qiydi.
+    const rows = within(screen.getByRole('table')).getAllByRole('row');
+    expect(within(rows[1]).getAllByRole('cell')[0]).toHaveTextContent('Q — Chora kerak');
+    expect(within(rows[2]).getAllByRole('cell')[0]).toHaveTextContent('Y — Talab bajarilgan');
+    expect(within(rows[3]).getAllByRole('cell')[0]).toHaveTextContent("— — O'lchanmagan");
+  });
+
   it('shows empty and error states', () => {
     const { rerender } = render(<DataTable columns={COLUMNS} rows={[]} rowKey={(r) => r.name} emptyTitle="Guruh topilmadi" />);
     expect(screen.getByText('Guruh topilmadi')).toBeInTheDocument();

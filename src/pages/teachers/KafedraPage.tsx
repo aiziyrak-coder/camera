@@ -1,39 +1,47 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { BarChart3, BookOpen, CalendarCheck, Clock, LayoutGrid, Rows3, Timer, UserCheck, Users } from 'lucide-react';
+import { BarChart3, BookOpen, CalendarCheck, LayoutGrid, Rows3, Table2, Users } from 'lucide-react';
 import {
   Avatar,
   Badge,
-  cn,
+  CodeText,
   ButtonLink,
   DataTable,
   DateRangePicker,
   detectPreset,
+  DocumentFooter,
+  DocumentHeader,
   EmptyState,
   ErrorState,
+  IntelPanel,
   KeyValue,
+  MicroLabel,
   Page,
   PageSkeleton,
   PersonCard,
   PersonGrid,
-  ProgressRing,
   SearchInput,
   Select,
-  StatTile,
   StatusBadge,
   Tabs,
   Toolbar,
+  cn,
+  formatNumber,
   formatPercent,
   formatUzRange,
   isIsoDate,
   rangeForPreset,
-  toneForRate,
   useShell,
   useUrlTab,
   type DataTableColumn,
   type DateRangeValue,
   type TabItem,
 } from '../../ui';
+import { RATE_RAG, rag } from '../../ui/rag';
+import { RagLegend, StatusBoard, type BoardItem } from '../../components/hisobot/board';
+import { KpiReadout, RateCell, StaleNote, StatusMark, stamp, worstFirst } from '../../components/attendance/readout';
+import { dayReference, idToken, unitCode, unitKindPrefix } from '../../components/attendance/references';
+import { branding } from '../../lib/branding';
 import { LessonDrawer } from '../../components/lessons/LessonDrawer';
 import { LessonsTable } from '../../components/lessons/LessonsTable';
 import { TeacherCardMeta, TodayLessons } from '../../components/teachers/TeacherBits';
@@ -47,7 +55,8 @@ import { useViewDate } from '../../lib/viewDate';
 import type { FixedPreset } from '../../lib/reportPeriods';
 
 type TabId = 'oqituvchilar' | 'tahlil' | 'darslar';
-type View = 'grid' | 'table';
+/** Saqlangan eski `'grid'` — "yuzlar", `'table'` — "jadval". */
+type View = 'board' | 'grid' | 'table';
 
 const PERIOD_PRESETS: readonly FixedPreset[] = ['last7', 'last30', 'month'];
 const SORT_OPTIONS: { value: TeacherSort; label: string }[] = [
@@ -56,6 +65,13 @@ const SORT_OPTIONS: { value: TeacherSort; label: string }[] = [
   { value: 'name', label: 'Ism bo‘yicha' },
 ];
 const REFRESH_MS = 60_000;
+
+/** Xodimning davr bo'yicha ishga kelish foizi — maxraj YOZUV BOR kunlar
+ *  (kelgan + kelmagan). Dam olish va yozuvsiz kunlar hukmga kirmaydi. */
+function presenceRate(t: Pick<KafedraTeacher, 'periodPresentDays' | 'periodAbsentDays'>): number | null {
+  const decided = t.periodPresentDays + t.periodAbsentDays;
+  return decided > 0 ? Math.round((t.periodPresentDays / decided) * 1000) / 10 : null;
+}
 
 /** Darsga o'z vaqtida kirish davri URL'da (`?dan=&gacha=`): ilgari u faqat komponent
  *  ichidagi `useState` edi — sahifani yangilash yoki havolani ulashish
@@ -99,7 +115,7 @@ export default function KafedraPage() {
 
   // Darsga o'z vaqtida kirish davri: standart — ko'rilayotgan sanagacha 30 kun.
   const [period, setPeriod] = useKafedraPeriod(date);
-  const [view, setView] = usePersistedState<View>('kafedra.view', 'grid');
+  const [view, setView] = usePersistedState<View>('kafedra.view', 'board');
   const [sort, setSort] = usePersistedState<TeacherSort>('kafedra.sort', 'lateness');
   const [search, setSearch] = useState('');
   // Boshqa bo'linmaga o'tilganda eski qidiruv so'zi yangi ro'yxatni
@@ -139,7 +155,7 @@ export default function KafedraPage() {
   const sortOptions = hasPeriodLessonsForSort ? SORT_OPTIONS : SORT_OPTIONS.filter((o) => !LESSON_TEACHER_SORTS.includes(o.value));
   const effectiveSort = resolveTeacherSort(sort, hasPeriodLessonsForSort);
 
-  // Tab hisoblagichi qidiruvdan keyin jadvaldagi qatorlar soniga teng
+  // Tab hisoblagichi qidiruvdan keyin ro'yxatdagi qatorlar soniga teng
   // bo'lsin: ilgari u doim bo'linmadagi JAMI xodimni ko'rsatib, ro'yxatda
   // 2 kishi turganda tabda "48" yozilardi.
   const visibleTeachers = useMemo(() => {
@@ -159,6 +175,9 @@ export default function KafedraPage() {
   const notFound = detail.error && !data && /topilmadi|404/i.test(detail.error);
   const title = data?.name ?? (notFound ? "Bo'linma topilmadi" : "Bo'linma");
   const crumbs = [{ label: "Xodimlar va o'qituvchilar", to: '/oqituvchilar' }];
+  const reference = dayReference(`${data ? unitKindPrefix(data.kind) : 'BOL'}-${idToken(departmentId)}`, date);
+  const generatedAt = useMemo(stamp, [date, data]);
+  const effectiveView: View = presentation ? 'grid' : view;
 
   if (detail.loading && !data && !detail.error) {
     return (
@@ -201,12 +220,13 @@ export default function KafedraPage() {
                 <Tabs
                   variant="segmented"
                   size="sm"
-                  value={view}
+                  value={effectiveView}
                   onChange={setView}
                   ariaLabel="Ko'rinish"
                   tabs={[
-                    { id: 'grid', label: 'Yuzlar', icon: LayoutGrid },
-                    { id: 'table', label: 'Jadval', icon: Rows3 },
+                    { id: 'board' as const, label: 'Taxta', icon: Rows3 },
+                    { id: 'grid' as const, label: 'Yuzlar', icon: LayoutGrid },
+                    { id: 'table' as const, label: 'Jadval', icon: Table2 },
                   ]}
                 />
               )
@@ -225,9 +245,7 @@ export default function KafedraPage() {
     >
       {/* Davr almashganda yangi so'rov yiqilsa ekranda ESKI davr raqamlari
           qolardi — hech qanday belgisiz. Endi eskirgani aytiladi. */}
-      {data && detail.error && (
-        <ErrorState title="Yangilab bo'lmadi — ekrandagi raqamlar eski" message={detail.error} onRetry={detail.reload} />
-      )}
+      {data && detail.error && <StaleNote message={detail.error} onRetry={detail.reload} />}
       {!periodValid ? (
         // Oraliq teskari kiritilganda sahifa avval butunlay bo'sh qolardi —
         // hech qanday xabar ham, ma'lumot ham yo'q edi.
@@ -245,7 +263,7 @@ export default function KafedraPage() {
             description="Bo'linma nomi reestrda o'zgargan yoki havola eskirgan. Ro'yxatga qayting."
             action={
               <ButtonLink to="/oqituvchilar" variant="secondary">
-                Bo'linmalar ro'yxati
+                Bo&apos;linmalar ro&apos;yxati
               </ButtonLink>
             }
           />
@@ -253,12 +271,31 @@ export default function KafedraPage() {
           <ErrorState variant="block" message={detail.error} onRetry={detail.reload} />
         )
       ) : data ? (
-        <>
-          {tab !== 'tahlil' && <KafedraTiles data={data} />}
+        <div className="flex min-w-0 flex-col gap-3">
+          {/* 1. Hujjat blanki — bo'linma nomi va davr. */}
+          <DocumentHeader
+            org={branding.orgFullName}
+            title={`${data.name} — xodimlar davomati`}
+            reference={reference}
+            generatedAt={generatedAt}
+            readouts={[
+              { label: 'Turi', value: data.unassigned ? 'Biriktirilmagan' : (UNIT_KIND_LABELS[data.kind] ?? data.kind) },
+              { label: data.isToday ? 'Kun' : "Ko'rilayotgan kun", value: data.date },
+              { label: 'Davr', value: formatUzRange(data.period.dateFrom, data.period.dateTo) },
+              { label: "Ro'yxatda", value: `${formatNumber(data.today.total)} xodim` },
+            ]}
+          />
+
+          {tab !== 'tahlil' && (
+            <IntelPanel title="Asosiy ko'rsatkichlar" code={reference}>
+              <KafedraKpis data={data} />
+            </IntelPanel>
+          )}
+
           {tab === 'oqituvchilar' ? (
             // key: boshqa bo'linmaga o'tilganda ochiq drawer va tanlov
             // eski bo'linmaning xodimida qolib ketmasin.
-            <TeachersSection key={data.id} data={data} date={date} view={presentation ? 'grid' : view} sort={effectiveSort} search={search} withDate={withDate} />
+            <TeachersSection key={data.id} data={data} date={date} view={effectiveView} sort={effectiveSort} search={search} withDate={withDate} />
           ) : tab === 'tahlil' ? (
             <UnitAnalyticsSection unitId={data.id} unitName={data.name} kind={data.kind} from={period.from} to={period.to} />
           ) : (
@@ -270,64 +307,63 @@ export default function KafedraPage() {
               onRetry={lessons.reload}
             />
           )}
-        </>
+
+          <DocumentFooter
+            note={`Xizmat uchun. Hujjat ${reference} raqami bilan tizimda tuzilgan. Kunlik foiz holati aniqlangan xodimlar bo'yicha; davr foizi esa yozuvi bor kunlar bo'yicha hisoblanadi.`}
+          />
+        </div>
       ) : null}
     </Page>
   );
 }
 
-function KafedraTiles({ data }: { data: KafedraDetail }) {
+function KafedraKpis({ data }: { data: KafedraDetail }) {
   const t = data.today;
   const p = data.period;
   const checked = p.onTime + p.late + p.missed;
   const hasLessons = p.lessons > 0;
   // "Bugun" faqat bugungi kun ko'rilayotganda — ?sana= bilan o'tgan kunga
-  // o'tilganda plitkalar baribir "Bugun" derdi.
+  // o'tilganda ko'rsatkichlar baribir "Bugun" derdi.
   const dayWord = data.isToday ? 'Bugun' : 'Shu kuni';
-  // Foiz maxraji — holati aniqlangan xodimlar; katta sondagi maxraj ham
-  // AYNAN shu bo'lishi kerak, aks holda "10 / 20" yonida 83% turardi.
-  const decided = t.present + t.absent + t.notYet;
   // Foiz maxraji — holati aniqlangan xodimlar (keldi + kelmadi + hali
   // kelmagan): yuzi ro'yxatdan o'tmaganlar foizga umuman kirmaydi, shuning
-  // uchun "jami xodimning N% qismi" deyish noto'g'ri edi.
+  // uchun "jami xodimning N% qismi" deyish noto'g'ri edi. Katta sondagi
+  // maxraj ham AYNAN shu — aks holda "10 / 20" yonida 83% turardi.
+  const decided = t.present + t.absent + t.notYet;
   return (
-    <div className={cn('grid grid-cols-2 gap-3', hasLessons ? 'lg:grid-cols-4' : 'lg:grid-cols-2')}>
-      <StatTile
-        label={`${dayWord} ishga kelgan xodimlar`}
-        icon={UserCheck}
-        tone={toneForRate(t.rate)}
-        value={t.present}
-        unit={`/ ${decided}`}
-        progress={t.rate}
-        hint={`Holati aniq ${decided} xodimdan ${formatPercent(t.rate)} keldi · ${t.absent} kishi kelmadi${t.notYet ? ` · ${t.notYet} kishi hali kelmagan` : ''}${t.noData ? ` · ${t.noData} xodimning yuzi ro'yxatdan o'tmagan` : ''}`}
-      />
-      <StatTile
-        label={`${dayWord} kech kelgan xodimlar`}
-        icon={Timer}
-        tone={t.late ? 'warning' : 'neutral'}
-        value={t.late}
-        hint={t.noData ? `Yana ${t.noData} xodimning holati aniqlanmagan — yuzi ro'yxatdan o'tmagan` : 'Ish boshlanish vaqtidan keyin kelganlar'}
-      />
-      {hasLessons && (
-        <>
-          <StatTile
-            label="Darsga o'z vaqtida kirgan"
-            icon={Clock}
-            tone={toneForRate(p.onTimeRate)}
-            value={formatPercent(p.onTimeRate)}
-            progress={p.onTimeRate}
-            hint={`${formatUzRange(p.dateFrom, p.dateTo)} oralig'ida tekshirilgan ${checked} darsdan ${p.onTime} tasi`}
-          />
-          <StatTile
-            label="O'qituvchi kech kirgan / kirmagan darslar"
-            icon={CalendarCheck}
-            tone={p.late + p.missed ? 'danger' : 'neutral'}
-            value={`${p.late} / ${p.missed}`}
-            hint={`${formatUzRange(p.dateFrom, p.dateTo)} oralig'idagi ${p.lessons} darsdan`}
-          />
-        </>
-      )}
-    </div>
+    <KpiReadout
+      className={hasLessons ? 'lg:grid-cols-4' : 'lg:grid-cols-2'}
+      items={[
+        {
+          label: `${dayWord} ishga kelgan xodimlar`,
+          value: t.present,
+          unit: `/ ${decided}`,
+          rate: t.rate,
+          hint: `Holati aniq ${decided} xodimdan ${formatPercent(t.rate)} keldi · ${t.absent} kishi kelmadi${t.notYet ? ` · ${t.notYet} kishi hali kelmagan` : ''}${t.noData ? ` · ${t.noData} xodimning yuzi ro'yxatdan o'tmagan` : ''}`,
+        },
+        {
+          label: `${dayWord} kech kelgan xodimlar`,
+          value: t.late,
+          unit: 'kishi',
+          hint: t.noData ? `Yana ${t.noData} xodimning holati aniqlanmagan — yuzi ro'yxatdan o'tmagan` : 'Ish boshlanish vaqtidan keyin kelganlar',
+        },
+        ...(hasLessons
+          ? [
+              {
+                label: "Darsga o'z vaqtida kirgan",
+                value: formatPercent(p.onTimeRate),
+                rate: p.onTimeRate,
+                hint: `${formatUzRange(p.dateFrom, p.dateTo)} oralig'ida tekshirilgan ${checked} darsdan ${p.onTime} tasi`,
+              },
+              {
+                label: "O'qituvchi kech kirgan / kirmagan darslar",
+                value: `${p.late} / ${p.missed}`,
+                hint: `${formatUzRange(p.dateFrom, p.dateTo)} oralig'idagi ${p.lessons} darsdan`,
+              },
+            ]
+          : []),
+      ]}
+    />
   );
 }
 
@@ -344,23 +380,57 @@ function TeachersSection({ data, date, view, sort, search, withDate }: { data: K
     return sortTeachers(filtered, sort);
   }, [data.teachers, search, sort]);
 
+  // Xizmat raqami — serverdan kelgan tartibda: qidiruv va saralash uni
+  // ko'chirmaydi, XOD-07 doim o'sha odam.
+  const codes = useMemo(() => new Map(data.teachers.map((t, i) => [t.id, unitCode('XOD', i)])), [data.teachers]);
+
+  const board = useMemo<BoardItem[]>(
+    () =>
+      rows.map((t) => ({
+        id: t.id,
+        code: codes.get(t.id) ?? 'XOD-00',
+        name: t.fullName,
+        value: presenceRate(t),
+        unit: '%',
+        detail: [
+          t.position,
+          `${t.periodPresentDays} kun keldi`,
+          t.periodLateDays > 0 ? `${t.periodLateDays} kech` : null,
+          t.periodAbsentDays > 0 ? `${t.periodAbsentDays} kelmagan` : null,
+          hasPeriodLessons ? `darsga o'z vaqtida ${formatPercent(t.onTimeRate)}` : null,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        headcount: null,
+      })),
+    [rows, codes, hasPeriodLessons],
+  );
+  const sortedBoard = useMemo(() => (sort === 'name' ? board : worstFirst(board)), [board, sort]);
+
   const columns: DataTableColumn<KafedraTeacher>[] = [
+    {
+      key: 'code',
+      header: 'Kod',
+      width: '5rem',
+      mono: true,
+      cell: (t) => <CodeText className="text-[12px] text-subtle">{codes.get(t.id)}</CodeText>,
+    },
     {
       key: 'name',
       header: "O'qituvchi",
       cell: (t) => (
-        <div className="flex min-w-0 items-center gap-3">
-          <Avatar name={t.fullName} src={t.photoUrl} size="md" />
+        <div className="flex min-w-0 items-center gap-2">
+          <Avatar name={t.fullName} src={t.photoUrl} size="sm" />
           <div className="min-w-0">
             <Link
               to={withDate(situationPaths.person(t.id))}
               onClick={(e) => e.stopPropagation()}
               title={t.fullName}
-              className="block truncate font-medium text-fg hover:text-primary hover:underline"
+              className="block truncate text-[13px] font-medium text-fg hover:text-primary hover:underline"
             >
               {t.fullName}
             </Link>
-            <p className="truncate text-xs text-muted" title={t.position}>
+            <p className="intel-micro truncate" title={t.position}>
               {t.position}
             </p>
           </div>
@@ -383,15 +453,18 @@ function TeachersSection({ data, date, view, sort, search, withDate }: { data: K
           {
             key: 'onTime',
             header: "Darsga o'z vaqtida kirgani",
+            align: 'right' as const,
+            width: '11rem',
+            sortValue: (t: KafedraTeacher) => t.onTimeRate,
             cell: (t: KafedraTeacher) => (
-              <div className="flex items-center gap-2.5">
-                <ProgressRing value={t.onTimeRate} size={34} thickness={4} />
-                <span className="text-xs tabular-nums text-muted">
+              <span className="flex flex-col items-end gap-0.5">
+                <RateCell value={t.onTimeRate} note="dars yo'q" />
+                <span className="intel-micro">
                   {t.periodLessons} dars
-                  {t.periodLate > 0 && <span className="text-warning"> · {t.periodLate} kech</span>}
-                  {t.periodMissed > 0 && <span className="text-danger"> · {t.periodMissed} yo'q</span>}
+                  {t.periodLate > 0 && ` · ${t.periodLate} kech`}
+                  {t.periodMissed > 0 && ` · ${t.periodMissed} yo'q`}
                 </span>
-              </div>
+              </span>
             ),
           },
         ]
@@ -399,12 +472,18 @@ function TeachersSection({ data, date, view, sort, search, withDate }: { data: K
     {
       key: 'days',
       header: 'Ishga kelgan kunlari',
+      align: 'right',
+      width: '11rem',
       hideOnMobile: true,
+      sortValue: (t) => presenceRate(t),
       cell: (t) => (
-        <span className="text-xs tabular-nums text-muted">
-          <span className="font-medium text-fg">{t.periodPresentDays}</span> kun
-          {t.periodLateDays > 0 && <span className="text-warning"> · {t.periodLateDays} kech</span>}
-          {t.periodAbsentDays > 0 && <span className="text-danger"> · {t.periodAbsentDays} yo'q</span>}
+        <span className="flex flex-col items-end gap-0.5">
+          <RateCell value={presenceRate(t)} note="yozuv yo'q" />
+          <span className="intel-micro">
+            {t.periodPresentDays} kun
+            {t.periodLateDays > 0 && ` · ${t.periodLateDays} kech`}
+            {t.periodAbsentDays > 0 && ` · ${t.periodAbsentDays} yo'q`}
+          </span>
         </span>
       ),
     },
@@ -420,33 +499,58 @@ function TeachersSection({ data, date, view, sort, search, withDate }: { data: K
         />
       ) : rows.length === 0 ? (
         <EmptyState icon={Users} compact title="Hech kim topilmadi" description="Qidiruv so'zini o'zgartiring." />
+      ) : view === 'board' ? (
+        <IntelPanel
+          title="Xodimlar holati"
+          code={`${rows.length} ta`}
+          right={<MicroLabel>{sort === 'name' ? "Ism bo'yicha" : 'Yomoni birinchi'}</MicroLabel>}
+        >
+          <StatusBoard
+            items={sortedBoard}
+            emptyText="Bu davrda xodim yozuvi yo'q"
+            onOpen={(id) => setSelected(rows.find((t) => t.id === id) ?? null)}
+          />
+          <p className="border-t border-border px-3 py-1.5 text-[11px] text-muted">
+            Katakdagi foiz — {formatUzRange(data.period.dateFrom, data.period.dateTo)} oralig&apos;ida yozuvi bor kunlardan nechtasida ishga kelgani.
+          </p>
+          <RagLegend />
+        </IntelPanel>
       ) : view === 'grid' ? (
-        <PersonGrid minItemWidth={presentation ? 170 : 180}>
-          {rows.map((t) => (
-            <PersonCard
-              key={t.id}
-              name={t.fullName}
-              photoUrl={t.photoUrl}
-              subtitle={t.position}
-              status={t.status === 'malumot_yoq' ? 'nomalum' : t.status}
-              time={t.checkIn}
-              meta={<TeacherCardMeta t={t} />}
-              onClick={() => setSelected(t)}
-              selected={selected?.id === t.id}
-            />
-          ))}
-        </PersonGrid>
+        <IntelPanel title="Xodimlar" code={`${rows.length} ta`}>
+          <PersonGrid minItemWidth={presentation ? 170 : 180} className="gap-px bg-border p-px">
+            {rows.map((t) => (
+              <PersonCard
+                key={t.id}
+                name={t.fullName}
+                photoUrl={t.photoUrl}
+                subtitle={t.position}
+                status={t.status === 'malumot_yoq' ? 'nomalum' : t.status}
+                time={t.checkIn}
+                meta={<TeacherCardMeta t={t} />}
+                onClick={() => setSelected(t)}
+                selected={selected?.id === t.id}
+              />
+            ))}
+          </PersonGrid>
+        </IntelPanel>
       ) : (
-        <DataTable
-          columns={columns}
-          rows={rows}
-          rowKey={(t) => t.id}
-          onRowClick={setSelected}
-          selectedKey={selected?.id ?? null}
-          manualSort
-          rowTone={(t) => (t.lessonsMissed ? 'danger' : t.lessonsLate || t.status === 'kech_keldi' ? 'warning' : null)}
-          ariaLabel="Kafedra o'qituvchilari"
-        />
+        <IntelPanel title="Xodimlar — batafsil" code={`${rows.length} qator`}>
+          <DataTable
+            columns={columns}
+            rows={rows}
+            rowKey={(t) => t.id}
+            onRowClick={setSelected}
+            selectedKey={selected?.id ?? null}
+            manualSort
+            rowRag={(t) => {
+              const value = presenceRate(t);
+              return value === null ? 'yoq' : rag(value, RATE_RAG);
+            }}
+            ragHeader="Davr"
+            ariaLabel="Kafedra o'qituvchilari"
+            dense
+          />
+        </IntelPanel>
       )}
 
       <TeacherDayDrawer
@@ -458,31 +562,36 @@ function TeachersSection({ data, date, view, sort, search, withDate }: { data: K
             "Profilni ochish" bor edi va u ko'rilayotgan sanani saqlardi, bu
             esa yo'q — bitta odamga ikki xil havola chiqardi. */}
         {selected && (
-          <div className="rounded-card border border-border bg-surface-2 p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-fg">Davr: {formatUzRange(data.period.dateFrom, data.period.dateTo)}</p>
-                <p className="text-xs text-muted">{hasPeriodLessons ? "Darsga o'z vaqtida kelish va ishga kelish" : 'Ishga kelish'}</p>
+          <div className="border border-border bg-surface">
+            <div className="flex items-center justify-between gap-3 border-b border-border bg-surface-2 px-3 py-2">
+              <div className="min-w-0">
+                <MicroLabel>Davr</MicroLabel>
+                <p className="intel-code text-[13px] font-semibold text-fg">{formatUzRange(data.period.dateFrom, data.period.dateTo)}</p>
               </div>
-              {hasPeriodLessons && <ProgressRing value={selected.onTimeRate} size={52} ariaLabel="O'z vaqtida" />}
+              <span className="flex items-center gap-2">
+                <StatusMark status={selected.status === 'malumot_yoq' ? 'malumot_yoq' : selected.status} label={data.isToday ? 'Bugungi holat' : 'Shu kungi holat'} />
+                <RateCell value={presenceRate(selected)} note="yozuv yo'q" />
+              </span>
             </div>
-            <KeyValue
-              layout="stacked"
-              columns={4}
-              items={[
-                ...(hasPeriodLessons
-                  ? [
-                      { label: 'Darslar', value: selected.periodLessons },
-                      { label: "O'z vaqtida", value: selected.periodOnTime },
-                      { label: 'Kech keldi', value: selected.periodLate },
-                      { label: 'Kelmagan', value: selected.periodMissed },
-                    ]
-                  : []),
-                { label: 'Kelgan kunlar', value: selected.periodPresentDays },
-                { label: 'Kech kelgan kunlar', value: selected.periodLateDays },
-                { label: 'Kelmagan kunlar', value: selected.periodAbsentDays },
-              ]}
-            />
+            <div className={cn('p-3', hasPeriodLessons ? undefined : 'pb-3')}>
+              <KeyValue
+                layout="stacked"
+                columns={4}
+                items={[
+                  ...(hasPeriodLessons
+                    ? [
+                        { label: 'Darslar', value: selected.periodLessons },
+                        { label: "O'z vaqtida", value: selected.periodOnTime },
+                        { label: 'Kech keldi', value: selected.periodLate },
+                        { label: 'Kelmagan', value: selected.periodMissed },
+                      ]
+                    : []),
+                  { label: 'Kelgan kunlar', value: selected.periodPresentDays },
+                  { label: 'Kech kelgan kunlar', value: selected.periodLateDays },
+                  { label: 'Kelmagan kunlar', value: selected.periodAbsentDays },
+                ]}
+              />
+            </div>
           </div>
         )}
       </TeacherDayDrawer>
@@ -493,13 +602,17 @@ function TeachersSection({ data, date, view, sort, search, withDate }: { data: K
 function LessonsSection({ rows, total, loading, error, onRetry }: { rows: Lesson[]; total: number; loading: boolean; error: string | null; onRetry: () => void }) {
   const [selected, setSelected] = useState<Lesson | null>(null);
   return (
-    <>
-      {/* Tab hisoblagichi serverdagi `total` ni ko'rsatadi, jadvalga esa
-          bir sahifa (500 ta) tushadi. Ular teng bo'lmasa foydalanuvchi ikki
-          xil sonni ko'rib, sababini bilmasdi. */}
+    <IntelPanel
+      title="Darslar"
+      code={`${rows.length} / ${total}`}
+      // Tab hisoblagichi serverdagi `total` ni ko'rsatadi, jadvalga esa
+      // bir sahifa (500 ta) tushadi. Ular teng bo'lmasa foydalanuvchi ikki
+      // xil sonni ko'rib, sababini bilmasdi.
+      right={total > rows.length ? <MicroLabel>Birinchi {rows.length} tasi ko&apos;rsatilmoqda</MicroLabel> : undefined}
+    >
       {total > rows.length && (
-        <p className="text-xs text-muted">
-          Bu kunda jami {total} ta dars bor — jadvalda birinchi {rows.length} tasi ko'rsatilmoqda.
+        <p className="border-b border-border bg-surface-2 px-3 py-1.5 text-[11px] text-muted">
+          Bu kunda jami {total} ta dars bor — jadvalda birinchi {rows.length} tasi ko&apos;rsatilmoqda.
         </p>
       )}
       <LessonsTable
@@ -513,13 +626,13 @@ function LessonsSection({ rows, total, loading, error, onRetry }: { rows: Lesson
         emptyTitle="Bu kunda darslar yo'q"
         emptyDescription={
           <>
-            Dars jadvali hali yuklanmagan bo'lishi mumkin —{' '}
+            Dars jadvali hali yuklanmagan bo&apos;lishi mumkin —{' '}
             <span className="font-medium text-fg">HEMIS ulangach avtomatik yuklanadi</span>
-            . Darslar bo'linmaga o'qituvchi orqali bog'lanadi.
+            . Darslar bo&apos;linmaga o&apos;qituvchi orqali bog&apos;lanadi.
           </>
         }
       />
       <LessonDrawer lesson={selected} onClose={() => setSelected(null)} />
-    </>
+    </IntelPanel>
   );
 }

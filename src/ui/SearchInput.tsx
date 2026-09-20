@@ -17,7 +17,7 @@ export interface SearchInputProps {
 export function SearchInput({ value, onChange, placeholder = 'Qidirish…', ariaLabel, size = 'md', autoFocus, className }: SearchInputProps) {
   return (
     <div className={cn('relative w-full min-w-[12rem] sm:max-w-xs', className)}>
-      <Search size={16} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-subtle" />
+      <Search size={14} aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-subtle" />
       <input
         type="search"
         value={value}
@@ -33,16 +33,16 @@ export function SearchInput({ value, onChange, placeholder = 'Qidirish…', aria
         autoComplete="off"
         spellCheck={false}
         autoFocus={autoFocus}
-        className={cn(controlBase, controlSizes[size], 'pl-9 pr-9 [&::-webkit-search-cancel-button]:hidden')}
+        className={cn('intel-code', controlBase, controlSizes[size], 'pl-8 pr-8 [&::-webkit-search-cancel-button]:hidden')}
       />
       {value && (
         <button
           type="button"
           onClick={() => onChange('')}
           aria-label="Qidiruvni tozalash"
-          className={cn('absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-subtle hover:bg-surface-2 hover:text-fg', focusRing)}
+          className={cn('absolute right-1 top-1/2 -translate-y-1/2 rounded-[2px] p-1 text-subtle hover:bg-surface-2 hover:text-fg', focusRing)}
         >
-          <X size={14} aria-hidden="true" />
+          <X size={13} aria-hidden="true" />
         </button>
       )}
     </div>

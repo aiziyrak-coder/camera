@@ -27,8 +27,10 @@ export function Toolbar({ children, end, activeCount = 0, onReset, sticky = fals
       role="toolbar"
       aria-label="Filtrlar"
       className={cn(
-        'flex flex-wrap items-center gap-2',
-        sticky && '-mx-1 rounded-card bg-bg/90 px-1 py-2 backdrop-blur supports-[backdrop-filter]:bg-bg/75 sticky top-14 z-20',
+        // Asboblar qatori — hujjatning boshqaruv chizig'i: oq lenta,
+        // tepasi va pasti ingichka chiziq bilan chegaralangan.
+        'flex flex-wrap items-center gap-1.5 border-y border-border bg-surface px-2 py-1.5',
+        sticky && 'sticky top-14 z-20',
         className,
       )}
     >
@@ -38,7 +40,7 @@ export function Toolbar({ children, end, activeCount = 0, onReset, sticky = fals
           Tozalash ({activeCount})
         </Button>
       )}
-      {end && <div className="ml-auto flex flex-wrap items-center gap-2">{end}</div>}
+      {end && <div className="ml-auto flex flex-wrap items-center gap-1.5">{end}</div>}
     </div>
   );
 }

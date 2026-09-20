@@ -1,11 +1,29 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ShieldCheck, Users } from 'lucide-react';
-import { ConfirmDialog, ErrorState, FilterBar, Page, SkeletonCard, SkeletonTiles, useToast, useUrlTab, type TabItem } from '../../ui';
+import {
+  CodeText,
+  ConfirmDialog,
+  DocumentFooter,
+  DocumentHeader,
+  ErrorState,
+  FilterBar,
+  Page,
+  SkeletonCard,
+  SkeletonTiles,
+  StatusLamp,
+  useToast,
+  useUrlTab,
+  type TabItem,
+} from '../../ui';
+import { RAG_LABEL, RAG_TEXT, RATE_RAG, rag } from '../../ui/rag';
+import { RagChip } from '../../components/hisobot/board';
 import { pagerFooter } from '../../components/settings/kit';
 import ConsentRecordModal from '../../components/privacy/ConsentRecordModal';
 import PrivacyPeopleTable, { PrivacyPersonDrawer, type PrivacyAction } from '../../components/privacy/PrivacyPeopleTable';
 import { PrivacyKpiTiles, RetentionSettingsCard } from '../../components/privacy/PrivacyOverviewPanel';
 import TypedConfirmDialog from '../../components/privacy/TypedConfirmDialog';
+import { consentCoverage, privacyReference } from '../../components/privacy/reference';
+import { branding } from '../../lib/branding';
 import { ApiError, isAbortError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { downloadBlob } from '../../lib/download';
@@ -43,6 +61,19 @@ type DangerousAction = { kind: 'erase' | 'withdraw'; person: PrivacyPerson };
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError || err instanceof Error ? err.message : fallback;
+}
+
+/** Hujjat tuzilgan payt — hisobot sahifasidagi bilan bir xil shaklda. */
+function stamp(): string {
+  try {
+    return new Intl.DateTimeFormat('ru-RU', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+      timeZone: 'Asia/Tashkent',
+    }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 16).replace('T', ' ');
+  }
 }
 
 export default function PrivacyPage() {
@@ -170,6 +201,18 @@ export default function PrivacyPage() {
 
   const retentionDays = overview?.retention.biometricRetentionDaysAfterInactive ?? 0;
 
+  // Hujjat raqami — bo'lim, filtr va qidiruvdan. Vaqtdan mustaqil.
+  const reference = useMemo(
+    () => privacyReference({ tab, parts: tab === 'shaxslar' ? [filter === 'all' ? '' : filter, search.trim()] : [] }),
+    [tab, filter, search],
+  );
+  const generatedAt = useMemo(stamp, [tab, overview]);
+
+  // Yagona svetoforli ko'rsatkich: biometrikasi saqlanganlarning qanchasida
+  // joriy rozilik bor. Qolgan sonlar xom bo'lib qoladi.
+  const coverage = overview ? consentCoverage(overview) : null;
+  const coverageTone = rag(coverage, RATE_RAG);
+
   const toolbar =
     tab === 'shaxslar' ? (
       <FilterBar
@@ -197,11 +240,46 @@ export default function PrivacyPage() {
   return (
     <Page
       title="Maxfiylik"
-      subtitle="Biometrik ma'lumotlarga rozilik, saqlash muddati va shaxsiy ma'lumotlar so'rovlari"
       breadcrumbs={[{ label: 'Sozlamalar' }, { label: 'Maxfiylik' }]}
       tabs={TABS}
       toolbar={toolbar}
     >
+      <div className="flex min-w-0 flex-col gap-3">
+      {/* 1. Hujjat blanki: qamrov, ro'yxat hajmi, rozilik hukmi. */}
+      <DocumentHeader
+        org={branding.orgFullName}
+        title="Biometrika va shaxsiy ma'lumotlar rejimi"
+        reference={reference}
+        generatedAt={generatedAt}
+        readouts={[
+          { label: 'Qamrov', value: tab === 'umumiy' ? 'Umumiy holat' : PRIVACY_FILTER_LABELS[filter as PrivacyFilter] ?? 'Barcha shaxslar' },
+          { label: "Ro'yxatda", value: overview ? `${overview.peopleTotal.toLocaleString('ru-RU')} kishi` : '—' },
+          {
+            label: 'Biometrikasi saqlangan',
+            value: overview ? `${overview.withBiometrics.toLocaleString('ru-RU')} kishi` : '—',
+            title: "Xom son — svetofor qo'yilmaydi",
+          },
+          {
+            label: 'Rozilik qamrovi',
+            value: (
+              <span className="flex items-center gap-1.5">
+                <CodeText className={`font-semibold ${RAG_TEXT[coverageTone]}`}>{coverage === null ? '—' : `${Math.round(coverage)}%`}</CodeText>
+                <RagChip tone={coverageTone} />
+              </span>
+            ),
+            title: RAG_LABEL[coverageTone],
+          },
+          {
+            label: "Ro'yxatdan o'tishda rozilik",
+            value: overview ? (
+              <StatusLamp status={overview.consentRequired ? 'ok' : 'warn'} label={overview.consentRequired ? 'Majburiy' : 'Ixtiyoriy'} />
+            ) : (
+              <StatusLamp status="idle" label="Yuklanmoqda" />
+            ),
+          },
+        ]}
+      />
+
       {tab === 'umumiy' &&
         (overviewError ? (
           <ErrorState
@@ -217,7 +295,7 @@ export default function PrivacyPage() {
           />
         ) : overview ? (
           <>
-            <PrivacyKpiTiles overview={overview} onFilter={openFiltered} />
+            <PrivacyKpiTiles overview={overview} onFilter={openFiltered} reference={reference} />
             <RetentionSettingsCard overview={overview} />
           </>
         ) : (
@@ -234,6 +312,8 @@ export default function PrivacyPage() {
           onAction={handleAction}
           onOpen={setViewing}
           selectedId={viewing?.id ?? null}
+          reference={reference}
+          total={people.total}
           loading={people.loading && people.items.length === 0}
           error={people.error}
           onRetry={people.reload}
@@ -251,6 +331,11 @@ export default function PrivacyPage() {
           })}
         />
       )}
+
+      <DocumentFooter
+        note={`Xizmat uchun. Hujjat ${reference} raqami bilan tizimda tuzilgan; saqlash muddatlari server sozlamalarida belgilanadi.`}
+      />
+      </div>
 
       <PrivacyPersonDrawer person={viewing} busy={busyId === viewing?.id} onClose={() => setViewing(null)} onAction={handleAction} />
 

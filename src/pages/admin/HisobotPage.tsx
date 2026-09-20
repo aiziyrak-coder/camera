@@ -1,0 +1,393 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { CalendarDays, Download, LayoutGrid, List, Printer, TriangleAlert } from 'lucide-react';
+import {
+  Button,
+  CodeText,
+  DocumentFooter,
+  DocumentHeader,
+  ErrorState,
+  IntelPanel,
+  MicroLabel,
+  Page,
+  SkeletonCard,
+  Tabs,
+  cn,
+  formatUzRange,
+  useToast,
+  type TabItem,
+} from '../../ui';
+import { RATE_RAG, rag } from '../../ui/rag';
+import CriteriaStrip from '../../components/hisobot/CriteriaStrip';
+import KpiStrip from '../../components/hisobot/KpiStrip';
+import PeopleTable from '../../components/hisobot/PeopleTable';
+import { RagLegend, StatusBoard, boardRag, type BoardItem } from '../../components/hisobot/board';
+import ReportFilters from '../../components/reports/ReportFilters';
+import TabelView from '../../components/reports/TabelView';
+import { ApiError, api } from '../../lib/apiClient';
+import { useAuth } from '../../lib/auth';
+import { branding } from '../../lib/branding';
+import { downloadBlob } from '../../lib/download';
+import { useApiResource } from '../../lib/useApiResource';
+import { formatUzMonth } from '../../lib/uzDate';
+import {
+  SECTION_KIND,
+  documentReference,
+  drillPatch,
+  hisobotPaths,
+  readState,
+  writeState,
+  type HisobotFilterOptions,
+  type HisobotReport,
+  type HisobotSection,
+  type HisobotState,
+  type HisobotView,
+} from '../../lib/hisobotApi';
+import { tabelExcelFilename, tabelExcelHref, tabelPaths, type TabelReport } from '../../lib/tabelApi';
+
+/**
+ * Hisobotlar — rahbar uchun.
+ *
+ * Uchta ko'rinish, bittadan vazifa bilan:
+ *   HOLAT TAXTASI — "qayerda muammo bor?" Bo'linmalar svetofor bilan,
+ *                   yomoni birinchi. Bosilsa o'sha bo'linmaga kiradi.
+ *   RO'YXAT       — "kim?" Har qator bitta odam.
+ *   OYLIK TABEL   — imzolanadigan hujjat (kun-kun jadval).
+ *
+ * Butun holat URL'da: havola ulashiladi, "orqaga" ishlaydi.
+ */
+
+const SECTIONS: TabItem<HisobotSection>[] = [
+  { id: 'xodimlar', label: 'Xodimlar' },
+  { id: 'talabalar', label: 'Talabalar' },
+];
+
+const VIEWS: TabItem<HisobotView>[] = [
+  { id: 'taxta', label: 'Holat taxtasi', icon: LayoutGrid },
+  { id: 'royxat', label: "Ro'yxat", icon: List },
+  { id: 'tabel', label: 'Oylik tabel', icon: CalendarDays },
+];
+
+function stamp(): string {
+  try {
+    return new Intl.DateTimeFormat('ru-RU', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+      timeZone: 'Asia/Tashkent',
+    }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 16).replace('T', ' ');
+  }
+}
+
+/** Bo'linma nomidan barqaror xizmat kodi: FAK-01, KAF-07. Tartib —
+ *  serverdan kelgan ro'yxat tartibi, shuning uchun bir hisobot ichida
+ *  kod o'zgarmaydi. */
+function unitCode(section: HisobotSection, index: number): string {
+  const prefix = section === 'talabalar' ? 'GUR' : 'BOL';
+  return `${prefix}-${String(index + 1).padStart(2, '0')}`;
+}
+
+export default function HisobotPage() {
+  const [params, setParams] = useSearchParams();
+  const state = useMemo(() => readState(params), [params]);
+  const { token } = useAuth();
+  const toast = useToast();
+  const [exporting, setExporting] = useState(false);
+
+  const kind = SECTION_KIND[state.section];
+  const tabel = state.view === 'tabel';
+  const options = useApiResource<HisobotFilterOptions>(hisobotPaths.filters(kind));
+  const report = useApiResource<HisobotReport>(tabel ? null : hisobotPaths.report(state));
+  const sheet = useApiResource<TabelReport>(tabel ? tabelPaths.data(state) : null);
+
+  // Bo'lim almashganda oldingi bo'limning ma'lumoti ko'rinib qolmasin.
+  const data = report.data && report.data.kind === kind ? report.data : null;
+  const [sheetSection, setSheetSection] = useState(state.section);
+  useEffect(() => {
+    if (sheet.data) setSheetSection(state.section);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- faqat yangi javob kelganda
+  }, [sheet.data]);
+  const sheetData =
+    sheet.data && sheet.data.month === state.month && sheetSection === state.section ? sheet.data : null;
+
+  const update = useCallback(
+    (patch: Partial<HisobotState>) => setParams((prev) => writeState(prev, patch), { replace: true }),
+    [setParams],
+  );
+  const reset = useCallback(
+    () => update({ faculty: '', course: '', group: '', unitKind: '', unit: '', q: '' }),
+    [update],
+  );
+
+  const criterion = data?.criterion ?? state.criterion;
+  const reference = useMemo(() => documentReference(state), [state]);
+  const generatedAt = useMemo(stamp, [state, data, sheetData]);
+  const ready = tabel ? Boolean(sheetData) : Boolean(data);
+  const loading = tabel ? sheet.loading : report.loading;
+
+  async function exportExcel() {
+    if (exporting) return;
+    if (!tabel && !criterion) return;
+    setExporting(true);
+    try {
+      const path = tabel ? tabelPaths.excel(state) : hisobotPaths.export(state, criterion);
+      const blob = await api.blob(path, token);
+      const filename = tabel
+        ? tabelExcelFilename(state)
+        : `hisobot-${state.section}-${criterion}-${state.from}_${state.to}.xlsx`;
+      downloadBlob(blob, filename);
+      toast.success(`${filename} yuklab olindi`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Excel faylni yuklab bo'lmadi — qaytadan urinib ko'ring");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  // Taxtadagi kataklar — serverning "kesim" qatorlaridan.
+  const board: BoardItem[] = useMemo(() => {
+    const rows = data?.report.breakdown?.rows ?? [];
+    const unit = data?.report.breakdown?.unit ?? '';
+    return rows.map((row, index) => ({
+      id: row.id,
+      code: unitCode(state.section, index),
+      name: row.name,
+      value: row.value,
+      unit,
+      detail: row.detail,
+      headcount: row.headcount,
+    }));
+  }, [data, state.section]);
+
+  // Yomoni birinchi: rahbar ekranning yuqorisidan chora kerak bo'lgan
+  // joyni topadi, pastga qarab tinchlanadi.
+  const sortedBoard = useMemo(() => {
+    const order = { qizil: 0, sariq: 1, yashil: 2, yoq: 3 } as const;
+    return [...board].sort((a, b) => {
+      const byTone = order[boardRag(a, RATE_RAG)] - order[boardRag(b, RATE_RAG)];
+      if (byTone !== 0) return byTone;
+      return (a.value ?? Infinity) - (b.value ?? Infinity);
+    });
+  }, [board]);
+
+  const attention = useMemo(
+    () => sortedBoard.filter((item) => boardRag(item, RATE_RAG) === 'qizil'),
+    [sortedBoard],
+  );
+
+  const canDrill = data ? drillPatch(state, '_') !== null : false;
+
+  const scope = tabel ? sheetData?.scope : data?.scope;
+  const period = tabel
+    ? sheetData?.monthLabel || formatUzMonth(state.month)
+    : data
+      ? formatUzRange(data.period.from, data.period.to)
+      : '—';
+  const population = tabel
+    ? sheetData
+      ? `${(sheetData.totals?.people ?? sheetData.people.length).toLocaleString('ru-RU')} kishi`
+      : '—'
+    : data
+      ? `${data.population.total.toLocaleString('ru-RU')} kishi`
+      : '—';
+
+  // Umumiy hukm — birinchi foizli plitkadan.
+  const headline = useMemo(() => {
+    const tile = data?.report.tiles.find((t) => t.unit === '%');
+    if (!tile) return null;
+    const numeric = typeof tile.value === 'number' ? tile.value : Number(String(tile.value).replace(',', '.'));
+    return { value: numeric, tone: rag(Number.isFinite(numeric) ? numeric : null, RATE_RAG), label: tile.label };
+  }, [data]);
+
+  return (
+    <Page
+      title="Hisobotlar"
+      actions={
+        <span className="flex gap-2 print-hide">
+          <Button variant="secondary" icon={Printer} onClick={() => window.print()} disabled={!ready || loading}>
+            Chop etish
+          </Button>
+          {tabel ? (
+            <a
+              href={tabelExcelHref(state)}
+              data-tabel-excel
+              className={cn(
+                'inline-flex items-center gap-1.5 border border-border bg-surface px-3 py-1.5 text-[13px]',
+                (!ready || exporting) && 'pointer-events-none opacity-60',
+              )}
+              onClick={(event) => {
+                event.preventDefault();
+                if (!ready || exporting) return;
+                void exportExcel();
+              }}
+              aria-disabled={!ready || exporting}
+              aria-busy={exporting}
+              tabIndex={!ready || exporting ? -1 : undefined}
+            >
+              <Download size={15} aria-hidden="true" />
+              {exporting ? 'Tayyorlanmoqda…' : 'Excel'}
+            </a>
+          ) : (
+            <Button variant="secondary" icon={Download} onClick={exportExcel} loading={exporting} disabled={!data}>
+              Excel
+            </Button>
+          )}
+        </span>
+      }
+    >
+      <div className="flex min-w-0 flex-col gap-3">
+        {/* 1. Hujjat blanki — kim, nima, qaysi davr, qaysi raqam ostida. */}
+        <DocumentHeader
+          org={branding.orgFullName}
+          title={
+            state.view === 'tabel'
+              ? 'Davomat tabeli'
+              : state.section === 'xodimlar'
+                ? 'Xodimlar davomati'
+                : 'Talabalar davomati'
+          }
+          reference={reference}
+          generatedAt={generatedAt}
+          readouts={[
+            { label: 'Qamrov', value: scope ?? '—', title: scope ?? undefined },
+            { label: state.view === 'tabel' ? 'Oy' : 'Davr', value: period },
+            { label: "Ro'yxatda", value: population },
+            {
+              label: 'Umumiy holat',
+              value: headline ? `${Math.round(headline.value * 10) / 10}%` : '—',
+              title: headline?.label,
+            },
+          ]}
+        />
+
+        {/* 2. Boshqaruv: bo'lim, ko'rinish, filtrlar. */}
+        <div className="print-hide flex flex-col gap-2 border border-border bg-surface">
+          <div className="flex flex-wrap items-center gap-3 border-b border-border px-3 py-2">
+            <Tabs tabs={SECTIONS} value={state.section} onChange={(section) => update({ section })} ariaLabel="Bo'lim" />
+            <Tabs
+              tabs={VIEWS}
+              value={state.view}
+              onChange={(view) => update({ view })}
+              variant="segmented"
+              size="sm"
+              ariaLabel="Ko'rinish"
+              className="sm:ms-auto"
+            />
+          </div>
+          {!tabel && (
+            <CriteriaStrip
+              criteria={data?.criteria ?? null}
+              value={criterion}
+              onChange={(key) => update({ criterion: key })}
+              loading={report.loading}
+            />
+          )}
+          <div className="px-3 pb-2">
+            <ReportFilters state={state} options={options.data} onChange={update} onReset={reset} />
+          </div>
+        </div>
+
+        {/* 3. Javob. */}
+        {tabel ? (
+          sheet.error && !sheetData ? (
+            <ErrorState title="Tabelni yuklab bo'lmadi" message={sheet.error} onRetry={sheet.reload} />
+          ) : !sheetData ? (
+            <SkeletonCard />
+          ) : (
+            <div className={sheet.loading ? 'opacity-70 transition-opacity' : undefined}>
+              {sheet.error && <StaleWarning message={sheet.error} onRetry={sheet.reload} />}
+              <TabelView data={sheetData} section={state.section} reference={reference} />
+            </div>
+          )
+        ) : report.error && !data ? (
+          <ErrorState title="Hisobotni yuklab bo'lmadi" message={report.error} onRetry={report.reload} />
+        ) : !data ? (
+          <SkeletonCard />
+        ) : (
+          <div className={cn('flex min-w-0 flex-col gap-3', report.loading && 'opacity-70 transition-opacity')}>
+            {report.error && <StaleWarning message={report.error} onRetry={report.reload} />}
+
+            <IntelPanel title="Asosiy ko'rsatkichlar" code={reference}>
+              <KpiStrip tiles={data.report.tiles} />
+            </IntelPanel>
+
+            {data.report.summary.length > 0 && (
+              <p className="border border-border bg-surface px-3 py-2 text-[13px] leading-relaxed text-fg">
+                {data.report.summary.join(' ')}
+              </p>
+            )}
+
+            {state.view === 'taxta' ? (
+              <>
+                {attention.length > 0 && (
+                  <IntelPanel
+                    title="Chora talab qiladi"
+                    code={`${attention.length} ta`}
+                    className="border-danger/50"
+                  >
+                    <ul className="divide-y divide-border">
+                      {attention.slice(0, 6).map((item) => (
+                        <li key={item.id} className="flex items-center gap-3 px-3 py-2">
+                          <span aria-hidden="true" className="h-4 w-1 shrink-0 bg-danger" />
+                          <CodeText className="text-[11px] text-subtle">{item.code}</CodeText>
+                          <span className="min-w-0 flex-1 truncate text-[13px] text-fg">{item.name}</span>
+                          <CodeText className="text-[13px] font-semibold text-danger">
+                            {item.value === null ? '—' : `${Math.round(item.value)}%`}
+                          </CodeText>
+                        </li>
+                      ))}
+                    </ul>
+                  </IntelPanel>
+                )}
+
+                <IntelPanel
+                  title={data.report.breakdown?.title ?? "Bo'linmalar holati"}
+                  code={`${board.length} ta`}
+                  right={<MicroLabel>Yomoni birinchi</MicroLabel>}
+                >
+                  <StatusBoard
+                    items={sortedBoard}
+                    onOpen={canDrill ? (id) => {
+                      const patch = drillPatch(state, id);
+                      if (patch) update(patch);
+                    } : undefined}
+                  />
+                  <RagLegend />
+                </IntelPanel>
+              </>
+            ) : (
+              <IntelPanel
+                title={data.report.people_title}
+                code={`${data.report.people_total.toLocaleString('ru-RU')} ta`}
+                right={<MicroLabel>{data.report.people_hint}</MicroLabel>}
+              >
+                <PeopleTable data={data} />
+              </IntelPanel>
+            )}
+
+            <DocumentFooter
+              note={`Xizmat uchun. Hujjat ${reference} raqami bilan tizimda tuzilgan; sonlar ${period} davri uchun.`}
+            />
+          </div>
+        )}
+      </div>
+    </Page>
+  );
+}
+
+/** Ekrandagi sonlar eskirgan bo'lishi mumkin — chop etib yubormasin. */
+function StaleWarning({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <p
+      role="alert"
+      className="print-hide flex flex-wrap items-center gap-2 border border-warning/50 bg-warning-soft px-3 py-2 text-[13px] text-fg"
+    >
+      <TriangleAlert size={15} aria-hidden="true" className="shrink-0" />
+      <span>Ko&apos;rsatilayotgan ma&apos;lumot eskirgan bo&apos;lishi mumkin: {message}</span>
+      <button type="button" onClick={onRetry} className="font-medium underline underline-offset-2">
+        Qayta urinish
+      </button>
+    </p>
+  );
+}
