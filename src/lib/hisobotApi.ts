@@ -1,6 +1,6 @@
 import { buildQuery } from './apiClient';
 import { isFixedPreset, resolvePreset, type FixedPreset } from './reportPeriods';
-import { todayInTashkent } from './uzDate';
+import { isMonth, monthOf, todayInTashkent } from './uzDate';
 
 /** Hisobotlar sahifasi (`/api/hisobot/*`, camera-api/app/routers/hisobot.py).
  *  Xodimlar va talabalar — alohida: sonlar, filtrlar va mezonlar aralashmaydi. */
@@ -105,9 +105,16 @@ export interface HisobotFilterOptions {
   unit_kinds: { id: string; label: string }[];
 }
 
+/** Sahifaning ikki ko'rinishi: 'tahlil' — ko'rsatkichlar va ro'yxatlar,
+ *  'tabel' — oylik davomat varag'i (qog'ozga bosiladigan hujjat). */
+export type HisobotView = 'tahlil' | 'tabel';
+
 /** URL'dagi holat — havola bilan ulashiladi, "orqaga" ishlaydi. */
 export interface HisobotState {
   section: HisobotSection;
+  view: HisobotView;
+  /** Oylik tabel uchun "YYYY-MM" (analitik ko'rinishda ishlatilmaydi). */
+  month: string;
   preset: FixedPreset | 'custom';
   from: string;
   to: string;
@@ -141,6 +148,8 @@ export function readState(params: URLSearchParams, today: string = todayInTashke
   }
   return {
     section,
+    view: params.get('korinish') === 'tabel' ? 'tabel' : 'tahlil',
+    month: isMonth(params.get('oy')) ? (params.get('oy') as string) : monthOf(today),
     preset,
     from: range.from,
     to: range.to,
@@ -173,6 +182,10 @@ export function writeState(current: URLSearchParams, patch: Partial<HisobotState
     if (value) next.set(key, value);
     else next.delete(key);
   };
+  // Ko'rinish va oy bo'limga bog'liq emas: xodimdan talabaga o'tganda
+  // ham odam o'sha oyning tabelida qoladi.
+  if (patch.view !== undefined) set('korinish', patch.view === 'tabel' ? 'tabel' : undefined);
+  if (patch.month !== undefined) set('oy', patch.month);
   if (patch.section !== undefined) {
     if (patch.section !== (current.get('bolim') === 'talabalar' ? 'talabalar' : 'xodimlar')) {
       SECTION_PARAMS.forEach((key) => next.delete(key));

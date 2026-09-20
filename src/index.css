@@ -370,4 +370,184 @@
       font-size: 9pt;
     }
   }
+
+  /* ----------------------------------------------------------------
+   * Oylik tabel — asosiy chiqish shakli: A4 ENIGA (landscape).
+   *
+   * 31 kunli oy uchun eng tor holat: 297mm - 16mm chekka = 281mm.
+   * Chap uchta ustun 82mm, o'ngdagi besh "jami" ustuni 40mm, qolgan
+   * ~159mm 31 ta kunga bo'linadi (~5mm). Shrift 7pt — belgi ham,
+   * ikki xonali son ham sig'adi, kesilmaydi.
+   * Nomlangan bet (`page: tabel`) shu varaqqagina landscape beradi;
+   * qo'llab-quvvatlamaydigan brauzerda oddiy portret bet qoladi,
+   * jadval esa baribir to'liq chiqadi (table-layout: fixed).
+   * -------------------------------------------------------------- */
+  @page tabel {
+    size: A4 landscape;
+    margin: 10mm 8mm 12mm;
+  }
+
+  .tabel-print {
+    page: tabel;
+    gap: 3mm !important;
+  }
+
+  .tabel-print-head {
+    text-align: center;
+    margin-bottom: 2mm;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  .tabel-print-org {
+    font-size: 10pt;
+  }
+
+  .tabel-print-title {
+    font-size: 13pt;
+    font-weight: 700;
+    margin: 1mm 0;
+  }
+
+  .tabel-print-scope {
+    font-size: 9.5pt;
+  }
+
+  .tabel-note {
+    font-size: 8pt;
+    border: 0 !important;
+    background: none !important;
+    padding: 0 !important;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  /* Jadval to'liq chiqsin: ichki aylantirish yo'q, ramka ko'rinadi. */
+  [data-tabel-scroll] {
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+  }
+
+  table[data-tabel] {
+    width: 100% !important;
+    table-layout: fixed;
+    font-size: 7pt;
+  }
+
+  table[data-tabel] thead {
+    display: table-header-group;
+  }
+
+  table[data-tabel] th,
+  table[data-tabel] td {
+    position: static !important;
+    border: 0.2mm solid #999 !important;
+    padding: 0.6mm 0.4mm !important;
+    background: none !important;
+    box-shadow: none !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0 !important;
+    max-width: none !important;
+  }
+
+  /* Ustun kengliklari: chap uchtasi va o'ngdagi jami ustunlari
+     qat'iy, qolgan eni kun ustunlariga teng bo'linadi. */
+  table[data-tabel] th:nth-child(1),
+  table[data-tabel] td:nth-child(1) {
+    width: 8mm;
+    text-align: center;
+  }
+
+  table[data-tabel] th:nth-child(2),
+  table[data-tabel] td:nth-child(2) {
+    width: 44mm;
+    text-align: left;
+  }
+
+  table[data-tabel] th:nth-child(3),
+  table[data-tabel] td:nth-child(3) {
+    width: 22mm;
+    text-align: left;
+  }
+
+  /* Jami ustunlari: sarlavhasi ("Aniqlanmadi") eng uzun so'z, shuning
+     uchun ular kun ustunlaridan kengroq va shrifti kichikroq — yorliq
+     qisqartirib "Aniql…" bo'lib qolmasligi kerak. */
+  table[data-tabel] td[data-total],
+  table[data-tabel] thead th:nth-last-child(-n + 5) {
+    width: 13mm;
+    font-size: 5.5pt;
+    text-align: center;
+    white-space: normal;
+  }
+
+  table[data-tabel] td[data-total] {
+    font-size: 7pt;
+  }
+
+  /* Ustun sarlavhasidagi hafta kuni harfi va sana ekran uchun piksel
+     bilan berilgan (10px) — qog'ozda u 7pt jadvalga sig'maydi. */
+  table[data-tabel] thead th span {
+    font-size: 6pt !important;
+    line-height: 1.05 !important;
+    display: block;
+  }
+
+  table[data-tabel] thead th span + span {
+    font-size: 7pt !important;
+    font-weight: 700;
+  }
+
+  table[data-tabel] td[data-tabel-cell] {
+    text-align: center;
+    font-weight: 700;
+  }
+
+  /* Dam olish kuni rangsiz qog'ozda ham ajralib tursin. */
+  table[data-tabel] [data-rest] {
+    background: #ececec !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* "Bugun" ekran belgisi qog'ozda keraksiz — sana o'zi ko'rinib turadi. */
+  table[data-tabel] [data-today] {
+    box-shadow: none !important;
+  }
+
+  .tabel-legend {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    font-size: 8pt;
+    margin-top: 2mm;
+  }
+
+  /* Imzo bloki — varaqning oxirida, bo'linmasdan. */
+  .tabel-sign {
+    display: block !important;
+    margin-top: 6mm;
+    font-size: 9pt;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .tabel-sign-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 3mm;
+    margin-top: 5mm;
+  }
+
+  .tabel-sign-line {
+    display: inline-block;
+    width: 60mm;
+    border-bottom: 0.3mm solid #111;
+  }
+
+  .tabel-sign-hint {
+    font-size: 7.5pt;
+  }
 }

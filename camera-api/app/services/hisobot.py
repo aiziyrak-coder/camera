@@ -628,8 +628,12 @@ def blocker(data: Data, key: str) -> str | None:
 
 
 # Qaysi AI moduli shu mezonni to'ldiradi va o'chirilganda nima deyiladi.
-def _module_off(data: Data, key: str) -> str | None:
-    att_code = STAFF_ATTENDANCE_CODE if data.kind == "xodim" else STUDENT_ATTENDANCE_CODE
+def module_off_text(kind: str, active_modules: set[int], key: str) -> str | None:
+    """Mezonni to'ldiradigan modul o'chirilgan bo'lsa — bir gapli sabab.
+
+    Alohida funksiya: oylik tabel (app/services/tabel.py) ham aynan shu
+    gapni ishlatadi — bitta sabab ikki joyda ikki xil aytilmasin."""
+    att_code = STAFF_ATTENDANCE_CODE if kind == "xodim" else STUDENT_ATTENDANCE_CODE
     pairs = {
         "davomat": (att_code, "Kelib-ketishni yuz orqali qayd etish"),
         "kechikish": (att_code, "Kelib-ketishni yuz orqali qayd etish"),
@@ -640,9 +644,20 @@ def _module_off(data: Data, key: str) -> str | None:
         "uxlash": (SLEEP_CODE, "Darsda uxlab qolishni aniqlash"),
     }
     pair = pairs.get(key)
-    if pair is None or pair[0] in data.active_modules:
+    if pair is None or pair[0] in active_modules:
         return None
     return f"{pair[1]} hozir o'chirib qo'yilgan, shuning uchun yangi yozuvlar yig'ilmayapti. Sozlamalar → AI modullari."
+
+
+def _module_off(data: Data, key: str) -> str | None:
+    return module_off_text(data.kind, data.active_modules, key)
+
+
+def not_enrolled_note(total: int, missing: int) -> str | None:
+    """"N kishidan M tasining yuzi kiritilmagan" — bitta gap, ikki joyda bir xil."""
+    if not missing:
+        return None
+    return (f"{total} kishidan {missing} tasining yuzi tizimga kiritilmagan — ular kameraga tushsa ham tanilmaydi.")
 
 
 def _has_data(data: Data, key: str) -> bool:
@@ -670,9 +685,9 @@ def note_for(data: Data, key: str) -> str | None:
                      "ta'sir qilmaydi, faqat binolar bo'yicha ko'rsatiladi.")
     if key in ("davomat", "kechikish", "erta_ketish"):
         missing = sum(1 for m in data.members if not m.enrolled)
-        if missing:
-            parts.append(f"{len(data.members)} kishidan {missing} tasining yuzi tizimga kiritilmagan — ular kameraga "
-                         "tushsa ham tanilmaydi.")
+        line = not_enrolled_note(len(data.members), missing)
+        if line:
+            parts.append(line)
     if key == "erta_ketish":
         # Halollik: baholab bo'lmagan kunlar "erta ketmadi" deb jimgina
         # o'tkazilmaydi, sahifa tepasida ochiq aytiladi.

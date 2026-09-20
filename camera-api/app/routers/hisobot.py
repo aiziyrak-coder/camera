@@ -3,6 +3,8 @@
   GET /api/hisobot/filters?kind=talaba|xodim      — filtr variantlari
   GET /api/hisobot/report?kind=&from=&to=&criterion=&faculty=&course=&group=&unit_kind=&unit=&q=
   GET /api/hisobot/export.xlsx (report bilan bir xil parametrlar) — Excel
+  GET /api/hisobot/tabel?kind=&oy=YYYY-MM&<filtrlar>  — oylik davomat tabeli
+  GET /api/hisobot/tabel.xlsx (tabel bilan bir xil parametrlar) — chop etish uchun
 
 Hisob-kitob app/services/hisobot.py da.
 """
@@ -14,12 +16,14 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from openpyxl import Workbook
-from openpyxl.styles import Font
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
-from app.services import hisobot, situation as svc
+from app.services import hisobot, situation as svc, tabel as tabel_svc
 
 router = APIRouter(prefix="/api/hisobot", tags=["hisobot"])
 
@@ -70,6 +74,137 @@ async def export(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}", "X-Report-Title": quote(label)},
     )
+
+
+TabelKindQuery = Annotated[Literal["talaba", "xodim"], Query()]
+
+
+@router.get("/tabel")
+async def tabel(
+    db: DbDep, _: ReadDep, kind: TabelKindQuery, oy: str,
+    faculty: str | None = None, course: Annotated[int | None, Query(ge=1, le=7)] = None,
+    group: str | None = None, unit_kind: str | None = None, unit: str | None = None, q: str | None = None,
+) -> dict:
+    """Oylik tabel: qatorlar — odamlar, ustunlar — oyning kunlari."""
+    return await tabel_svc.build(db, kind, oy, _filters(faculty, course, group, unit_kind, unit, q))
+
+
+@router.get("/tabel.xlsx")
+async def tabel_export(
+    db: DbDep, _: ReadDep, kind: TabelKindQuery, oy: str,
+    faculty: str | None = None, course: Annotated[int | None, Query(ge=1, le=7)] = None,
+    group: str | None = None, unit_kind: str | None = None, unit: str | None = None, q: str | None = None,
+) -> Response:
+    data = await tabel_svc.build(db, kind, oy, _filters(faculty, course, group, unit_kind, unit, q))
+    name = f"tabel-{'talabalar' if kind == 'talaba' else 'xodimlar'}-{data['month']}.xlsx"
+    return Response(
+        build_tabel_workbook(data),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}",
+                 "X-Report-Title": quote(data["title"])},
+    )
+
+
+# Chop etiladigan varaq: sarlavha bloki, jadval, izoh, imzo joyi.
+_WEEKEND_FILL = PatternFill("solid", fgColor="EDEDED")
+_HEADER_FILL = PatternFill("solid", fgColor="DCE6F1")
+_THIN = Side(style="thin", color="999999")
+_BOX = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
+_TOTAL_COLUMNS = [("present", "Keldi"), ("late", "Kech keldi"), ("absent", "Kelmadi"),
+                  ("unknown", "Ma'lumot yo'q"), ("workDays", "Ish kunlari")]
+
+
+def build_tabel_workbook(data: dict) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Tabel"
+    bold = Font(bold=True)
+    center = Alignment(horizontal="center", vertical="center")
+
+    ws.append([settings.org_name])
+    ws["A1"].font = Font(bold=True, size=12)
+    ws.append([data["title"]])
+    ws["A2"].font = Font(bold=True, size=14)
+    ws.append([data["scope"]])
+    ws.append([data["monthLabel"]])
+    ws.append([])
+
+    days = data["days"]
+    # 1-4 sarlavha bloki, 5 bo'sh, 6 — kun raqamlari, 7 — hafta kunlari.
+    head = 6
+    first_day_col = 4
+    ws.cell(head, 1, "№").font = bold
+    ws.cell(head, 2, "F.I.Sh.").font = bold
+    ws.cell(head, 3, "Guruh / bo'linma").font = bold
+    for i, day in enumerate(days):
+        col = first_day_col + i
+        top = ws.cell(head, col, day["day"])
+        sub = ws.cell(head + 1, col, day["weekday"])
+        for cell in (top, sub):
+            cell.font = bold
+            cell.alignment = center
+            cell.border = _BOX
+            cell.fill = _HEADER_FILL if day["isWorkDay"] else _WEEKEND_FILL
+        ws.column_dimensions[get_column_letter(col)].width = 4
+    total_col = first_day_col + len(days)
+    for i, (_key, label) in enumerate(_TOTAL_COLUMNS):
+        cell = ws.cell(head, total_col + i, label)
+        cell.font = bold
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = _BOX
+        ws.column_dimensions[get_column_letter(total_col + i)].width = 9
+    for col in (1, 2, 3):
+        for row in (head, head + 1):
+            ws.cell(row, col).fill = _HEADER_FILL
+            ws.cell(row, col).border = _BOX
+        ws.merge_cells(start_row=head, start_column=col, end_row=head + 1, end_column=col)
+    for i in range(len(_TOTAL_COLUMNS)):
+        ws.merge_cells(start_row=head, start_column=total_col + i, end_row=head + 1, end_column=total_col + i)
+
+    row = head + 2
+    for n, person in enumerate(data["people"], start=1):
+        ws.cell(row, 1, n).alignment = center
+        ws.cell(row, 2, person["fullName"])
+        ws.cell(row, 3, person["group"])
+        for i, (cell_data, day) in enumerate(zip(person["cells"], days)):
+            cell = ws.cell(row, first_day_col + i, cell_data["mark"])
+            cell.alignment = center
+            cell.border = _BOX
+            if not day["isWorkDay"]:
+                cell.fill = _WEEKEND_FILL
+        for i, (key, _label) in enumerate(_TOTAL_COLUMNS):
+            cell = ws.cell(row, total_col + i, person["totals"][key])
+            cell.alignment = center
+            cell.border = _BOX
+        for col in (1, 2, 3):
+            ws.cell(row, col).border = _BOX
+        row += 1
+
+    ws.freeze_panes = f"C{head + 2}"  # birinchi ikki ustun va sarlavha qatori
+    ws.print_title_rows = f"{head}:{head + 1}"
+    ws.column_dimensions["A"].width = 5
+    ws.column_dimensions["B"].width = 34
+    ws.column_dimensions["C"].width = 22
+
+    row += 1
+    ws.cell(row, 1, "Belgilar").font = bold
+    row += 1
+    for item in data["legend"]:
+        ws.cell(row, 1, item["mark"]).alignment = center
+        ws.cell(row, 2, item["label"])
+        row += 1
+    if data.get("note"):
+        row += 1
+        ws.cell(row, 1, "Izoh")
+        ws.cell(row, 2, data["note"])
+        row += 1
+    row += 2
+    ws.cell(row, 1, "Tabelni to'ldirgan: ______________________  /______________________/")
+    row += 2
+    ws.cell(row, 1, "Tasdiqlayman: ______________________  /______________________/")
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
 
 def build_workbook(data: dict) -> bytes:

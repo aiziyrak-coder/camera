@@ -40,6 +40,38 @@ export function daysBetweenInclusive(from: string, to: string): number {
   return Math.round((parseIsoDate(to).getTime() - parseIsoDate(from).getTime()) / 86_400_000) + 1;
 }
 
+/* -------------------------------------------------------------------
+ * Oy ("YYYY-MM") — oylik tabel uchun. Sana kabi satr bilan yuritiladi.
+ * ----------------------------------------------------------------- */
+
+export function isMonth(value: string | null | undefined): value is string {
+  return Boolean(value && /^\d{4}-(0[1-9]|1[0-2])$/.test(value));
+}
+
+/** Sanadan oy: "2026-09-19" → "2026-09". */
+export function monthOf(iso: string): string {
+  return iso.slice(0, 7);
+}
+
+/** "2026-09" → "Sentabr 2026". */
+export function formatUzMonth(month: string): string {
+  if (!isMonth(month)) return month;
+  const name = UZ_MONTHS[Number(month.slice(5, 7)) - 1];
+  return `${name[0].toUpperCase()}${name.slice(1)} ${month.slice(0, 4)}`;
+}
+
+/** Oydagi kunlar soni. */
+export function daysInMonth(month: string): number {
+  if (!isMonth(month)) return 0;
+  return new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
+}
+
+/** Oy va kun → hafta kuni indeksi (0 = dushanba). */
+export function weekdayIndex(month: string, day: number): number {
+  const date = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, day));
+  return (date.getUTCDay() + 6) % 7;
+}
+
 export function formatCount(value: number | null | undefined): string {
   return value === null || value === undefined ? '—' : value.toLocaleString('ru-RU');
 }

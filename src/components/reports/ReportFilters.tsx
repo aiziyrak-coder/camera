@@ -9,6 +9,7 @@ import {
   type HisobotFilterOptions,
   type HisobotState,
 } from '../../lib/hisobotApi';
+import MonthPicker from './MonthPicker';
 
 interface ReportFiltersProps {
   state: HisobotState;
@@ -35,17 +36,21 @@ export default function ReportFilters({ state, options, onChange, onReset }: Rep
 
   const fields: FilterFieldEntry[] = [
     // Davr doim tanlangan bo'ladi, shuning uchun "faol filtr" deb
-    // sanalmaydi — ilgari ham sanalmasdi.
+    // sanalmaydi — ilgari ham sanalmasdi. Oylik tabelda esa erkin
+    // oraliq emas, faqat OY tanlanadi: hujjat butun oy uchun tuziladi.
     {
       kind: 'custom',
-      render: (
-        <DateRangePicker
-          value={period}
-          presets={PERIOD_PRESETS}
-          onChange={(v) => onChange({ preset: v.preset, from: v.from, to: v.to })}
-          showSummary={false}
-        />
-      ),
+      render:
+        state.view === 'tabel' ? (
+          <MonthPicker value={state.month} onChange={(month) => onChange({ month })} />
+        ) : (
+          <DateRangePicker
+            value={period}
+            presets={PERIOD_PRESETS}
+            onChange={(v) => onChange({ preset: v.preset, from: v.from, to: v.to })}
+            showSummary={false}
+          />
+        ),
     },
     students && {
       kind: 'select',
