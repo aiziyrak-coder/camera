@@ -13,13 +13,28 @@ import {
   PanelLeftOpen,
   Trash2,
 } from 'lucide-react';
-import { Button, ErrorState, IconButton, Page, Toolbar, cn, useShell, useToast } from '../../ui';
+import {
+  Button,
+  CodeText,
+  ErrorState,
+  IconButton,
+  MicroLabel,
+  Page,
+  StatusLamp,
+  Toolbar,
+  cn,
+  useShell,
+  useToast,
+  type IntelStatus,
+} from '../../ui';
 import CameraSidebar from './CameraSidebar';
 import LayoutPicker from './LayoutPicker';
 import TourMenu, { DEFAULT_TOUR, sanitizeTour, type TourSettings } from './TourMenu';
 import ViewsMenu from './ViewsMenu';
 import WallPopover from './WallPopover';
 import WallTile from './WallTile';
+import { buildCameraCodes } from './cameraCode';
+import { formatWallDate, formatWallTime, useWallClock } from './wallClock';
 import { usePageVisible } from './usePageVisible';
 import { useStoredViews } from './useStoredViews';
 import { useWallCameras } from './useWallCameras';
@@ -32,6 +47,7 @@ import {
   filterCameras,
   isCameraOnline,
   isFeaturedLayout,
+  LAYOUT_LABELS,
   layoutCapacity,
   layoutForKey,
   layoutGeometry,
@@ -99,6 +115,27 @@ const SHORTCUTS: Array<[string, string]> = [
   ['Strelkalar (PTZ)', 'Kattalashtirilgan PTZ kamerani burish'],
 ];
 
+/** Yuqori/pastki chiziqdagi yorliq + qiymat juftligi (bir qatorda). */
+function StripReadout({ label, value, title }: { label: string; value: ReactNode; title?: string }) {
+  return (
+    <span className="flex shrink-0 items-center gap-1.5" title={title}>
+      <MicroLabel>{label}</MicroLabel>
+      <CodeText className="text-[11px] font-semibold text-fg">{value}</CodeText>
+    </span>
+  );
+}
+
+/** Obyekt vaqti (Toshkent) — soniyalar bilan, butun devor uchun bitta taymer. */
+function WallClock() {
+  const now = useWallClock();
+  return (
+    <span className="flex shrink-0 items-center gap-2" title="Obyekt vaqti — Asia/Tashkent">
+      <CodeText className="text-[12px] font-semibold text-fg">{formatWallTime(now)}</CodeText>
+      <MicroLabel>{formatWallDate(now)} · UTC+5</MicroLabel>
+    </span>
+  );
+}
+
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
@@ -128,6 +165,9 @@ export default function VideoWall({
 
   const { cameras, loading, error, knownIds, reload, refreshStreams } = useWallCameras();
   const byId = useMemo(() => new Map(cameras.map((camera) => [camera.id, camera])), [cameras]);
+  // Xizmat kodlari (`CAM-084`) — filtrga emas, TO'LIQ ro'yxatga bog'langan,
+  // shuning uchun filtr o'zgarsa ham katakdagi kod o'zgarmaydi.
+  const codes = useMemo(() => buildCameraCodes(cameras), [cameras]);
 
   const [views, setViews] = useStoredViews();
   const [storedState, setStoredState] = usePersistedState<WallState>(
@@ -523,7 +563,7 @@ export default function VideoWall({
   const layoutPicker = <LayoutPicker value={wall.layout} onChange={setLayout} />;
 
   const sourceControls = (
-    <div className="inline-flex items-center gap-0.5 rounded-control border border-border bg-surface-2 p-0.5">
+    <div className="inline-flex items-center gap-0.5 rounded-[2px] border border-border bg-surface-2 p-0.5">
       <button
         type="button"
         onClick={() => {
@@ -533,8 +573,8 @@ export default function VideoWall({
         aria-pressed={source === 'manual'}
         title="Kataklarni qo'lda to'ldirish"
         className={cn(
-          'inline-flex h-8 items-center gap-1.5 rounded-[6px] px-2.5 text-[13px] font-medium transition-colors',
-          source === 'manual' ? 'bg-surface text-fg shadow-sm' : 'text-muted hover:text-fg',
+          'inline-flex h-8 items-center gap-1.5 rounded-[2px] px-2.5 text-[13px] font-medium transition-colors',
+          source === 'manual' ? 'border border-border-strong bg-surface text-fg' : 'text-muted hover:text-fg',
         )}
       >
         <Hand size={14} aria-hidden="true" />
@@ -546,15 +586,15 @@ export default function VideoWall({
         aria-pressed={source === 'list'}
         title="Yon paneldagi filtrga mos kameralar — sahifama-sahifa"
         className={cn(
-          'inline-flex h-8 items-center gap-1.5 rounded-[6px] px-2.5 text-[13px] font-medium transition-colors',
-          source === 'list' ? 'bg-surface text-fg shadow-sm' : 'text-muted hover:text-fg',
+          'inline-flex h-8 items-center gap-1.5 rounded-[2px] px-2.5 text-[13px] font-medium transition-colors',
+          source === 'list' ? 'border border-border-strong bg-surface text-fg' : 'text-muted hover:text-fg',
         )}
       >
         <ListVideo size={14} aria-hidden="true" />
         Ro&apos;yxat
       </button>
       {source === 'list' && (
-        <span className="flex items-center gap-0.5 pl-1 text-[13px] tabular-nums text-muted">
+        <span className="intel-code flex items-center gap-0.5 pl-1 text-[12px] text-muted">
           <IconButton icon={ChevronLeft} size="sm" label="Oldingi sahifa" onClick={() => step(-1)} className="h-7 w-7" />
           {Math.min(page + 1, pages)}/{pages}
           <IconButton icon={ChevronRight} size="sm" label="Keyingi sahifa" onClick={() => step(1)} className="h-7 w-7" />
@@ -563,14 +603,52 @@ export default function VideoWall({
     </div>
   );
 
-  const statusText = (
-    <span
-      className="hidden text-xs tabular-nums text-muted md:inline"
-      title={`Bir vaqtda ko'pi bilan ${WALL_MAX_LIVE} ta jonli oqim; qolganlari kadr (rasm) ko'rinishida`}
-    >
-      {pageVisible ? `${liveCount} jonli${snapshotCount ? ` · ${snapshotCount} kadr` : ''}` : 'Pauza (varaq fonda)'}
-      {touring && tourPaused && pageVisible ? " · tur to'xtab turibdi" : ''}
-    </span>
+  // --------------------------------------------------------- konsol chizig'i
+  /** Ekranda ROSTDAN turgan kataklar soni (kattalashtirilganda — bitta). */
+  const shownTiles = maximized !== null ? 1 : plan.filter((state) => state !== 'hidden').length;
+
+  const connection: { status: IntelStatus; label: string } = error
+    ? { status: 'alert', label: "Bog'lanish yo'q" }
+    : !pageVisible
+      ? { status: 'idle', label: 'Pauza' }
+      : loading && cameras.length === 0
+        ? { status: 'warn', label: 'Ulanmoqda' }
+        : liveCount > 0
+          ? { status: 'ok', label: 'Efir' }
+          : { status: 'warn', label: 'Kutilmoqda' };
+
+  const topStrip = (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border bg-surface-2 px-2.5 py-1.5">
+      <span className="flex shrink-0 items-center gap-2">
+        <MicroLabel className="!text-fg">Kuzatuv markazi · Videodevor</MicroLabel>
+      </span>
+      <WallClock />
+      <span className="flex flex-wrap items-center gap-x-4 gap-y-1 md:ms-auto">
+        <StripReadout label="Kataklar" value={`${shownTiles}/${capacity}`} title="Ekranda ko'rinayotgan kataklar / setka sig'imi" />
+        <StripReadout
+          label="Oqimlar"
+          value={`${liveCount}/${cameras.length}`}
+          title={`Jonli oqim / ro'yxatdagi kamera. Bir vaqtda ko'pi bilan ${WALL_MAX_LIVE} ta jonli oqim; qolganlari kadr (rasm) ko'rinishida`}
+        />
+        {snapshotCount > 0 && <StripReadout label="Kadrlar" value={snapshotCount} title="Kadr (rasm) rejimidagi kataklar" />}
+        {touring && <StripReadout label="Aylanish" value={tourPaused ? "To'xtab turibdi" : `${tour.intervalSec} s`} />}
+        <StatusLamp status={connection.status} label={connection.label} pulse={connection.status === 'ok'} />
+      </span>
+    </div>
+  );
+
+  const bottomStrip = (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border bg-surface-2 px-2.5 py-1">
+      <StripReadout label="Setka" value={LAYOUT_LABELS[wall.layout]} />
+      <StripReadout
+        label="Manba"
+        value={source === 'list' ? `Ro'yxat ${Math.min(page + 1, pages)}/${pages}` : "Qo'lda"}
+      />
+      {activeView && <StripReadout label="Ko'rinish" value={`${activeView.name}${dirty ? ' *' : ''}`} />}
+      <MicroLabel className="ms-auto hidden lg:inline">
+        1–7 setka · F to&apos;liq ekran · T aylanish · ← → sahifa · Esc qaytish
+      </MicroLabel>
+    </div>
   );
 
   const clearButton = source === 'manual' && onWall.size > 0 && (
@@ -649,7 +727,7 @@ export default function VideoWall({
         };
 
   const grid = (
-    <div role="grid" aria-label="Videodevor" className="grid h-full w-full gap-0.5 overflow-hidden bg-black" style={gridStyle}>
+    <div role="grid" aria-label="Videodevor" className="grid h-full w-full gap-px overflow-hidden bg-border" style={gridStyle}>
       {geometry.cells.map((cell) => {
         const state = plan[cell.index];
         if (state === 'hidden') return null;
@@ -661,6 +739,7 @@ export default function VideoWall({
             index={cell.index}
             cameraId={cameraId}
             camera={cameraId ? byId.get(cameraId) ?? null : null}
+            code={cameraId ? codes.get(cameraId) : undefined}
             playback={state}
             pending={loading && Boolean(cameraId) && !byId.has(cameraId ?? '')}
             style={
@@ -703,6 +782,7 @@ export default function VideoWall({
       loading={loading}
       error={error}
       onWall={onWall}
+      codes={codes}
       className={immersive ? 'shadow-pop md:w-72' : 'h-72 md:h-full'}
     />
   );
@@ -721,7 +801,6 @@ export default function VideoWall({
       {viewsMenu}
       {tourMenu}
       <div className="ml-auto flex items-center gap-1.5">
-        {statusText}
         {clearButton}
         {helpPopover}
         {fullscreenButton}
@@ -745,8 +824,15 @@ export default function VideoWall({
       {overlayChrome}
       <div className={cn('flex min-h-0 flex-1', immersive ? '' : 'flex-col gap-3 md:flex-row')}>
         {sidebar && <div className={immersive ? 'z-30 h-full p-2 pt-16' : 'shrink-0 md:h-full'}>{sidebar}</div>}
-        <div className={cn('min-h-[260px] min-w-0 flex-1 overflow-hidden', !immersive && 'rounded-card border border-border shadow-card')}>
-          {grid}
+        <div
+          className={cn(
+            'flex min-h-[260px] min-w-0 flex-1 flex-col overflow-hidden',
+            immersive ? 'border border-border' : 'intel-panel intel-brackets',
+          )}
+        >
+          {topStrip}
+          <div className="min-h-0 min-w-0 flex-1">{grid}</div>
+          {bottomStrip}
         </div>
       </div>
       {immersive && error && cameras.length === 0 && (
@@ -776,7 +862,6 @@ export default function VideoWall({
         <Toolbar
           end={
             <>
-              {statusText}
               {clearButton}
               {helpPopover}
             </>

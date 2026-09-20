@@ -25,6 +25,7 @@ import { useApiResource } from '../../lib/useApiResource';
 import { formatUzMonth } from '../../lib/uzDate';
 import {
   SECTION_KIND,
+  documentReference,
   drillPatch,
   hisobotPaths,
   readState,
@@ -94,6 +95,11 @@ export default function ReportsPage() {
     () => update({ faculty: '', course: '', group: '', unitKind: '', unit: '', q: '' }),
     [update],
   );
+
+  // Hujjat raqami — holatdan deterministik: bir xil tanlov doim bir xil
+  // kod bilan chiqadi, shuning uchun qog'ozdagi varaqni ekrandagi
+  // ko'rinish bilan solishtirish mumkin.
+  const reference = useMemo(() => documentReference(state), [state]);
 
   const criterion = data?.criterion ?? state.criterion;
   const canDrill = data ? drillPatch(state, '_') !== null : false;
@@ -214,7 +220,7 @@ export default function ReportsPage() {
               {/* Yangilash xatosi ilgari jimgina yutilardi: ekranda eski
                   oyning tabeli turaverardi va uni chop etish mumkin edi. */}
               {sheet.error && <StaleWarning message={sheet.error} onRetry={sheet.reload} />}
-              <TabelView data={sheetData} section={state.section} />
+              <TabelView data={sheetData} section={state.section} reference={reference} />
             </div>
           )}
         </section>
@@ -241,6 +247,7 @@ export default function ReportsPage() {
                 {report.error && <StaleWarning message={report.error} onRetry={report.reload} />}
                 <ReportView
                   data={data}
+                  reference={reference}
                   onDrill={canDrill ? (rowId) => {
                     const patch = drillPatch(state, rowId);
                     if (patch) update(patch);
@@ -261,7 +268,7 @@ function StaleWarning({ message, onRetry }: { message: string; onRetry: () => vo
   return (
     <p
       role="alert"
-      className="print-hide mb-3 flex flex-wrap items-center gap-2 rounded-card border border-warning/40 bg-warning-soft px-3 py-2 text-[13px] text-fg"
+      className="print-hide mb-3 flex flex-wrap items-center gap-2 border border-warning/50 bg-warning-soft px-3 py-2 text-[13px] text-fg"
     >
       <TriangleAlert size={15} aria-hidden="true" className="shrink-0" />
       <span>Ko&apos;rsatilayotgan ma&apos;lumot eskirgan bo&apos;lishi mumkin: {message}</span>

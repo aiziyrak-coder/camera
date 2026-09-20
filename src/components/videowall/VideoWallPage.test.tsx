@@ -246,6 +246,29 @@ describe('Videodevor', () => {
     expect(players()).toHaveLength(0);
   });
 
+  it('konsol ramkasi: katak kodi, joy kodi, JONLI yorlig‘i va oqim hisobi', async () => {
+    renderWall();
+    await loadedFlat();
+    fireEvent.click(screen.getByTitle(/Kamera 1 —/));
+
+    const cell = cells()[0];
+    expect(within(cell).getByText('CAM-001')).toBeInTheDocument();
+    expect(within(cell).getByText('B1·Q1')).toBeInTheDocument();
+    // "JONLI" faqat oqim rostdan o'ynayotganda.
+    expect(within(cell).getByText('JONLI')).toBeInTheDocument();
+    // Vaqt tamg'asi (Toshkent, soniyalar bilan).
+    expect(within(cell).getByText(/^\d{2}:\d{2}:\d{2}$/)).toBeInTheDocument();
+
+    // Yuqori chiziq: jonli oqim / ro'yxatdagi kamera, kataklar soni.
+    expect(screen.getByText('1/30')).toBeInTheDocument();
+    expect(screen.getByText('4/4')).toBeInTheDocument();
+
+    // Oflayn katakda "JONLI" chiqmaydi.
+    fireEvent.click(screen.getByTitle(/Kamera 2 —/));
+    expect(within(cells()[1]).queryByText('JONLI')).not.toBeInTheDocument();
+    expect(within(cells()[1]).getByText('OFLAYN')).toBeInTheDocument();
+  });
+
   it("ko'rinishni saqlaydi va localStorage'ga yozadi", async () => {
     renderWall();
     await loadedFlat();

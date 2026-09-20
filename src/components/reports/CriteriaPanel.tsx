@@ -1,5 +1,5 @@
 import { Check } from 'lucide-react';
-import { TONE_TEXT, cn, focusRing, Skeleton } from '../../ui';
+import { MicroLabel, TONE_TEXT, cn, focusRing, Skeleton } from '../../ui';
 import type { HisobotCriterion } from '../../lib/hisobotApi';
 
 interface CriteriaPanelProps {
@@ -24,8 +24,8 @@ export default function CriteriaPanel({ criteria, value, onChange, loading }: Cr
   }
   return (
     <nav aria-label="Hisobot turlari" className={cn('transition-opacity print-hide', loading && 'opacity-70')}>
-      <p className="mb-2 hidden px-1 text-xs font-medium uppercase tracking-wide text-subtle lg:block">
-        Nimani ko'rmoqchisiz?
+      <p className="mb-2 hidden border-b border-border pb-1.5 lg:block">
+        <MicroLabel>Nimani ko&apos;rmoqchisiz?</MicroLabel>
       </p>
       <ul className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 lg:mx-0 lg:flex-col lg:gap-1 lg:overflow-visible lg:px-0 lg:pb-0">
         {criteria.map((c) => {
@@ -37,9 +37,9 @@ export default function CriteriaPanel({ criteria, value, onChange, loading }: Cr
                 onClick={() => onChange(c.key)}
                 aria-current={active ? 'true' : undefined}
                 className={cn(
-                  'flex w-full flex-col gap-0.5 rounded-control border px-3 py-2 text-left text-sm transition-colors',
+                  'flex w-full flex-col gap-0.5 border px-2.5 py-1.5 text-left text-[13px] transition-colors',
                   active
-                    ? 'border-primary/40 bg-primary/10 text-fg'
+                    ? 'border-border-strong bg-primary-soft text-fg shadow-[inset_2px_0_0_rgb(var(--c-primary))]'
                     : 'border-border bg-surface text-muted hover:bg-surface-2 hover:text-fg lg:border-transparent lg:bg-transparent',
                   focusRing,
                 )}
@@ -49,11 +49,11 @@ export default function CriteriaPanel({ criteria, value, onChange, loading }: Cr
                     {active && <Check size={13} className="mr-1 inline-block align-[-1px] text-primary" aria-hidden="true" />}
                     {c.label}
                   </span>
-                  <span className={cn('shrink-0 tabular-nums text-[13px] font-semibold', TONE_TEXT[c.tone])}>
+                  <span className={cn('intel-code shrink-0 text-[13px] font-semibold', TONE_TEXT[c.tone])}>
                     {c.indicator}
                   </span>
                 </span>
-                <span className="text-xs leading-4 text-subtle">
+                <span className="text-[11px] leading-4 text-subtle">
                   {c.unavailable ? c.unavailable : c.description}
                 </span>
               </button>
@@ -61,7 +61,7 @@ export default function CriteriaPanel({ criteria, value, onChange, loading }: Cr
           );
         })}
       </ul>
-      <p className="mt-2 hidden px-1 text-xs text-subtle lg:block">
+      <p className="mt-2 hidden px-1 text-[11px] leading-4 text-subtle lg:block">
         Tanlangan turga qarab o'ngdagi jadval va sonlar o'zgaradi.
       </p>
     </nav>

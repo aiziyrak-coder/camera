@@ -5,6 +5,8 @@ import {
   formatCell,
   groupOptions,
   hisobotPaths,
+  buildReference,
+  documentReference,
   printScopeNote,
   readState,
   writeState,
@@ -130,5 +132,61 @@ describe('misc', () => {
     expect(full).toContain(`${ru(4120)} kishi`);
     expect(full).toContain('hammasi');
     expect(full).not.toContain('Excel');
+  });
+});
+
+/* ------------------------------------------------------------------
+ * Hujjat raqami — qog'ozdagi varaqni ekrandagi ko'rinish bilan
+ * bog'laydigan yagona kod. Eng muhim xossasi: DETERMINISTIK.
+ * ---------------------------------------------------------------- */
+describe('Hujjat raqami', () => {
+  it("shakli: TASHKILOT/TUR/DAVR/BO'LIM-TARTIB", () => {
+    const state = readState(new URLSearchParams('bolim=xodimlar&korinish=tabel&oy=2026-09'), TODAY);
+    expect(documentReference(state)).toBe('FERMI/TBL/2026-09/XDM-0001');
+  });
+
+  it('talabalar bo\'limi boshqa kod beradi', () => {
+    const state = readState(new URLSearchParams('bolim=talabalar&korinish=tabel&oy=2026-09'), TODAY);
+    expect(documentReference(state)).toBe('FERMI/TBL/2026-09/TLB-0001');
+  });
+
+  it("bir xil holat — doim bir xil kod (hujjat raqami o'zgarib ketmaydi)", () => {
+    const search = 'bolim=talabalar&korinish=tabel&oy=2026-09&fakultet=f1&guruh=101-guruh';
+    const a = documentReference(readState(new URLSearchParams(search), TODAY));
+    const b = documentReference(readState(new URLSearchParams(search), '2027-01-05'));
+    expect(a).toBe(b);
+    // Filtr qo'yilgan — bu endi "butun bo'lim" hujjati emas.
+    expect(a).not.toContain('-0001');
+    expect(a).toMatch(/^FERMI\/TBL\/2026-09\/TLB-\d{4}$/);
+  });
+
+  it('boshqa tanlov — boshqa tartib raqami', () => {
+    const one = documentReference(readState(new URLSearchParams('bolim=talabalar&korinish=tabel&oy=2026-09&guruh=101-guruh'), TODAY));
+    const two = documentReference(readState(new URLSearchParams('bolim=talabalar&korinish=tabel&oy=2026-09&guruh=102-guruh'), TODAY));
+    expect(one).not.toBe(two);
+  });
+
+  it('tahlil ko\'rinishida davr — oraliq, turi ANL', () => {
+    const state = readState(new URLSearchParams('bolim=xodimlar&davr=today'), TODAY);
+    expect(documentReference(state)).toMatch(/^FERMI\/ANL\/20260919-20260919\/XDM-\d{4}$/);
+  });
+
+  it('tashkilot kodi almashtiriladi va bosh harfga keltiriladi', () => {
+    const state = readState(new URLSearchParams('bolim=xodimlar&korinish=tabel&oy=2026-09'), TODAY);
+    expect(documentReference(state, 'qmii')).toBe('QMII/TBL/2026-09/XDM-0001');
+  });
+
+  it('buildReference bo\'laklardan ham kod tuzadi (jadval o\'z holatini bilmaydi)', () => {
+    expect(buildReference({ view: 'tabel', section: 'talabalar', period: '2026-09' })).toBe(
+      'FERMI/TBL/2026-09/TLB-0001',
+    );
+    const withScope = buildReference({
+      view: 'tabel',
+      section: 'talabalar',
+      period: '2026-09',
+      parts: ['Davolash ishi, 2-kurs'],
+    });
+    expect(withScope).toMatch(/^FERMI\/TBL\/2026-09\/TLB-\d{4}$/);
+    expect(withScope).not.toContain('-0001');
   });
 });

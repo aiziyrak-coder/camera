@@ -4,6 +4,11 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { CalendarDay, PersonProfile } from '../../lib/situationApi';
 import type { AttendanceSummary } from '../../types';
 
+// Sana QOTIRILMAYDI: ilgari bu yerda '2026-09-20' turardi va o'sha kun
+// o'tishi bilan "kelajakdagi oraliq" testi yiqildi. Soat ham bir joyga
+// qotiriladi — yarim tunda o'tayotgan test ishonchsiz bo'ladi.
+vi.useFakeTimers({ toFake: ['Date'] });
+vi.setSystemTime(new Date('2026-09-20T09:00:00+05:00'));
 const TODAY = '2026-09-20';
 
 const day = (date: string, status: CalendarDay['status'], checkIn: string | null = null): CalendarDay => ({

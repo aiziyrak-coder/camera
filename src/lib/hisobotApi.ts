@@ -310,3 +310,79 @@ export function drillPatch(state: HisobotState, rowId: string): Partial<HisobotS
   if (!state.group) return rowId ? { group: rowId } : null;
   return null;
 }
+
+/* ------------------------------------------------------------------
+ * Hujjat raqami (ro'yxat kodi).
+ *
+ * Har bir hisobot — rasmiy hujjat, demak o'z raqami bo'lishi kerak:
+ * qog'ozdagi varaqni ekrandagi ko'rinish bilan solishtirish, kelishuv
+ * xatida "FERMI/TBL/2026-09/XDM-0007" deb yozish mumkin bo'lsin.
+ *
+ * Shakl: TASHKILOT / HUJJAT TURI / DAVR / BO'LIM-TARTIB
+ *   FERMI/TBL/2026-09/XDM-0001
+ *
+ * Raqam HOLATDAN kelib chiqadi va tasodifiy emas: bir xil tanlov —
+ * doim bir xil kod. Shuning uchun tartib raqami sanagichdan emas,
+ * tanlovning o'zidan (FNV-1a) hisoblanadi; filtrsiz to'liq hujjat
+ * doim «0001» bo'ladi.
+ * ------------------------------------------------------------------ */
+
+/** Tashkilot kodi — boshqa muassasaga o'rnatishda almashtiriladi. */
+export const DOCUMENT_ORG_CODE = 'FERMI';
+
+const DOCUMENT_VIEW_CODE: Record<HisobotView, string> = { tabel: 'TBL', tahlil: 'ANL' };
+const DOCUMENT_SECTION_CODE: Record<HisobotSection, string> = { xodimlar: 'XDM', talabalar: 'TLB' };
+
+/** Tanlovdan deterministik 4 xonali tartib raqami (0002–9999).
+ *  Tanlov bo'sh bo'lsa — 0001 (butun bo'lim bo'yicha asosiy hujjat). */
+function referenceSerial(parts: readonly (string | null | undefined)[]): string {
+  const key = parts
+    .map((part) => (part ?? '').trim())
+    .filter(Boolean)
+    .join('|');
+  if (!key) return '0001';
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < key.length; i += 1) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return String((hash % 9998) + 2).padStart(4, '0');
+}
+
+/** Davr bo'lagi: tabelda "2026-09", tahlilda "20260901-20260919". */
+function referencePeriod(view: HisobotView, state: Pick<HisobotState, 'month' | 'from' | 'to'>): string {
+  if (view === 'tabel') return state.month;
+  const compact = (iso: string) => iso.replace(/-/g, '');
+  return `${compact(state.from)}-${compact(state.to)}`;
+}
+
+/** Hujjat raqamini bo'laklardan tuzadi (TabelView o'z holatini bilmaydi,
+ *  shuning uchun quruq ma'lumotdan ham kod chiqara olishi kerak). */
+export function buildReference(input: {
+  view: HisobotView;
+  section: HisobotSection;
+  /** Tayyor davr bo'lagi: "2026-09" yoki "20260901-20260919". */
+  period: string;
+  /** Tartib raqamiga ta'sir qiladigan tanlov bo'laklari. */
+  parts?: readonly (string | null | undefined)[];
+  org?: string;
+}): string {
+  const org = (input.org ?? DOCUMENT_ORG_CODE).toUpperCase();
+  const serial = referenceSerial(input.parts ?? []);
+  return `${org}/${DOCUMENT_VIEW_CODE[input.view]}/${input.period}/${DOCUMENT_SECTION_CODE[input.section]}-${serial}`;
+}
+
+/** Joriy holat uchun hujjat raqami — sahifa shuni ishlatadi. */
+export function documentReference(state: HisobotState, org: string = DOCUMENT_ORG_CODE): string {
+  const parts =
+    state.view === 'tabel'
+      ? [state.faculty, state.course, state.group, state.unitKind, state.unit, state.q.trim()]
+      : [state.criterion, state.faculty, state.course, state.group, state.unitKind, state.unit, state.q.trim()];
+  return buildReference({
+    view: state.view,
+    section: state.section,
+    period: referencePeriod(state.view, state),
+    parts,
+    org,
+  });
+}

@@ -265,6 +265,107 @@
 }
 
 /* ------------------------------------------------------------------
+ * Operatsiya markazi uslubi (src/ui/intel.tsx).
+ *
+ * Hisobotlar va kamera devori uchun: qat'iy to'rt burchak, ingichka
+ * chiziq, monoshrift raqamlar, burchak qisqichlari. Mavzu yorug'
+ * qoladi — ekrandagi hujjat qog'ozdagi bilan bir xil ko'rinsin.
+ * ------------------------------------------------------------------ */
+:root {
+  --font-intel: ui-monospace, "Cascadia Mono", "Segoe UI Mono", "SF Mono", Consolas,
+    "Liberation Mono", "Roboto Mono", monospace;
+}
+
+.intel-micro {
+  font-family: var(--font-intel);
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: rgb(var(--c-muted));
+  white-space: nowrap;
+}
+
+/* Tor ustun sarlavhasi ikki qatorga tushsin (tabeldagi "Ma'lumot yo'q"
+   kabi uzun yorliqlar qirqilib qolmasin). */
+.intel-micro-wrap {
+  white-space: normal;
+  /* So'z ichidan emas, faqat bo'shliqdan bo'linadi: "KELMADI" ikkiga
+     bo'linib "KELM/ADI" bo'lib qolmasin. */
+  overflow-wrap: normal;
+  word-break: keep-all;
+  letter-spacing: 0.04em;
+}
+
+.intel-code {
+  font-family: var(--font-intel);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.intel-panel {
+  position: relative;
+  background: rgb(var(--c-surface));
+  border: 1px solid rgb(var(--c-border));
+  border-radius: 2px;
+}
+
+/* Burchak qisqichlari — panel chegarasini "nishon" kabi belgilaydi. */
+.intel-brackets::before,
+.intel-brackets::after {
+  content: "";
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  pointer-events: none;
+  border-color: rgb(var(--c-border-strong));
+}
+
+.intel-brackets::before {
+  top: -1px;
+  left: -1px;
+  border-top: 2px solid;
+  border-left: 2px solid;
+}
+
+.intel-brackets::after {
+  right: -1px;
+  bottom: -1px;
+  border-right: 2px solid;
+  border-bottom: 2px solid;
+}
+
+.intel-doc-head {
+  background: rgb(var(--c-surface));
+  border: 1px solid rgb(var(--c-border));
+  border-radius: 2px;
+}
+
+/* Jonli manbani bildiruvchi sekin urish. */
+@keyframes intel-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+.intel-pulse {
+  animation: intel-pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intel-pulse {
+    animation: none;
+  }
+}
+
+/* Ekran to'ri — kamera kataklari ostidagi zaif o'lchov to'ri. */
+.intel-grid {
+  background-image:
+    linear-gradient(to right, rgb(var(--c-border) / 0.55) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(var(--c-border) / 0.55) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* ------------------------------------------------------------------
  * Chop etish (Ctrl+P). Hisobot sahifasi qog'ozda hujjatga aylanadi:
  * yon menyu, yuqori panel, filtrlar va tugmalar chiqmaydi; jadval
  * sarlavhasi har betda takrorlanadi; A4 eniga sig'adi.
@@ -549,5 +650,123 @@
 
   .tabel-sign-hint {
     font-size: 7.5pt;
+  }
+}
+
+/* ------------------------------------------------------------------
+ * Hisobot hujjati — rasmiy jurnal ko'rinishi.
+ *
+ * Faqat QO'SHIMCHA qoidalar: yuqoridagi hech biri o'zgarmaydi.
+ * Maqsad — ekrandagi tabel qog'ozdagi daftar kabi o'qilsin: har
+ * katakda ingichka to'r, har 5-kun va har 5-odamdan keyin qalinroq
+ * chiziq (ko'z 31 ta ustunda adashmaydi), dam olish kunlari tekis
+ * kulrang emas, zaif qiya shtrix bilan, bugungi kun ingichka urg'u
+ * chizig'i bilan belgilanadi.
+ * ------------------------------------------------------------------ */
+
+/* Ish varag'ining to'ri. */
+table[data-tabel] th,
+table[data-tabel] td {
+  border-right: 1px solid rgb(var(--c-border) / 0.75);
+}
+
+/* Har 5-kun ustunidan keyin — qalinroq chiziq. */
+table[data-tabel] [data-major] {
+  border-right: 2px solid rgb(var(--c-border-strong));
+}
+
+/* Har 5-odamdan keyin — qalinroq ko'ndalang chiziq. */
+table[data-tabel] tr[data-major-row] > * {
+  border-bottom: 2px solid rgb(var(--c-border-strong));
+}
+
+/* Yopishgan chap uchta ustunning o'ng chegarasi — kunlardan ajratadi. */
+table[data-tabel] [data-sticky-edge] {
+  border-right: 2px solid rgb(var(--c-border-strong));
+}
+
+/* Dam olish kunlari: tekis kulrang o'rniga zaif qiya shtrix. */
+.intel-hatch,
+table[data-tabel] td[data-rest],
+table[data-tabel] th[data-rest] {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgb(var(--c-border-strong) / 0.6) 0 1px,
+    transparent 1px 5px
+  );
+}
+
+/* Bugungi ustun — ingichka urg'u chizig'i (fon emas). */
+table[data-tabel] [data-today] {
+  box-shadow: inset 2px 0 0 rgb(var(--c-primary) / 0.85), inset -2px 0 0 rgb(var(--c-primary) / 0.85);
+}
+
+/* Shartli belgilar kaliti: har belgi o'z ramkasida. */
+.intel-key-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  border: 1px solid rgb(var(--c-border-strong));
+  border-radius: 2px;
+  padding: 0 0.25rem;
+  font-family: var(--font-intel);
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.5rem;
+  color: rgb(var(--c-fg));
+}
+
+/* ------------------------------------------------------------------
+ * Chop etish — yuqoridagi qoidalarning qog'ozdagi ko'rinishi.
+ * ---------------------------------------------------------------- */
+@media print {
+  /* Burchak qisqichlari qog'ozda keraksiz bezak. */
+  .intel-brackets::before,
+  .intel-brackets::after {
+    display: none !important;
+  }
+
+  .intel-panel,
+  .intel-doc-head {
+    border: 0 !important;
+  }
+
+  /* Hujjat raqami qog'ozda ham ko'rinadi — varaqni ekrandagi
+     ko'rinish bilan solishtirish uchun yagona bog'lovchi. */
+  .tabel-print-ref {
+    font-size: 8.5pt;
+    margin-top: 1mm;
+  }
+
+  /* Bir odamning qatori ikki betga bo'linmasin. */
+  table[data-tabel] tbody tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Qalin chiziqlar qog'ozda ham qoladi (umumiy 0.2mm to'rdan qalinroq). */
+  table[data-tabel] [data-major] {
+    border-right: 0.5mm solid #555 !important;
+  }
+
+  table[data-tabel] tr[data-major-row] > * {
+    border-bottom: 0.45mm solid #555 !important;
+  }
+
+  table[data-tabel] [data-sticky-edge] {
+    border-right: 0.5mm solid #555 !important;
+  }
+
+  /* Kalit va imzo bloki bo'linmasin. */
+  .intel-key {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .intel-key-mark {
+    border: 0.2mm solid #111 !important;
+    min-width: 5mm;
+    line-height: 4.5mm;
   }
 }

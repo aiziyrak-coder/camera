@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation, useSearchParams } from 'react-rou
 import AppShell from './layouts/AppShell';
 import MinimalLayout from './layouts/MinimalLayout';
 import { RequireAuth, RequirePermission, RequireRole } from './layouts/guards';
+import PreviewPage from './pages/dev/PreviewPage';
 import { legacyRedirect } from './layouts/legacyRoutes';
 import { ALL_NAV_ITEMS, homeForRole } from './layouts/shell/navConfig';
 import LoginPage from './pages/admin/LoginPage';
@@ -109,6 +110,9 @@ export default function App() {
             <Route path="/parolni-tiklash" element={<ResetPasswordPage />} />
           </Route>
           {/* Ro'yxatdan o'tish ATAYLAB ochiq: hali hisobi yo'q odam o'z yuzini yuboradi. */}
+          {/* Dizayn ko'rigi — faqat ishlab chiqish rejimida (`npm run dev`).
+              Ishlab chiqarish yig'masiga tushmaydi. */}
+          {import.meta.env.DEV && <Route path="/dev-korik" element={<PreviewPage />} />}
           <Route element={<PublicPage />}>
             <Route path="/royxatdan-otish" element={<EnrollmentPage />} />
           </Route>

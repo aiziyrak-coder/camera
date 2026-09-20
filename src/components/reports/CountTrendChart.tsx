@@ -37,7 +37,7 @@ export default function CountTrendChart({ points, label, height = 240 }: CountTr
             }}
             formatter={(value) => [value as number, label]}
           />
-          <Bar dataKey="value" fill={theme.warning} radius={[4, 4, 0, 0]} maxBarSize={28} />
+          <Bar dataKey="value" fill={theme.warning} radius={0} maxBarSize={24} />
         </BarChart>
       </ResponsiveContainer>
     </div>

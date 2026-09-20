@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from 'react';
-import { Loader2, Maximize2, Minimize2, Plus, VideoOff, X } from 'lucide-react';
-import { StatusDot, cn } from '../../ui';
+import { Loader2, Maximize2, Minimize2, Plus, X } from 'lucide-react';
+import { CodeText, MicroLabel, StatusLamp, cn, type IntelStatus } from '../../ui';
 import LiveVideoPlayer from '../LiveVideoPlayer';
 import CameraThumbnail from './CameraThumbnail';
 import PtzControls from '../ptz/PtzControls';
 import { usePtzAvailability } from '../ptz/usePtzAvailability';
+import { UNKNOWN_CAMERA_CODE, cameraPlaceCode } from './cameraCode';
+import { formatWallTime, useWallClock } from './wallClock';
 import type { TilePlayback } from '../../lib/videoWall';
 import type { CameraFeed } from '../../types';
 
@@ -29,10 +31,32 @@ function useInView<T extends Element>() {
   return [ref, inView] as const;
 }
 
+/** Burchak qisqichlari — katakni "nishon" kabi belgilaydi. Video ustida
+ * oq, bo'sh/oflayn katakda esa qog'oz ranglari ishlatiladi. */
+function TileBrackets({ tone }: { tone: 'video' | 'paper' }) {
+  const color = tone === 'video' ? 'border-white/55' : 'border-border-strong';
+  const base = 'pointer-events-none absolute h-2.5 w-2.5';
+  return (
+    <span aria-hidden="true">
+      <span className={cn(base, 'left-0 top-0 border-l-2 border-t-2', color)} />
+      <span className={cn(base, 'right-0 top-0 border-r-2 border-t-2', color)} />
+      <span className={cn(base, 'bottom-0 left-0 border-b-2 border-l-2', color)} />
+      <span className={cn(base, 'bottom-0 right-0 border-b-2 border-r-2', color)} />
+    </span>
+  );
+}
+
+/** Katakdagi jonli vaqt tamg'asi — butun devor uchun bitta taymerdan. */
+function TileTime() {
+  const now = useWallClock();
+  return <CodeText className="shrink-0 text-[10px] text-white/75">{formatWallTime(now)}</CodeText>;
+}
+
 export default function WallTile({
   index,
   cameraId,
   camera,
+  code = UNKNOWN_CAMERA_CODE,
   playback,
   style,
   startDelayMs,
@@ -52,6 +76,8 @@ export default function WallTile({
   cameraId: string | null;
   /** null — katak bo'sh YOKI kamera ro'yxatda topilmadi (o'chirilgan). */
   camera: CameraFeed | null;
+  /** Kameraning xizmat kodi (`CAM-084`) — `buildCameraCodes` dan. */
+  code?: string;
   playback: TilePlayback;
   style: CSSProperties;
   startDelayMs: number;
@@ -100,6 +126,22 @@ export default function WallTile({
   const isLive = camera?.status === 'live';
   const noVideo = isLive && camera?.hasVideo === false;
   const showLive = playback === 'live' && inView && Boolean(camera?.streamUrl);
+  /** Oqim ROSTDAN o'ynayapti — "JONLI" yorlig'i faqat shu holatda. */
+  const streaming = showLive && isLive && !noVideo;
+  const place = cameraPlaceCode(camera);
+
+  // Holat chirog'i: bitta matn — takrorlanmasin (ekranda sanaladi).
+  const lamp: { status: IntelStatus; label: string; pulse: boolean } = streaming
+    ? { status: 'alert', label: 'JONLI', pulse: true }
+    : playback === 'snapshot'
+      ? { status: 'warn', label: 'KADR', pulse: false }
+      : playback === 'offline'
+        ? { status: 'idle', label: noVideo ? 'TASVIRSIZ' : 'OFLAYN', pulse: false }
+        : { status: 'warn', label: 'ULANMOQDA', pulse: false };
+
+  /** Video ustidagi matn oq bo'lishi kerak — `intel-micro` ning odatdagi
+   * kulrangi qorong'i kadrda o'qilmaydi. */
+  const overVideo = '[&>.intel-micro]:!text-white/85';
 
   return (
     <div
@@ -119,22 +161,23 @@ export default function WallTile({
       onClick={() => onSelect(index)}
       onDoubleClick={() => cameraId && onToggleMaximize(index)}
       className={cn(
-        'group relative min-h-0 min-w-0 overflow-hidden bg-neutral-900 outline-none',
+        'group relative min-h-0 min-w-0 overflow-hidden rounded-[2px] bg-surface-2 outline-none',
         selected && !maximized && 'ring-2 ring-inset ring-primary',
         dragOver && 'ring-2 ring-inset ring-success',
       )}
     >
       {!cameraId && (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-1 border border-dashed border-white/10 text-white/25">
-          <Plus size={compact ? 14 : 20} aria-hidden="true" />
-          {!compact && <span className="px-2 text-center text-[10px] font-medium">Kamerani shu yerga torting</span>}
+        <div className="intel-grid flex h-full w-full flex-col items-center justify-center gap-1 border border-dashed border-border text-subtle">
+          <Plus size={compact ? 14 : 18} aria-hidden="true" />
+          {!compact && <MicroLabel className="px-2 text-center">Kamerani shu yerga torting</MicroLabel>}
         </div>
       )}
 
       {cameraId && !camera && (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-white/40">
-          {pending ? <Loader2 size={18} className="animate-spin" /> : <VideoOff size={18} />}
-          <span className="text-[10px] font-medium">{pending ? 'Yuklanmoqda...' : 'Kamera topilmadi'}</span>
+        <div className="intel-grid flex h-full w-full flex-col items-center justify-center gap-1.5 text-muted">
+          {pending && <Loader2 size={16} aria-hidden="true" className="animate-spin" />}
+          <MicroLabel>{pending ? 'Yuklanmoqda' : "Ro'yxatda yo'q"}</MicroLabel>
+          <CodeText className="text-[11px] text-subtle">{code}</CodeText>
         </div>
       )}
 
@@ -153,33 +196,85 @@ export default function WallTile({
       )}
 
       {camera && playback === 'offline' && (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-neutral-900 text-white/40">
-          <VideoOff size={compact ? 16 : 24} />
-          <span className="text-[10px] font-bold tracking-wide">{noVideo ? 'TASVIRSIZ' : 'OFLAYN'}</span>
+        <div className="intel-grid flex h-full w-full flex-col items-center justify-center gap-1.5 text-muted">
+          <MicroLabel>{noVideo ? "Tasvir yo'q" : "Signal yo'q"}</MicroLabel>
+          <CodeText className="text-[11px] text-subtle">{code}</CodeText>
         </div>
       )}
 
       {camera && (
         <>
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center gap-1.5 bg-gradient-to-b from-black/70 to-transparent px-2 py-1">
-            <StatusDot tone={isLive && !noVideo ? 'success' : noVideo ? 'warning' : 'neutral'} className="scale-75" />
-            <span className={`truncate font-semibold text-white ${compact ? 'text-[10px]' : 'text-xs'}`}>{camera.name}</span>
-            {playback === 'snapshot' && (
-              <span className="ml-auto shrink-0 rounded bg-black/50 px-1 text-[9px] font-medium text-white/60" title="Jonli oqimlar chegarasiga yetildi — kadr har 10 soniyada yangilanadi">
-                KADR
+          <div
+            className={cn(
+              'pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center gap-2 px-2 py-1',
+              playback === 'offline' ? 'border-b border-border' : 'bg-gradient-to-b from-black/70 to-transparent',
+            )}
+          >
+            <CodeText
+              className={cn(
+                'shrink-0 font-semibold',
+                compact ? 'text-[9px]' : 'text-[10px]',
+                playback === 'offline' ? 'text-muted' : 'text-white/90',
+              )}
+            >
+              {code}
+            </CodeText>
+            {place && (
+              <CodeText
+                className={cn(
+                  'shrink-0 text-[9px]',
+                  playback === 'offline' ? 'text-subtle' : 'text-white/60',
+                )}
+              >
+                {place}
+              </CodeText>
+            )}
+            {!compact && (
+              <span
+                className={cn(
+                  'truncate text-[11px] font-semibold tracking-tight',
+                  playback === 'offline' ? 'text-fg' : 'text-white',
+                )}
+              >
+                {camera.name}
               </span>
             )}
+            <StatusLamp
+              status={lamp.status}
+              label={lamp.label}
+              pulse={lamp.pulse}
+              className={cn('ms-auto shrink-0', playback !== 'offline' && overVideo)}
+            />
           </div>
+
           {!compact && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 truncate bg-gradient-to-t from-black/60 to-transparent px-2 py-1 text-[10px] text-white/70">
-              {[camera.building, camera.floor != null ? `${camera.floor}-qavat` : null, camera.zone].filter(Boolean).join(' · ')}
+            <div
+              className={cn(
+                'pointer-events-none absolute inset-x-0 bottom-0 z-10 flex items-center gap-2 px-2 py-1',
+                playback === 'offline' ? 'border-t border-border' : 'bg-gradient-to-t from-black/70 to-transparent',
+              )}
+            >
+              <MicroLabel className={cn('truncate', playback !== 'offline' && '!text-white/75')}>
+                {[camera.building, camera.floor != null ? `${camera.floor}-qavat` : null, camera.zone]
+                  .filter(Boolean)
+                  .join(' · ') || 'Joy belgilanmagan'}
+              </MicroLabel>
+              <span className="ms-auto">
+                {playback === 'offline' ? (
+                  <CodeText className="shrink-0 text-[10px] text-subtle">{code}</CodeText>
+                ) : (
+                  <TileTime />
+                )}
+              </span>
             </div>
           )}
         </>
       )}
 
+      <TileBrackets tone={camera && playback !== 'offline' ? 'video' : 'paper'} />
+
       {cameraId && (
-        <div className="absolute right-1 top-1 z-20 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+        <div className="absolute right-1 top-6 z-20 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
           <button
             type="button"
             onClick={(event) => {
@@ -188,7 +283,7 @@ export default function WallTile({
             }}
             aria-label={maximized ? 'Kichraytirish' : 'Kattalashtirish'}
             title={maximized ? 'Kichraytirish (Esc)' : "Kattalashtirish (ikki marta bosish)"}
-            className="rounded-md bg-black/60 p-1 text-white hover:bg-black/80"
+            className="rounded-[2px] border border-white/20 bg-black/60 p-1 text-white hover:bg-black/80"
           >
             {maximized ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
           </button>
@@ -201,12 +296,16 @@ export default function WallTile({
               }}
               aria-label="Katakdan olib tashlash"
               title="Katakdan olib tashlash"
-              className="rounded-md bg-black/60 p-1 text-white hover:bg-danger"
+              className="rounded-[2px] border border-white/20 bg-black/60 p-1 text-white hover:bg-danger"
             >
               <X size={13} />
             </button>
           )}
         </div>
+      )}
+
+      {selected && !maximized && (
+        <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 z-20 w-0.5 bg-primary" />
       )}
 
       {maximized && camera && ptzAvailable && (

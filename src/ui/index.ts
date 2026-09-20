@@ -90,3 +90,15 @@ export { Sparkline } from './Sparkline';
 export type { SparklineProps } from './Sparkline';
 
 export { topDialogPanel } from './internal/useDialog';
+
+// Operatsiya markazi uslubi — hisobot va kamera ekranlari uchun.
+export {
+  MicroLabel,
+  CodeText,
+  Readout,
+  StatusLamp,
+  IntelPanel,
+  DocumentHeader,
+  DocumentFooter,
+} from './intel';
+export type { IntelStatus } from './intel';

@@ -30,7 +30,7 @@ export default function LayoutPicker({
     <div
       role="radiogroup"
       aria-label="Setka"
-      className={cn('inline-flex max-w-full gap-0.5 overflow-x-auto rounded-control border border-border bg-surface-2 p-0.5 no-scrollbar', className)}
+      className={cn('inline-flex max-w-full gap-0.5 overflow-x-auto rounded-[2px] border border-border bg-surface-2 p-0.5 no-scrollbar', className)}
     >
       {WALL_LAYOUTS.map((layout, index) => {
         const active = value === layout;
@@ -48,9 +48,9 @@ export default function LayoutPicker({
             onKeyDown={(event) => onKeyDown(event, index)}
             title={`${LAYOUT_LABELS[layout]} katak (${index + 1})`}
             className={cn(
-              'h-8 min-w-[2.25rem] shrink-0 rounded-[6px] px-2 text-[13px] font-semibold tabular-nums transition-colors',
+              'intel-code h-8 min-w-[2.25rem] shrink-0 rounded-[2px] px-2 text-[12px] font-semibold transition-colors',
               focusRing,
-              active ? 'bg-surface text-fg shadow-sm' : 'text-muted hover:text-fg',
+              active ? 'border border-border-strong bg-surface text-fg' : 'text-muted hover:text-fg',
             )}
           >
             {LAYOUT_LABELS[layout]}

@@ -228,6 +228,21 @@ describe('Oylik tabel — chop etish elementlari', () => {
     expect(container.querySelector('.tabel-print')).toBeTruthy();
   });
 
+  it("hujjat raqami qog'ozga ham tushadi", () => {
+    const { container } = renderSheet();
+    // Sahifa kod bermasa ham varaq o'zi tuzadi.
+    const auto = container.querySelector('.tabel-print-ref')?.textContent ?? '';
+    expect(auto).toMatch(/FERMI\/TBL\/2026-09\/TLB-\d{4}/);
+    expect(auto).toContain('Tuzildi:');
+  });
+
+  it('sahifa bergan hujjat raqami ishlatiladi', () => {
+    const { container } = render(
+      <TabelView data={report()} section="talabalar" reference="FERMI/TBL/2026-09/TLB-0042" />,
+    );
+    expect(container.querySelector('.tabel-print-ref')?.textContent).toContain('FERMI/TBL/2026-09/TLB-0042');
+  });
+
   it('server legend bermasa ham belgilar tushuntiriladi', () => {
     const { container } = renderSheet({ legend: [] });
     const legend = container.querySelector('.tabel-legend');
