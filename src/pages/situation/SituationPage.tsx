@@ -451,7 +451,7 @@ export default function SituationPage() {
             />
             {lessonTiles}
             {isToday ? (
-              {camerasTile}
+              camerasTile
             ) : (
               <KpiTile
                 label="Yuz topshirgan talabalar"
@@ -530,7 +530,7 @@ export default function SituationPage() {
             )}
             {lessonTiles}
             {isToday ? (
-              {camerasTile}
+              camerasTile
             ) : (
               <KpiTile
                 label="Xodimlar keldi"
