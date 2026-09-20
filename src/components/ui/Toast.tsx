@@ -11,10 +11,12 @@ interface ToastItem {
 
 const ToastContext = createContext<(kind: ToastKind, message: string) => void>(() => {});
 
+// Ranglar CSS tokenlaridan — qorong'i mavzuda ham o'qiladi
+// (ilgari qat'iy emerald-50/red-50 edi: qorong'i fonda oq quti ko'rinardi).
 const STYLE: Record<ToastKind, { box: string; icon: typeof Info }> = {
-  success: { box: 'border-emerald-200 bg-emerald-50 text-emerald-900', icon: CheckCircle2 },
-  error: { box: 'border-red-200 bg-red-50 text-red-900', icon: AlertTriangle },
-  info: { box: 'border-indigo-200 bg-indigo-50 text-indigo-900', icon: Info },
+  success: { box: 'border-success bg-success-soft text-success', icon: CheckCircle2 },
+  error: { box: 'border-danger bg-danger-soft text-danger', icon: AlertTriangle },
+  info: { box: 'border-info bg-info-soft text-info', icon: Info },
 };
 
 /** Qisqa xabarlar ("Saqlandi", "Xatolik") — konsolga yozish o'rniga

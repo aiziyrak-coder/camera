@@ -1,8 +1,7 @@
 import { useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
-import { CalendarClock, ChevronRight, FileUp } from 'lucide-react';
+import { CalendarClock } from 'lucide-react';
 import type { Lesson } from '../../lib/situationApi';
-import { Badge, buttonClasses, Card, CardHeader, EmptyState, ErrorState, ProgressBar, Skeleton, cn, focusRing, formatNumber, type Tone } from '../../ui';
+import { Badge, Card, CardHeader, EmptyState, ErrorState, ProgressBar, Skeleton, cn, formatNumber, type Tone } from '../../ui';
 import { lessonSlots, type LessonSlot } from './situationUtils';
 
 interface Props {
@@ -10,7 +9,6 @@ interface Props {
   loading: boolean;
   error: string | null;
   onRetry: () => void;
-  link: string | null;
   isToday: boolean;
   big?: boolean;
 }
@@ -22,7 +20,7 @@ const STATE: Record<LessonSlot['state'], { label: string; tone: Tone }> = {
 };
 
 /** "Bugungi darslar": juftliklar bo'yicha qisqa vaqt chizig'i. */
-export function LessonsTimeline({ lessons, loading, error, onRetry, link, isToday, big }: Props) {
+export function LessonsTimeline({ lessons, loading, error, onRetry, isToday, big }: Props) {
   const slots = lessons ? lessonSlots(lessons) : [];
   const counts = { finished: 0, ongoing: 0, upcoming: 0 };
   for (const lesson of lessons ?? []) counts[lesson.state] += 1;
@@ -49,13 +47,6 @@ export function LessonsTimeline({ lessons, loading, error, onRetry, link, isToda
         title={isToday ? 'Bugungi darslar' : 'Shu kungi darslar'}
         subtitle={subtitle}
         icon={CalendarClock}
-        actions={
-          link ? (
-            <Link to={link} className={cn('inline-flex items-center gap-0.5 rounded-control text-[13px] font-medium text-primary hover:underline', focusRing)}>
-              Barcha darslar <ChevronRight size={14} aria-hidden="true" />
-            </Link>
-          ) : undefined
-        }
       />
       {loading ? (
         <div className="flex gap-3 overflow-hidden" aria-busy="true" aria-label="Yuklanmoqda">
@@ -77,14 +68,6 @@ export function LessonsTimeline({ lessons, loading, error, onRetry, link, isToda
               Dars jadvali hali yuklanmagan bo'lishi mumkin. Jadval kiritilgach, bu yerda juftliklar, o'qituvchilarning o'z vaqtida kelishi va
               guruhlar davomati ko'rinadi.
             </>
-          }
-          action={
-            link ? (
-              <Link to={link} className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
-                <FileUp size={15} aria-hidden="true" />
-                Darslar → Jadvalni import
-              </Link>
-            ) : undefined
           }
         />
       ) : (

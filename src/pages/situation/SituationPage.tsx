@@ -253,7 +253,6 @@ export default function SituationPage() {
 
   const studentsLink = canStudentsPages ? withDate('/talabalar') : undefined;
   const teachersLink = canStudentsPages ? withDate('/oqituvchilar') : undefined;
-  const lessonsLink: string | null = null;
 
   return (
     <Page title="Situatsion markaz" subtitle={subtitle} titleAddon={titleAddon} actions={big ? undefined : actions}>
@@ -371,7 +370,6 @@ export default function SituationPage() {
                     : "ta dars o'tgan"
                   : undefined
               }
-              to={lessonsLink ?? undefined}
               loading={loadingTiles}
               big={big}
             />
@@ -534,7 +532,6 @@ export default function SituationPage() {
                     : "ta dars o'tgan"
                   : undefined
               }
-              to={lessonsLink ?? undefined}
               loading={loadingTiles}
               big={big}
             />
@@ -643,7 +640,6 @@ export default function SituationPage() {
                 loading={lessons.loading && !lessons.data}
                 error={lessons.data ? null : lessons.error}
                 onRetry={lessons.reload}
-                link={lessonsLink}
                 isToday={isToday}
                 big={big}
               />
@@ -662,7 +658,6 @@ export default function SituationPage() {
                 groupLink={canStudentsPages ? (name) => withDate(situationPaths.group(name)) : null}
                 teacherLessons={lateTeachers}
                 teacherLink={canStudentsPages ? (lesson) => (lesson.teacherId ? withDate(situationPaths.person(lesson.teacherId)) : null) : null}
-                lessonsLink={lessonsLink}
                 big={big}
               />
               {isToday && (

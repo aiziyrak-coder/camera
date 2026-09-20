@@ -8,7 +8,8 @@ const LEGACY_MAP: Record<string, string> = {
   '/admin/students-staff': '/reestr',
   '/admin/attendance': '/talabalar',
   '/admin/presence': '/oqituvchilar',
-  '/admin/teaching': '/darslar',
+  // Darslar sahifasi olib tashlangan (2026-09-19) — situatsion markazga.
+  '/admin/teaching': '/',
   '/admin/org-structure': '/tuzilma',
   '/admin/cameras': '/sozlamalar/kameralar',
   '/admin/ai-modules': '/sozlamalar/ai',
@@ -16,7 +17,8 @@ const LEGACY_MAP: Record<string, string> = {
   '/admin/users-roles': '/sozlamalar/foydalanuvchilar',
   '/admin/system-log': '/sozlamalar/tizim?tab=jurnal',
   '/admin/video-wall': '/videodevor',
-  '/admin/floor-plans': '/xarita',
+  // Qavat rejalari olib tashlangan (2026-09-19) — videodevorga.
+  '/admin/floor-plans': '/videodevor',
   '/admin/notifications': '/sozlamalar/bildirishnomalar',
   '/admin/integrations': '/sozlamalar/integratsiyalar',
   '/admin/privacy': '/sozlamalar/maxfiylik',

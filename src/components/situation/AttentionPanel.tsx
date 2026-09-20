@@ -21,7 +21,6 @@ export interface AttentionPanelProps {
   groupLink: ((name: string) => string) | null;
   teacherLessons: readonly Lesson[];
   teacherLink: ((lesson: Lesson) => string | null) | null;
-  lessonsLink: string | null;
   big?: boolean;
 }
 
@@ -51,7 +50,7 @@ function GroupTitle({ children }: { children: ReactNode }) {
 
 /** "Diqqat talab": muhim ochiq hodisalar, muddati o'tganlar, ishlamayotgan
  *  kameralar, davomati eng past guruhlar va darsga kechikkan o'qituvchilar. */
-export function AttentionPanel({ loading, events, cameras, groups, groupLink, teacherLessons, teacherLink, lessonsLink, big }: AttentionPanelProps) {
+export function AttentionPanel({ loading, events, cameras, groups, groupLink, teacherLessons, teacherLink, big }: AttentionPanelProps) {
   const hasEvents = events && (events.highOpen > 0 || events.overdue > 0);
   const hasCameras = cameras && cameras.offline > 0;
   const issues = (hasEvents ? 1 : 0) + (hasCameras ? 1 : 0) + groups.length + teacherLessons.length;
@@ -187,7 +186,7 @@ export function AttentionPanel({ loading, events, cameras, groups, groupLink, te
                   const missed = lesson.teacherStatus === 'kelmadi';
                   return (
                     <li key={lesson.id}>
-                      <RowLink to={teacherLink ? teacherLink(lesson) : lessonsLink}>
+                      <RowLink to={teacherLink ? teacherLink(lesson) : null}>
                         <Avatar name={lesson.teacher || "O'qituvchi"} src={lesson.teacherPhotoUrl} size="sm" status={missed ? 'danger' : 'warning'} className="mx-0.5" />
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium text-fg">{lesson.teacher || "O'qituvchi ko'rsatilmagan"}</p>
