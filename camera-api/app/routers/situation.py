@@ -639,7 +639,12 @@ async def person_profile(
             )
         )
 
-    _period_start, period_end = svc.day_bounds(end)
+    # Tashriflar HAM tanlangan davrga tegishli bo'lishi kerak: sahifada ular
+    # "tanlangan davrda qayerda ko'ringan" deb ko'rsatiladi. Ilgari faqat
+    # yuqori chegara qo'yilardi va o'tgan oy tanlanganda ham eski (davrdan
+    # oldingi) tashriflar chiqib, kalendar bilan zid ko'rinardi.
+    period_start, _ = svc.day_bounds(start)
+    _, period_end = svc.day_bounds(end)
     visits = (
         await db.execute(
             select(PresenceVisit.id, PresenceVisit.first_seen_at, PresenceVisit.last_seen_at, PresenceVisit.sightings,
@@ -647,6 +652,7 @@ async def person_profile(
             .outerjoin(Camera, Camera.id == PresenceVisit.camera_id)
             .outerjoin(Building, Building.id == Camera.building_id)
             .where(PresenceVisit.student_staff_id == pid)
+            .where(PresenceVisit.first_seen_at >= period_start)
             .where(PresenceVisit.first_seen_at < period_end)
             .order_by(PresenceVisit.first_seen_at.desc())
             .limit(20)

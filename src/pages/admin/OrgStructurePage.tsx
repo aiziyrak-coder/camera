@@ -27,6 +27,70 @@ const DELETE_META: Record<DeleteTarget['kind'], { noun: string; path: string }> 
   department: { noun: 'kafedra', path: '/api/departments' },
 };
 
+/**
+ * O'chirish tasdig'ida AYNAN nima yo'qolishi va nima saqlanib qolishi
+ * yoziladi. Ilgari hamma tur uchun bitta matn turardi ("butunlay
+ * o'chiriladi") — holbuki backendda oqibatlar juda har xil:
+ * fakultet o'chirilsa uning GURUHLARI ham CASCADE bilan ketadi
+ * (app/models/org.py: student_groups.faculty_id ondelete="CASCADE"),
+ * bino o'chirilsa qavat rasmlari (floor_plans) ketadi, kameralar esa
+ * qolib binosiz bo'ladi. Admin buni tasdiqlashdan oldin bilishi shart.
+ */
+export function deleteConsequences(target: DeleteTarget, groupsInFaculty: number): { lost: string[]; kept: string[] } {
+  const { kind, item } = target;
+  if (kind === 'building') {
+    const building = item as Building;
+    return {
+      lost: ['Binoning qavat rasmlari (qavat sxemalari)'],
+      kept: [
+        building.cameraCount > 0
+          ? `${formatNumber(building.cameraCount)} ta kamera — o'chmaydi, lekin binosiz qoladi va binolar bo'yicha filtrda ko'rinmaydi`
+          : "Kameralar (bu binoda biriktirilgani yo'q)",
+        "Bu binodagi kafedralar — o'chmaydi, binosi bo'sh qoladi",
+        "Turniket qurilmalari — o'chmaydi, binosi bo'sh qoladi",
+      ],
+    };
+  }
+  if (kind === 'faculty') {
+    const faculty = item as Faculty;
+    return {
+      lost: [
+        groupsInFaculty > 0
+          ? `${formatNumber(groupsInFaculty)} ta guruh — fakultet bilan birga o'chadi`
+          : "Fakultetga biriktirilgan guruhlar (hozircha yo'q)",
+      ],
+      kept: [
+        faculty.studentCount > 0
+          ? `${formatNumber(faculty.studentCount)} ta talaba — reestrda qoladi, lekin fakultetsiz bo'ladi`
+          : 'Talabalar reestri',
+        'Davomat tarixi',
+      ],
+    };
+  }
+  if (kind === 'group') {
+    const group = item as StudentGroup;
+    return {
+      lost: ["Guruh ro'yxatdan chiqadi (guruh kesimidagi davomat sahifasi ochilmaydi)"],
+      kept: [
+        group.studentCount > 0
+          ? `${formatNumber(group.studentCount)} ta talaba — reestrda qoladi`
+          : 'Talabalar reestri',
+        'Davomat tarixi',
+      ],
+    };
+  }
+  const department = item as Department;
+  return {
+    lost: ['Kafedra bo’yicha filtr'],
+    kept: [
+      department.cameraCount > 0
+        ? `${formatNumber(department.cameraCount)} ta kamera — o'chmaydi, kafedrasiz qoladi`
+        : "Kameralar (bu kafedrada biriktirilgani yo'q)",
+      'Xodimlar reestri',
+    ],
+  };
+}
+
 const ADD_LABEL: Record<TabId, string> = {
   binolar: "Korpus qo'shish",
   fakultetlar: "Fakultet qo'shish",
@@ -478,11 +542,33 @@ export default function OrgStructurePage() {
         open={!!deleteTarget}
         title={deleteTarget ? `${capitalize(DELETE_META[deleteTarget.kind].noun)}ni o'chirasizmi?` : ''}
         message={
-          deleteTarget && (
-            <>
-              <span className="font-medium text-fg">«{deleteTarget.item.name}»</span> butunlay o&apos;chiriladi. Bu amalni qaytarib bo&apos;lmaydi.
-            </>
-          )
+          deleteTarget &&
+          (() => {
+            const { lost, kept } = deleteConsequences(
+              deleteTarget,
+              deleteTarget.kind === 'faculty' ? groups.filter((g) => g.faculty === deleteTarget.item.name).length : 0,
+            );
+            return (
+              <div className="flex flex-col gap-2">
+                <p>
+                  <span className="font-medium text-fg">«{deleteTarget.item.name}»</span> butunlay o&apos;chiriladi. Bu amalni
+                  qaytarib bo&apos;lmaydi.
+                </p>
+                <p className="font-medium text-danger">Birga o&apos;chadi:</p>
+                <ul className="list-disc space-y-0.5 pl-5">
+                  {lost.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+                <p className="font-medium text-fg">Saqlanib qoladi:</p>
+                <ul className="list-disc space-y-0.5 pl-5">
+                  {kept.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })()
         }
         confirmLabel="O'chirish"
         onCancel={() => setDeleteTarget(null)}

@@ -1,18 +1,19 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { Navigate, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth } from '../lib/auth';
+import { Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { useAuth, type Role } from '../lib/auth';
 import { usePermissions } from '../lib/permissions';
 import { useLiveEvents } from '../lib/realtime';
 import { usePersistedState } from '../lib/usePersistedState';
 import { VIEW_DATE_PARAM } from '../lib/viewDate';
-import { PageSkeleton, cn } from '../ui';
+import { ButtonLink, EmptyState, PageSkeleton, cn } from '../ui';
 import { ShellContext, type Crumb, type PageMeta } from '../ui/pageContext';
-import { findActive, homeForRole, isPathAllowedForRole, usesViewDate, visibleSections } from './shell/navConfig';
+import { ROLE_LABEL, findActive, homeForRole, isPathAllowedForRole, usesViewDate, visibleSections } from './shell/navConfig';
 import { CommandPalette } from './shell/CommandPalette';
 import { useCommandPaletteHotkey } from './shell/useCommandPaletteHotkey';
 import { Sidebar } from './shell/Sidebar';
 import { Topbar } from './shell/Topbar';
 import { usePresentation } from './shell/usePresentation';
+import { ShieldAlert } from 'lucide-react';
 
 /** Tizimga kirgandan keyingi YAGONA maket: chapda menyu, tepada panel
  *  (non-yo'l, sana, soat, holat, hodisalar, mavzu, taqdimot, foydalanuvchi),
@@ -37,13 +38,21 @@ export default function AppShell() {
   // holati o'zgargani, yangi hodisa emas.
   const canReviewEvents = can('reviewEvents', role);
   const [unreadEvents, setUnreadEvents] = useState(0);
-  useLiveEvents((event) => {
+  const liveStatus = useLiveEvents((event) => {
     if (event.kind !== 'event_updated') setUnreadEvents((n) => n + 1);
   }, canReviewEvents);
 
   useEffect(() => {
     setMobileNavOpen(false);
     setSearchOpen(false);
+  }, [location.pathname]);
+
+  // Hodisalar sahifasiga QANDAY kelinganidan qat'i nazar hisoblagich
+  // tozalanadi. Ilgari u faqat qo'ng'iroq tugmasi bosilganda tozalanardi:
+  // menyudan (yoki xatcho'pdan) kirilsa, ro'yxat allaqachon ko'z oldida
+  // turgan bo'lsa ham qizil "12" osilib qolaverardi.
+  useEffect(() => {
+    if (location.pathname === '/hodisalar') setUnreadEvents(0);
   }, [location.pathname]);
   useEffect(() => {
     if (!mobileNavOpen) return;
@@ -78,10 +87,13 @@ export default function AppShell() {
   }, [meta, location.pathname]);
 
   // Cheklangan rol (kamera mas'uli) ruxsat etilmagan manzilga tushsa
-  // (eski havola, brauzer tarixi) — o'z bosh sahifasiga qaytariladi.
-  if (!isPathAllowedForRole(role, location.pathname)) {
-    return <Navigate to={homeForRole(role)} replace />;
-  }
+  // (URL'ni qo'lda yozdi, eski havola, brauzer tarixi) — SABABI AYTILADI.
+  //
+  // Ilgari bu yerda jimgina `<Navigate>` bor edi: foydalanuvchi bosgan
+  // havolasi hech qanday izohsiz boshqa sahifaga "sakrab" ketardi va u
+  // buni sahifa buzilgan deb tushunardi. Endi menyu va panel joyida
+  // qoladi, o'rtada esa tushunarli xabar va bosh sahifaga tugma.
+  const pathBlocked = !isPathAllowedForRole(role, location.pathname);
 
   const rawDate = params.get(VIEW_DATE_PARAM);
   const linkSuffix = rawDate ? `?${VIEW_DATE_PARAM}=${encodeURIComponent(rawDate)}` : '';
@@ -123,14 +135,24 @@ export default function AppShell() {
             onLogout={handleLogout}
             onOpenSearch={() => setSearchOpen(true)}
             wallScreen={can('viewReports', role) || can('manageAttendance', role)}
+            live={liveStatus}
           />
-          <CommandPalette open={searchOpen} onClose={() => setSearchOpen(false)} sections={sections} can={canKey} />
+          <CommandPalette open={searchOpen} onClose={() => setSearchOpen(false)} sections={sections} can={canKey} role={role} />
           <main id="asosiy" tabIndex={-1} className={cn('flex min-w-0 flex-1 flex-col outline-none', presentation.active ? 'p-6' : 'px-4 py-5 sm:px-6 lg:px-8 lg:py-7')}>
             <div className={cn('mx-auto flex w-full min-w-0 flex-1 flex-col', !presentation.active && 'max-w-[1600px]')}>
-              {/* Sahifa bo'lagi yuklanayotganda menyu va panel joyida qoladi. */}
-              <Suspense fallback={<PageSkeleton />}>
-                <Outlet />
-              </Suspense>
+              {pathBlocked ? (
+                <EmptyState
+                  icon={ShieldAlert}
+                  title="Bu sahifa sizning rolingiz uchun ochiq emas"
+                  description={`${ROLE_LABEL[role as Role] ?? 'Rolingiz'} faqat o'ziga tegishli bo'limlar bilan ishlaydi. Kerakli bo'lim chap menyuda; boshqasiga kirish kerak bo'lsa, Super Admin'ga murojaat qiling.`}
+                  action={<ButtonLink variant="primary" to={homeForRole(role)}>Ishchi sahifaga qaytish</ButtonLink>}
+                />
+              ) : (
+                /* Sahifa bo'lagi yuklanayotganda menyu va panel joyida qoladi. */
+                <Suspense fallback={<PageSkeleton />}>
+                  <Outlet />
+                </Suspense>
+              )}
             </div>
           </main>
         </div>

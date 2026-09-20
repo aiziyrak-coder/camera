@@ -1,8 +1,8 @@
 import { Link } from 'react-router-dom';
 import { BookOpen, Building2 } from 'lucide-react';
 import { Badge, ProgressBar, ProgressRing, TONE_TEXT, cn, focusRing } from '../../ui';
-import { UNIT_KIND_LABELS, type KafedraStat } from '../../lib/situationApi';
-import { kafedraSegments } from '../../lib/teachersApi';
+import { type KafedraStat } from '../../lib/situationApi';
+import { kafedraSegments, unitKindLabel } from '../../lib/teachersApi';
 import { DeltaBadge } from '../analytics';
 
 function Stat({ label, value, tone }: { label: string; value: number; tone: 'success' | 'warning' | 'danger' }) {
@@ -38,10 +38,12 @@ export function KafedraCard({ kafedra: k, to, trend, trendHint }: KafedraCardPro
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="mb-1 flex flex-wrap items-center gap-1.5">
-            <Badge tone={k.kind === 'kafedra' ? 'primary' : k.kind === 'dekanat' ? 'info' : 'neutral'}>{UNIT_KIND_LABELS[k.kind] ?? k.kind}</Badge>
+            <Badge tone={k.unassigned ? 'warning' : k.kind === 'kafedra' ? 'primary' : k.kind === 'dekanat' ? 'info' : 'neutral'}>{unitKindLabel(k)}</Badge>
             <DeltaBadge value={trend} unit="pp" title={trendHint} />
           </div>
-          <h3 className={cn('line-clamp-2 text-[15px] font-semibold leading-snug text-fg group-hover:text-primary', k.unassigned && 'text-muted')}>{k.name}</h3>
+          <h3 className={cn('line-clamp-2 text-[15px] font-semibold leading-snug text-fg group-hover:text-primary', k.unassigned && 'text-muted')} title={k.name}>
+            {k.name}
+          </h3>
           <p className="mt-1 flex items-center gap-1 truncate text-xs text-muted">
             <Building2 size={12} aria-hidden="true" className="shrink-0" />
             <span className="truncate">

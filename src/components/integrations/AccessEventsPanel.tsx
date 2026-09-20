@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
-import { ArrowDownLeft, ArrowUpRight } from 'lucide-react';
-import { Badge, DataTable, FilterBar, Input, cn, focusRing, type DataTableColumn, type FilterFieldEntry } from '../../ui';
+import { ArrowDownLeft, ArrowUpRight, Plus } from 'lucide-react';
+import { Badge, Button, DataTable, FilterBar, Input, cn, focusRing, type DataTableColumn, type FilterFieldEntry } from '../../ui';
 import { pagerFooter } from '../settings/kit';
 import { useServerPage } from '../../lib/useServerPage';
 import { formatDateTime, peopleSearchLink, type AccessDevice, type AccessEventItem } from '../../lib/integrationsApi';
@@ -164,7 +164,16 @@ const COLUMNS: DataTableColumn<AccessEventItem>[] = [
 ];
 
 /** Turniket o'tishlari jurnali (server sahifalash). Filtrlar — `AccessEventsToolbar`. */
-export default function AccessEventsPanel({ filters }: { filters: AccessEventFilters }) {
+export default function AccessEventsPanel({
+  filters,
+  deviceCount = null,
+  onAddDevice,
+}: {
+  filters: AccessEventFilters;
+  /** Qo'shilgan turniket qurilmalari soni; null — hali noma'lum. */
+  deviceCount?: number | null;
+  onAddDevice?: () => void;
+}) {
   const { items, page, setPage, totalPages, total, pageSize, loading, error, reload } = useServerPage<AccessEventItem>(
     '/api/access/events',
     {
@@ -178,6 +187,9 @@ export default function AccessEventsPanel({ filters }: { filters: AccessEventFil
     25,
   );
   const filtered = Object.values(filters).some((v) => v.trim() !== '');
+  // Qurilma qo'shilmagan bo'lsa jurnal bo'sh bo'lishi TABIIY — "Hodisa
+  // topilmadi, qurilma ulanganini tekshiring" emas, aniq sabab aytiladi.
+  const noDevices = deviceCount === 0 && !filtered;
 
   return (
     <DataTable
@@ -188,8 +200,21 @@ export default function AccessEventsPanel({ filters }: { filters: AccessEventFil
       loading={loading && items.length === 0}
       error={error}
       onRetry={reload}
-      emptyTitle="Hodisa topilmadi"
-      emptyDescription={filtered ? "Filtrlarni o'zgartiring yoki tozalang." : "Qurilma ulanganini tekshiring — o'tishlar shu yerda ko'rinadi."}
+      emptyTitle={noDevices ? "Turniket qurilmasi qo'shilmagan" : 'Hodisa topilmadi'}
+      emptyDescription={
+        noDevices
+          ? "Jurnal turniketlardan to'ladi. Avval «Turniketlar» bo'limida qurilma qo'shing va uni sinab ko'ring."
+          : filtered
+            ? "Filtrlarni o'zgartiring yoki tozalang."
+            : "Qurilma ulanganini tekshiring — o'tishlar shu yerda ko'rinadi."
+      }
+      emptyAction={
+        noDevices && onAddDevice ? (
+          <Button variant="primary" icon={Plus} onClick={onAddDevice}>
+            Qurilma qo&apos;shish
+          </Button>
+        ) : undefined
+      }
       mobileTitleKey="person"
       ariaLabel="Kirish hodisalari jurnali"
       maxHeight="none"

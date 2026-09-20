@@ -14,7 +14,8 @@ interface Item {
  *  yashiriladi), "Ma'lumot yo'q" — faqat bor bo'lsa. */
 function countItems(counts: Counts, options: { showZeroNotYet?: boolean } = {}): Item[] {
   const items: Item[] = [
-    { key: 'keldi', label: 'Keldi', short: 'keldi', value: counts.present - counts.late, tone: 'success' },
+    // Math.max — countSegments bilan bir xil: buzuq ma'lumotda "-1 keldi" chiqmasin.
+    { key: 'keldi', label: 'Keldi', short: 'keldi', value: Math.max(0, counts.present - counts.late), tone: 'success' },
     { key: 'kech', label: 'Kech keldi', short: 'kech', value: counts.late, tone: 'warning' },
     { key: 'kelmadi', label: 'Kelmadi', short: 'kelmadi', value: counts.absent, tone: 'danger' },
   ];

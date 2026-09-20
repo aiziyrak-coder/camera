@@ -16,7 +16,7 @@ from app.dependencies import CurrentUser, get_current_user
 from app.email import send_password_reset_email
 from app.models import AuditLog, PasswordResetToken, RevokedToken, User
 from app.rate_limit import limiter
-from app.schemas.auth import ForgotPasswordIn, LoginRequest, LoginResponse, ResetPasswordIn
+from app.schemas.auth import ForgotPasswordIn, LoginRequest, LoginResponse, ResetPasswordIn, SessionResponse
 from app.security import create_access_token, hash_password, verify_password
 from app.services.security_checks import forget_default_password_check
 
@@ -84,6 +84,24 @@ async def login(
 
     token = create_access_token(str(user.id), user.role, user.token_version)
     return LoginResponse(token=token, role=user.role, user_name=user.full_name)
+
+
+@router.get("/me", response_model=SessionResponse)
+async def me(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> SessionResponse:
+    """Sessiyaning hozirgi haqiqati: rol va ism BAZADAN.
+
+    get_current_user allaqachon tokenni, blocklistni va token_version'ni
+    tekshiradi — ya'ni chiqib ketgan, paroli almashtirilgan yoki o'chirilgan
+    hisob bu yerda 401 oladi. Mijoz shu javob bilan localStorage'dagi
+    (kirish paytida muzlatilgan) rolni yangilaydi: lavozimi o'zgargan odam
+    JWT muddati tugashini kutmasdan to'g'ri menyuni ko'radi."""
+    user = await db.get(User, current_user.id)
+    if user is None:  # pragma: no cover — get_current_user allaqachon tekshirgan
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessiya tugatilgan — qayta kiring")
+    return SessionResponse(role=user.role, user_name=user.full_name)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

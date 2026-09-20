@@ -187,6 +187,15 @@ export function normalizeText(value: string): string {
     .trim();
 }
 
+/** Plitkadagi son bilan bir xil bo'lishi uchun: "Ma'lumot yo'q" plitkasi
+ *  `noData + dayOff` ni ko'rsatadi, demak filtri ham ikkalasini oladi
+ *  (aks holda "Ma'lumot yo'q: 5" bosilganda setkada 3 ta talaba chiqardi). */
+export function matchesFilter(status: AttendanceStatus, filter: StudentFilter): boolean {
+  if (filter === 'all') return true;
+  if (filter === 'malumot_yoq') return status === 'malumot_yoq' || status === 'dam_olish';
+  return status === filter;
+}
+
 export function filterStudents<T extends Pick<GroupStudent, 'fullName' | 'status'>>(
   students: readonly T[],
   filter: StudentFilter,
@@ -194,7 +203,7 @@ export function filterStudents<T extends Pick<GroupStudent, 'fullName' | 'status
 ): T[] {
   const needle = normalizeText(query);
   return students.filter(
-    (s) => (filter === 'all' || s.status === filter) && (!needle || normalizeText(s.fullName).includes(needle)),
+    (s) => matchesFilter(s.status, filter) && (!needle || normalizeText(s.fullName).includes(needle)),
   );
 }
 

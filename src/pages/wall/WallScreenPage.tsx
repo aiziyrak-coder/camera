@@ -7,7 +7,7 @@ import { RankingPanel } from '../../components/wall/RankingPanel';
 import { SecurityPanel } from '../../components/wall/SecurityPanel';
 import { SpotlightPanel } from '../../components/wall/SpotlightPanel';
 import { TodayPanel } from '../../components/wall/TodayPanel';
-import { WallHeader } from '../../components/wall/WallHeader';
+import { tashkentClock, WallHeader } from '../../components/wall/WallHeader';
 import { WallSettings } from '../../components/wall/WallSettings';
 import { api, buildQuery, isAbortError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
@@ -42,6 +42,7 @@ const RELOAD_MS = 6 * 60 * 60_000;
 const BURN_STEP_MS = 2 * 60_000;
 const FRESH_MS = 8_000;
 const DETAIL_TTL_MS = 60_000;
+const SPOT_CACHE_MAX = 12;
 
 const WALL_CSS = `
 @keyframes wall-arrive { 0% { transform: translateY(-0.8em) scale(.97); opacity: 0 } 60% { opacity: 1 } 100% { transform: none; opacity: 1 } }
@@ -56,11 +57,14 @@ const WALL_CSS = `
 .wall-alert { animation: wall-arrive .7s both, wall-alert 1.6s ease-in-out 3 }
 `;
 
+/** Vaqtni institut (Toshkent) mintaqasida ko'rsatadi — ekran turgan
+ *  kompyuterning mintaqasi noto'g'ri sozlangan bo'lsa ham to'g'ri. */
 function hhmm(value: string | null | undefined): string {
-  if (!value) return new Date().toTimeString().slice(0, 5);
+  const clock = (d: Date) => `${tashkentClock(d).hh}:${tashkentClock(d).mm}`;
+  if (!value) return clock(new Date());
   if (/^\d{2}:\d{2}/.test(value)) return value.slice(0, 5);
   const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? value.slice(0, 5) : d.toTimeString().slice(0, 5);
+  return Number.isNaN(d.getTime()) ? value.slice(0, 5) : clock(d);
 }
 
 function initialsOf(name: string): string {
@@ -89,17 +93,36 @@ function liveToArrival(m: LiveAttendanceMessage): LastArrival {
 
 function useFresh() {
   const [ids, setIds] = useState<ReadonlySet<string>>(() => new Set());
+  // Ekran kunlab ochiq turadi: taymerlar ro'yxati yopilganda tozalanadi.
+  const timers = useRef<number[]>([]);
+  useEffect(() => () => timers.current.forEach((t) => window.clearTimeout(t)), []);
   const mark = useCallback((id: string) => {
     setIds((prev) => new Set(prev).add(id));
-    window.setTimeout(() => {
-      setIds((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-    }, FRESH_MS);
+    timers.current.push(
+      window.setTimeout(() => {
+        setIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+        timers.current = timers.current.slice(-50);
+      }, FRESH_MS),
+    );
   }, []);
-  return [ids, mark] as const;
+  const clear = useCallback(() => setIds(new Set()), []);
+  return [ids, mark, clear] as const;
+}
+
+/** Kadrlar keshi faqat ekranda turgan hodisalar uchun saqlanadi: ekran
+ *  kunlab ochiq turganda kesh cheksiz o'smasin. */
+export function pruneSnapshots(
+  map: Record<string, string | null>,
+  keepIds: string,
+): Record<string, string | null> {
+  const keep = new Set(keepIds.split(',').filter(Boolean));
+  const out: Record<string, string | null> = {};
+  for (const id of Object.keys(map)) if (keep.has(id)) out[id] = map[id];
+  return out;
 }
 
 function useAspect() {
@@ -170,24 +193,42 @@ export default function WallScreenPage() {
   const wallDate = wall?.date;
   useEffect(() => {
     if (!allowed || !wallDate || !config.panels.includes('D')) return;
-    const load = () =>
-      getChronic(shiftIsoDate(wallDate, 13), wallDate)
+    let ctrl: AbortController | null = null;
+    const load = () => {
+      ctrl?.abort();
+      ctrl = new AbortController();
+      getChronic(shiftIsoDate(wallDate, 13), wallDate, { signal: ctrl.signal })
         .then((rows) => setChronic(rows.length))
         .catch(() => {
           /* ko'rsatilmaydi — "—" */
         });
-    void load();
+    };
+    load();
     const t = window.setInterval(load, CHRONIC_MS);
-    return () => window.clearInterval(t);
+    return () => {
+      window.clearInterval(t);
+      ctrl?.abort();
+    };
   }, [allowed, wallDate, config.panels]);
 
   // ── Jonli kelishlar va hodisalar
   const [liveArrivals, setLiveArrivals] = useState<LastArrival[]>([]);
   const [liveEvents, setLiveEvents] = useState<WallHighEvent[]>([]);
-  const [freshArrivals, markArrival] = useFresh();
+  const [freshArrivals, markArrival, clearFreshArrivals] = useFresh();
   const [freshEvents, markEvent] = useFresh();
 
+  // Yarim tundan keyin server yangi kunni beradi — kechagi jonli
+  // kelishlar ekranda "bugungi" bo'lib qolmasin (ekran kunlab ochiq).
+  useEffect(() => {
+    if (!wallDate) return;
+    setLiveArrivals([]);
+    setLiveEvents([]);
+    clearFreshArrivals();
+  }, [wallDate, clearFreshArrivals]);
+
   useLiveAttendance((m) => {
+    // Boshqa kunning xabari (yarim tun atrofida) ekranga tushmaydi.
+    if (wallDate && m.date && m.date !== wallDate) return;
     const a = liveToArrival(m);
     setLiveArrivals((prev) => mergeArrival(prev, a, 12));
     markArrival(a.id);
@@ -232,11 +273,13 @@ export default function WallScreenPage() {
         const next: Record<string, string | null> = {};
         for (const id of missing) next[id] = null;
         for (const ev of page.items) next[ev.id] = ev.snapshotUrl ?? null;
-        setSnapshots((prev) => ({ ...prev, ...next }));
+        setSnapshots((prev) => pruneSnapshots({ ...prev, ...next }, highIds));
       })
       .catch((err) => {
         if (isAbortError(err)) return;
-        setSnapshots((prev) => ({ ...prev, ...Object.fromEntries(missing.map((id) => [id, null])) }));
+        setSnapshots((prev) =>
+          pruneSnapshots({ ...prev, ...Object.fromEntries(missing.map((id) => [id, null])) }, highIds),
+        );
       });
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- snapshots faqat keshni tekshirish uchun
@@ -289,7 +332,13 @@ export default function WallScreenPage() {
       }
       getSpotlightDetail(item, { signal: ctrl.signal })
         .then((d) => {
-          cacheRef.current.set(key, { detail: d, at: Date.now() });
+          const cache = cacheRef.current;
+          cache.set(key, { detail: d, at: Date.now() });
+          // Ekran kunlab ochiq: eskirganlari va ortiqchasi tashlanadi
+          // (yuzlar ro'yxati — xotirada eng og'ir qism).
+          const now = Date.now();
+          for (const [k, v] of cache) if (now - v.at > DETAIL_TTL_MS) cache.delete(k);
+          while (cache.size > SPOT_CACHE_MAX) cache.delete(cache.keys().next().value as string);
           if (show) setDetail(d);
         })
         .catch(() => {
@@ -312,6 +361,15 @@ export default function WallScreenPage() {
   // ── Kamera paneli mavjudligi
   const [camsAvailable, setCamsAvailable] = useState(true);
   const onCams = useCallback((has: boolean) => setCamsAvailable(has), []);
+  // Sozlamalarda o'chirilgan kamera ekran sozlamasida (`?cameras=`)
+  // qolib ketmasin. Tozalash faqat ishonchli ro'yxat bilan bo'ladi —
+  // CamerasPanel xato yoki bo'sh javobda buni umuman chaqirmaydi.
+  const onPruneCams = useCallback(
+    (ids: string[]) => {
+      setSearchParams(new URLSearchParams(buildWallQuery({ ...config, cameras: ids })), { replace: true });
+    },
+    [config, setSearchParams],
+  );
   const effectivePanels = config.panels.filter((p) => p !== 'F' || camsAvailable);
 
   // ── Joylashuv
@@ -335,14 +393,20 @@ export default function WallScreenPage() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+      const typing = Boolean(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA'));
+      // Escape maydon ichida turganda ham oynani yopadi — aks holda
+      // sozlamadan chiqishning yagona yo'li sichqoncha bo'lib qolardi.
+      if (e.key === 'Escape') {
+        setSettingsOpen(false);
+        return;
+      }
+      if (typing) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === 's' || e.key === 'S') setSettingsOpen((o) => !o);
       if (e.key === 'f' || e.key === 'F') {
         if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
         else void document.documentElement.requestFullscreen?.().catch(() => undefined);
       }
-      if (e.key === 'Escape') setSettingsOpen(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -409,10 +473,13 @@ export default function WallScreenPage() {
                 events={highEvents}
                 camerasOnline={wall.camerasOnline}
                 camerasTotal={wall.camerasTotal}
+                highOpen={wall.highOpen}
                 freshIds={freshEvents}
               />
             )}
-            {config.panels.includes('F') && <CamerasPanel ids={config.cameras} onAvailability={onCams} />}
+            {config.panels.includes('F') && (
+              <CamerasPanel ids={config.cameras} onAvailability={onCams} onPrune={onPruneCams} />
+            )}
           </main>
         )}
       </div>

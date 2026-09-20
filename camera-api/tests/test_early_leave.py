@@ -31,8 +31,11 @@ def _record(day: date, check_in: str | None, check_out: str | None, status: str 
 
 
 class TestIsEarlyLeave:
+    """`sightings` — o'sha kuni odam necha marta ko'rilgani. Usiz (yoki bitta
+    ko'rinish bilan) javob "aniqlanmadi", ya'ni erta ketish emas."""
+
     def test_past_day_with_final_exit_before_cutoff(self):
-        assert _is_early_leave(_record(PAST_DAY, "08:00", "14:30"), time(14, 30)) is True
+        assert _is_early_leave(_record(PAST_DAY, "08:00", "14:30"), time(14, 30), sightings=6) is True
 
     def test_today_is_not_judged_before_the_cutoff(self):
         today = date(2026, 9, 17)
@@ -42,18 +45,23 @@ class TestIsEarlyLeave:
     def test_today_is_judged_once_the_cutoff_has_passed(self):
         today = date(2026, 9, 17)
         now = datetime(2026, 9, 17, 18, 5, tzinfo=INSTITUTE_TZ)
-        assert _is_early_leave(_record(today, "10:23", "15:02"), time(15, 2), now=now) is True
+        assert _is_early_leave(_record(today, "10:23", "15:02"), time(15, 2), sightings=4, now=now) is True
 
     def test_seen_elsewhere_after_the_exit_is_not_early_leave(self):
         """Tushlikka chiqish: eshik 12:00 ni yozdi, xona kamerasi 15:30 da ko'rdi."""
-        assert _is_early_leave(_record(PAST_DAY, "08:00", "12:00"), time(15, 30)) is False
+        assert _is_early_leave(_record(PAST_DAY, "08:00", "12:00"), time(15, 30), sightings=6) is False
 
     def test_a_hallway_glimpse_right_after_the_exit_still_counts_as_leaving(self):
-        assert _is_early_leave(_record(PAST_DAY, "08:00", "12:00"), time(12, 1)) is True
+        assert _is_early_leave(_record(PAST_DAY, "08:00", "12:00"), time(12, 1), sightings=6) is True
 
     def test_unknown_arrival_is_never_early_leave(self):
         """Kelish vaqti noma'lum (birinchi ko'rinish xonada, cutoff dan keyin)."""
-        assert _is_early_leave(_record(PAST_DAY, None, "14:30"), time(14, 30)) is False
+        assert _is_early_leave(_record(PAST_DAY, None, "14:30"), time(14, 30), sightings=6) is False
+
+    def test_a_single_sighting_is_not_evidence_of_leaving(self):
+        """Kamera odamni bir marta ko'rdi, keyin yo'qotdi — bu "erta ketdi" emas."""
+        assert _is_early_leave(_record(PAST_DAY, "08:00", "14:30"), time(14, 30), sightings=1) is False
+        assert _is_early_leave(_record(PAST_DAY, "08:00", "14:30"), time(14, 30)) is False
 
 
 @pytest.fixture

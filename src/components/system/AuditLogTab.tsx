@@ -84,6 +84,16 @@ export function AuditLogTab({ canExport }: { canExport: boolean }) {
         pages = res.totalPages;
         current += 1;
       } while (current <= pages);
+      // Bo'sh fayl yuklab berish — "ishladi" degan taassurot qoldirib,
+      // amalda hech nima bermaydi. Sababi aytiladi.
+      if (all.length === 0) {
+        toast.info(
+          activeCount > 0
+            ? "Tanlangan filtrlarga mos yozuv yo'q — eksport qilinmadi"
+            : "Jurnalda hali yozuv yo'q — eksport qilinmadi",
+        );
+        return;
+      }
       exportRowsAsCsv(
         ['Vaqt', 'Foydalanuvchi', 'Amal', 'Modul', 'Holat', 'IP manzil'],
         all.map((l) => [l.timestamp, l.user, l.action, l.module, STATUS[l.status]?.label ?? l.status, l.ip]),

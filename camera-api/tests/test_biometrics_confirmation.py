@@ -15,7 +15,7 @@ from sqlalchemy import select
 from app.models import Faculty, StudentStaff
 from app.routers import enrollment, students_staff
 from app.timezone import uz_datetime_parts
-from tests.conftest import auth_headers
+from tests.conftest import ENROLL_CODE, auth_headers
 
 PINFL = "30000000000099"
 CONFIRMED_UTC = datetime(2026, 9, 14, 8, 57, 54, tzinfo=timezone.utc)  # Toshkentda 13:57:54
@@ -77,7 +77,7 @@ class TestConfirmationIsRecorded:
         before = datetime.now(timezone.utc)
         resp = await client.post(
             f"/api/public/enrollment/{person.id}/submit",
-            data={"pinfl": PINFL, "consent": "true"},
+            data={"code": ENROLL_CODE, "pinfl": PINFL, "consent": "true"},
             files=[("photos", (f"{n}.jpg", b"frame", "image/jpeg")) for n in ("front", "left", "right")],
         )
         assert resp.status_code == 200, resp.text

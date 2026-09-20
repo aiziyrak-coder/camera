@@ -4,6 +4,7 @@ from app.models.attendance import AttendanceRecord
 from app.models.attendance_policy import AttendancePolicy
 from app.models.audit_log import AuditLog
 from app.models.camera import Camera
+from app.models.enrollment_code import EnrollmentCode
 from app.models.event import Event
 from app.models.face_gallery import FaceGalleryEmbedding
 from app.models.lesson_attendance import LessonAttendance
@@ -39,6 +40,7 @@ __all__ = [
     "StudentStaff",
     "AuditLog",
     "Camera",
+    "EnrollmentCode",
     "Event",
     "FaceGalleryEmbedding",
     "AIModuleConfig",

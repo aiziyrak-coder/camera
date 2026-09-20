@@ -136,6 +136,9 @@ export default function CameraZoneModal({
             {hasStream ? (
               <LiveVideoPlayer
                 streamUrl={camera.streamUrl}
+                /* Zona chizish uchun tasvir DARHOL kerak — umumiy HLS
+                   navbatida kutib turmaydi (streamLoadQueue izohiga qarang). */
+                priority
                 zoneEditing
                 zonePoints={points}
                 onZonePointAdd={(p) => setPoints((prev) => [...prev, p])}

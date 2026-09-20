@@ -443,12 +443,15 @@ export default function PersonPage() {
                   </div>
                 </>
               ) : (
+              // Foiz = kelgan / (kelgan + kelmagan); izoh ham AYNAN shu ikki
+              // sondan yoziladi. Ilgari u butun davrdagi kunlar sonini (dam
+              // olish kunlari bilan) "ish kuni" deb ko'rsatardi.
               <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
                 <StatTile
                   label="Kelgan kunlari ulushi"
                   value={formatPercent(data.totals.rate, 1)}
                   progress={data.totals.rate}
-                  hint={`Tanlangan davrdagi ${data.totals.days} ish kunidan`}
+                  hint={`Yozuv bor ${data.totals.present + data.totals.absent} kundan ${data.totals.present} tasida kelgan`}
                 />
                 <StatTile label="O'z vaqtida kelgan" value={`${data.totals.present - data.totals.late} kun`} icon={CheckCircle2} tone="success" hint={`Soat ${lateLabel} gacha`} />
                 <StatTile label="Kech kelgan" value={`${data.totals.late} kun`} icon={Clock} tone="warning" hint={`Soat ${lateLabel} dan keyin`} />

@@ -5,12 +5,13 @@ import { Building2, Cctv, Clock, CornerDownLeft, GraduationCap, Loader2, Search,
 import { api, buildQuery, isAbortError, type Page as ApiPage } from '../../lib/apiClient';
 import type { PermissionKey } from '../../lib/permissions';
 import { getGroups, getKafedras, situationPaths, UNIT_KIND_LABELS, type KafedraStat } from '../../lib/situationApi';
-import { highlight, loadRecent, matchText, pushRecent, rankItems, type MatchRange, type RecentItem } from '../../lib/search';
+import { highlight, loadRecent, matchText, pushRecent, rankItems, visibleRecent, type MatchRange, type RecentItem } from '../../lib/search';
 import { useDebouncedValue } from '../../lib/useDebouncedValue';
 import type { StudentStaffRecord } from '../../types';
 import { cn } from '../../ui';
 import { useDialog } from '../../ui/internal/useDialog';
-import type { NavSection } from './navConfig';
+import type { Role } from '../../lib/auth';
+import { isPathAllowedForRole, type NavSection } from './navConfig';
 
 type Kind = 'page' | 'group' | 'unit' | 'person' | 'camera' | 'recent';
 
@@ -89,16 +90,18 @@ export interface CommandPaletteProps {
   /** Menyu bo'limlari (huquq bo'yicha filtrlangan). */
   sections: NavSection[];
   can: (key: PermissionKey) => boolean;
+  /** Cheklangan rol uchun so'nggi tanlovlarni ham filtrlash kerak. */
+  role?: Role | null;
 }
 
 /** Global qidiruv (Ctrl/⌘+K): sahifalar, guruhlar, bo'linmalar, shaxslar,
  *  kameralar va so'nggi tanlovlar — klaviatura bilan boshqariladi. */
-export function CommandPalette({ open, onClose, sections, can }: CommandPaletteProps) {
+export function CommandPalette({ open, onClose, sections, can, role }: CommandPaletteProps) {
   if (!open) return null;
-  return createPortal(<PaletteDialog onClose={onClose} sections={sections} can={can} />, document.body);
+  return createPortal(<PaletteDialog onClose={onClose} sections={sections} can={can} role={role} />, document.body);
 }
 
-function PaletteDialog({ onClose, sections, can }: Omit<CommandPaletteProps, 'open'>) {
+function PaletteDialog({ onClose, sections, can, role }: Omit<CommandPaletteProps, 'open'>) {
   const navigate = useNavigate();
   const panelRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -108,7 +111,7 @@ function PaletteDialog({ onClose, sections, can }: Omit<CommandPaletteProps, 'op
 
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
-  const [recent, setRecent] = useState<RecentItem[]>(() => loadRecent());
+  const [recentRaw, setRecent] = useState<RecentItem[]>(() => loadRecent());
   const debounced = useDebouncedValue(query.trim(), 200);
   const remoteQ = debounced.length >= 2 ? debounced : '';
 
@@ -124,6 +127,20 @@ function PaletteDialog({ onClose, sections, can }: Omit<CommandPaletteProps, 'op
   );
   const camerasRes = useRemote(canCameras && remoteQ ? `c:${remoteQ}` : null, (signal) =>
     api.get<ApiPage<PublicCamera>>(`/api/public/cameras${buildQuery({ search: remoteQ, pageSize: 5 })}`, undefined, { signal }),
+  );
+
+  // So'nggi tanlovlar brauzerda saqlanadi — huquq va rol o'zgarganini
+  // bilmaydi. Ochib bo'lmaydigan yozuv ko'rsatilmaydi (izohi search.ts).
+  const allowedPages = useMemo(() => new Set(sections.flatMap((section) => section.items.map((item) => item.to))), [sections]);
+  const recent = useMemo(
+    () =>
+      visibleRecent(recentRaw, {
+        allowedPages,
+        allowKind: (kind) =>
+          kind === 'group' || kind === 'unit' ? canDavomat : kind === 'person' ? canPeople || canDavomat : kind === 'camera' ? canCameras : false,
+        allowPath: (to) => isPathAllowedForRole(role, to),
+      }),
+    [recentRaw, allowedPages, canDavomat, canPeople, canCameras, role],
   );
 
   const pages = useMemo(

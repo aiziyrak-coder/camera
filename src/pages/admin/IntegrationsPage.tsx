@@ -19,15 +19,22 @@ const TABS: readonly TabItem<Tab>[] = [
 ];
 
 export default function IntegrationsPage() {
-  const [tab] = useUrlTab(TABS);
+  const [tab, setTab] = useUrlTab(TABS);
   const hemis = useHemisSync();
   const [addingDevice, setAddingDevice] = useState(false);
   const [devices, setDevices] = useState<AccessDevice[]>([]);
   const [eventFilters, setEventFilters] = useState<AccessEventFilters>({ search: '', deviceId: '', granted: '', matched: '', from: '', to: '' });
   const [unmatchedDays, setUnmatchedDays] = useState(7);
-  // Jurnal filtri uchun qurilmalar ro'yxati (Turniketlar tabi ochilmagan bo'lsa ham).
-  const deviceList = useApiResource<AccessDevice[]>(tab === 'jurnal' && devices.length === 0 ? '/api/access/devices' : null);
+  // Jurnal filtri va "qurilma umuman qo'shilganmi?" savoli uchun qurilmalar
+  // ro'yxati (Turniketlar tabi ochilmagan bo'lsa ham). Productionda bu
+  // jadval BO'SH — shu holatni "Hodisa topilmadi" / "Hammasi biriktirilgan"
+  // deb ko'rsatmaslik uchun ro'yxat boshqa tablarda ham kerak.
+  const needDevices = tab === 'jurnal' || tab === 'biriktirilmagan';
+  const deviceList = useApiResource<AccessDevice[]>(needDevices && devices.length === 0 ? '/api/access/devices' : null);
   const filterDevices = devices.length ? devices : (deviceList.data ?? []);
+  // null — hali bilmaymiz (yuklanmoqda yoki xato): bo'sh holat matni
+  // "qurilma yo'q" deb xato aytmasin.
+  const deviceCount: number | null = devices.length ? devices.length : deviceList.data ? deviceList.data.length : null;
 
   let actions = null;
   if (tab === 'hemis') actions = <HemisActions hemis={hemis} />;
@@ -54,8 +61,8 @@ export default function IntegrationsPage() {
     >
       {tab === 'hemis' && <HemisPanel hemis={hemis} />}
       {tab === 'turniket' && <DevicesPanel onDevicesChange={setDevices} adding={addingDevice} onAddingChange={setAddingDevice} />}
-      {tab === 'jurnal' && <AccessEventsPanel filters={eventFilters} />}
-      {tab === 'biriktirilmagan' && <UnmatchedPanel days={unmatchedDays} />}
+      {tab === 'jurnal' && <AccessEventsPanel filters={eventFilters} deviceCount={deviceCount} onAddDevice={() => setTab('turniket')} />}
+      {tab === 'biriktirilmagan' && <UnmatchedPanel days={unmatchedDays} deviceCount={deviceCount} onAddDevice={() => setTab('turniket')} />}
     </Page>
   );
 }

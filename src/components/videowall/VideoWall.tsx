@@ -43,6 +43,7 @@ import {
   parseViewsImport,
   placeCamera,
   planPlayback,
+  pruneTilesIfKnown,
   removeAt,
   resizeTiles,
   sanitizeWallState,
@@ -51,6 +52,7 @@ import {
   swapTiles,
   tourSequence,
   type WallCameraFilters,
+  type WallCameraRequest,
   type WallLayout,
   type WallState,
   type WallTiles,
@@ -109,13 +111,14 @@ function sameTiles(a: WallTiles, b: WallTiles): boolean {
 export default function VideoWall({
   standalone = false,
   initialSearch = '',
-  initialCameraId = null,
+  cameraRequest = null,
 }: {
   standalone?: boolean;
   /** Yon panelning boshlang'ich qidiruvi (eski `?q=` havolasi). */
   initialSearch?: string;
-  /** Ochilishda devorga qo'yiladigan kamera (eski `?kamera=` havolasi). */
-  initialCameraId?: string | null;
+  /** Devorga qo'yiladigan kamera (`?kamera=` havolasi). Havola qayta
+   *  bosilsa yangi `nonce` bilan keladi va kamera qayta qo'yiladi. */
+  cameraRequest?: WallCameraRequest | null;
 }) {
   const toast = useToast();
   const { presentation } = useShell();
@@ -123,7 +126,7 @@ export default function VideoWall({
   const viewParam = params.get('view');
   const standaloneHref = useHref(STANDALONE_PATH);
 
-  const { cameras, loading, error, reload } = useWallCameras();
+  const { cameras, loading, error, knownIds, reload, refreshStreams } = useWallCameras();
   const byId = useMemo(() => new Map(cameras.map((camera) => [camera.id, camera])), [cameras]);
 
   const [views, setViews] = useStoredViews();
@@ -166,6 +169,19 @@ export default function VideoWall({
   const dirty = Boolean(activeView) && (activeView!.layout !== wall.layout || !sameTiles(activeView!.tiles, tiles));
 
   const setWall = useCallback((layout: WallLayout, nextTiles: WallTiles) => setStoredState({ layout, tiles: nextTiles }), [setStoredState]);
+
+  // Sozlamalarda o'chirilgan (yoki ishdan chiqarilgan) kamera katakda
+  // "o'lik" bo'lib qolmasin — ro'yxat har yangilanganda tozalanadi.
+  // `knownIds` faqat xatosiz VA bo'sh bo'lmagan javobdan keladi, shuning
+  // uchun tarmoq uzilishi yoki bo'sh javob devorni bo'shatib yubormaydi.
+  useEffect(() => {
+    if (!knownIds) return;
+    setStoredState((prev) => {
+      const state = sanitizeWallState(prev);
+      const next = pruneTilesIfKnown(state.tiles, knownIds);
+      return next === state.tiles ? prev : { layout: state.layout, tiles: next };
+    });
+  }, [knownIds, setStoredState]);
 
   // Sahifa raqami filtr/setka o'zgarganda chegaradan chiqib ketmasin.
   useEffect(() => {
@@ -311,14 +327,21 @@ export default function VideoWall({
     editTiles(() => placed.tiles);
   }
 
-  // Eski "Bino va qavat bo'yicha" havolasi (?kamera=<id>) — o'sha kamera
-  // ro'yxat yuklangach bo'sh katakka qo'yiladi (bir marta).
-  const placedInitial = useRef(false);
+  // "Bino va qavat bo'yicha" havolasi (?kamera=<id>) — o'sha kamera
+  // kameralar ro'yxati yuklangach birinchi bo'sh katakka qo'yiladi.
+  //
+  // Har so'rov ko'pi bilan BIR marta bajariladi (`nonce` eslab qolinadi),
+  // lekin yangi havola — yangi `nonce` — qayta ishlaydi. Qo'lda yig'ilgan
+  // kataklar bilan urishmaydi: `addToFirstEmpty` faqat bo'sh katakni
+  // to'ldiradi va kamera allaqachon devorda bo'lsa hech narsa qilmaydi.
+  const placedNonce = useRef<number | null>(null);
   useEffect(() => {
-    if (placedInitial.current || !initialCameraId || !byId.has(initialCameraId)) return;
-    placedInitial.current = true;
-    editTiles((base) => addToFirstEmpty(base, initialCameraId)?.tiles ?? null);
-  }, [initialCameraId, byId, editTiles]);
+    if (!cameraRequest || placedNonce.current === cameraRequest.nonce) return;
+    // Ro'yxat hali kelmagan bo'lsa — belgilamaymiz, kelganda qayta uriniladi.
+    if (!byId.has(cameraRequest.id)) return;
+    placedNonce.current = cameraRequest.nonce;
+    editTiles((base) => addToFirstEmpty(base, cameraRequest.id)?.tiles ?? null);
+  }, [cameraRequest, byId, editTiles]);
 
   // ---------------------------------------------------------------- tour
   const tourViewIds = useMemo(() => tourSequence(views, tour.viewIds), [views, tour.viewIds]);
@@ -658,6 +681,7 @@ export default function VideoWall({
             onRemove={(index) => editTiles((base) => removeAt(base, index))}
             onDropCamera={(index, id) => editTiles((base) => placeCamera(base, index, id))}
             onDropTile={(from, to) => editTiles((base) => swapTiles(base, from, to))}
+            onStreamUnavailable={refreshStreams}
           />
         );
       })}

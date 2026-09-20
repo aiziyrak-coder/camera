@@ -1,15 +1,17 @@
 """Kelib-ketish qoidalari: ish vaqti, kechikish chegarasi, ish kunlari.
 
 GET — hamma davomat ko'ruvchi; PUT — manageAttendance. Saqlanganda oxirgi
-RECOMPUTE_DAYS kundagi kamera/turniket yozuvlarining holati (keldi /
-kech_keldi) yangi qoida bo'yicha qayta hisoblanadi — kelish vaqti o'zgarmaydi."""
+RECOMPUTE_DAYS kundagi yozuvlarning holati (keldi / kech_keldi) yangi qoida
+bo'yicha qayta hisoblanadi — kelish vaqti o'zgarmaydi. Qo'lda kiritilgan
+yozuvdan (source='qolda') boshqa hammasi qayta hisoblanadi, manbasi
+yozilmagan eski yozuvlar ham."""
 
 from datetime import timedelta, time as time_type
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_action
@@ -23,6 +25,7 @@ router = APIRouter(prefix="/api/attendance-policy", tags=["attendance"])
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 RECOMPUTE_DAYS = 60
+UPDATE_CHUNK_SIZE = 5000
 
 
 class PolicyIn(BaseModel):
@@ -91,7 +94,19 @@ async def put_policy(
             .where(AttendanceRecord.date >= since)
             .where(AttendanceRecord.check_in.is_not(None))
             .where(AttendanceRecord.status.in_(("keldi", "kech_keldi")))
-            .where(AttendanceRecord.source.in_(("kamera", "turniket")))
+            # Qo'lda tuzatilgan yozuv (source='qolda') tegilmaydi — operator
+            # qarori qoidadan ustun. QOLGANLARINING hammasi qayta hisoblanadi,
+            # shu jumladan manbasi NULL bo'lgan ESKI yozuvlar: ilgari bu yerda
+            # source IN ('kamera','turniket') turardi va productionda 1005 ta
+            # yozuvning manbasi NULL, faqat 5 tasi 'kamera' edi — ya'ni "Ish
+            # vaqti" sahifasi saqlanganda muvaffaqiyat deb aytardi-yu, amalda
+            # deyarli hech nimani qayta hisoblamasdi.
+            .where(
+                or_(
+                    AttendanceRecord.source.is_(None),
+                    AttendanceRecord.source != "qolda",
+                )
+            )
         )
     ).all()
     changed = {"keldi": [], "kech_keldi": []}
@@ -99,9 +114,17 @@ async def put_policy(
         new = policy.arrival_status(check_in, person_type, day)
         if new != old:
             changed[new].append(rec_id)
+    # Bo'laklab yangilanadi: 60 kun × 10 000 odam = 600 000 qator, hammasi
+    # bitta IN () ga sig'maydi — Postgres bitta so'rovda 32 767 dan ortiq
+    # parametr qabul qilmaydi va qoidani saqlash butunlay xato bilan
+    # tugardi (app/jobs/absence_marker.py:INSERT_CHUNK_SIZE da xuddi shu
+    # dars yozilgan).
     for new_status, ids in changed.items():
-        if ids:
-            await db.execute(update(AttendanceRecord).where(AttendanceRecord.id.in_(ids)).values(status=new_status))
+        for start in range(0, len(ids), UPDATE_CHUNK_SIZE):
+            chunk = ids[start : start + UPDATE_CHUNK_SIZE]
+            await db.execute(
+                update(AttendanceRecord).where(AttendanceRecord.id.in_(chunk)).values(status=new_status)
+            )
     recomputed = sum(len(v) for v in changed.values())
     await log_action(
         db, request, current_user.id,

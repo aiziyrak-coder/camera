@@ -30,6 +30,7 @@ from app.services.sleep_detection import (
     NOSE_TIP_INDEX,
     RIGHT_EYE_OUTER_INDEX,
 )
+from tests.conftest import ENROLL_CODE
 
 EYE_LEFT_X, EYE_RIGHT_X = 100.0, 200.0
 CENTER_X = 150.0
@@ -84,7 +85,7 @@ async def a_record(db_session, seeded) -> StudentStaff:
 async def submit(client, record, files=None):
     return await client.post(
         f"/api/public/enrollment/{record.id}/submit",
-        data={"pinfl": "31111111111111", "consent": "true"},
+        data={"code": ENROLL_CODE, "pinfl": "31111111111111", "consent": "true"},
         files=files if files is not None else frames(),
     )
 
@@ -277,7 +278,7 @@ class TestBrokenFramesDoNotCrash:
         qaysi kadr o'qilmaganini bilishi kerak."""
         resp = await client.post(
             f"/api/public/enrollment/{a_record.id}/submit",
-            data={"pinfl": "31111111111111", "consent": "true"},
+            data={"code": ENROLL_CODE, "pinfl": "31111111111111", "consent": "true"},
             files=[("photos", (f"{i}.jpg", b"", "image/jpeg")) for i in range(3)],
         )
         assert resp.status_code == 422

@@ -19,7 +19,7 @@ import {
   type SortState,
 } from '../../ui';
 import { branding } from '../../lib/branding';
-import { formatCell, type HisobotPerson, type HisobotReport } from '../../lib/hisobotApi';
+import { formatCell, printScopeNote, type HisobotPerson, type HisobotReport } from '../../lib/hisobotApi';
 
 interface ReportViewProps {
   data: HisobotReport;
@@ -179,7 +179,12 @@ export default function ReportView({ data, onDrill }: ReportViewProps) {
                   : `${body.people_total} kishi`
               }
             />
-            <p className="mt-1 text-xs text-muted">{sortSentence}</p>
+            <p className="mt-1 text-xs text-muted print-hide">{sortSentence}</p>
+            {/* Qog'ozda: plitkalar qancha odamni qamraganini va jadvalda
+                nechta qator borligini hujjatning o'zi aytib turadi. */}
+            <p className="print-only print-scope-note mt-1 text-xs">
+              {printScopeNote(data.population.total, body.people.length, body.people_total)}
+            </p>
           </div>
           <DataTable
             columns={columns}

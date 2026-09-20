@@ -72,7 +72,7 @@ export default function FacultiesPage() {
       subtitle={
         view === 'yuz'
           ? "Kamera talabani tanishi uchun uning yuzi oldindan ro'yxatdan o'tishi kerak. Bu yerda — kim topshirgan, kim yo'q"
-          : `Har bir fakultetda bugun nechta talaba kelgani · ${formatUzDate(date, { weekday: true })}`
+          : `Har bir fakultetda ${isToday ? 'bugun' : 'shu kuni'} nechta talaba kelgani · ${formatUzDate(date, { weekday: true })}`
       }
       breadcrumbs={[{ label: 'Talabalar' }]}
       actions={<IconButton icon={RefreshCw} label="Yangilash" variant="secondary" onClick={overview.reload} loading={overview.refreshing} />}

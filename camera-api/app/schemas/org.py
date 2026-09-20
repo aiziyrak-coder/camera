@@ -1,3 +1,5 @@
+from pydantic import Field
+
 from app.schemas.base import CamelModel
 
 
@@ -37,9 +39,12 @@ class BuildingOut(CamelModel):
 
 
 class BuildingCreateIn(CamelModel):
-    name: str
-    camera_count: int = 0
-    floors: int | None = None
+    name: str = Field(min_length=1, max_length=200)
+    camera_count: int = Field(default=0, ge=0)
+    # Qavatlar soni monitoringdagi bino kesimini chizadi: 0, manfiy yoki
+    # 900 qabul qilinsa o'sha kesim buzilardi (AddBuildingModal.tsx dagi
+    # min/max atributlari faqat brauzer maslahati edi, so'rovni to'smasdi).
+    floors: int | None = Field(default=None, ge=1, le=50)
     sort_order: int | None = None
 
 

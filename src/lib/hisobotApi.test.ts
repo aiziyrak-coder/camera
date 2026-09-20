@@ -5,6 +5,7 @@ import {
   formatCell,
   groupOptions,
   hisobotPaths,
+  printScopeNote,
   readState,
   writeState,
   type HisobotFilterOptions,
@@ -111,5 +112,23 @@ describe('misc', () => {
     expect(formatCell('08:15', '')).toBe('08:15');
     expect(formatCell('Kech keldi', '')).toBe('Kech keldi');
     expect(formatCell('', '')).toBe('—');
+  });
+
+  it("chop etilgan hujjat jadval chegarasini so'z bilan aytadi", () => {
+    // Ming ajratgichi brauzer/Node lokaliga bog'liq — xuddi shu tarzda tuzamiz.
+    const ru = (value: number) => value.toLocaleString('ru-RU');
+
+    // Ko'rsatkichlar 4120 kishini qamragan, jadvalda esa 1890 tadan 300 qator.
+    const cut = printScopeNote(4120, 300, 1890);
+    expect(cut).toContain(`${ru(4120)} kishi`);
+    expect(cut).toContain(ru(1890));
+    expect(cut).toContain('300');
+    expect(cut).toContain('Excel');
+
+    // Jadval to'liq bo'lsa — chegara haqida gapirilmaydi.
+    const full = printScopeNote(4120, 42, 42);
+    expect(full).toContain(`${ru(4120)} kishi`);
+    expect(full).toContain('hammasi');
+    expect(full).not.toContain('Excel');
   });
 });

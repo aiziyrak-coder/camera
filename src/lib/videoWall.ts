@@ -37,6 +37,17 @@ export interface WallGeometry {
 /** Katak: kamera id yoki bo'sh (null). */
 export type WallTiles = (string | null)[];
 
+/** Devorga kamera qo'yish so'rovi — `?kamera=<id>` havolasidan.
+ *
+ * `nonce` HAR bir yangi havola uchun ortadi. Parametr o'qilgandan keyin
+ * URL'dan o'chiriladi, shuning uchun bir xil kamera qayta so'ralishi
+ * mumkin: id yetarli emas, aynan shu son "bu boshqa so'rov" deyishga
+ * imkon beradi. */
+export interface WallCameraRequest {
+  id: string;
+  nonce: number;
+}
+
 function squareGrid(n: number): WallGeometry {
   const cells: WallCell[] = [];
   for (let row = 0; row < n; row += 1) {
@@ -174,6 +185,27 @@ export function swapTiles(tiles: WallTiles, from: number, to: number): WallTiles
 export function pruneTiles(tiles: WallTiles, known: ReadonlySet<string>): WallTiles {
   if (tiles.every((id) => id === null || known.has(id))) return tiles;
   return tiles.map((id) => (id !== null && known.has(id) ? id : null));
+}
+
+/** Kataklarni faqat ISHONCHLI ro'yxat asosida tozalaydi.
+ *
+ * `known === null` — ro'yxat hali kelmagan yoki so'rov xato bergan;
+ * bo'sh to'plam — server bo'sh javob qaytargan. Ikkalasi ham "barcha
+ * kamera o'chirilgan" degani EMAS, shuning uchun bunday paytda kataklar
+ * tegilmaydi: operator yig'gan devor bitta tarmoq uzilishidan yoki
+ * server nosozligidan bo'shab qolmasligi kerak. */
+export function pruneTilesIfKnown(tiles: WallTiles, known: ReadonlySet<string> | null): WallTiles {
+  if (!known || known.size === 0) return tiles;
+  return pruneTiles(tiles, known);
+}
+
+/** Xuddi shu qoida kamera identifikatorlari ro'yxati uchun (situatsion
+ * markaz ekranining `?cameras=` sozlamasi). O'zgarish bo'lmasa — o'sha
+ * massivning o'zi qaytadi. */
+export function pruneCameraIds(ids: readonly string[], known: ReadonlySet<string> | null): readonly string[] {
+  if (!known || known.size === 0) return ids;
+  if (ids.every((id) => known.has(id))) return ids;
+  return ids.filter((id) => known.has(id));
 }
 
 // ---------------------------------------------------------------------------

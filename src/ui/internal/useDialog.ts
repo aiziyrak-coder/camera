@@ -4,7 +4,26 @@ const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 // Ochiq dialoglar steki: Esc va Tab faqat eng ustidagisiga tegishli.
-const stack: symbol[] = [];
+interface StackEntry {
+  token: symbol;
+  panelRef: RefObject<HTMLElement | null>;
+}
+const stack: StackEntry[] = [];
+
+/**
+ * Hozir eng ustida turgan dialogning paneli (ochiq dialog bo'lmasa null).
+ *
+ * Dialog ustida dialog ochilishi odatiy hol: hodisa paneli ochiq
+ * turganda "O'chirish" tasdig'i yoki "Hal qilindi" oynasi ustiga
+ * chiqadi. Pastdagi panelning `document` darajasidagi tezkor tugmalari
+ * (T — tasdiqlash, R — rad etish) esa buni bilmasdi va ustki dialogda
+ * yozilgan har "t" harfi hodisani jimgina TASDIQLAB yuborardi. Shu
+ * funksiya bilan pastdagi qatlam "men eng ustida emasman" deb bila
+ * oladi va tinch turadi.
+ */
+export function topDialogPanel(): HTMLElement | null {
+  return stack[stack.length - 1]?.panelRef.current ?? null;
+}
 let scrollLocks = 0;
 let savedOverflow = '';
 
@@ -30,7 +49,7 @@ export function useDialog(open: boolean, onClose: () => void, panelRef: RefObjec
   useEffect(() => {
     if (!open) return;
     const token = Symbol('dialog');
-    stack.push(token);
+    stack.push({ token, panelRef });
     lockScroll();
     const previouslyFocused = document.activeElement as HTMLElement | null;
 
@@ -42,7 +61,7 @@ export function useDialog(open: boolean, onClose: () => void, panelRef: RefObjec
     }, 0);
 
     function onKeyDown(event: KeyboardEvent) {
-      if (stack[stack.length - 1] !== token) return;
+      if (stack[stack.length - 1]?.token !== token) return;
       if (event.key === 'Escape') {
         event.stopPropagation();
         onCloseRef.current();
@@ -72,7 +91,7 @@ export function useDialog(open: boolean, onClose: () => void, panelRef: RefObjec
     return () => {
       window.clearTimeout(focusTimer);
       document.removeEventListener('keydown', onKeyDown);
-      const index = stack.indexOf(token);
+      const index = stack.findIndex((entry) => entry.token === token);
       if (index >= 0) stack.splice(index, 1);
       unlockScroll();
       if (previouslyFocused && document.contains(previouslyFocused)) previouslyFocused.focus({ preventScroll: true });

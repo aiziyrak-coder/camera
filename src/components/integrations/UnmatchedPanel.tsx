@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Copy, UserSearch } from 'lucide-react';
-import { DataTable, IconButton, Select, Toolbar, formatNumber, useToast, type DataTableColumn } from '../../ui';
+import { Copy, Plus, UserSearch } from 'lucide-react';
+import { Button, DataTable, IconButton, Select, Toolbar, formatNumber, useToast, type DataTableColumn } from '../../ui';
 import { Notice } from '../settings/kit';
 import { useAuth } from '../../lib/auth';
 import { formatDateTime, integrationsApi, peopleSearchLink, type UnmatchedCredential } from '../../lib/integrationsApi';
@@ -30,7 +30,16 @@ function credentialValue(item: UnmatchedCredential): string {
 /** Turniketda ko'ringan, lekin hech kimga biriktirilmagan karta/xodim
  *  raqamlari. Admin raqamni nusxalab, reestrda kerakli odamning
  *  kartasiga yozadi — shundan keyin raqam bu ro'yxatdan chiqadi. */
-export default function UnmatchedPanel({ days = 7 }: { days?: number }) {
+export default function UnmatchedPanel({
+  days = 7,
+  deviceCount = null,
+  onAddDevice,
+}: {
+  days?: number;
+  /** Ro'yxatdagi turniket qurilmalari soni; null — hali noma'lum. */
+  deviceCount?: number | null;
+  onAddDevice?: () => void;
+}) {
   const { token } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
@@ -117,10 +126,17 @@ export default function UnmatchedPanel({ days = 7 }: { days?: number }) {
     },
   ];
 
+  // Qurilma umuman qo'shilmagan bo'lsa (productionda hozir shunday),
+  // "Hammasi biriktirilgan" deyish YOLG'ON bo'lardi: hech qanday o'tish
+  // yozilmagan, ya'ni tekshiriladigan narsaning o'zi yo'q.
+  const noDevices = deviceCount === 0;
+
   return (
     <div className="flex flex-col gap-4">
-      <Notice tone="info">
-        Raqamni nusxalang va reestrda egasining “Karta raqami” maydoniga kiriting — shundan keyin u bu ro'yxatdan chiqadi.
+      <Notice tone={noDevices ? 'warning' : 'info'}>
+        {noDevices
+          ? "Turniket qurilmasi hali qo'shilmagan — hech qanday o'tish yozilmayapti, shuning uchun bu ro'yxat ham bo'sh."
+          : 'Raqamni nusxalang va reestrda egasining “Karta raqami” maydoniga kiriting — shundan keyin u bu ro’yxatdan chiqadi.'}
       </Notice>
       <DataTable
         columns={columns}
@@ -130,8 +146,19 @@ export default function UnmatchedPanel({ days = 7 }: { days?: number }) {
         loading={items === null || (loading && items.length === 0)}
         error={error}
         onRetry={() => void load()}
-        emptyTitle="Hammasi biriktirilgan"
-        emptyDescription="Bu davrda noma'lum karta yoki xodim raqami ko'rinmadi."
+        emptyTitle={noDevices ? "Turniket qurilmasi qo'shilmagan" : 'Hammasi biriktirilgan'}
+        emptyDescription={
+          noDevices
+            ? "Kartalar shu yerga turniketlardan tushadi. Avval «Turniketlar» bo'limida qurilma qo'shing."
+            : "Bu davrda noma'lum karta yoki xodim raqami ko'rinmadi."
+        }
+        emptyAction={
+          noDevices && onAddDevice ? (
+            <Button variant="primary" icon={Plus} onClick={onAddDevice}>
+              Qurilma qo&apos;shish
+            </Button>
+          ) : undefined
+        }
         ariaLabel="Biriktirilmagan kartalar"
         maxHeight="none"
         footer={items && items.length > 0 ? <span className="text-[13px] tabular-nums text-muted">Jami: {formatNumber(items.length)} ta</span> : undefined}

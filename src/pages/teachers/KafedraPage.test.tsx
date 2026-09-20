@@ -1,0 +1,142 @@
+// @vitest-environment jsdom
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import type { KafedraDetail, KafedraTeacher } from '../../lib/situationApi';
+
+const getKafedra = vi.fn();
+
+vi.mock('../../lib/situationApi', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../lib/situationApi')>();
+  return {
+    ...original,
+    getKafedra: (...args: unknown[]) => getKafedra(...args),
+    getLessons: vi.fn(async () => ({ items: [], total: 0, page: 1, pageSize: 500, totalPages: 1, date: '2026-09-20', counts: { upcoming: 0, ongoing: 0, finished: 0 } })),
+  };
+});
+vi.mock('../../components/lessons/LessonDrawer', () => ({ LessonDrawer: () => null }));
+vi.mock('../../components/lessons/LessonsTable', () => ({ LessonsTable: () => null }));
+
+import KafedraPage from './KafedraPage';
+
+function teacher(partial: Partial<KafedraTeacher> = {}): KafedraTeacher {
+  return {
+    id: 't1',
+    fullName: "Abdurahmonov Shohruhbek Ulug'bek o'g'li",
+    photoUrl: null,
+    initials: 'AS',
+    position: 'Katta o‘qituvchi',
+    biometricsStatus: 'tasdiqlangan',
+    status: 'keldi',
+    checkIn: '08:02',
+    checkOut: null,
+    lessonsScheduled: 0,
+    lessonsOnTime: 0,
+    lessonsLate: 0,
+    lessonsMissed: 0,
+    periodLessons: 0,
+    periodOnTime: 0,
+    periodLate: 0,
+    periodMissed: 0,
+    onTimeRate: null,
+    avgActivityScore: null,
+    periodPresentDays: 18,
+    periodLateDays: 2,
+    periodAbsentDays: 1,
+    ...partial,
+  };
+}
+
+function detail(patch: Partial<KafedraDetail> = {}, todayPatch: Partial<KafedraDetail['today']> = {}, periodPatch: Partial<KafedraDetail['period']> = {}): KafedraDetail {
+  return {
+    id: 'u1',
+    name: 'Normal anatomiya kafedrasi',
+    kind: 'kafedra',
+    building: null,
+    unassigned: false,
+    date: '2026-09-20',
+    isToday: true,
+    today: { total: 20, enrolled: 12, present: 10, late: 2, absent: 2, dayOff: 0, notYet: 0, noData: 8, rate: 83.3, ...todayPatch },
+    teachers: [teacher()],
+    period: {
+      dateFrom: '2026-08-22',
+      dateTo: '2026-09-20',
+      lessons: 0,
+      onTime: 0,
+      late: 0,
+      missed: 0,
+      unknown: 0,
+      onTimeRate: null,
+      avgActivityScore: null,
+      presentDays: 18,
+      lateDays: 2,
+      absentDays: 1,
+      ...periodPatch,
+    },
+    ...patch,
+  };
+}
+
+function renderPage(entry = '/oqituvchilar/kafedra/u1') {
+  return render(
+    <MemoryRouter initialEntries={[entry]}>
+      <Routes>
+        <Route path="/oqituvchilar/kafedra/:departmentId" element={<KafedraPage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+beforeEach(() => {
+  localStorage.clear();
+  getKafedra.mockReset();
+});
+
+describe('KafedraPage — «Bugun ishga kelgan xodimlar» plitkasi', () => {
+  // rate = present / (present + absent + notYet) — yuzi ro'yxatdan
+  // o'tmaganlar (noData) foizga KIRMAYDI. Izoh esa "jami 20 xodimning
+  // 83%" derdi, ya'ni raqam o'z yorlig'iga to'g'ri kelmasdi.
+  it('names the real denominator of the percentage', async () => {
+    getKafedra.mockResolvedValue(detail());
+    renderPage();
+    const hint = await screen.findByText(/Holati aniq/);
+    expect(hint.textContent).toContain('Holati aniq 12 xodimdan');
+    expect(hint.textContent).toContain("8 xodimning yuzi ro'yxatdan o'tmagan");
+    expect(hint.textContent).not.toContain("Bo'linmadagi 20 xodimning");
+  });
+});
+
+describe('KafedraPage — dars ustuni dars jadvaliga bog\'liq', () => {
+  it('hides the on-time-at-lesson column when the period has no lessons', async () => {
+    localStorage.setItem('kafedra.view', JSON.stringify('table'));
+    getKafedra.mockResolvedValue(detail());
+    renderPage();
+    await screen.findByRole('columnheader', { name: /Bugun/ });
+    expect(screen.queryByRole('columnheader', { name: /Darsga o'z vaqtida kirgani/ })).toBeNull();
+    expect(screen.getByRole('columnheader', { name: /Ishga kelgan kunlari/ })).toBeTruthy();
+  });
+
+  it('shows the column again as soon as lessons exist', async () => {
+    localStorage.setItem('kafedra.view', JSON.stringify('table'));
+    getKafedra.mockResolvedValue(
+      detail({ teachers: [teacher({ periodLessons: 12, periodOnTime: 10, periodLate: 2, onTimeRate: 83.3 })] }, {}, { lessons: 12, onTime: 10, late: 2, onTimeRate: 83.3 }),
+    );
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('columnheader', { name: /Darsga o'z vaqtida kirgani/ })).toBeTruthy());
+  });
+});
+
+describe('KafedraPage — havolalar ko\'rilayotgan sanani saqlaydi', () => {
+  it('keeps ?sana= on the teacher profile link', async () => {
+    localStorage.setItem('kafedra.view', JSON.stringify('table'));
+    getKafedra.mockResolvedValue(detail());
+    renderPage('/oqituvchilar/kafedra/u1?sana=2026-09-15');
+    // DataTable keng ekranda jadval, tor ekranda kartochka chiqaradi —
+    // ikkalasi ham bir xil havolani beradi, shuning uchun hammasi tekshiriladi.
+    const links = await screen.findAllByRole('link', { name: /Abdurahmonov/ });
+    expect(links.length).toBeGreaterThan(0);
+    for (const link of links) {
+      expect(link.getAttribute('href')).toContain('sana=2026-09-15');
+    }
+  });
+});

@@ -24,9 +24,55 @@ export function saveAttendancePolicy(token: string | null, body: AttendancePolic
   return api.put<AttendancePolicy>('/api/attendance-policy', body, token);
 }
 
-/** "08:00" + 10 -> "08:10". */
+const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+/** "08:00" -> 480. Vaqt noto'g'ri bo'lsa null. */
+export function minutesOfDay(hhmm: string): number | null {
+  const match = TIME_RE.exec((hhmm ?? '').trim());
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+}
+
+/** "08:00" + 10 -> "08:10". Vaqt bo'sh yoki noto'g'ri bo'lsa "—"
+ *  (ilgari "NaN:NaN" chiqardi: `type="time"` maydoni tozalanganda
+ *  qiymat bo'sh satr bo'ladi va "Qanday hisoblanadi" kartasi buzilardi). */
 export function addMinutes(hhmm: string, minutes: number): string {
-  const [h, m] = hhmm.split(':').map(Number);
-  const total = (((h * 60 + m + minutes) % 1440) + 1440) % 1440;
+  const base = minutesOfDay(hhmm);
+  if (base === null || !Number.isFinite(minutes)) return '—';
+  const total = (((base + minutes) % 1440) + 1440) % 1440;
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+export type AttendancePolicyErrors = Partial<Record<keyof AttendancePolicyInput, string>>;
+
+/**
+ * Saqlashdan OLDINGI tekshiruv. Ilgari bu yerda hech narsa yo'q edi:
+ * bo'sh vaqt maydoni yoki bitta ham belgilanmagan ish kuni serverga
+ * ketib, javobida pydantic'ning inglizcha xatosi qaytardi
+ * ("Input should be in a valid time format") — foydalanuvchi qaysi
+ * maydon aybdorligini ham bilmasdi.
+ */
+export function validateAttendancePolicy(form: AttendancePolicyInput): AttendancePolicyErrors {
+  const errors: AttendancePolicyErrors = {};
+  const staff = minutesOfDay(form.staffStart);
+  const student = minutesOfDay(form.studentStart);
+  const end = minutesOfDay(form.workEnd);
+
+  if (staff === null) errors.staffStart = "Ish boshlanish vaqtini kiriting (masalan 08:30)";
+  if (student === null) errors.studentStart = "Dars boshlanish vaqtini kiriting (masalan 08:30)";
+  if (end === null) errors.workEnd = "Ish tugash vaqtini kiriting (masalan 17:00)";
+
+  if (!Number.isInteger(form.graceMinutes) || form.graceMinutes < 0 || form.graceMinutes > 180) {
+    errors.graceMinutes = "0 dan 180 gacha daqiqa kiriting";
+  }
+  if (form.workDays.length === 0) {
+    errors.workDays = "Kamida bitta ish kunini belgilang — aks holda hech kim kech kelgan hisoblanmaydi";
+  }
+  // Server ham tekshiradi (attendance_policy.py), lekin xabari bitta
+  // maydonga bog'lanmagan — bu yerda aniq maydon ko'rsatiladi.
+  if (staff !== null && end !== null && end <= staff) {
+    errors.workEnd = "Ish tugashi xodimlar ish boshlanishidan keyin bo'lishi kerak";
+  } else if (student !== null && end !== null && end <= student) {
+    errors.workEnd = "Ish tugashi dars boshlanishidan keyin bo'lishi kerak";
+  }
+  return errors;
 }

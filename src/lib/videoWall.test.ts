@@ -20,7 +20,9 @@ import {
   parseViewsImport,
   placeCamera,
   planPlayback,
+  pruneCameraIds,
   pruneTiles,
+  pruneTilesIfKnown,
   removeAt,
   resizeTiles,
   sanitizeView,
@@ -118,6 +120,24 @@ describe('kataklar', () => {
     const tiles = ['a', 'x', null];
     expect(pruneTiles(tiles, new Set(['a']))).toEqual(['a', null, null]);
     expect(pruneTiles(tiles, new Set(['a', 'x']))).toBe(tiles);
+  });
+
+  it("ishonchsiz ro'yxat kataklarni bo'shatmaydi", () => {
+    const tiles = ['a', 'x', null];
+    // Ro'yxat hali kelmagan yoki so'rov xato bergan — tegilmaydi.
+    expect(pruneTilesIfKnown(tiles, null)).toBe(tiles);
+    // Bo'sh javob ham "hamma kamera o'chirilgan" degani emas.
+    expect(pruneTilesIfKnown(tiles, new Set())).toBe(tiles);
+    // Ishonchli ro'yxat — endi yo'q kamera katakdan olinadi.
+    expect(pruneTilesIfKnown(tiles, new Set(['a']))).toEqual(['a', null, null]);
+  });
+
+  it("kamera identifikatorlari ro'yxati ham xuddi shu qoida bilan tozalanadi", () => {
+    const ids = ['a', 'x'];
+    expect(pruneCameraIds(ids, null)).toBe(ids);
+    expect(pruneCameraIds(ids, new Set())).toBe(ids);
+    expect(pruneCameraIds(ids, new Set(['a', 'x']))).toBe(ids);
+    expect(pruneCameraIds(ids, new Set(['a']))).toEqual(['a']);
   });
 });
 

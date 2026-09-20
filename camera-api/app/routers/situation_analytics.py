@@ -35,7 +35,7 @@ from app.schemas.situation import (
     WallOut,
     WallUnitOut,
 )
-from app.services import situation as svc, situation_analytics as an
+from app.services import enrollment_code as enrollment_codes, situation as svc, situation_analytics as an
 from app.services.event_scope import OPERATOR_EVENTS
 from app.services.event_status import OPEN_STATUSES
 from app.timezone import local_now
@@ -110,16 +110,20 @@ async def analytics_people(
     date_to: ToQuery = None,
     type_: TypeQuery = "xodim",
     sort: Annotated[Literal["late", "absent", "arrival", "rate"], Query()] = "late",
+    order: Annotated[Literal["asc", "desc"] | None, Query()] = None,
     unit_id: Annotated[str | None, Query(alias="unitId", max_length=200)] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
 ) -> list[PersonRankOut]:
     """Eng muammolilar birinchi: late/absent — kunlar soni kamayish,
     arrival — o'rtacha kelish eng kechi, rate — foiz eng pasti. Davrda
-    kamida bitta kelgan/kelmagan yozuvi borlar kiradi."""
+    kamida bitta kelgan/kelmagan yozuvi borlar kiradi.
+
+    `order` teskari reytinglar uchun ("eng erta keladigan", "eng yuqori
+    davomat"): ro'yxat kesilishidan OLDIN tartiblanadi."""
     start, end = _period(date_from, date_to)
     rows = await an.cached(
-        ("people", type_, start, end, sort, unit_id, limit),
-        lambda: an.people(db, type_, start, end, sort, unit_id, limit),
+        ("people", type_, start, end, sort, unit_id, limit, order),
+        lambda: an.people(db, type_, start, end, sort, unit_id, limit, order),
     )
     return [PersonRankOut(**r) for r in rows]
 
@@ -177,9 +181,19 @@ async def enrollment_missing(group_name: str, db: DbDep, _: ReadDep) -> EnrollMi
     if not total and group_name not in {name for name, _f, _c in await svc.student_group_rows(db)}:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Guruh topilmadi")
     base = settings.frontend_base_url.rstrip("/")
+    # Kartada QR bilan birga guruh kodi ham chop etiladi: kodsiz
+    # topshirish qabul qilinmaydi (app/routers/enrollment.py). Kodi
+    # bo'lmagan guruhga u shu yerda yaratiladi — aks holda yangi guruh
+    # uchun kartani chop etib bo'lmasdi.
+    code_row = await enrollment_codes.ensure_code(
+        db, enrollment_codes.SCOPE_GROUP, enrollment_codes.unit_key(group_name), " ".join(group_name.split())
+    )
+    code = code_row.code
+    await db.commit()
     return EnrollMissingOut(
         group=group_name, total=total, missing=[EnrollMissingPersonOut(**m) for m in missing],
-        enroll_url=f"{base}/royxatdan-otish?guruh={quote(group_name, safe='')}",
+        enroll_url=f"{base}/royxatdan-otish?guruh={quote(group_name, safe='')}&kod={quote(code, safe='')}",
+        enroll_code=code,
     )
 
 
@@ -189,6 +203,11 @@ async def enrollment_missing(group_name: str, db: DbDep, _: ReadDep) -> EnrollMi
 async def wall(db: DbDep, _: ReadDep) -> WallOut:
     """Devor ekrani uchun bitta ixcham javob (15–30 soniyada bir so'rov)."""
     return await an.cached(("wall", svc.today()), lambda: _build_wall(db))
+
+
+# Devor ekranidagi reyting/"diqqat markazida" uchun eng kam o'lchangan
+# odam soni (keldi + kelmadi + hali kelmagan).
+WALL_MIN_MEASURED = 3
 
 
 def _wall_unit(u: an.UnitToday) -> WallUnitOut:
@@ -202,10 +221,15 @@ async def _build_wall(db: AsyncSession) -> WallOut:
     rows = await svc.unit_rows(db, day)
     students = svc.type_counts(rows, "talaba", pending)
     staff = svc.type_counts(rows, "xodim", pending)
+    students_ok = svc.students_data_available(students)
 
-    # "Lavozim bo'yicha" soxta bo'linmasi reytingga kirmaydi.
+    # "Lavozim bo'yicha" soxta bo'linmasi reytingga kirmaydi. Bir-ikki
+    # kishisi o'lchanadigan bo'linma ham kirmaydi: 0% yoki 100% o'sha
+    # bir kishidan chiqadi — devor ekranida bu "reyting" emas, shovqin.
+    # Mezon "Institut holati" sahifasidagi bilan bir xil (rankUnits).
     units = [u for u in await an.staff_units_today(db, day)
-             if u.ref.id != svc.UNASSIGNED_KAFEDRA_ID and u.counts.rate is not None]
+             if u.ref.id != svc.UNASSIGNED_KAFEDRA_ID and u.counts.rate is not None
+             and u.counts.present + u.counts.absent + u.counts.not_yet >= WALL_MIN_MEASURED]
     ranked = sorted(units, key=lambda u: (-u.counts.rate, svc.norm_name(u.ref.name)))
     top = ranked[:5]
     bottom = sorted(units, key=lambda u: (u.counts.rate, svc.norm_name(u.ref.name)))[:5]
@@ -221,20 +245,25 @@ async def _build_wall(db: AsyncSession) -> WallOut:
         )
     ).all()
     cameras = await svc.camera_summary(db)
+    events_summary = await svc.event_summary(db, day)
 
     spotlight = [SpotlightOut(kind="unit", id=u.ref.id, name=u.ref.name, rate=u.counts.rate)
                  for u in sorted(units, key=lambda u: svc.norm_name(u.ref.name))
                  if u.counts.present + u.counts.absent]
-    for name, agg in sorted(svc.aggregate_groups(rows, pending).items()):
-        if name and agg.counts.present + agg.counts.absent:
-            spotlight.append(SpotlightOut(kind="group", id=name, name=name, rate=agg.counts.rate))
+    # Talabalar yuzi yetarli bo'lmaguncha guruh foizi o'lchov emas —
+    # 30 kishilik guruhdan 2 tasi tanilsa, ekranda "6%" chiqib qolardi.
+    if students_ok:
+        for name, agg in sorted(svc.aggregate_groups(rows, pending).items()):
+            measured = agg.counts.present + agg.counts.absent + agg.counts.not_yet
+            if name and agg.counts.present + agg.counts.absent and measured >= WALL_MIN_MEASURED:
+                spotlight.append(SpotlightOut(kind="group", id=name, name=name, rate=agg.counts.rate))
 
     return WallOut(
         date=day.isoformat(),
         generated_at=local_now().isoformat(timespec="seconds"),
         students=students.out(),
         staff=staff.out(),
-        students_data_available=svc.students_data_available(students),
+        students_data_available=students_ok,
         top_units=[_wall_unit(u) for u in top],
         bottom_units=[_wall_unit(u) for u in bottom],
         last_arrivals=[ArrivalOut(**r) for r in await svc.last_arrivals(db, day, limit=12)],
@@ -244,7 +273,14 @@ async def _build_wall(db: AsyncSession) -> WallOut:
             for eid, module, camera, building, occurred, event_status in events
         ],
         cameras_online=cameras["online"],
-        cameras_total=cameras["total"],
+        # Ataylab o'chirilgan ("nofaol") kamera "javob bermayapti" emas:
+        # maxraj — ishlashi kerak bo'lgan kameralar, "Institut holati"
+        # sahifasidagi kabi (cameras.active).
+        cameras_total=cameras["active"],
+        # Ro'yxat eng so'nggi 5 tasi bilan cheklangan — ochiq yuqori
+        # xavfli hodisalar soni alohida keladi, aks holda ekranda
+        # "5" turib qolardi.
+        high_open=events_summary["high_open"],
         enrollment=EnrollmentOut(**await an.cached(("enrollment",), lambda: an.enrollment(db))),
         spotlight=spotlight,
     )

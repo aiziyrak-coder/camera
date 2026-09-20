@@ -1,10 +1,39 @@
 import { Wifi, WifiOff } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { branding } from '../../lib/branding';
+import { todayInTashkent } from '../../lib/uzDate';
 import { cn } from '../../ui';
 
 const WEEKDAYS = ['Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba'];
 const MONTHS = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'];
+
+/** Soat/sana — institut vaqti (Toshkent) bo'yicha: devor ekrani
+ *  turgan kompyuterning vaqt mintaqasi noto'g'ri sozlangan bo'lsa ham
+ *  ekrandagi kun serverdagi kun bilan bir xil bo'ladi. */
+export function tashkentClock(now: Date): { hh: string; mm: string; ss: string; dateLabel: string } {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Tashkent',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(now);
+  const pick = (type: string) => parts.find((p) => p.type === type)?.value ?? '00';
+  const iso = todayInTashkent(now);
+  const [y, m, d] = iso.split('-').map(Number);
+  const weekday = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  return {
+    hh: pick('hour') === '24' ? '00' : pick('hour'),
+    mm: pick('minute'),
+    ss: pick('second'),
+    dateLabel: `${WEEKDAYS[weekday]}, ${d}-${MONTHS[m - 1]} ${y}`,
+  };
+}
+
+function tashkentHhmm(value: Date): string {
+  const { hh, mm } = tashkentClock(value);
+  return `${hh}:${mm}`;
+}
 
 function useNow(intervalMs = 1000) {
   const [now, setNow] = useState(() => new Date());
@@ -17,12 +46,8 @@ function useNow(intervalMs = 1000) {
 
 export function WallHeader({ online, updatedAt }: { online: boolean; updatedAt: Date | null }) {
   const now = useNow();
-  const hh = String(now.getHours()).padStart(2, '0');
-  const mm = String(now.getMinutes()).padStart(2, '0');
-  const ss = String(now.getSeconds()).padStart(2, '0');
-  const upd = updatedAt
-    ? `${String(updatedAt.getHours()).padStart(2, '0')}:${String(updatedAt.getMinutes()).padStart(2, '0')}`
-    : '—';
+  const { hh, mm, ss, dateLabel } = tashkentClock(now);
+  const upd = updatedAt ? tashkentHhmm(updatedAt) : '—';
   return (
     <header className="flex shrink-0 items-center gap-[1.2em] px-[0.4em]">
       <img src="/favicon.svg" alt="" className="h-[2.8em] w-[2.8em] shrink-0" />
@@ -48,9 +73,7 @@ export function WallHeader({ online, updatedAt }: { online: boolean; updatedAt: 
             {hh}:{mm}
             <span className="text-[0.5em] text-muted">:{ss}</span>
           </div>
-          <div className="mt-[0.3em] text-[0.85em] text-muted">
-            {WEEKDAYS[now.getDay()]}, {now.getDate()}-{MONTHS[now.getMonth()]} {now.getFullYear()}
-          </div>
+          <div className="mt-[0.3em] text-[0.85em] text-muted">{dateLabel}</div>
         </div>
       </div>
     </header>

@@ -1,13 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Download, ShieldCheck } from 'lucide-react';
 import { Avatar, Badge, Button, Card, DateRangePicker, EmptyState, ErrorState, Select, SkeletonCard, Toolbar, cn, focusRing, formatUzDate } from '../../ui';
 import { getAnalyticsChronic, situationPaths, type ChronicPerson } from '../../lib/situationApi';
 import { exportRowsAsCsv } from '../../lib/csvExport';
-import { ANALYTICS_PRESETS, periodSuffix, useAnalyticsPeriod } from './analyticsPeriod';
+import { useViewDate } from '../../lib/viewDate';
+import { ANALYTICS_PRESETS, periodSuffix, useAnalyticsPeriod, useUrlChoice } from './analyticsPeriod';
 import { useLoader } from './useLoader';
 
-const THRESHOLDS = [2, 3, 5, 7, 10].map((n) => ({ value: String(n), label: `${n} kundan` }));
+// Server "kamida N marta" deb hisoblaydi (minLate/minAbsent), shuning uchun
+// yorliq ham "kamida N kun" — "N kundan ko'p" bir kunga adashtirardi.
+const THRESHOLD_VALUES = ['2', '3', '5', '7', '10'] as const;
+type Threshold = (typeof THRESHOLD_VALUES)[number];
+const THRESHOLDS = THRESHOLD_VALUES.map((n) => ({ value: n, label: `kamida ${n} kun` }));
 
 function DateChips({ dates, tone, max = 12 }: { dates: string[]; tone: 'warning' | 'danger'; max?: number }) {
   const shown = dates.slice(-max);
@@ -23,15 +28,19 @@ function DateChips({ dates, tone, max = 12 }: { dates: string[]; tone: 'warning'
   );
 }
 
-function ChronicRow({ p }: { p: ChronicPerson }) {
+function ChronicRow({ p, to }: { p: ChronicPerson; to: string }) {
   return (
     <li>
-      <Link to={situationPaths.person(p.id)} className={cn('group -mx-2 flex flex-col gap-3 rounded-control px-2 py-3 transition-colors hover:bg-surface-2 sm:flex-row sm:items-start', focusRing)}>
+      <Link to={to} className={cn('group -mx-2 flex flex-col gap-3 rounded-control px-2 py-3 transition-colors hover:bg-surface-2 sm:flex-row sm:items-start', focusRing)}>
         <div className="flex min-w-0 items-center gap-3 sm:w-64 sm:shrink-0">
           <Avatar name={p.fullName} src={p.photoUrl ?? undefined} size="md" status={p.reasons.includes('kelmadi') ? 'danger' : 'warning'} />
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-fg group-hover:text-primary">{p.fullName}</p>
-            <p className="truncate text-xs text-muted">{p.unit}</p>
+            <p className="truncate text-sm font-medium text-fg group-hover:text-primary" title={p.fullName}>
+              {p.fullName}
+            </p>
+            <p className="truncate text-xs text-muted" title={p.unit}>
+              {p.unit}
+            </p>
             <div className="mt-1 flex flex-wrap gap-1">
               {p.reasons.includes('kech_keldi') && <Badge tone="warning">{p.lateDays} kun kech</Badge>}
               {p.reasons.includes('kelmadi') && <Badge tone="danger">{p.absentDays} kun kelmadi</Badge>}
@@ -60,8 +69,10 @@ function ChronicRow({ p }: { p: ChronicPerson }) {
 /** "Surunkali" tabi: davrda chegaradan ko'p kechikkan yoki kelmagan xodimlar. */
 export function ChronicTab() {
   const [period, setPeriod] = useAnalyticsPeriod();
-  const [minLate, setMinLate] = useState('3');
-  const [minAbsent, setMinAbsent] = useState('3');
+  // Chegaralar URL'da: yangilangandan keyin ham o'sha ro'yxat qaytadi.
+  const [minLate, setMinLate] = useUrlChoice('kech', THRESHOLD_VALUES, '3');
+  const [minAbsent, setMinAbsent] = useUrlChoice('yoq', THRESHOLD_VALUES, '3');
+  const { withDate } = useViewDate();
   const chronic = useLoader(
     `c:${period.from}:${period.to}:${minLate}:${minAbsent}`,
     (signal) => getAnalyticsChronic({ from: period.from, to: period.to, type: 'xodim', minLate: Number(minLate), minAbsent: Number(minAbsent) }, { signal }),
@@ -91,14 +102,14 @@ export function ChronicTab() {
     <>
       <Toolbar end={<Button variant="secondary" size="sm" icon={Download} onClick={exportCsv} disabled={!rows.length}>CSV</Button>}>
         <DateRangePicker value={period} onChange={setPeriod} presets={ANALYTICS_PRESETS} size="sm" showSummary={false} />
-        <Select size="sm" value={minLate} onChange={setMinLate} options={THRESHOLDS} ariaLabel="Kechikish chegarasi" label="Kech kelgan:" />
-        <Select size="sm" value={minAbsent} onChange={setMinAbsent} options={THRESHOLDS} ariaLabel="Kelmaslik chegarasi" label="Kelmagan:" />
+        <Select size="sm" value={minLate} onChange={(v) => setMinLate(v as Threshold)} options={THRESHOLDS} ariaLabel="Kechikish chegarasi" label="Kech kelgan:" />
+        <Select size="sm" value={minAbsent} onChange={(v) => setMinAbsent(v as Threshold)} options={THRESHOLDS} ariaLabel="Kelmaslik chegarasi" label="Kelmagan:" />
       </Toolbar>
       <Card>
         {chronic.data && (
           <p className="mb-2 text-sm text-muted">
-            Tanlangan davrda <span className="font-semibold text-fg">{rows.length}</span> xodim belgilangan chegaradan ko'p marta
-            kechikkan yoki kelmagan: <span className="text-warning">{lateCount} kishi takror kech kelgan</span> ·{' '}
+            Tanlangan davrda <span className="font-semibold text-fg">{rows.length}</span> xodim kamida {minLate} kun kech kelgan yoki
+            kamida {minAbsent} kun kelmagan: <span className="text-warning">{lateCount} kishi takror kech kelgan</span> ·{' '}
             <span className="text-danger">{absentCount} kishi takror kelmagan</span>
           </p>
         )}
@@ -114,12 +125,12 @@ export function ChronicTab() {
           <EmptyState
             icon={ShieldCheck}
             title="Takror kechikkan xodim yo'q"
-            description={`Bu davrda ${minLate} kundan ko'p kech kelgan yoki ${minAbsent} kundan ko'p kelmagan xodim topilmadi. Chegarani yuqoridagi tanlagichlar orqali o'zgartirish mumkin.`}
+            description={`Bu davrda kamida ${minLate} kun kech kelgan yoki kamida ${minAbsent} kun kelmagan xodim topilmadi. Chegarani yuqoridagi tanlagichlar orqali o'zgartirish mumkin.`}
           />
         ) : (
           <ul className="divide-y divide-border">
             {rows.map((p) => (
-              <ChronicRow key={p.id} p={p} />
+              <ChronicRow key={p.id} p={p} to={withDate(situationPaths.person(p.id))} />
             ))}
           </ul>
         )}

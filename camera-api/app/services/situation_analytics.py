@@ -473,7 +473,14 @@ PEOPLE_SORTS = {
 
 
 async def people(db: AsyncSession, type_: str, start: date_type, end: date_type, sort: str,
-                 unit_id: str | None, limit: int) -> list[dict]:
+                 unit_id: str | None, limit: int, order: str | None = None) -> list[dict]:
+    """`order` — tartib yo'nalishi (asc | desc). Berilmasa har bir `sort`
+    uchun tabiiy yo'nalish (PEOPLE_SORTS) ishlatiladi.
+
+    Bu MUHIM: ro'yxat avval tartiblanadi, keyin `limit` bilan kesiladi.
+    "Eng erta keladiganlar"ni olish uchun mijoz javobni teskari qilsa,
+    kerakli odamlar allaqachon kesib tashlangan bo'ladi — shuning uchun
+    yo'nalish serverga beriladi."""
     ids = await unit_member_ids(db, type_, unit_id) if unit_id else None
     if ids == []:
         return []
@@ -495,6 +502,8 @@ async def people(db: AsyncSession, type_: str, start: date_type, end: date_type,
             "avg_arrival_minutes": round(agg.avg_minutes) if agg.avg_minutes is not None else None,
         })
     key_fn, descending = PEOPLE_SORTS[sort]
+    if order is not None:
+        descending = order == "desc"
     rows = sort_rows(sorted(rows, key=lambda r: r["full_name"]), key_fn, descending)[:limit]
 
     picked = [uuid.UUID(r["id"]) for r in rows]

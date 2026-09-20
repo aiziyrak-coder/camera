@@ -149,7 +149,9 @@ export function StudentDrawer({
             <>
               <DayStrip days={data.calendar} />
               <p className="mt-2 text-xs text-muted">
-                {data.totals.present} kun keldi · {data.totals.late} kech · {data.totals.absent} kelmadi
+                {/* totals.present kech kelganlarni ham o'z ichiga oladi — uch son
+                    qo'shilganda jami kunni bersin uchun ayirib ko'rsatiladi. */}
+                {Math.max(0, data.totals.present - data.totals.late)} kun o'z vaqtida · {data.totals.late} kech · {data.totals.absent} kelmadi
               </p>
             </>
           ) : null}

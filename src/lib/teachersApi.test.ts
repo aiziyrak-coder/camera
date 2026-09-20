@@ -86,11 +86,31 @@ describe('summarizeKafedras', () => {
       kafedra({ staffTotal: 7, present: 6, late: 1, absent: 1, lessonsToday: 10, teacherLateLessons: 2, teacherMissedLessons: 1 }),
       kafedra({ id: 'unassigned', unassigned: true, staffTotal: 3, present: 2, lessonsToday: 1 }),
     ]);
-    expect(s).toEqual({ staffTotal: 10, present: 8, late: 1, absent: 1, lessons: 11, lateLessons: 2, missedLessons: 1 });
+    expect(s).toMatchObject({ staffTotal: 10, present: 8, late: 1, absent: 1, lessons: 11, lateLessons: 2, missedLessons: 1 });
   });
 
   it('returns zeros for an empty list', () => {
     expect(summarizeKafedras([]).staffTotal).toBe(0);
+    expect(summarizeKafedras([]).rate).toBeNull();
+  });
+
+  // Foiz maxraji backenddagi `Counts.rate` bilan bir xil bo'lishi SHART:
+  // aks holda tepa plitka bilan har bir bo'linma kartasidagi halqa turli
+  // foizni ko'rsatadi (kartada 90%, plitkada 50%).
+  it('computes the rate like the backend: present / (present + absent + notYet)', () => {
+    const s = summarizeKafedras([
+      // 20 xodim: 10 keldi, 2 kelmadi, 0 hali kelmagan, 8 ning yuzi yo'q.
+      kafedra({ staffTotal: 20, present: 10, late: 2, absent: 2, notYet: 0, noData: 8 }),
+    ]);
+    expect(s.decided).toBe(12);
+    expect(s.rate).toBe(83.3);
+    expect(s.noData).toBe(8);
+  });
+
+  it('counts people who have not arrived yet in the denominator', () => {
+    const s = summarizeKafedras([kafedra({ staffTotal: 10, present: 4, absent: 1, notYet: 5 })]);
+    expect(s.decided).toBe(10);
+    expect(s.rate).toBe(40);
   });
 });
 

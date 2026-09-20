@@ -98,5 +98,16 @@ export default function ReportFilters({ state, options, onChange, onReset }: Rep
   ];
 
   // Tozalash URL holatini ham tiklashi kerak — sahifa o'zi bajaradi.
-  return <FilterBar fields={fields} onReset={onReset} />;
+  // Qidiruv maydoni esa mahalliy (`query`, debounce bilan): `state.q` hali
+  // yozilmagan bo'lsa (350 ms o'tmagan) sahifaning tiklashi uni ko'rmaydi
+  // va matn maydonda qolib, bir zumdan keyin filtr qaytib kelardi.
+  return (
+    <FilterBar
+      fields={fields}
+      onReset={() => {
+        setQuery('');
+        onReset();
+      }}
+    />
+  );
 }

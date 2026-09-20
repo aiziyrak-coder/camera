@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { BarChart3, BookOpen, CalendarCheck, Clock, LayoutGrid, Rows3, Timer, UserCheck, UserRound, Users } from 'lucide-react';
+import { BarChart3, BookOpen, CalendarCheck, Clock, LayoutGrid, Rows3, Timer, UserCheck, Users } from 'lucide-react';
 import {
   Avatar,
   Badge,
@@ -57,7 +57,7 @@ const REFRESH_MS = 60_000;
 
 export default function KafedraPage() {
   const { departmentId = '' } = useParams();
-  const { date, isToday } = useViewDate();
+  const { date, isToday, withDate } = useViewDate();
   const { presentation } = useShell();
 
   // Punktuallik davri: standart — ko'rilayotgan sanagacha 30 kun.
@@ -68,6 +68,11 @@ export default function KafedraPage() {
   useEffect(() => {
     setPeriod((p) => (p.preset === 'custom' ? p : rangeForPreset(p.preset as FixedPreset, date)));
   }, [date]);
+  // Boshqa bo'linmaga o'tilganda eski qidiruv so'zi yangi ro'yxatni
+  // "Hech kim topilmadi" holatida qoldirmasin.
+  useEffect(() => {
+    setSearch('');
+  }, [departmentId]);
 
   const periodValid = period.from <= period.to;
   const detailKey = periodValid ? `${departmentId}:${date}:${period.from}:${period.to}` : null;
@@ -174,7 +179,16 @@ export default function KafedraPage() {
         ) : undefined
       }
     >
-      {detail.error && !data ? (
+      {!periodValid ? (
+        // Oraliq teskari kiritilganda sahifa avval butunlay bo'sh qolardi —
+        // hech qanday xabar ham, ma'lumot ham yo'q edi.
+        <EmptyState
+          icon={CalendarCheck}
+          compact
+          title="Davr noto'g'ri tanlangan"
+          description="Boshlanish sanasi tugash sanasidan keyin turibdi. Yuqoridagi oraliqni to'g'rilang."
+        />
+      ) : detail.error && !data ? (
         notFound ? (
           <EmptyState
             icon={Users}
@@ -193,7 +207,9 @@ export default function KafedraPage() {
         <>
           {tab !== 'tahlil' && <KafedraTiles data={data} />}
           {tab === 'oqituvchilar' ? (
-            <TeachersSection data={data} date={date} view={presentation ? 'grid' : view} sort={effectiveSort} search={search} />
+            // key: boshqa bo'linmaga o'tilganda ochiq drawer va tanlov
+            // eski bo'linmaning xodimida qolib ketmasin.
+            <TeachersSection key={data.id} data={data} date={date} view={presentation ? 'grid' : view} sort={effectiveSort} search={search} withDate={withDate} />
           ) : tab === 'tahlil' ? (
             <UnitAnalyticsSection unitId={data.id} unitName={data.name} kind={data.kind} from={period.from} to={period.to} />
           ) : (
@@ -215,6 +231,9 @@ function KafedraTiles({ data }: { data: KafedraDetail }) {
   const p = data.period;
   const checked = p.onTime + p.late + p.missed;
   const hasLessons = p.lessons > 0;
+  // Foiz maxraji — holati aniqlangan xodimlar (keldi + kelmadi + hali
+  // kelmagan): yuzi ro'yxatdan o'tmaganlar foizga umuman kirmaydi, shuning
+  // uchun "jami xodimning N% qismi" deyish noto'g'ri edi.
   return (
     <div className={cn('grid grid-cols-2 gap-3', hasLessons ? 'lg:grid-cols-4' : 'lg:grid-cols-2')}>
       <StatTile
@@ -224,7 +243,7 @@ function KafedraTiles({ data }: { data: KafedraDetail }) {
         value={t.present}
         unit={`/ ${t.total}`}
         progress={t.rate}
-        hint={`Bo'linmadagi ${t.total} xodimning ${formatPercent(t.rate)} qismi · ${t.absent} kishi kelmadi${t.notYet ? ` · ${t.notYet} kishi hali kelmagan` : ''}`}
+        hint={`Holati aniq ${t.present + t.absent + t.notYet} xodimdan ${formatPercent(t.rate)} keldi · ${t.absent} kishi kelmadi${t.notYet ? ` · ${t.notYet} kishi hali kelmagan` : ''}${t.noData ? ` · ${t.noData} xodimning yuzi ro'yxatdan o'tmagan` : ''}`}
       />
       <StatTile
         label="Bugun kech kelgan xodimlar"
@@ -256,7 +275,7 @@ function KafedraTiles({ data }: { data: KafedraDetail }) {
   );
 }
 
-function TeachersSection({ data, date, view, sort, search }: { data: KafedraDetail; date: string; view: View; sort: TeacherSort; search: string }) {
+function TeachersSection({ data, date, view, sort, search, withDate }: { data: KafedraDetail; date: string; view: View; sort: TeacherSort; search: string; withDate: (path: string) => string }) {
   // Dars jadvali yo'q bo'lsa dars ustunlari/qatorlari chizilmaydi:
   // har satrda "Darsi yo'q" va har joyda "—" turishining ma'nosi yo'q.
   const hasTodayLessons = data.teachers.some((t) => t.lessonsScheduled > 0);
@@ -277,10 +296,17 @@ function TeachersSection({ data, date, view, sort, search }: { data: KafedraDeta
         <div className="flex min-w-0 items-center gap-3">
           <Avatar name={t.fullName} src={t.photoUrl} size="md" />
           <div className="min-w-0">
-            <Link to={situationPaths.person(t.id)} onClick={(e) => e.stopPropagation()} className="block truncate font-medium text-fg hover:text-primary hover:underline">
+            <Link
+              to={withDate(situationPaths.person(t.id))}
+              onClick={(e) => e.stopPropagation()}
+              title={t.fullName}
+              className="block truncate font-medium text-fg hover:text-primary hover:underline"
+            >
               {t.fullName}
             </Link>
-            <p className="truncate text-xs text-muted">{t.position}</p>
+            <p className="truncate text-xs text-muted" title={t.position}>
+              {t.position}
+            </p>
           </div>
         </div>
       ),
@@ -294,20 +320,26 @@ function TeachersSection({ data, date, view, sort, search }: { data: KafedraDeta
       ? [{ key: 'lessons', header: 'Darslar', cell: (t: KafedraTeacher) => <TodayLessons t={t} /> }]
       : []),
 
-    {
-      key: 'onTime',
-      header: "Darsga o'z vaqtida kirgani",
-      cell: (t) => (
-        <div className="flex items-center gap-2.5">
-          <ProgressRing value={t.onTimeRate} size={34} thickness={4} />
-          <span className="text-xs tabular-nums text-muted">
-            {t.periodLessons} dars
-            {t.periodLate > 0 && <span className="text-warning"> · {t.periodLate} kech</span>}
-            {t.periodMissed > 0 && <span className="text-danger"> · {t.periodMissed} yo'q</span>}
-          </span>
-        </div>
-      ),
-    },
+    // Dars jadvali bo'lmasa bu ustun har satrda bo'sh halqa va "0 dars"
+    // ko'rsatardi — ma'nosiz. Jadval paydo bo'lishi bilan ustun qaytadi.
+    ...(hasPeriodLessons
+      ? [
+          {
+            key: 'onTime',
+            header: "Darsga o'z vaqtida kirgani",
+            cell: (t: KafedraTeacher) => (
+              <div className="flex items-center gap-2.5">
+                <ProgressRing value={t.onTimeRate} size={34} thickness={4} />
+                <span className="text-xs tabular-nums text-muted">
+                  {t.periodLessons} dars
+                  {t.periodLate > 0 && <span className="text-warning"> · {t.periodLate} kech</span>}
+                  {t.periodMissed > 0 && <span className="text-danger"> · {t.periodMissed} yo'q</span>}
+                </span>
+              </div>
+            ),
+          },
+        ]
+      : []),
     {
       key: 'days',
       header: 'Ishga kelgan kunlari',
@@ -366,11 +398,9 @@ function TeachersSection({ data, date, view, sort, search }: { data: KafedraDeta
         date={date}
         onClose={() => setSelected(null)}
       >
-        {selected && (
-          <ButtonLink to={situationPaths.person(selected.id)} variant="secondary" icon={UserRound} className="w-full">
-            To'liq profil
-          </ButtonLink>
-        )}
+        {/* "To'liq profil" tugmasi olib tashlandi: Drawer pastida allaqachon
+            "Profilni ochish" bor edi va u ko'rilayotgan sanani saqlardi, bu
+            esa yo'q — bitta odamga ikki xil havola chiqardi. */}
         {selected && (
           <div className="rounded-card border border-border bg-surface-2 p-4">
             <div className="mb-3 flex items-center justify-between gap-3">

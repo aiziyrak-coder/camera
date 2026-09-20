@@ -82,11 +82,16 @@ export default function NotificationRuleModal({
   const [form, setForm] = useState<FormState>(toForm(rule));
   const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
+  // "Qabul qiluvchilar" maydonida hali chip'ga aylanmagan matn. Ilgari u
+  // saqlashda JIMGINA yo'qolardi (noto'g'ri raqam yozilib, Enter bosilmasa
+  // qoida usiz saqlanardi) — endi saqlash to'xtatiladi.
+  const [recipientDraft, setRecipientDraft] = useState('');
 
   useEffect(() => {
     if (open) {
       setForm(toForm(rule));
       setErrors({});
+      setRecipientDraft('');
     }
   }, [open, rule]);
 
@@ -115,7 +120,11 @@ export default function NotificationRuleModal({
     e.preventDefault();
     const next: Errors = {
       name: form.name.trim().length < 2 ? 'Qoida nomini kiriting' : undefined,
-      recipients: form.recipients.length === 0 ? 'Kamida bitta qabul qiluvchi kiriting' : undefined,
+      recipients: recipientDraft.trim()
+        ? `«${recipientDraft.trim()}» hali qo'shilmadi — Enter bosing yoki maydonni tozalang`
+        : form.recipients.length === 0
+          ? 'Kamida bitta qabul qiluvchi kiriting'
+          : undefined,
       kinds: form.kinds.length === 0 ? 'Kamida bitta signal turini tanlang' : undefined,
     };
     setErrors(next);
@@ -180,7 +189,13 @@ export default function NotificationRuleModal({
           <ChoiceCards name="notification-channel" value={form.channel} onChange={changeChannel} options={CHANNEL_OPTIONS} />
         </fieldset>
 
-        <RecipientChipsInput channel={form.channel} value={form.recipients} onChange={(next) => set('recipients', next)} error={errors.recipients} />
+        <RecipientChipsInput
+          channel={form.channel}
+          value={form.recipients}
+          onChange={(next) => set('recipients', next)}
+          onDraftChange={setRecipientDraft}
+          error={errors.recipients}
+        />
 
         <fieldset>
           <legend className={legendClass}>

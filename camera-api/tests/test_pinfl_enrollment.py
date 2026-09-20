@@ -13,7 +13,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.models import Faculty, StudentStaff
-from tests.conftest import auth_headers
+from tests.conftest import ENROLL_CODE, auth_headers
 
 PINFL = "30000000000047"
 
@@ -38,7 +38,7 @@ async def a_staff_member(db_session, seeded) -> StudentStaff:
 @pytest.mark.usefixtures("seeded")
 class TestLookupByPinfl:
     async def test_a_staff_member_is_found_by_pinfl(self, client: AsyncClient, a_staff_member):
-        resp = await client.post("/api/public/enrollment/lookup", json={"pinfl": PINFL})
+        resp = await client.post("/api/public/enrollment/lookup", json={"code": ENROLL_CODE, "pinfl": PINFL})
         assert resp.status_code == 200
         body = resp.json()
         assert body["fullName"] == "Sinovov Sardor Aliyevich"
@@ -50,19 +50,19 @@ class TestLookupByPinfl:
         qolishi juda tez-tez uchraydi. Ularni tozalamasak, raqami to'g'ri
         bo'lgan xodim "topilmadi" javobini olardi va sababini tushunmasdi."""
         resp = await client.post(
-            "/api/public/enrollment/lookup", json={"pinfl": " 3000-0000 0000-47 "}
+            "/api/public/enrollment/lookup", json={"code": ENROLL_CODE, "pinfl": " 3000-0000 0000-47 "}
         )
         assert resp.status_code == 200
         assert resp.json()["fullName"] == "Sinovov Sardor Aliyevich"
 
     async def test_an_unknown_pinfl_is_not_found(self, client: AsyncClient, a_staff_member):
-        resp = await client.post("/api/public/enrollment/lookup", json={"pinfl": "99999999999999"})
+        resp = await client.post("/api/public/enrollment/lookup", json={"code": ENROLL_CODE, "pinfl": "99999999999999"})
         assert resp.status_code == 404
         assert "JSHSHIR" in resp.json()["detail"]
 
     async def test_an_empty_request_is_rejected(self, client: AsyncClient):
         """Na JSHSHIR, na pasport — bu qidiruv emas, xato so'rov."""
-        resp = await client.post("/api/public/enrollment/lookup", json={})
+        resp = await client.post("/api/public/enrollment/lookup", json={"code": ENROLL_CODE})
         assert resp.status_code == 422
 
     async def test_the_passport_path_still_works(self, client: AsyncClient, db_session, seeded):
@@ -76,7 +76,7 @@ class TestLookupByPinfl:
 
         resp = await client.post(
             "/api/public/enrollment/lookup",
-            json={"passportSeries": "AD", "passportNumber": "1234567"},
+            json={"code": ENROLL_CODE, "passportSeries": "AD", "passportNumber": "1234567"},
         )
         assert resp.status_code == 200
         assert resp.json()["fullName"] == "Eski Foydalanuvchi"
@@ -90,7 +90,7 @@ class TestSubmitIsGuardedByTheSameIdentity:
         bilan aynan bir xil qayta tekshiradi."""
         resp = await client.post(
             f"/api/public/enrollment/{a_staff_member.id}/submit",
-            data={"pinfl": "11111111111111"},
+            data={"code": ENROLL_CODE, "pinfl": "11111111111111"},
             files={"photos": ("f.jpg", b"not-a-real-image", "image/jpeg")},
         )
         assert resp.status_code == 403

@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, ChevronLeft, ChevronRight, ExternalLink, FlaskConical, ImageOff, Info, Lightbulb, Trash2, X } from 'lucide-react';
-import { Badge, Button, Drawer, IconButton, KeyValue, StatusBadge, type KeyValueItem } from '../../ui';
+import { Badge, Button, Drawer, IconButton, KeyValue, StatusBadge, topDialogPanel, type KeyValueItem } from '../../ui';
 import EventActivity from './EventActivity';
+import { cameraLabel } from './ReviewCard';
 import EventWorkflowPanel from './EventWorkflowPanel';
 import { detailMetrics } from '../../lib/eventDetails';
 import { isOpenStatus } from '../../lib/eventWorkflow';
@@ -39,12 +40,23 @@ export default function EventDrawer({
   position?: string;
   busy?: boolean;
 }) {
+  const panelRef = useRef<HTMLElement>(null);
+  const [snapshotFailed, setSnapshotFailed] = useState(false);
+  // Boshqa hodisaga o'tilganda oldingi kadrning xatosi qolib ketmasin.
+  useEffect(() => setSnapshotFailed(false), [event?.id, event?.snapshotUrl]);
+
   useEffect(() => {
     if (!event) return;
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // USTIMIZDA BOSHQA DIALOG BORMI. "O'chirish" tasdig'i yoki "Hal
+      // qilindi" oynasi ochilganda panelning tezkor tugmalari ishlab
+      // ketardi: tasdiq oynasida bosilgan "t" hodisani jimgina
+      // tasdiqlab, "r" esa rad etib yuborardi — orqada, foydalanuvchi
+      // ko'rmagan holda. Eng ustki dialog biz bo'lmasak — tinch turamiz.
+      if (topDialogPanel() !== panelRef.current) return;
       if (e.key === 'ArrowLeft' && onPrev) {
         e.preventDefault();
         onPrev();
@@ -68,7 +80,7 @@ export default function EventDrawer({
     ? [
         { label: 'Vaqt', value: event.timestamp, hint: event.occurredAt ? relativeTime(event.occurredAt) : undefined },
         { label: 'Kriteriya', value: `№${event.moduleCode} ${event.moduleName}` },
-        { label: 'Kamera', value: event.cameraName },
+        { label: 'Kamera', value: cameraLabel(event) },
         ...(event.building ? [{ label: 'Bino', value: event.building }] : []),
         ...(event.personName ? [{ label: 'Shaxs', value: event.personName }] : []),
         ...(event.reviewedBy ? [{ label: "Ko'rib chiqdi", value: event.reviewedBy, hint: event.reviewedAt ?? undefined }] : []),
@@ -79,9 +91,10 @@ export default function EventDrawer({
     <Drawer
       open={!!event}
       onClose={onClose}
+      panelRef={panelRef}
       size="lg"
       title={event?.moduleName}
-      subtitle={event ? `${event.cameraName}${event.building ? ` · ${event.building}` : ''}` : undefined}
+      subtitle={event ? `${cameraLabel(event)}${event.building ? ` · ${event.building}` : ''}` : undefined}
       footer={
         event && (
           <div className="flex w-full flex-wrap items-center justify-between gap-3">
@@ -108,7 +121,7 @@ export default function EventDrawer({
       {event && (
         <div className="space-y-4">
           <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-card bg-black">
-            {event.snapshotUrl ? (
+            {event.snapshotUrl && !snapshotFailed ? (
               <a
                 href={event.snapshotUrl}
                 target="_blank"
@@ -116,7 +129,12 @@ export default function EventDrawer({
                 title="Kadrni to'liq o'lchamda ochish"
                 className="group block h-full w-full focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-primary/60"
               >
-                <img src={event.snapshotUrl} alt={`${event.moduleName} — ${event.cameraName}`} className="h-full w-full object-contain" />
+                <img
+                  src={event.snapshotUrl}
+                  alt={`${event.moduleName} — ${event.cameraName}`}
+                  onError={() => setSnapshotFailed(true)}
+                  className="h-full w-full object-contain"
+                />
                 <span className="absolute right-3 top-3 flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-[11px] text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
                   <ExternalLink size={12} aria-hidden="true" />
                   To&apos;liq
@@ -125,7 +143,19 @@ export default function EventDrawer({
             ) : (
               <div className="flex flex-col items-center gap-1.5 text-white/40">
                 <ImageOff size={28} aria-hidden="true" />
-                <span className="text-xs">Kadr saqlanmagan</span>
+                {/* Ikki xil sabab — ikki xil xabar: "yo'q" bilan
+                    "ochilmadi" operator uchun bir xil narsa emas. */}
+                <span className="text-xs">{snapshotFailed ? "Kadrni yuklab bo'lmadi" : 'Kadr saqlanmagan'}</span>
+                {snapshotFailed && (
+                  <a
+                    href={event.snapshotUrl ?? '#'}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-white/70 underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/60"
+                  >
+                    Havolani alohida ochish
+                  </a>
+                )}
               </div>
             )}
           </div>

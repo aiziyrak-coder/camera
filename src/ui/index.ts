@@ -88,3 +88,5 @@ export { CountUp } from './CountUp';
 export { parseDisplayNumber, formatLike } from './numberTween';
 export { Sparkline } from './Sparkline';
 export type { SparklineProps } from './Sparkline';
+
+export { topDialogPanel } from './internal/useDialog';

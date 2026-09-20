@@ -1,4 +1,4 @@
-import { useId, useRef, type ReactNode } from 'react';
+import { useId, useRef, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { cn } from './cn';
@@ -22,12 +22,16 @@ export interface DrawerProps {
   children: ReactNode;
   footer?: ReactNode;
   size?: keyof typeof SIZE;
+  /** Panel elementi — ustida boshqa dialog ochilganini bilish uchun
+   *  (topDialogPanel bilan solishtiriladi). */
+  panelRef?: RefObject<HTMLElement | null>;
 }
 
 /** O'ngdan chiqadigan panel — ro'yxatdan chiqmasdan tafsilotni ko'rish
  *  (hodisa, shaxs, kamera). Telefonda to'liq kenglikda. */
-export function Drawer({ open, onClose, title, subtitle, actions, children, footer, size = 'md' }: DrawerProps) {
-  const panelRef = useRef<HTMLElement>(null);
+export function Drawer({ open, onClose, title, subtitle, actions, children, footer, size = 'md', panelRef: externalRef }: DrawerProps) {
+  const ownRef = useRef<HTMLElement>(null);
+  const panelRef = externalRef ?? ownRef;
   const titleId = useId();
   useDialog(open, onClose, panelRef);
 

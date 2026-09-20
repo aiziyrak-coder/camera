@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { api } from './apiClient';
+import { ApiError, api } from './apiClient';
 import { useAuth, type Role } from './auth';
 import { isBackendConfigured } from './config';
 import { usePersistedState } from './usePersistedState';
@@ -84,12 +84,35 @@ const ROLE_COLUMN: Record<Role, PermissionRoleColumn> = {
   'kamera-masuli': 'cameraSteward',
 };
 
+/** "Rol" tanlagichidagi variantlar (AdminUser.role yorliqlari). */
+export const ROLE_OPTIONS = [
+  { value: 'Super Admin', label: 'Super Admin' },
+  { value: 'Admin', label: 'Admin' },
+  { value: "Kamera mas'uli", label: "Kamera mas'uli" },
+];
+
+/**
+ * Backend (app/routers/users.py: _resolve_role) "Super Admin" rolini faqat
+ * Super Admin'ga berishga ruxsat beradi. `manageRoles` sozlanadigan huquq
+ * bo'lgani uchun oddiy admin ham foydalanuvchi oynasiga tusha oladi — unga
+ * o'sha variantni KO'RSATIB, keyin 403 qaytarish o'rniga ro'yxatdan olib
+ * tashlaymiz (UI hech qachon server rad etadigan tugmani ko'rsatmasin).
+ */
+export function roleOptionsFor(myRole: Role | null) {
+  return myRole === 'super-admin' ? ROLE_OPTIONS : ROLE_OPTIONS.filter((o) => o.value !== 'Super Admin');
+}
+
 const STORAGE_KEY = 'camera-permissions';
 
 interface PermissionsContextValue {
   matrix: PermissionMatrix;
   can: (key: PermissionKey, role: Role | null) => boolean;
   toggle: (key: PermissionKey, role: PermissionRoleColumn) => void;
+  /** Oxirgi `toggle` serverda rad etilgan bo'lsa — sababi. Ilgari xato
+   *  jimgina yutilardi: kalit o'z holiga qaytardi-yu, foydalanuvchi
+   *  "bosdim, lekin hech nima bo'lmadi" deb qolaverardi. */
+  saveError: string | null;
+  clearSaveError: () => void;
 }
 
 const PermissionsContext = createContext<PermissionsContextValue | null>(null);
@@ -105,6 +128,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
   const { token } = useAuth();
   const [localMatrix, setLocalMatrix] = usePersistedState<PermissionMatrix>(STORAGE_KEY, DEFAULT_PERMISSIONS);
   const [remoteMatrix, setRemoteMatrix] = useState<PermissionMatrix>(DEFAULT_PERMISSIONS);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isBackendConfigured || !token) return;
@@ -145,6 +169,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
     }
     if (!token) return;
 
+    setSaveError(null);
     setRemoteMatrix((prev) => ({
       ...prev,
       [key]: { ...prev[key], [role]: !prev[key][role] },
@@ -155,17 +180,25 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
       .then((updated) => {
         setRemoteMatrix((prev) => ({ ...prev, [key]: updated }));
       })
-      .catch(() => {
-        // Server rad etdi (masalan, huquq yo'q) — optimistik o'zgarishni qaytaramiz.
+      .catch((err: unknown) => {
+        // Server rad etdi (masalan, huquq yo'q) — optimistik o'zgarishni
+        // qaytaramiz VA sababini ko'rsatamiz.
         setRemoteMatrix((prev) => ({
           ...prev,
           [key]: { ...prev[key], [role]: !prev[key][role] },
         }));
+        setSaveError(
+          err instanceof ApiError
+            ? `«${PERMISSION_LABELS[key]}» saqlanmadi: ${err.message}`
+            : `«${PERMISSION_LABELS[key]}» saqlanmadi — server bilan bog'lanib bo'lmadi`,
+        );
       });
   }
 
   return (
-    <PermissionsContext.Provider value={{ matrix, can, toggle }}>{children}</PermissionsContext.Provider>
+    <PermissionsContext.Provider value={{ matrix, can, toggle, saveError, clearSaveError: () => setSaveError(null) }}>
+      {children}
+    </PermissionsContext.Provider>
   );
 }
 

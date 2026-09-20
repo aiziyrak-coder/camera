@@ -10,14 +10,21 @@ export default function RecipientChipsInput({
   channel,
   value,
   onChange,
+  onDraftChange,
   error,
 }: {
   channel: NotificationChannel;
   value: string[];
   onChange: (next: string[]) => void;
+  /** Hali "chip"ga aylanmagan matn — forma uni jimgina yo'qotmasligi uchun. */
+  onDraftChange?: (draft: string) => void;
   error?: string;
 }) {
-  const [draft, setDraft] = useState('');
+  const [draft, setDraftText] = useState('');
+  const setDraft = (next: string) => {
+    setDraftText(next);
+    onDraftChange?.(next);
+  };
   const [draftError, setDraftError] = useState<string | null>(null);
   const inputId = useId();
   const hintId = `${inputId}-hint`;

@@ -7,7 +7,7 @@
  * monitoring yozuvlari, xodim qidiruvi) va hisob-kitoblar.
  */
 import { api, buildQuery, type CallOptions, type Page } from './apiClient';
-import type { KafedraStat, KafedraTeacher, Lesson } from './situationApi';
+import { UNIT_KIND_LABELS, type KafedraStat, type KafedraTeacher, type Lesson, type PeopleSort, type PersonRank } from './situationApi';
 import type { Tone } from '../ui';
 import type {
   AttendanceCameras,
@@ -81,6 +81,17 @@ export function deleteLessonSession(id: string): Promise<void> {
   return api.del(`/api/lesson-sessions/${encodeURIComponent(id)}`);
 }
 
+/** Reyting ro'yxati. `order` MUHIM: server ro'yxatni tartiblab, keyin
+ *  `limit` bilan KESADI — "eng erta keladigan"/"eng yuqori davomat"ni
+ *  mijozda `reverse()` qilib olish mumkin emas, chunki kerakli odamlar
+ *  kesilgan qismda qoladi. Shuning uchun tartib serverdan so'raladi. */
+export function getPeopleRanking(
+  params: { from: string; to: string; sort: PeopleSort; order: 'asc' | 'desc'; limit?: number },
+  opts?: CallOptions,
+): Promise<PersonRank[]> {
+  return api.get<PersonRank[]>(`/api/situation/analytics/people${buildQuery({ type: 'xodim', ...params })}`, undefined, opts);
+}
+
 // ───────────────────────────────────────────── Yorliqlar va ohanglar
 
 // Yagona ta'rif studentAttendance.ts'da — bu yerda faqat qayta eksport.
@@ -101,25 +112,48 @@ export interface KafedraSummary {
   present: number;
   late: number;
   absent: number;
+  notYet: number;
+  noData: number;
+  dayOff: number;
   lessons: number;
   lateLessons: number;
   missedLessons: number;
+  /** Holati aniqlangan xodimlar: present + absent + notYet (rate maxraji). */
+  decided: number;
+  /** present / decided * 100 — backenddagi `Counts.rate` bilan AYNAN bir xil
+   *  formula. Jami xodimga bo'lish noto'g'ri: yuzi ro'yxatdan o'tmagan
+   *  (noData) va dam olishdagi xodimlar foizga umuman kirmaydi. */
+  rate: number | null;
 }
 
 /** Kafedralar ro'yxatidan umumiy yig'indi (tepa plitkalar). */
 export function summarizeKafedras(rows: readonly KafedraStat[]): KafedraSummary {
-  return rows.reduce<KafedraSummary>(
-    (acc, row) => ({
-      staffTotal: acc.staffTotal + row.staffTotal,
-      present: acc.present + row.present,
-      late: acc.late + row.late,
-      absent: acc.absent + row.absent,
-      lessons: acc.lessons + row.lessonsToday,
-      lateLessons: acc.lateLessons + row.teacherLateLessons,
-      missedLessons: acc.missedLessons + row.teacherMissedLessons,
+  const acc = rows.reduce(
+    (sum, row) => ({
+      staffTotal: sum.staffTotal + row.staffTotal,
+      present: sum.present + row.present,
+      late: sum.late + row.late,
+      absent: sum.absent + row.absent,
+      notYet: sum.notYet + row.notYet,
+      noData: sum.noData + row.noData,
+      dayOff: sum.dayOff + row.dayOff,
+      lessons: sum.lessons + row.lessonsToday,
+      lateLessons: sum.lateLessons + row.teacherLateLessons,
+      missedLessons: sum.missedLessons + row.teacherMissedLessons,
     }),
-    { staffTotal: 0, present: 0, late: 0, absent: 0, lessons: 0, lateLessons: 0, missedLessons: 0 },
+    { staffTotal: 0, present: 0, late: 0, absent: 0, notYet: 0, noData: 0, dayOff: 0, lessons: 0, lateLessons: 0, missedLessons: 0 },
   );
+  const decided = acc.present + acc.absent + acc.notYet;
+  return { ...acc, decided, rate: decided ? Math.round((acc.present / decided) * 1000) / 10 : null };
+}
+
+/** Bo'linma yorlig'i. "Lavozim bo'yicha (bo'linmasi ko'rsatilmagan)" soxta
+ *  bo'linmasi hamma joyda bir xil — "Biriktirilmagan" — deb ataladi: kartada
+ *  "Lavozim", sahifasida "Biriktirilmagan" deyilsa bir xil bo'linma ikki xil
+ *  ko'rinardi. */
+export function unitKindLabel(unit: Pick<KafedraStat, 'kind' | 'unassigned'>): string {
+  if (unit.unassigned) return 'Biriktirilmagan';
+  return UNIT_KIND_LABELS[unit.kind] ?? unit.kind;
 }
 
 /** Kafedra davomati bo'laklari: o'z vaqtida / kech / kelmadi / hali kelmagan / ma'lumot yo'q. */

@@ -218,3 +218,32 @@ describe('lateAfterMinutes', () => {
     expect(POLICY_DEFAULT_LATE).toBe(490);
   });
 });
+
+import { countsByStatus, matchesFilter } from './studentAttendance';
+
+describe("«Ma'lumot yo'q» filtri plitkadagi son bilan bir xil", () => {
+  // Plitka noData + dayOff ni ko'rsatadi, demak filtri ham ikkalasini olishi
+  // kerak — aks holda "Ma'lumot yo'q: 3" bosilganda setkada 2 ta talaba qolardi.
+  const list = [
+    student('a', 'Aliyev A', 'malumot_yoq'),
+    student('b', 'Botirov B', 'dam_olish'),
+    student('c', 'Choriyev C', 'keldi'),
+  ];
+
+  it('dam_olish ham kiradi', () => {
+    expect(filterStudents(list, 'malumot_yoq', '').map((s) => s.id)).toEqual(['a', 'b']);
+    expect(matchesFilter('dam_olish', 'malumot_yoq')).toBe(true);
+    expect(matchesFilter('keldi', 'malumot_yoq')).toBe(false);
+  });
+
+  it("filtrlangan soni plitkadagi son bilan teng", () => {
+    const tally = countsByStatus(countsFromStudents(list));
+    expect(filterStudents(list, 'malumot_yoq', '')).toHaveLength(tally.malumot_yoq + tally.dam_olish);
+  });
+
+  it("boshqa filtrlar o'zgarmaydi", () => {
+    expect(filterStudents(list, 'keldi', '').map((s) => s.id)).toEqual(['c']);
+    expect(filterStudents(list, 'dam_olish', '').map((s) => s.id)).toEqual(['b']);
+    expect(filterStudents(list, 'all', '')).toHaveLength(3);
+  });
+});

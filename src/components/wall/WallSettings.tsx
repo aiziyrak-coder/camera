@@ -43,7 +43,12 @@ export function WallSettings({
   };
 
   return (
-    <div className="fixed right-4 top-4 z-50 w-[360px] rounded-card border border-border bg-surface p-4 text-sm shadow-pop animate-ui-pop-in">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Ekran sozlamalari"
+      className="fixed right-4 top-4 z-50 w-[360px] max-w-[calc(100vw-2rem)] rounded-card border border-border bg-surface p-4 text-sm shadow-pop animate-ui-pop-in"
+    >
       <div className="mb-3 flex items-center">
         <div className="font-semibold text-fg">Ekran sozlamalari</div>
         <IconButton label="Yopish" icon={X} variant="ghost" size="sm" className="ml-auto" onClick={onClose} />
@@ -54,6 +59,7 @@ export function WallSettings({
           <button
             key={p}
             type="button"
+            aria-pressed={panels.includes(p)}
             onClick={() => toggle(p)}
             className={cn(
               'flex items-center gap-2 rounded-control border px-2.5 py-1.5 text-left',
@@ -65,6 +71,9 @@ export function WallSettings({
           </button>
         ))}
       </div>
+      {panels.length === 0 && (
+        <p className="mb-3 text-xs text-warning">Kamida bitta panel kerak — hozirgi panellar saqlanadi.</p>
+      )}
       <label className="mb-1 block text-xs font-medium text-muted" htmlFor="wall-rotate">
         Aylanish, soniya
       </label>

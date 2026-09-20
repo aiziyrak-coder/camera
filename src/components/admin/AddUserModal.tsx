@@ -4,6 +4,7 @@ import { Notice } from '../settings/kit';
 import { required, minLength } from '../../lib/validation';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
+import { roleOptionsFor } from '../../lib/permissions';
 import { normalizeUzPhone } from '../../lib/notificationsApi';
 import type { AdminUser } from '../../types';
 
@@ -17,12 +18,6 @@ interface FormErrors {
   form?: string;
 }
 
-const ROLE_OPTIONS = [
-  { value: 'Super Admin', label: 'Super Admin' },
-  { value: 'Admin', label: 'Admin' },
-  { value: "Kamera mas'uli", label: "Kamera mas'uli" },
-];
-
 export default function AddUserModal({
   open,
   onClose,
@@ -32,7 +27,8 @@ export default function AddUserModal({
   onClose: () => void;
   onAdd: (user: AdminUser) => void;
 }) {
-  const { token } = useAuth();
+  const { token, role: myRole } = useAuth();
+  const roleOptions = roleOptionsFor(myRole);
   const [name, setName] = useState('');
   const [login, setLogin] = useState('');
   const [email, setEmail] = useState('');
@@ -120,7 +116,7 @@ export default function AddUserModal({
             <Input placeholder="a.alimov" value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="off" />
           </Field>
           <Field label="Rol" required error={errors.role} hint="Huquqlarni “Huquqlar matritsasi” bo'limida sozlash mumkin.">
-            <Select value={role} onChange={(v) => setRole(v as AdminUser['role'])} options={ROLE_OPTIONS} placeholder="Tanlang" className="sm:w-full" />
+            <Select value={role} onChange={(v) => setRole(v as AdminUser['role'])} options={roleOptions} placeholder="Tanlang" className="sm:w-full" />
           </Field>
           <Field label="Email" hint="Ixtiyoriy">
             <Input type="email" placeholder="a.alimov@fjsti.uz" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />

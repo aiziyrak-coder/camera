@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Award, CalendarCheck2, Clock3, Timer } from 'lucide-react';
 import { Avatar, Card, CardHeader, DataTable, ErrorState, ProgressBar, SkeletonTiles, StatTile, cn, formatPercent, formatUzRange, toneForRate, type DataTableColumn } from '../../ui';
 import { getAnalyticsPeople, getAnalyticsUnits, situationPaths, type PersonRank, type UnitKind } from '../../lib/situationApi';
+import { useViewDate } from '../../lib/viewDate';
 import { DeltaBadge } from '../analytics';
 import { StreakBadge } from './RankingTab';
 import { useLoader } from './useLoader';
@@ -17,13 +18,17 @@ function weightedRate(rows: Array<{ presentDays: number; absentDays: number }>):
  *  o'rtachasiga nisbatan), bo'linmalar orasidagi o'rni va xodimlar jadvali. */
 export function UnitAnalyticsSection({ unitId, unitName, kind, from, to }: { unitId: string; unitName: string; kind: UnitKind; from: string; to: string }) {
   const navigate = useNavigate();
+  const { withDate } = useViewDate();
   const units = useLoader(`ua:${from}:${to}`, (signal) => getAnalyticsUnits({ from, to, kind: 'all', sort: 'rate' }, { signal }), { group: 'ua' });
   const people = useLoader(`up:${unitId}:${from}:${to}`, (signal) => getAnalyticsPeople({ from, to, unitId, sort: 'late', limit: 500 }, { signal }), { group: 'up' });
 
   const unit = units.data?.find((u) => u.id === unitId) ?? null;
   const ranked = useMemo(() => (units.data ?? []).filter((u) => u.rate !== null && u.kind !== 'lavozim'), [units.data]);
   const position = unit ? ranked.findIndex((u) => u.id === unit.id) + 1 : 0;
-  const institute = useMemo(() => weightedRate(units.data ?? []), [units.data]);
+  // O'rtacha ham reyting bilan bir xil to'plamdan: "Lavozim bo'yicha" soxta
+  // bo'linmasi o'rinlar ro'yxatidan chiqarilgani holda o'rtachaga kirsa,
+  // "N-o'rin" va "institut o'rtachasi" boshqa-boshqa institutni bildirardi.
+  const institute = useMemo(() => weightedRate((units.data ?? []).filter((u) => u.kind !== 'lavozim')), [units.data]);
   const vsInstitute = unit?.rate !== null && unit?.rate !== undefined && institute !== null ? unit.rate - institute : null;
 
   const columns: DataTableColumn<PersonRank>[] = [
@@ -35,7 +40,9 @@ export function UnitAnalyticsSection({ unitId, unitName, kind, from, to }: { uni
         <div className="flex min-w-0 items-center gap-3">
           <Avatar name={p.fullName} src={p.photoUrl ?? undefined} size="sm" />
           <div className="min-w-0">
-            <p className="truncate font-medium text-fg">{p.fullName}</p>
+            <p className="truncate font-medium text-fg" title={p.fullName}>
+              {p.fullName}
+            </p>
             <StreakBadge p={p} />
           </div>
         </div>
@@ -102,7 +109,13 @@ export function UnitAnalyticsSection({ unitId, unitName, kind, from, to }: { uni
               </span>
             }
           />
-          <StatTile label="O'rtacha kelish" icon={Clock3} tone="info" value={unit?.avgArrival ?? '—'} hint={`${formatPercent(unit?.punctualPct)} kunlarda o'z vaqtida`} />
+          <StatTile
+            label="O'rtacha kelish"
+            icon={Clock3}
+            tone="info"
+            value={unit?.avgArrival ?? '—'}
+            hint={unit?.punctualPct === null || unit?.punctualPct === undefined ? "Ma'lumot yo'q" : `kelgan kunlarning ${formatPercent(unit.punctualPct)} qismida o'z vaqtida`}
+          />
           <StatTile
             label="Kech / kelmagan"
             icon={Timer}
@@ -125,7 +138,7 @@ export function UnitAnalyticsSection({ unitId, unitName, kind, from, to }: { uni
           loading={people.loading}
           error={people.data ? null : people.error}
           onRetry={people.reload}
-          onRowClick={(p) => navigate(situationPaths.person(p.id))}
+          onRowClick={(p) => navigate(withDate(situationPaths.person(p.id)))}
           defaultSort={{ key: 'late', dir: 'desc' }}
           emptyTitle="Bu davrda ma'lumot yo'q"
           emptyDescription="Xodimlarning yuzi tasdiqlanib, kameralar ularni tanigach tahlil paydo bo'ladi."

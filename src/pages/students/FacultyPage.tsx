@@ -76,7 +76,9 @@ export default function FacultyPage() {
   const [query, setQuery] = useState('');
   const [sort, setSort] = usePersistedState<GroupSortKey>('talabalar.fakultet.saralash', 'name');
   const [view, setView] = usePersistedState<'cards' | 'table'>('talabalar.fakultet.korinish', 'cards');
-  const defaultMode: ViewId = data && !hasAttendanceData(data.totals) ? 'yuz' : 'davomat';
+  // Talabasi yo'q fakultet "Yuz topshirish" bilan ochilmaydi — yig'iladigan
+  // yuz ham yo'q, foydalanuvchi bo'sh kampaniya ko'rinishiga tushib qolardi.
+  const defaultMode: ViewId = data && data.totals.total > 0 && !hasAttendanceData(data.totals) ? 'yuz' : 'davomat';
   const [mode] = useUrlTab(VIEWS, { param: VIEW_PARAM, defaultTab: defaultMode });
 
   const courseTabs: TabItem[] = useMemo(
@@ -120,7 +122,18 @@ export default function FacultyPage() {
     { key: 'on', header: "O'z vaqtida", align: 'right', cell: (g) => formatNumber(g.present - g.late), sortValue: (g) => g.present - g.late },
     { key: 'late', header: 'Kech keldi', align: 'right', cell: (g) => formatNumber(g.late), sortValue: (g) => g.late },
     { key: 'absent', header: 'Kelmadi', align: 'right', cell: (g) => formatNumber(g.absent), sortValue: (g) => g.absent },
-    { key: 'notYet', header: 'Hali kelmagan', align: 'right', cell: (g) => formatNumber(g.notYet), sortValue: (g) => g.notYet, hideOnMobile: !isToday },
+    // O'tgan kunda "hali kelmagan" bo'lmaydi (server pending=false) — o'rniga
+    // kamera taniy olmagan (yuzi yo'q) talabalar soni ko'rsatiladi.
+    isToday
+      ? { key: 'notYet', header: 'Hali kelmagan', align: 'right' as const, cell: (g: GroupStat) => formatNumber(g.notYet), sortValue: (g: GroupStat) => g.notYet }
+      : {
+          key: 'noData',
+          header: "Ma'lumot yo'q",
+          align: 'right' as const,
+          cell: (g: GroupStat) => formatNumber(g.noData + g.dayOff),
+          sortValue: (g: GroupStat) => g.noData + g.dayOff,
+          hideOnMobile: true,
+        },
     {
       key: 'rate',
       header: 'Kelganlar ulushi',
@@ -145,7 +158,7 @@ export default function FacultyPage() {
   return (
     <Page
       title={name}
-      subtitle={`Fakultetdagi har bir guruhda bugun nechta talaba kelgani${data ? ` · ${groupCount} guruh, ${formatNumber(data.totals.total)} talaba` : ''} · ${formatUzDate(date, { weekday: true })}`}
+      subtitle={`Fakultetdagi har bir guruhda ${isToday ? 'bugun' : 'shu kuni'} nechta talaba kelgani${data ? ` · ${groupCount} guruh, ${formatNumber(data.totals.total)} talaba` : ''} · ${formatUzDate(date, { weekday: true })}`}
       breadcrumbs={[{ label: 'Talabalar', to: withDate(situationPaths.faculties) }, { label: name }]}
       actions={<IconButton icon={RefreshCw} label="Yangilash" variant="secondary" onClick={faculty.reload} loading={faculty.refreshing} />}
       tabs={data ? VIEWS : undefined}
@@ -223,7 +236,6 @@ export default function FacultyPage() {
               rowKey={(g) => g.name}
               onRowClick={(g) => navigate(withDate(situationPaths.group(g.name)))}
               rowTone={(g) => (g.rate === null || !hasAttendanceData(g) ? null : g.rate >= 85 ? 'success' : g.rate >= 70 ? 'warning' : 'danger')}
-              manualSort
             />
           ) : (
             blocks

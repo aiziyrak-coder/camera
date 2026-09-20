@@ -26,7 +26,7 @@ from app.models import (
 from app.routers import enrollment
 from app.services import privacy as privacy_service
 from app.services.face_matching import load_candidate_matrix, load_candidate_matrix_cached
-from tests.conftest import auth_headers
+from tests.conftest import ENROLL_CODE, auth_headers
 
 EMBEDDING = json.dumps([0.1] * 512)
 FRAMES = [("photos", (f"{step}.jpg", b"jpeg", "image/jpeg")) for step in ("front", "left", "right")]
@@ -115,7 +115,7 @@ class TestEnrollmentConsent:
             db_session, pinfl="31234567890123", biometrics_status="yoq", biometric_embedding=None,
             biometric_photo_key=None,
         )
-        resp = await client.post(f"/api/public/enrollment/{person.id}/submit", data={"pinfl": person.pinfl}, files=FRAMES)
+        resp = await client.post(f"/api/public/enrollment/{person.id}/submit", data={"code": ENROLL_CODE, "pinfl": person.pinfl}, files=FRAMES)
         assert resp.status_code == 422
         assert "rozilik" in resp.json()["detail"]
         await db_session.refresh(person)
@@ -129,7 +129,7 @@ class TestEnrollmentConsent:
         )
         resp = await client.post(
             f"/api/public/enrollment/{person.id}/submit",
-            data={"pinfl": person.pinfl, "consent": "true"},
+            data={"code": ENROLL_CODE, "pinfl": person.pinfl, "consent": "true"},
             files=FRAMES,
         )
         assert resp.status_code == 200, resp.text
@@ -145,7 +145,7 @@ class TestEnrollmentConsent:
             db_session, pinfl="31234567890123", biometrics_status="yoq", biometric_embedding=None,
             biometric_photo_key=None,
         )
-        resp = await client.post(f"/api/public/enrollment/{person.id}/submit", data={"pinfl": person.pinfl}, files=FRAMES)
+        resp = await client.post(f"/api/public/enrollment/{person.id}/submit", data={"code": ENROLL_CODE, "pinfl": person.pinfl}, files=FRAMES)
         assert resp.status_code == 200, resp.text
         await db_session.refresh(person)
         assert person.consent_given_at is None
@@ -157,7 +157,7 @@ class TestEnrollmentConsent:
         )
         resp = await client.post(
             f"/api/public/enrollment/{person.id}/submit",
-            data={"pinfl": person.pinfl, "consent": "true"},
+            data={"code": ENROLL_CODE, "pinfl": person.pinfl, "consent": "true"},
             files=FRAMES,
         )
         assert resp.status_code == 403

@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Permission, User
 from app.rtsp import redact_credentials
 from app.security import create_access_token
-from tests.conftest import auth_headers, login
+from tests.conftest import ENROLL_CODE, auth_headers, login
 
 
 # ---------------------------------------------------------------------------
@@ -311,10 +311,13 @@ async def test_public_endpoints_reject_malformed_ids_with_404(
 
     resp = await client.post(
         "/api/public/enrollment/not-a-uuid/submit",
-        data={"pinfl": "12345678901234", "consent": "true"},
+        data={"code": ENROLL_CODE, "pinfl": "12345678901234", "consent": "true"},
         files=[("photos", ("a.jpg", b"not-an-image", "image/jpeg"))],
     )
-    assert resp.status_code == 404
+    # 500 emas. Endi 404 ham emas: yo'q yozuv va noto'g'ri kod AYNAN bir
+    # xil javob beradi (403), aks holda identifikatorlarni birma-bir
+    # sinab kim bor-yo'qligini aniqlash mumkin bo'lardi.
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -323,7 +326,7 @@ async def test_register_with_malformed_faculty_id_is_422_not_500(
 ) -> None:
     resp = await client.post(
         "/api/public/enrollment/register",
-        json={
+        json={"code": ENROLL_CODE, 
             "fullName": "Test Testov",
             "type": "talaba",
             "groupOrPosition": "101-guruh",
@@ -362,7 +365,7 @@ async def test_duplicate_passport_does_not_break_lookup(
 
     resp = await client.post(
         "/api/public/enrollment/lookup",
-        json={"passportSeries": "AD", "passportNumber": "1234567"},
+        json={"code": ENROLL_CODE, "passportSeries": "AD", "passportNumber": "1234567"},
     )
     assert resp.status_code == 200
     # Eng eskisi — barqaror tanlov (har chaqiruvda bir xil yozuv).

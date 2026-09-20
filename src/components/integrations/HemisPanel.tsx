@@ -34,22 +34,31 @@ const ENTITY_TEST_LABELS: Record<string, string> = {
 };
 
 /** Sahifa sarlavhasidagi HEMIS tugmalari (o'ng yuqorida). */
+/** Nofaol tugma sababi — sichqoncha ustiga kelganda ko'rinadi. Tugma
+ *  o'zi `pointer-events` ni yutadi, shuning uchun izoh o'ram span'da. */
+const NOT_CONFIGURED_HINT = 'HEMIS sozlanmagan: serverda HEMIS_BASE_URL va HEMIS_API_TOKEN kiritilishi kerak';
+
 export function HemisActions({ hemis }: { hemis: HemisSync }) {
   const configured = Boolean(hemis.status?.configured);
+  const hint = configured ? undefined : NOT_CONFIGURED_HINT;
   return (
     <>
-      <Button icon={PlugZap} loading={hemis.testing} disabled={!configured} onClick={() => void hemis.test()}>
-        Ulanishni tekshirish
-      </Button>
-      <Button
-        variant="primary"
-        icon={RefreshCw}
-        loading={hemis.starting || Boolean(hemis.running)}
-        disabled={!configured}
-        onClick={() => void hemis.sync()}
-      >
-        Hozir sinxronlash
-      </Button>
+      <span title={hint}>
+        <Button icon={PlugZap} loading={hemis.testing} disabled={!configured} onClick={() => void hemis.test()}>
+          Ulanishni tekshirish
+        </Button>
+      </span>
+      <span title={hint}>
+        <Button
+          variant="primary"
+          icon={RefreshCw}
+          loading={hemis.starting || Boolean(hemis.running)}
+          disabled={!configured}
+          onClick={() => void hemis.sync()}
+        >
+          Hozir sinxronlash
+        </Button>
+      </span>
     </>
   );
 }
@@ -280,8 +289,15 @@ export default function HemisPanel({ hemis }: { hemis: HemisSync }) {
           loadingRows={4}
           error={runs ? null : hemis.runsError}
           onRetry={() => void hemis.loadRuns()}
-          emptyTitle="Hali sinxronlash bo'lmagan"
-          emptyDescription="“Hozir sinxronlash” tugmasini bosing."
+          // HEMIS sozlanmagan bo'lsa (productionda hozir shunday) "Hozir
+          // sinxronlash tugmasini bosing" deyish noto'g'ri — o'sha tugma
+          // aynan shu sababdan NOFAOL turibdi.
+          emptyTitle={status && !status.configured ? "Sinxronlash hali mumkin emas" : "Hali sinxronlash bo'lmagan"}
+          emptyDescription={
+            status && !status.configured
+              ? "HEMIS ulanmagan: yuqoridagi ko'rsatma bo'yicha serverdagi .env fayliga HEMIS_BASE_URL va HEMIS_API_TOKEN ni kiriting. Shundan keyin “Hozir sinxronlash” tugmasi ishlaydi."
+              : '“Hozir sinxronlash” tugmasini bosing.'
+          }
           ariaLabel="Sinxronlash tarixi"
           maxHeight="none"
           footer={

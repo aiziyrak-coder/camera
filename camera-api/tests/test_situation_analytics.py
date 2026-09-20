@@ -328,7 +328,12 @@ class TestEnrollment:
         assert body["total"] == 5
         assert [m["fullName"] for m in body["missing"]] == ["Ergasheva Laylo"]
         assert body["missing"][0]["initials"] == "EL" and body["missing"][0]["biometricsStatus"] == "yoq"
-        assert body["enrollUrl"] == "https://cam.example.uz/royxatdan-otish?guruh=DI-2301"
+        # Kartadagi havola guruh kodini ham olib yuradi — telefonda uni
+        # qo'lda terish shart bo'lmasin (kodsiz topshirish qabul qilinmaydi).
+        assert len(body["enrollCode"]) == 6
+        assert body["enrollUrl"] == (
+            f"https://cam.example.uz/royxatdan-otish?guruh=DI-2301&kod={body['enrollCode']}"
+        )
 
         empty = (await client.get("/api/situation/enrollment/groups/DI-2303/missing", headers=admin)).json()
         assert empty["total"] == 0 and empty["missing"] == []
@@ -337,26 +342,69 @@ class TestEnrollment:
 
 # ─────────────────────────────────────────── API: devor va overview bayrog'i
 
-async def test_wall_payload(client, world, admin):
+@pytest.fixture
+async def wall_world(world, db_session):
+    """Reyting chiqishi uchun bo'linmalarga kamida 3 kishi kerak
+    (WALL_MIN_MEASURED) — kichik dunyoga qo'shimcha xodimlar."""
+    extra = [
+        _person("Anatomchi Kelmadi", "xodim", "Anatomiya kafedrasi"),
+        _person("Anatomchi Kutilmoqda", "xodim", "Anatomiya kafedrasi"),
+        _person("Fiziolog Bir", "xodim", "Fiziologiya kafedrasi"),
+        _person("Fiziolog Ikki", "xodim", "Fiziologiya kafedrasi"),
+    ]
+    db_session.add_all(extra)
+    await db_session.flush()
+    db_session.add(_record(extra[0], world.today, "kelmadi"))
+    await db_session.commit()
+    svc.clear_cache()
+    return world
+
+
+async def test_wall_payload(client, wall_world, admin):
+    world = wall_world
     body = (await client.get("/api/situation/wall", headers=admin)).json()
     assert body["date"] == world.today.isoformat()
     assert body["students"]["total"] == 12 and body["staff"]["present"] == 2
     assert body["studentsDataAvailable"] is True
     assert [(u["name"], u["rate"]) for u in body["topUnits"]] == [
-        ("Anatomiya kafedrasi", 100.0), ("Fiziologiya kafedrasi", 0.0),
+        ("Anatomiya kafedrasi", 50.0), ("Fiziologiya kafedrasi", 0.0),
     ]
     assert [u["name"] for u in body["bottomUnits"]] == ["Fiziologiya kafedrasi", "Anatomiya kafedrasi"]
     assert len(body["lastArrivals"]) == 8 and body["lastArrivals"][0]["fullName"] == "Karimov Aziz Olimovich"
     assert [e["status"] for e in body["highEvents"]] == ["yangi"]
-    assert (body["camerasOnline"], body["camerasTotal"]) == (2, 3)
+    # Ochiq yuqori xavfli hodisalar soni ro'yxat uzunligidan alohida keladi
+    # (ro'yxat 5 ta bilan cheklangan).
+    assert body["highOpen"] == 1
+    # "nofaol" kamera javob bermayotgan emas: maxraj — faol kameralar.
+    assert (body["camerasOnline"], body["camerasTotal"]) == (2, 2)
     assert body["enrollment"]["students"]["pct"] == 75.0
+    # O'lchangani 3 kishidan kam guruh/bo'linma ekranga chiqmaydi:
+    # DI-2101 (1), DI-2302 (1), PE-2501 (2) tushib qoladi.
     assert body["spotlight"] == [
-        {"kind": "unit", "id": str(world.anatomy.id), "name": "Anatomiya kafedrasi", "rate": 100.0},
-        {"kind": "group", "id": "DI-2101", "name": "DI-2101", "rate": 100.0},
+        {"kind": "unit", "id": str(world.anatomy.id), "name": "Anatomiya kafedrasi", "rate": 50.0},
         {"kind": "group", "id": "DI-2301", "name": "DI-2301", "rate": 50.0},
-        {"kind": "group", "id": "DI-2302", "name": "DI-2302", "rate": 100.0},
-        {"kind": "group", "id": "PE-2501", "name": "PE-2501", "rate": 50.0},
     ]
+
+
+async def test_wall_hides_units_measured_on_one_or_two_people(client, world, admin):
+    """Ikki kishilik kafedraning "0%" yoki "100%" i reyting emas."""
+    body = (await client.get("/api/situation/wall", headers=admin)).json()
+    assert body["topUnits"] == [] and body["bottomUnits"] == []
+    assert [s["kind"] for s in body["spotlight"]] == ["group"]
+
+
+async def test_wall_drops_group_spotlight_without_student_faces(client, world, admin, db_session):
+    """Yuzi tasdiqlangan talaba yetarli bo'lmaganda guruh foizi o'lchov
+    emas — devor ekranida guruhlar umuman ko'rsatilmaydi."""
+    for person in vars(world.people).values():
+        if person.type == "talaba":
+            person.biometrics_status = "yoq"
+    db_session.add_all([_person(f"Talaba {i}", "talaba", "1-kurs, ZZ-1", enrolled=False) for i in range(10)])
+    await db_session.commit()
+    svc.clear_cache()
+    body = (await client.get("/api/situation/wall", headers=admin)).json()
+    assert body["studentsDataAvailable"] is False
+    assert [s for s in body["spotlight"] if s["kind"] == "group"] == []
 
 
 async def test_overview_students_data_flag(client, world, admin, db_session):

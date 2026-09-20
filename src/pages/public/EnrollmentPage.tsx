@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Check, CheckCircle2, Clock, IdCard, RotateCcw, ScanFace, UserCheck } from 'lucide-react';
+import { Check, CheckCircle2, Clock, IdCard, RotateCcw, ScanFace, UserCheck, UserPlus } from 'lucide-react';
 import EnrollmentConsent from '../../components/public/EnrollmentConsent';
 import EnrollmentFaceCapture from '../../components/public/EnrollmentFaceCapture';
 import EnrollmentRegisterForm from '../../components/public/EnrollmentRegisterForm';
@@ -8,6 +8,7 @@ import { Notice, Segmented } from '../../components/settings/kit';
 import { Avatar, Button, Card, Field, Input, cn } from '../../ui';
 import { ApiError } from '../../lib/apiClient';
 import { branding } from '../../lib/branding';
+import { ENROLL_CODE_LENGTH, isEnrollCodeComplete, normalizeEnrollCode } from '../../lib/enrollCode';
 import {
   type EnrollmentLookupResult,
   type EnrollmentRegisterInput,
@@ -77,8 +78,17 @@ export default function EnrollmentPage() {
   const [searchParams] = useSearchParams();
   // QR kartadan kelganda (?guruh=DI-2301) — guruh nomi eslatma sifatida ko'rsatiladi.
   const groupHint = (searchParams.get('guruh') ?? '').trim().slice(0, 60);
+  // QR kartada kod ham bor (?kod=K7M2XR) — telefonda uni qo'lda terish
+  // shart emas. Havolasiz kelgan odam kodni o'zi kiritadi.
+  const codeHint = normalizeEnrollCode(searchParams.get('kod'));
   const [step, setStep] = useState<Step>('identify');
   const [method, setMethod] = useState<Method>('pinfl');
+  const [code, setCode] = useState(codeHint);
+  // Topilmadi: yozuvi yo'q odam shu tugma orqali o'zini qo'shadi.
+  // Avval bu avtomatik bo'lardi, lekin endi "topilmadi" javobi
+  // "kod noto'g'ri" bilan bir xil — ya'ni sababini faqat odamning
+  // o'zi biladi va tanlovni ham o'zi qilishi kerak.
+  const [notFound, setNotFound] = useState(false);
   const [pinfl, setPinfl] = useState('');
   const [series, setSeries] = useState('');
   const [number, setNumber] = useState('');
@@ -108,17 +118,21 @@ export default function EnrollmentPage() {
   async function handleLookup(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setNotFound(false);
     setLoading(true);
     try {
-      const result = await lookupPerson(identity);
+      const result = await lookupPerson(identity, code);
       setFound(result);
       setStep('confirm');
     } catch (err) {
-      // 404 — bu xato emas, oqimning ikkinchi yo'li: tizimda yozuvi yo'q
-      // odam shu yerdan o'zini ro'yxatdan o'tkazadi. Ilgari jarayon
-      // aynan shu nuqtada "yozuv topilmadi" bilan tugardi.
+      // 404 — "topilmadi YOKI kod noto'g'ri". Server ataylab ikkisini
+      // ajratmaydi: aks holda begona odam kodni to'g'ri topganini
+      // javobdan bilib olardi. Shuning uchun bu yerda ham avtomatik
+      // ravishda "o'zini qo'shish"ga o'tilmaydi — xabar ko'rsatiladi
+      // va tanlov odamning o'ziga qoldiriladi.
       if (err instanceof ApiError && err.status === 404) {
-        setStep('register');
+        setError(err.message);
+        setNotFound(true);
       } else {
         setError(err instanceof ApiError ? err.message : "So'rovni bajarib bo'lmadi");
       }
@@ -131,7 +145,7 @@ export default function EnrollmentPage() {
     setError(null);
     setLoading(true);
     try {
-      const created = await registerSelf(input);
+      const created = await registerSelf(input, code);
       setFound(created);
       setStep('confirm');
     } catch (err) {
@@ -147,7 +161,7 @@ export default function EnrollmentPage() {
     setCaptureError(null);
     setLoading(true);
     try {
-      const result = await submitEnrollment(found.recordId, identity, frames, consent);
+      const result = await submitEnrollment(found.recordId, identity, frames, consent, code);
       setAwaitingApproval(Boolean(result.awaitingApproval));
       setStep('success');
     } catch (err) {
@@ -166,6 +180,7 @@ export default function EnrollmentPage() {
     setStep('identify');
     setFound(null);
     setError(null);
+    setNotFound(false);
   }
 
   const pinflShort = method === 'pinfl' && pinfl.length > 0 && pinfl.length < 13;
@@ -190,7 +205,9 @@ export default function EnrollmentPage() {
           <Notice tone="info" title={`Guruh: ${groupHint}`}>
             {step === 'register'
               ? `«Guruh» maydoniga «${groupHint}» deb yozing.`
-              : "Bu havola guruhingiz uchun berilgan. JSHSHIR bilan o'zingizni toping va yuzingizni skanerlang."}
+              : codeHint
+                ? "Bu havola guruhingiz uchun berilgan va guruh kodi ham unga kiritilgan. JSHSHIR bilan o'zingizni toping va yuzingizni skanerlang."
+                : "Bu havola guruhingiz uchun berilgan. JSHSHIR va guruh kodi bilan o'zingizni toping."}
           </Notice>
         )}
 
@@ -261,9 +278,50 @@ export default function EnrollmentPage() {
               </div>
             )}
 
-            <Button type="submit" variant="primary" size="lg" icon={IdCard} loading={loading} fullWidth>
+            <Field
+              label={`Guruh kodi (${ENROLL_CODE_LENGTH} belgi)`}
+              hint="Kod guruh sardorida yoki dekanatda bo'ladi — chop etilgan kartada ham yozilgan."
+              required
+            >
+              <Input
+                value={code}
+                onChange={(e) => setCode(normalizeEnrollCode(e.target.value))}
+                placeholder="K7M2XR"
+                autoComplete="off"
+                autoCapitalize="characters"
+                required
+                size="lg"
+                className="[&_input]:text-base [&_input]:font-mono [&_input]:uppercase [&_input]:tracking-[0.3em]"
+              />
+            </Field>
+
+            <Button
+              type="submit"
+              variant="primary"
+              size="lg"
+              icon={IdCard}
+              loading={loading}
+              disabled={!isEnrollCodeComplete(code)}
+              fullWidth
+            >
               {loading ? 'Qidirilmoqda...' : 'Davom etish'}
             </Button>
+
+            {notFound && (
+              <Button
+                type="button"
+                variant="ghost"
+                icon={UserPlus}
+                onClick={() => {
+                  setError(null);
+                  setNotFound(false);
+                  setStep('register');
+                }}
+                fullWidth
+              >
+                Ro&apos;yxatda yo&apos;qman — o&apos;zimni qo&apos;shish
+              </Button>
+            )}
           </form>
         )}
 

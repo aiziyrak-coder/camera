@@ -113,6 +113,29 @@ async def _clean_tables():
     reset_motion_history_for_tests()
 
 
+#: Testlardagi ro'yxatdan o'tish kodi.
+#
+#: Ochiq ro'yxatdan o'tish endi guruh kodini talab qiladi
+#: (app/services/enrollment_code.py). Har bir test o'ziga guruh kodi
+#: yaratib o'tirmasligi uchun bu yerda institut bo'yicha ZAXIRA
+#: ('umumiy') kod yaratiladi: u o'z kodi bo'lmagan yozuvlarga qo'llanadi,
+#: ya'ni guruh kodini ataylab tekshiradigan testlar o'z kodini yaratib,
+#: shu zaxirani o'zi bosib o'tadi.
+ENROLL_CODE = "K7M2XR"
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _enrollment_code(_clean_tables) -> AsyncGenerator[str, None]:
+    # _clean_tables jadvallarni tozalagandan KEYIN yozilishi shart —
+    # aks holda kod o'sha tozalashda o'chib ketardi.
+    from app.models import EnrollmentCode
+
+    async with TestSessionLocal() as session:
+        session.add(EnrollmentCode(scope="umumiy", unit_key="", unit_name="Butun institut", code=ENROLL_CODE))
+        await session.commit()
+    yield ENROLL_CODE
+
+
 @pytest_asyncio.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     async with TestSessionLocal() as session:

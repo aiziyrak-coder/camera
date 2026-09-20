@@ -294,6 +294,14 @@
     display: block !important;
   }
 
+  /* Jadval ustidagi rostgo'ylik izohi (nechta odam hisoblangan, nechta
+     qator bosilgan) jadvaldan ajralib, o'zi yolg'iz betda qolmasin. */
+  .print-scope-note {
+    break-after: avoid;
+    page-break-after: avoid;
+    break-inside: avoid;
+  }
+
   main {
     padding: 0 !important;
   }

@@ -7,7 +7,8 @@ Qoida sodda va tushunarli (institut talabi, 2026-09-19):
     undan keyin — "kech_keldi" (kechikish daqiqasi hisoblanadi);
   * dam olish kunlari kechikish hisoblanmaydi;
   * track_last_seen — kunning oxirgi ko'rinishi check_out ga yoziladi
-    ("oxirgi ko'rilgan"), ish tugashidan oldin bo'lsa — erta ketgan.
+    ("oxirgi ko'rilgan"); "erta ketdi" degan xulosa esa faqat dalil
+    yetarli bo'lganda chiqariladi — early_leave_verdict() ga qarang.
 
 Jadval bitta qatorli (app/models/attendance_policy.py). Yuz tanish har
 soniyada chaqiriladi, shuning uchun qoida xotirada keshlanadi (30 s)."""
@@ -20,7 +21,9 @@ from datetime import date as date_type, datetime, time as time_type, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.attendance_policy import AttendancePolicy
+from app.timezone import local_now
 
 CACHE_SECONDS = 30.0
 
@@ -45,8 +48,18 @@ class Policy:
         return day is None or day.isoweekday() in self.work_days
 
     def late_minutes(self, arrived: time_type | None, person_type: str | None, day: date_type | None = None) -> int:
-        """Ish boshlanishidan necha daqiqa kech (grace ichida bo'lsa 0)."""
-        if arrived is None or not self.is_work_day(day) or arrived <= self.late_after(person_type):
+        """Ish boshlanishidan necha daqiqa kech (grace ichida bo'lsa 0).
+
+        Soniya hisobga olinmaydi — chegara DAQIQA aniqligida. Kelish vaqti
+        soniyasi bilan yoziladi (attendance_ai: .replace(microsecond=0)),
+        shuning uchun taqqoslashdan oldin soniya kesiladi: 08:10:30 da
+        kelgan odam "08:10 da keldi" deb ko'rsatiladi, lekin kesilmasa
+        08:10:00 < 08:10:30 bo'lib "10 daqiqa kech keldi" deb yozilardi —
+        ya'ni 08:10 daqiqasida kelgan hamma noto'g'ri kech hisoblanardi."""
+        if arrived is None or not self.is_work_day(day):
+            return 0
+        arrived = arrived.replace(second=0, microsecond=0)
+        if arrived <= self.late_after(person_type):
             return 0
         start = self.start_for(person_type)
         return (arrived.hour * 60 + arrived.minute) - (start.hour * 60 + start.minute)
@@ -60,6 +73,101 @@ class Policy:
             data[key] = data[key].strftime("%H:%M")
         data["work_days"] = list(self.work_days)
         return data
+
+
+# ─────────────────────────────────────────── erta ketish (TT kriteriya 9)
+
+PRESENT_STATUSES = ("keldi", "kech_keldi")
+
+# Qaror turlari. "aniqlanmadi" — eng muhimi: ma'lumot yetarli emas.
+EARLY_YES = "erta_ketdi"
+EARLY_NO = "vaqtida"
+EARLY_UNKNOWN = "aniqlanmadi"
+EARLY_NA = "tegishli_emas"  # kelmagan kun, dam olish, hali tugamagan kun
+
+# Chiqishdan keyingi shu oraliqdagi ko'rinish "keyin ham binoda edi"
+# hisoblanmaydi: odam eshikdan chiqayotganda uni yonidagi koridor kamerasi
+# ham bir lahza ko'radi.
+EXIT_SIGHTING_TOLERANCE = timedelta(minutes=2)
+
+# Kun davomida shundan kam ko'rinish bo'lsa, "oxirgi ko'rinish = ketish
+# payti" degan xulosaga asos yo'q: bitta ko'rinish faqat "bir marta
+# ko'rindi" deganidir.
+MIN_SIGHTINGS_TO_JUDGE = 2
+
+
+def early_leave_verdict(
+    *,
+    status: str | None,
+    day: date_type | None,
+    check_in: time_type | None,
+    check_out: time_type | None,
+    last_seen: time_type | None = None,
+    sightings: int | None = None,
+    source: str | None = None,
+    policy: "Policy | None" = None,
+    now: datetime | None = None,
+) -> str:
+    """"Erta ketdi" / "vaqtida" / "aniqlanmadi" — BITTA umumiy qoida.
+
+    Ilgari bu savolga uch joyda uch xil javob berilardi (hisobot SQL'i,
+    bitta kunlik jadval va odam kartasi), va eng yumshog'i — "check_out ish
+    tugashidan oldin" — productionda 64 qatordan 54 tasini (84%) "erta
+    ketdi" deb belgilab qo'ygan edi. Sabab: check_out endi ISTALGAN
+    kameradagi oxirgi ko'rinish, kamera qoplamasi esa siyrak — odam soat
+    10:12 da koridorda ko'ringan bo'lsa, u "10:12 da ketgan" degani emas,
+    "10:12 dan keyin hech bir kamera ko'rmagan" degani.
+
+    Shuning uchun qoida ikki tomonlama qattiq:
+
+      * "erta ketdi" deyish uchun DALIL kerak — odam kun davomida yetarlicha
+        kuzatilgan (kamida MIN_SIGHTINGS_TO_JUDGE ko'rinish), binoda kamida
+        attendance_early_leave_min_presence_minutes bo'lgan, va kunning
+        OXIRGI ko'rinishi aynan o'sha chiqish payti;
+      * dalil yetmasa javob "aniqlanmadi" — 0 emas, "yo'q" ham emas.
+        Direktor o'qiydigan hisobotda o'ylab topilgan muammodan ko'ra
+        "o'lchanmadi" halolroq.
+
+    `sightings` — o'sha kuni odam necha marta ko'rilgani (presence_visits),
+    `last_seen` — oxirgi ko'rinish payti, `sightings` — necha marta
+    ko'rilgani. Ikkovi None bo'lsa — ko'rinish tarixi yuritilmagan va
+    javob "aniqlanmadi" bo'ladi.
+
+    `source="qolda"` — istisno: vaqtni kamera emas, ODAM yozgan. Operator
+    "14:30 da ketdi" deb yozgan bo'lsa, bu taxmin emas, dalil; kamera
+    ko'rinishlari bo'yicha "dalil yetarli emas" deyish uning yozganini
+    bekor qilish bo'lardi."""
+    rule = policy or current_policy()
+    if status not in PRESENT_STATUSES:
+        return EARLY_NA
+    if not rule.is_work_day(day):
+        return EARLY_NA
+    moment = now or local_now()
+    if day is not None and day >= moment.date() and moment.time() < rule.work_end:
+        # Kun hali tugamagan — odam binoda bo'lishi mumkin.
+        return EARLY_NA
+    if check_out is None or check_in is None:
+        return EARLY_UNKNOWN
+    if check_out >= rule.work_end:
+        return EARLY_NO
+    if last_seen is not None and day is not None:
+        exit_moment = datetime.combine(day, check_out)
+        if datetime.combine(day, last_seen) > exit_moment + EXIT_SIGHTING_TOLERANCE:
+            # Chiqishdan keyin ham ko'rilgan — ketmagan.
+            return EARLY_NO
+    # Qo'lda kiritilgan yozuvda kamera ko'rinishlari talab qilinmaydi:
+    # vaqtni odam yozgan (docstringga qarang). Qisqa qolish qoidasi esa
+    # unga ham tegishli — 12:37-12:42 "erta ketdi" emas.
+    if source != "qolda" and (sightings is None or sightings < MIN_SIGHTINGS_TO_JUDGE):
+        return EARLY_UNKNOWN
+    presence_minutes = (
+        datetime.combine(date_type.min, check_out) - datetime.combine(date_type.min, check_in)
+    ).total_seconds() / 60
+    if presence_minutes < settings.attendance_early_leave_min_presence_minutes:
+        # Bir marta ko'rinib, qaytib ko'rinmagan odam — bu "erta ketdi"
+        # emas, "kamera uni yo'qotdi".
+        return EARLY_UNKNOWN
+    return EARLY_YES
 
 
 def parse_days(raw: str) -> tuple[int, ...]:

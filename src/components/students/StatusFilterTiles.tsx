@@ -28,17 +28,21 @@ export function StatusFilterTiles<T extends string = StudentFilter>({
       {tiles.map((tile) => {
         const active = tile.id === value;
         const share = total > 0 && tile.id !== 'all' ? Math.round((tile.value / total) * 100) : null;
+        // Nol plitkani bosish har doim bo'sh setka berardi — o'chirib qo'yiladi.
+        const empty = tile.value === 0 && !active && tile.id !== 'all';
         return (
           <button
             key={tile.id}
             type="button"
             role="radio"
             aria-checked={active}
+            disabled={empty}
+            title={empty ? `${tile.label}: 0 — filtrlash uchun hech kim yo'q` : undefined}
             onClick={() => onChange(active && tile.id !== 'all' ? ('all' as T) : tile.id)}
             className={cn(
               'flex min-w-0 flex-col rounded-control border px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow]',
               active ? 'border-primary bg-primary-soft/60 ring-1 ring-primary/30' : 'border-border bg-surface hover:border-border-strong hover:bg-surface-2/60',
-              tile.value === 0 && !active && tile.id !== 'all' && 'opacity-60',
+              empty && 'cursor-default opacity-60 hover:border-border hover:bg-surface',
               focusRing,
             )}
           >

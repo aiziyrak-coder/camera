@@ -14,13 +14,14 @@ import {
   Tabs,
   Toolbar,
   formatPercent,
+  formatUzRange,
   rangeForPreset,
   toneForRate,
   useShell,
   type DataTableColumn,
 } from '../../ui';
-import { getAnalyticsUnits, getLessons, situationPaths, UNIT_KIND_LABELS, type KafedraStat, type UnitKind } from '../../lib/situationApi';
-import { kafedraSegments, summarizeKafedras, summarizePunctuality } from '../../lib/teachersApi';
+import { getAnalyticsUnits, getLessons, situationPaths, type KafedraStat, type UnitKind } from '../../lib/situationApi';
+import { kafedraSegments, summarizeKafedras, summarizePunctuality, unitKindLabel } from '../../lib/teachersApi';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { DeltaBadge } from '../analytics';
 import { KafedraCard } from './KafedraCard';
@@ -51,6 +52,8 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
   const week = useMemo(() => rangeForPreset('last7', date), [date]);
   const trends = useLoader(`tr:${week.from}:${week.to}`, (signal) => getAnalyticsUnits({ from: week.from, to: week.to, kind: 'all' }, { signal }));
   const trendById = useMemo(() => new Map((trends.data ?? []).map((u) => [u.id, u.trend])), [trends.data]);
+  // O'tgan kunni ko'rayotganda "oxirgi 7 kun" yolg'on bo'lardi — haqiqiy oraliq yoziladi.
+  const trendHint = `${formatUzRange(week.from, week.to)} davomati undan oldingi 7 kunga nisbatan`;
 
   const all = useMemo(() => loader.data ?? [], [loader.data]);
   const counts = useMemo(() => {
@@ -61,8 +64,13 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
   const rows = useMemo(() => (kind === 'all' ? all : all.filter((u) => u.kind === kind)), [all, kind]);
   const summary = useMemo(() => summarizeKafedras(rows), [rows]);
   const punctuality = useMemo(() => (lessons.data ? summarizePunctuality(lessons.data.items) : null), [lessons.data]);
-  const hasLessons = scheduledLessons > 0;
-  const staffRate = summary.staffTotal ? (summary.present / summary.staffTotal) * 100 : null;
+  // Dars plitkalari ko'rsatilayotgan bo'linmalarga bog'liq: filtr ostidagi
+  // bo'linmalarda dars bo'lmasa plitkalar chizilmaydi.
+  const hasLessons = summary.lessons > 0;
+  // Foiz AYNAN kartadagi halqa bilan bir xil formulada: present /
+  // (present + absent + notYet). Jami xodimga bo'lish yuzi ro'yxatdan
+  // o'tmagan ~80 xodimni "kelmagan" qilib ko'rsatardi.
+  const staffRate = summary.rate;
   const effectiveView: View = presentation ? 'cards' : view;
 
   const columns: DataTableColumn<KafedraStat>[] = [
@@ -72,8 +80,12 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
       sortValue: (k) => `${k.unassigned ? 1 : 0}${k.name}`,
       cell: (k) => (
         <div className="min-w-0">
-          <p className={k.unassigned ? 'font-medium text-muted' : 'font-medium text-fg'}>{k.name}</p>
-          <p className="truncate text-xs text-muted">{UNIT_KIND_LABELS[k.kind]}</p>
+          {/* Bo'linma nomlari uzun ("Patologik fiziologiya va patologik
+              anatomiya") — kesiladi, to'lig'i tooltipda. */}
+          <p className={cn('truncate font-medium', k.unassigned ? 'text-muted' : 'text-fg')} title={k.name}>
+            {k.name}
+          </p>
+          <p className="truncate text-xs text-muted">{unitKindLabel(k)}</p>
         </div>
       ),
     },
@@ -101,9 +113,7 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
       align: 'right',
       sortValue: (k) => trendById.get(k.id) ?? null,
       cell: (k) => (
-        <span title="Oxirgi 7 kun davomati undan oldingi 7 kunga nisbatan">
-          <DeltaBadge value={trendById.get(k.id)} unit="pp" emptyLabel="—" />
-        </span>
+        <DeltaBadge value={trendById.get(k.id)} unit="pp" emptyLabel="—" title={trendHint} />
       ),
     },
     { key: 'lessonsToday', header: 'Bugungi darslar', align: 'right', hideOnMobile: true, sortValue: (k) => k.lessonsToday, sortFirst: 'desc' },
@@ -165,7 +175,13 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
           value={summary.present}
           unit={`/ ${summary.staffTotal}`}
           progress={staffRate}
-          hint={staffRate === null ? undefined : `Ko'rsatilgan bo'linmalardagi ${summary.staffTotal} xodimning ${formatPercent(staffRate)} qismi`}
+          hint={
+            staffRate === null
+              ? undefined
+              : `Holati aniq ${summary.decided} xodimdan ${formatPercent(staffRate)} keldi${
+                  summary.noData ? ` · yana ${summary.noData} xodimning yuzi ro'yxatdan o'tmagan — foizga kirmaydi` : ''
+                }`
+          }
         />
         <StatTile
           label="Kech kelgan xodimlar"
@@ -186,7 +202,9 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
               progress={punctuality?.rate}
               hint={
                 punctuality
-                  ? `Tekshirilgan ${punctuality.onTime + punctuality.late + punctuality.missed} darsdan ${punctuality.onTime} tasiga o'qituvchi o'z vaqtida kirgan`
+                  ? `Tekshirilgan ${punctuality.onTime + punctuality.late + punctuality.missed} darsdan ${punctuality.onTime} tasiga o'qituvchi o'z vaqtida kirgan${
+                      kind === 'all' ? '' : ' · barcha bo‘linmalar bo‘yicha'
+                    }`
                   : undefined
               }
             />
@@ -219,7 +237,7 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
       ) : effectiveView === 'cards' ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {rows.map((k) => (
-            <KafedraCard key={k.id} kafedra={k} to={withDate(situationPaths.kafedra(k.id))} trend={trendById.get(k.id)} trendHint="Oxirgi 7 kun davomati oldingi 7 kunga nisbatan" />
+            <KafedraCard key={k.id} kafedra={k} to={withDate(situationPaths.kafedra(k.id))} trend={trendById.get(k.id)} trendHint={trendHint} />
           ))}
         </div>
       ) : (

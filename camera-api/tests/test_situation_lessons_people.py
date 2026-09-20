@@ -100,6 +100,24 @@ class TestPerson:
             world.today.isoformat(), "08:05", "08:07", 2,
         )
 
+    async def test_recent_visits_stay_inside_the_selected_range(self, client, world, admin):
+        """Tashriflar "tanlangan davrda qayerda ko'ringan" deb ko'rsatiladi —
+        davrdan oldingi tashrif ro'yxatga tushmasligi kerak (ilgari faqat
+        yuqori chegara qo'yilgani uchun tushib qolardi)."""
+        after = (world.today + timedelta(days=1)).isoformat()
+        body = (
+            await client.get(f"/api/situation/people/{world.people.aliyev.id}",
+                             params={"from": after, "to": after}, headers=admin)
+        ).json()
+        assert body["recentVisits"] == []
+
+        day = world.today.isoformat()
+        same_day = (
+            await client.get(f"/api/situation/people/{world.people.aliyev.id}",
+                             params={"from": day, "to": day}, headers=admin)
+        ).json()
+        assert [v["firstSeen"] for v in same_day["recentVisits"]] == ["08:05"]
+
     async def test_late_and_absent_totals(self, client, world, admin):
         body = (
             await client.get(f"/api/situation/people/{world.people.botirova.id}",

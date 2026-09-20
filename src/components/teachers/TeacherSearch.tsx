@@ -92,10 +92,30 @@ export function TeacherSearch({ className }: { className?: string }) {
     }
   }
 
+  function onKeyDownCapture(event: KeyboardEvent<HTMLDivElement>) {
+    // Escape ro'yxatni yopadi (SearchInput'ning "Esc — tozalash"idan oldin:
+    // avval ochiq ro'yxat yopilsin, yozilgan matn saqlansin).
+    if (event.key === 'Escape' && open) {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+    }
+  }
+
   const showPanel = open && debounced.length >= 2;
 
   return (
-    <div ref={wrapRef} className={cn('relative w-full sm:w-80', className)} onKeyDown={onKeyDown} onFocus={() => setOpen(true)}>
+    <div
+      ref={wrapRef}
+      className={cn('relative w-full sm:w-80', className)}
+      onKeyDownCapture={onKeyDownCapture}
+      onKeyDown={onKeyDown}
+      onFocus={() => setOpen(true)}
+    >
+      {/* Ekran o'quvchi uchun: nechta natija topilgani ovoz chiqarib o'qiladi. */}
+      <p className="sr-only" role="status" aria-live="polite">
+        {showPanel ? (loading ? 'Qidirilmoqda' : `${hits.length} ta xodim topildi`) : ''}
+      </p>
       <SearchInput
         value={query}
         onChange={(value) => {

@@ -17,6 +17,8 @@ interface RequestOptions {
   /** Eskirgan so'rovni bekor qilish (filtr o'zgarganda, sahifadan chiqilganda). */
   signal?: AbortSignal;
   responseType?: 'json' | 'blob';
+  /** 0 — chegara yo'q (uzun yuklashlar). Berilmasa — standart. */
+  timeoutMs?: number;
 }
 
 export interface CallOptions {
@@ -68,21 +70,62 @@ export function setAuthTokenGetter(getter: TokenGetter | null): void {
   getAuthToken = getter;
 }
 
+/**
+ * So'rov qancha kutishi mumkin.
+ *
+ * Bunisiz: server javob bermay qotib qolsa (qayta ishga tushayotgan
+ * backend, uzilgan VPN, "yarim ochiq" TCP), `fetch` hech qachon
+ * tugamasdi — foydalanuvchi esa aylanayotgan spinnerga soatlab qarab
+ * o'tirardi, chunki na xato, na "Qayta urinish" tugmasi paydo bo'lardi.
+ * Endi belgilangan vaqtdan keyin oddiy xato: ekranda sabab va qayta
+ * urinish tugmasi.
+ */
+export const REQUEST_TIMEOUT_MS = 30_000;
+/** Fayl (Excel/PDF) tayyorlash uzoqroq — lekin abadiy emas. */
+export const BLOB_TIMEOUT_MS = 120_000;
+
+export const TIMEOUT_MESSAGE = "Server javob bermadi (vaqt tugadi) — qayta urinib ko'ring";
+/** Vaqt tugaganda status: HTTP javobi umuman bo'lmagani uchun 0. */
+export const TIMEOUT_STATUS = 0;
+
 async function request<T>(
   path: string,
-  { method = 'GET', body, token, isForm, signal, responseType = 'json' }: RequestOptions = {},
+  { method = 'GET', body, token, isForm, signal, responseType = 'json', timeoutMs }: RequestOptions = {},
 ): Promise<T> {
   const headers: Record<string, string> = {};
   const authToken = token ?? getAuthToken?.() ?? null;
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
   if (body !== undefined && !isForm) headers['Content-Type'] = 'application/json';
 
-  const res = await fetch(`${config.apiBaseUrl}${path}`, {
-    method,
-    headers,
-    body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
-    signal,
-  });
+  // Chaqiruvchining bekor qilishi (filtr o'zgardi) va vaqt chegarasi —
+  // ikkalasi bitta signalga yig'iladi, lekin ularni FARQLASH kerak:
+  // bekor qilish jim o'tadi, vaqt tugashi esa xato bo'lib ko'rinadi.
+  const limit = timeoutMs ?? (responseType === 'blob' ? BLOB_TIMEOUT_MS : REQUEST_TIMEOUT_MS);
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = limit > 0 ? setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, limit) : undefined;
+  const onOuterAbort = () => controller.abort();
+  signal?.addEventListener('abort', onOuterAbort);
+  if (signal?.aborted) controller.abort();
+
+  let res: Response;
+  try {
+    res = await fetch(`${config.apiBaseUrl}${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (timedOut && !signal?.aborted) throw new ApiError(TIMEOUT_STATUS, TIMEOUT_MESSAGE);
+    throw err;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    signal?.removeEventListener('abort', onOuterAbort);
+  }
 
   if (!res.ok) {
     // Faqat token YUBORILGAN so'rovda: ya'ni sessiya yaroqli bo'lishi
@@ -146,12 +189,18 @@ export function buildQuery(params: Record<string, string | number | undefined | 
   return qs ? `?${qs}` : '';
 }
 
-/** Walk every page of a paginated list endpoint (max pageSize 500 on API). */
+/** Walk every page of a paginated list endpoint (max pageSize 500 on API).
+ *
+ * `maxRows` — eksport uchun yuqori chegara: 4300 ta hodisani brauzer
+ * xotirasiga yig'ish ham, uni CSV ga yozish ham cheksiz bo'lmasligi kerak.
+ * Chegaraga yetganda so'rovlar to'xtaydi va ro'yxat shu yerda kesiladi —
+ * chaqiruvchi `rows.length >= maxRows` bo'yicha buni foydalanuvchiga aytadi. */
 export async function fetchAllPages<T>(
   path: string,
   token: string | null | undefined,
   params: Record<string, string | number | undefined | null> = {},
   pageSize = 500,
+  maxRows = Number.POSITIVE_INFINITY,
 ): Promise<T[]> {
   const all: T[] = [];
   let page = 1;
@@ -162,6 +211,6 @@ export async function fetchAllPages<T>(
     all.push(...res.items);
     totalPages = res.totalPages;
     page += 1;
-  } while (page <= totalPages);
-  return all;
+  } while (page <= totalPages && all.length < maxRows);
+  return all.length > maxRows ? all.slice(0, maxRows) : all;
 }

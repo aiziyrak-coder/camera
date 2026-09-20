@@ -262,6 +262,32 @@ export function formatCell(value: string | number | null | undefined, unit: stri
   return unit ? `${text} ${unit}` : text;
 }
 
+/**
+ * Chop etilgan hujjatdagi rostgo'ylik izohi — jadvalning ustida turadi.
+ *
+ * Tepadagi ko'rsatkichlar BUTUN ro'yxat bo'yicha hisoblanadi, jadval esa
+ * serverda chegaralangan (eng muhim qatorlar). Bu farq qog'ozda
+ * ko'rinmasdi: o'quvchi jadvalni to'liq ro'yxat deb o'qib, sonlarni
+ * o'zi qayta sanaganda ular to'g'ri kelmasdi. Endi hujjatning o'zi
+ * nechta odam hisoblangani, nechta qator bosilgani va to'liq ro'yxatni
+ * qayerdan olishni so'z bilan aytadi.
+ *
+ * @param population tepadagi ko'rsatkichlar qamragan odamlar soni
+ * @param printed qog'ozga tushadigan qatorlar soni
+ * @param total shu ro'yxatga mos keladigan jami odamlar soni
+ */
+export function printScopeNote(population: number, printed: number, total: number): string {
+  const n = (value: number) => value.toLocaleString('ru-RU');
+  const head = `Yuqoridagi ko'rsatkichlar ${n(population)} kishi bo'yicha hisoblangan.`;
+  if (printed >= total) {
+    return `${head} Quyidagi jadvalda shu holatga mos ${n(total)} ta qatorning hammasi chop etilgan.`;
+  }
+  return (
+    `${head} Quyidagi jadvalda esa ${n(total)} ta qatordan faqat eng muhim ${n(printed)} tasi chop etilgan — ` +
+    `qog'ozga minglab qator chiqarilmaydi. To'liq ro'yxat «Excel» tugmasi orqali yuklab olinadi.`
+  );
+}
+
 /** Kesim qatorini bosish — bir pog'ona chuqurroq filtr (fakultet -> kurs
  *  -> guruh; xodimda — bo'linma). Pastroq pog'ona bo'lmasa null. */
 export function drillPatch(state: HisobotState, rowId: string): Partial<HisobotState> | null {

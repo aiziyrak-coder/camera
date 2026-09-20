@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useNavigate } from 'react-router-dom';
 import VideoWallPage from '../../pages/admin/VideoWallPage';
 import { WALL_MAX_LIVE } from '../../lib/videoWall';
 import type { CameraFeed } from '../../types';
@@ -16,11 +16,15 @@ const cameras: CameraFeed[] = Array.from({ length: 30 }, (_, index) => ({
   floor: (index % 3) + 1,
 }));
 
+/** Serverdan keladigan ro'yxat — sinov ichida almashtiriladi (kamera
+ *  o'chirildi / so'rov xato berdi). */
+let feed: () => Promise<CameraFeed[]> = async () => cameras;
+
 vi.mock('../../lib/apiClient', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../lib/apiClient')>();
   return {
     ...original,
-    fetchAllPages: vi.fn(async () => cameras),
+    fetchAllPages: vi.fn(() => feed()),
     api: { ...original.api, blob: vi.fn(async () => Promise.reject(new Error('kadr yo‘q'))) },
   };
 });
@@ -30,10 +34,22 @@ vi.mock('../LiveVideoPlayer', () => ({
   default: ({ streamUrl }: { streamUrl?: string }) => <div data-testid="player" data-url={streamUrl} />,
 }));
 
-function renderWall(entry = '/videodevor') {
+/** Boshqa varaqdagi havolani taqlid qiladi: bosilganda manzil o'zgaradi,
+ *  sahifa esa qayta yuklanmaydi (aynan shu holat sinovdan o'tadi). */
+function LinkLike({ to, label }: { to: string; label: string }) {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate(to)}>
+      {label}
+    </button>
+  );
+}
+
+function renderWall(entry = '/videodevor', extra?: React.ReactNode) {
   return render(
     <MemoryRouter initialEntries={[entry]}>
       <VideoWallPage />
+      {extra}
     </MemoryRouter>,
   );
 }
@@ -53,6 +69,7 @@ async function loadedFlat() {
 
 beforeEach(() => {
   localStorage.clear();
+  feed = async () => cameras;
 });
 
 afterEach(() => {
@@ -158,6 +175,75 @@ describe('Videodevor', () => {
     await waitFor(() => expect(players()).toHaveLength(1));
     expect(players()[0]).toHaveAttribute('data-url', cameras[6].streamUrl);
     expect(screen.getByLabelText('Kameralarni qidirish')).toHaveValue('Kamera 7');
+  });
+
+  it("sozlamalarda o'chirilgan kamera katakdan olib tashlanadi", async () => {
+    localStorage.setItem('videowall-current', JSON.stringify({ layout: '2x2', tiles: ['cam-1', 'cam-2', null, null] }));
+    renderWall();
+    await loaded();
+    expect(within(cells()[0]).getByText('Kamera 1')).toBeInTheDocument();
+
+    // cam-1 sozlamalarda o'chirildi — ro'yxatni yangilaymiz.
+    feed = async () => cameras.filter((camera) => camera.id !== 'cam-1');
+    fireEvent.click(screen.getByLabelText("Ro'yxatni yangilash"));
+
+    await waitFor(() =>
+      expect(JSON.parse(localStorage.getItem('videowall-current') ?? '{}').tiles).toEqual([null, 'cam-2', null, null]),
+    );
+    expect(screen.queryByText('Kamera 1')).not.toBeInTheDocument();
+  });
+
+  it("ro'yxat kelmasa yoki bo'sh bo'lsa devor bo'shab qolmaydi", async () => {
+    localStorage.setItem('videowall-current', JSON.stringify({ layout: '2x2', tiles: ['cam-1', 'cam-2', null, null] }));
+    renderWall();
+    await loaded();
+
+    // 1) Tarmoq xatosi — kataklar joyida qoladi, xato ko'rsatiladi.
+    feed = async () => Promise.reject(new Error('tarmoq'));
+    fireEvent.click(screen.getByLabelText("Ro'yxatni yangilash"));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/yuklab bo'lmadi/i));
+    expect(JSON.parse(localStorage.getItem('videowall-current') ?? '{}').tiles).toEqual(['cam-1', 'cam-2', null, null]);
+
+    // 2) Bo'sh javob ham "hamma kamera o'chirilgan" degani emas.
+    feed = async () => [];
+    fireEvent.click(screen.getByLabelText("Ro'yxatni yangilash"));
+    await waitFor(() => expect(screen.getByText(/^0 ta ·/)).toBeInTheDocument());
+    expect(JSON.parse(localStorage.getItem('videowall-current') ?? '{}').tiles).toEqual(['cam-1', 'cam-2', null, null]);
+  });
+
+  it("«Yangilash» tugmasi kutish holatini ko'rsatadi va ro'yxatni yangilaydi", async () => {
+    renderWall();
+    await loaded();
+    const button = screen.getByLabelText("Ro'yxatni yangilash");
+    expect(button).not.toBeDisabled();
+
+    let release: (list: CameraFeed[]) => void = () => {};
+    feed = () => new Promise<CameraFeed[]>((resolve) => { release = resolve; });
+    fireEvent.click(button);
+
+    // Bosildi — tugma kutish holatida (ilgari hech narsa o'zgarmasdi).
+    await waitFor(() => expect(screen.getByLabelText("Ro'yxatni yangilash")).toBeDisabled());
+
+    await act(async () => {
+      release(cameras.slice(0, 3));
+    });
+    await waitFor(() => expect(screen.getByText(/^3 ta ·/)).toBeInTheDocument());
+    expect(screen.getByLabelText("Ro'yxatni yangilash")).not.toBeDisabled();
+  });
+
+  it("keyin kelgan ?kamera= havolasi ham devorga tushadi va manzildan o'chadi", async () => {
+    renderWall('/videodevor', <LinkLike to="/videodevor?kamera=cam-9" label="Havola" />);
+    await loaded();
+    expect(players()).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Havola' }));
+    await waitFor(() => expect(players()).toHaveLength(1));
+    expect(players()[0]).toHaveAttribute('data-url', cameras[8].streamUrl);
+
+    // Havola ishlatilgach parametr manzilda qolmaydi — qo'lda yig'ilgan
+    // kataklar "orqaga"/qayta renderda o'z-o'zidan o'zgarmasin.
+    fireEvent.click(screen.getByRole('button', { name: 'Katakdan olib tashlash' }));
+    expect(players()).toHaveLength(0);
   });
 
   it("ko'rinishni saqlaydi va localStorage'ga yozadi", async () => {

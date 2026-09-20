@@ -117,6 +117,14 @@ export function useServerPage<T>(
         hasData.current = true;
         setError(null);
         if (cacheable) remember(cacheKey, res as Page<unknown>);
+        // RO'YXAT QISQARIB QOLSA — OXIRGI SAHIFAGA QAYTAMIZ.
+        //
+        // Operator 40-sahifada turganda hamkasbi 2680 ta hodisani birdan
+        // yopsa (yoki filtr tor bo'lsa), server bo'sh ro'yxat qaytarardi
+        // va ekranda "hech narsa topilmadi" turardi — holbuki yozuvlar
+        // bor, shunchaki boshqa sahifada. Foydalanuvchi buni bo'sh baza
+        // deb o'qirdi. Endi mavjud oxirgi sahifa ko'rsatiladi.
+        if (res.total > 0 && res.totalPages > 0 && page > res.totalPages) setPage(res.totalPages);
       })
       .catch((err: unknown) => {
         if (isAbortError(err)) return;

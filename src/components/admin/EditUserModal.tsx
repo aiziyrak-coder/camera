@@ -5,6 +5,7 @@ import { Notice } from '../settings/kit';
 import { required, minLength } from '../../lib/validation';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
+import { roleOptionsFor } from '../../lib/permissions';
 import { formatUzPhone, normalizeUzPhone } from '../../lib/notificationsApi';
 import type { AdminUser } from '../../types';
 
@@ -15,12 +16,6 @@ interface FormState {
   phone: string;
   role: AdminUser['role'];
 }
-
-const ROLE_OPTIONS = [
-  { value: 'Super Admin', label: 'Super Admin' },
-  { value: 'Admin', label: 'Admin' },
-  { value: "Kamera mas'uli", label: "Kamera mas'uli" },
-];
 
 function toForm(u: AdminUser): FormState {
   return { name: u.name, login: u.login, email: u.email ?? '', phone: formatUzPhone(u.phone), role: u.role };
@@ -35,7 +30,12 @@ export default function EditUserModal({
   onClose: () => void;
   onSave: (user: AdminUser) => void;
 }) {
-  const { token } = useAuth();
+  const { token, role: myRole } = useAuth();
+  // Backend (app/routers/users.py: _guard_super_admin_target) Super Admin
+  // hisobiga faqat Super Admin tegishiga ruxsat beradi — aks holda saqlash
+  // ham, parol tiklash ham 403 bilan qaytadi. Shuni oldindan aytamiz.
+  const lockedTarget = user?.role === 'Super Admin' && myRole !== 'super-admin';
+  const roleOptions = roleOptionsFor(myRole);
   const [form, setForm] = useState<FormState | null>(user ? toForm(user) : null);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>> & { form?: string }>({});
   const [saving, setSaving] = useState(false);
@@ -133,16 +133,24 @@ export default function EditUserModal({
           <Button onClick={onClose} disabled={saving}>
             Bekor qilish
           </Button>
-          <Button type="submit" form="edit-user-form" variant="primary" loading={saving}>
-            Saqlash
-          </Button>
+          <span title={lockedTarget ? "Super Admin hisobini faqat Super Admin o'zgartira oladi" : undefined}>
+            <Button type="submit" form="edit-user-form" variant="primary" loading={saving} disabled={lockedTarget}>
+              Saqlash
+            </Button>
+          </span>
         </>
       }
     >
       {form && user && (
         <div className="flex flex-col gap-5">
+          {lockedTarget && (
+            <Notice tone="warning" title="Bu hisobni tahrirlay olmaysiz">
+              {user.name} — Super Admin. Uning ma&apos;lumotlarini, rolini va parolini faqat boshqa Super Admin
+              o&apos;zgartira oladi.
+            </Notice>
+          )}
           <form id="edit-user-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-            <div className="grid gap-4 sm:grid-cols-2">
+            <fieldset disabled={lockedTarget} className="grid gap-4 border-0 p-0 sm:grid-cols-2">
               <Field label="F.I.Sh." required error={errors.name} className="sm:col-span-2">
                 <Input value={form.name} onChange={(e) => set('name', e.target.value)} />
               </Field>
@@ -153,7 +161,7 @@ export default function EditUserModal({
                 <Select
                   value={form.role}
                   onChange={(v) => set('role', v as AdminUser['role'])}
-                  options={ROLE_OPTIONS}
+                  options={roleOptions}
                   className="sm:w-full"
                 />
               </Field>
@@ -169,7 +177,7 @@ export default function EditUserModal({
                   autoComplete="off"
                 />
               </Field>
-            </div>
+            </fieldset>
             {user.telegramLinked && (
               <div>
                 <Badge tone="success" icon={Send}>
@@ -187,9 +195,11 @@ export default function EditUserModal({
             {!resetting ? (
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="min-w-0 flex-1 basis-56 text-[13px] text-muted">
-                  Foydalanuvchi parolini unutgan bo&apos;lsa, unga yangi parol o&apos;rnating.
+                  {lockedTarget
+                    ? "Super Admin parolini faqat boshqa Super Admin tiklay oladi."
+                    : "Foydalanuvchi parolini unutgan bo'lsa, unga yangi parol o'rnating."}
                 </p>
-                <Button size="sm" icon={KeyRound} onClick={() => setResetting(true)}>
+                <Button size="sm" icon={KeyRound} disabled={lockedTarget} onClick={() => setResetting(true)}>
                   Parolni tiklash
                 </Button>
               </div>

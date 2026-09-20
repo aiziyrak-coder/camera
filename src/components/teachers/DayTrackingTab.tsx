@@ -22,8 +22,13 @@ export function DayTrackingTab({ date }: { date: string }) {
       sortValue: (r) => r.fullName,
       cell: (r) => (
         <div className="min-w-0">
-          <p className="font-medium text-fg">{r.fullName}</p>
-          <p className="truncate text-xs text-muted">{r.unit}</p>
+          {/* Uzun o'zbekcha F.I.Sh. jadvalni cho'zib yubormasin. */}
+          <p className="truncate font-medium text-fg" title={r.fullName}>
+            {r.fullName}
+          </p>
+          <p className="truncate text-xs text-muted" title={r.unit}>
+            {r.unit}
+          </p>
         </div>
       ),
     },
@@ -34,7 +39,8 @@ export function DayTrackingTab({ date }: { date: string }) {
       cell: (r) => <StatusBadge status={r.attendanceStatus ?? 'nomalum'} />,
     },
     { key: 'firstSeen', header: 'Keldi', align: 'right', sortValue: (r) => r.firstSeen ?? '99', cell: (r) => hhmm(r.firstSeen) },
-    { key: 'lastSeen', header: "Oxirgi marta ko'ringan", align: 'right', hideOnMobile: true, sortValue: (r) => r.lastSeen ?? '', cell: (r) => hhmm(r.lastSeen) },
+    // Noma'lum vaqt ikkala ustunda ham OXIRIDA tursin ('99' > har qanday "HH:MM").
+    { key: 'lastSeen', header: "Oxirgi marta ko'ringan", align: 'right', hideOnMobile: true, sortValue: (r) => r.lastSeen ?? '99', cell: (r) => hhmm(r.lastSeen) },
     {
       key: 'buildings',
       header: 'Binolar',
@@ -77,8 +83,12 @@ export function DayTrackingTab({ date }: { date: string }) {
         onRowClick={setSelected}
         selectedKey={selected?.id ?? null}
         rowTone={(r) => (r.lessonsScheduled > r.lessonsAttended ? 'danger' : null)}
-        emptyTitle="Bu kunda hech kim ko'rinmagan"
-        emptyDescription="Bu kunda kameralar birorta xodimni tanimagan va darsi bor xodim ham topilmadi. Xodim bu ro'yxatda ko'rinishi uchun avval yuzini ro'yxatdan o'tkazishi kerak."
+        emptyTitle={debounced ? 'Hech kim topilmadi' : "Bu kunda hech kim ko'rinmagan"}
+        emptyDescription={
+          debounced
+            ? `«${debounced}» so'roviga mos xodim bu kunda ro'yxatda yo'q. Qidiruv so'zini o'zgartiring yoki tozalang.`
+            : "Bu kunda kameralar birorta xodimni tanimagan va darsi bor xodim ham topilmadi. Xodim bu ro'yxatda ko'rinishi uchun avval yuzini ro'yxatdan o'tkazishi kerak."
+        }
         ariaLabel="O'qituvchilar kuni"
         defaultSort={{ key: 'firstSeen', dir: 'asc' }}
       />

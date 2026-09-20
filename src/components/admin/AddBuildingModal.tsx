@@ -1,6 +1,6 @@
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { Button, ErrorState, Field, Input, Modal } from '../../ui';
-import { required, minLength } from '../../lib/validation';
+import { required, minLength, numberRange } from '../../lib/validation';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import type { Building } from '../../types';
@@ -22,6 +22,7 @@ export default function AddBuildingModal({
   const [name, setName] = useState(building?.name ?? '');
   const [floors, setFloors] = useState(building?.floors ? String(building.floors) : '');
   const [nameError, setNameError] = useState<string>();
+  const [floorsError, setFloorsError] = useState<string>();
   const [formError, setFormError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
 
@@ -30,6 +31,7 @@ export default function AddBuildingModal({
       setName(building?.name ?? '');
       setFloors(building?.floors ? String(building.floors) : '');
       setNameError(undefined);
+      setFloorsError(undefined);
       setFormError(undefined);
     }
   }, [open, building]);
@@ -37,8 +39,13 @@ export default function AddBuildingModal({
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const err = required(name, 'Bino nomi kiritilishi shart') ?? minLength(name, 3);
+    // Qavatlar soni ixtiyoriy, lekin kiritilsa haqiqiy bo'lishi kerak:
+    // ilgari 0, −3 yoki 900 ham serverga ketardi va monitoringdagi bino
+    // kesimi o'sha raqam bo'yicha chizilib buzilardi.
+    const floorsErr = floors.trim() === '' ? undefined : numberRange(floors, 1, 50, "Qavatlar soni 1 dan 50 gacha bo'lishi kerak");
     setNameError(err);
-    if (err) return;
+    setFloorsError(floorsErr);
+    if (err || floorsErr) return;
 
     setSubmitting(true);
     setFormError(undefined);
@@ -87,6 +94,7 @@ export default function AddBuildingModal({
         </Field>
         <Field
           label="Qavatlar soni"
+          error={floorsError}
           hint="Monitoring markazidagi bino kesimi shuncha qavat chizadi — kamerasi hali biriktirilmagan qavat ham ko'rinadi."
         >
           <Input type="number" min={1} max={50} placeholder="Masalan: 4" value={floors} onChange={(e) => setFloors(e.target.value)} />

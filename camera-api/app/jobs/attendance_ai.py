@@ -53,7 +53,7 @@ from app.services.face_matching import CandidateMatrix, find_best_match as _vect
 from app.services.attendance_policy import current_policy, load_policy
 from app.services import face_gallery
 from app.services.face_matching import GradedMatch
-from app.services.face_recognition import TRACK_IOU, _iou, detect_faces, face_quality_ok, recognizable_faces
+from app.services.face_recognition import TRACK_IOU, Box, _iou, detect_faces, face_quality_ok, recognizable_faces
 from app.services.face_tracks import track_store
 from app.services.inference_gate import PRIORITY_ATTENDANCE, PRIORITY_BACKGROUND
 from app.services.frame_grabber import (
@@ -333,6 +333,34 @@ async def upsert_attendance_from_recognition(
         not wrote_something
         and existing is not None
         and settings.attendance_arrival_only
+        and _is_earlier_arrival(existing, occurred_time)
+    ):
+        # Kunning haqiqiy BIRINCHI ko'rinishi keyinroq yetib keldi:
+        #   * kun "kelmadi" deb belgilangan (absence_marker yoki qo'lda),
+        #     keyin odamni kamera haqiqatan ko'rdi — "kelmadi" qolishi
+        #     yolg'on ayblov;
+        #   * turniket hodisasi kechikib kelib 09:00 ni yozgan, kamera
+        #     kadri esa 07:55 ni ko'rsatadi — kelish 07:55.
+        # Turniket yo'li (access_control._attendance_changes) aynan shuni
+        # qiladi; ikki yo'l bir xil kunga qarama-qarshi javob bermasligi
+        # kerak.
+        if person is None:
+            person = await db.get(StudentStaff, student_staff_id)
+        status, check_in = first_sighting_status(
+            occurred_time, camera, person.type if person else None, record_date
+        )
+        stmt = (
+            update(AttendanceRecord)
+            .where(AttendanceRecord.id == existing.id)
+            .values(status=status, check_in=check_in, source="kamera")
+            .returning(AttendanceRecord)
+        )
+        record = (await db.execute(stmt.execution_options(populate_existing=True))).scalar_one()
+        wrote_something = True
+    elif (
+        not wrote_something
+        and existing is not None
+        and settings.attendance_arrival_only
         and policy.track_last_seen
         and _is_later_sighting(existing, occurred_time)
     ):
@@ -402,6 +430,20 @@ async def upsert_attendance_from_recognition(
     return record
 
 
+def _is_earlier_arrival(record: AttendanceRecord, occurred_time: time_type) -> bool:
+    """Shu ko'rinish mavjud yozuvdagi kelishdan OLDINmi (yoki yozuv
+    umuman kelishni bilmaydimi)?
+
+    "dam_olish" — qo'lda qo'yilgan ruxsat/ta'til, kamera uni buzmaydi
+    (turniket yo'lidagi qoida bilan bir xil). source='qolda' — operator
+    ataylab tuzatgan yozuv; kamera uning ustiga yozmaydi."""
+    if record.status == "dam_olish" or record.source == "qolda":
+        return False
+    if record.status == "kelmadi" or record.check_in is None:
+        return True
+    return occurred_time < record.check_in
+
+
 def _is_later_sighting(record: AttendanceRecord, occurred_time: time_type) -> bool:
     last = record.check_out or record.check_in
     if last is None:
@@ -452,6 +494,7 @@ async def process_camera_frame(
     skip_boxes: tuple = (),
     identified_boxes: list | None = None,
     allow_zoom: bool = True,
+    matched_boxes_out: list | None = None,
 ) -> list[AttendanceRecord]:
     """Checks EVERY face in the frame — not just the largest — and writes
     an attendance record for each one that matches an enrolled person.
@@ -487,7 +530,13 @@ async def process_camera_frame(
     qo'shiladi — kuzatuvchi ularni keyingi kadrda `skip_boxes` qilib beradi.
 
     `allow_zoom=False` — bu kadrning o'zi asosiy oqimdan yaqinlashtirib
-    olingan (app/services/face_zoom.py), ya'ni yana zoom qilinmaydi."""
+    olingan (app/services/face_zoom.py), ya'ni yana zoom qilinmaydi.
+
+    `matched_boxes_out` berilsa, shu kadrda TANILGAN yuzlarning ramkalari
+    unga qo'shiladi (shu kadrning o'z koordinatalarida). Zoom passi shu
+    orqali "4K kadrda kim tanildi" ni biladi va o'sha joyni substream
+    koordinatalarida statik filtrdan himoyalaydi — _zoom_recheck izohiga
+    qarang."""
     camera_key = str(camera.id) if camera is not None else None
     # Devordagi rasmlar (app/services/static_faces.py). Faqat ODATDAGI
     # tekshiruvda: zoom kadri 4K, ya'ni uning koordinatalari boshqa
@@ -587,6 +636,8 @@ async def process_camera_frame(
 
         matched_ids.add(student_staff_id)
         matched_boxes.append(face.bbox)
+        if matched_boxes_out is not None:
+            matched_boxes_out.append(face.bbox)
         if identified_boxes is not None:
             identified_boxes.append(face.bbox)
         logger.info(
@@ -619,20 +670,28 @@ async def process_camera_frame(
         _note_static_faces(camera, camera_key, faces, matched_boxes)
 
     if allow_zoom:
-        records.extend(
-            await _zoom_recheck(
-                faces,
-                tuple(matched_boxes),
-                frame_bytes,
-                db,
-                camera,
-                candidates,
-                moment=moment,
-                off_hours_module_active=off_hours_module_active,
-                staff_module_active=staff_module_active,
-                student_module_active=student_module_active,
+        # Zoom — ODATDAGI tekshiruvga qo'shimcha. Uning har qanday xatosi
+        # (4K oqim ulanmadi, detektor yiqildi) shu kadrda ALLAQACHON
+        # yozilgan davomat natijasini yo'q qilmasligi kerak: oldin istisno
+        # process_camera_frame dan chiqib ketib, `records` ni ham, kirish
+        # kamerasidagi burst'ning qolgan kadrlarini ham tashlab yuborardi.
+        try:
+            records.extend(
+                await _zoom_recheck(
+                    faces,
+                    tuple(matched_boxes),
+                    frame_bytes,
+                    db,
+                    camera,
+                    candidates,
+                    moment=moment,
+                    off_hours_module_active=off_hours_module_active,
+                    staff_module_active=staff_module_active,
+                    student_module_active=student_module_active,
+                )
             )
-        )
+        except Exception:
+            logger.warning("zoom pass failed; keeping the substream result", exc_info=True)
     return records
 
 
@@ -665,6 +724,42 @@ def _note_static_faces(camera: Camera | None, camera_key: str | None, faces: lis
         )
 
 
+def _zoom_matches_in_substream(
+    matched: list,
+    detections: list[list],
+    source_box: list[Box],
+    main_frame: bytes,
+    width: int,
+    height: int,
+) -> list[Box]:
+    """Zoom passida tanilgan yuzlarning joyi — SUBSTREAM koordinatalarida.
+
+    Statik ramkalar xotirasi (app/services/static_faces.py) kamera bo'yicha
+    va substream o'lchamida yuritiladi, zoom esa 4K kadrda ishlaydi:
+    himoya o'sha kalitga tushishi uchun ikki yo'l bilan qaytariladi —
+    yuz topilgan hududning ASL nomzod ramkasi (aynan kuzatilayotgan ramka)
+    va 4K ramkaning miqyoslangan ko'rinishi. Ikkovi ham bo'sh bo'lsa hech
+    narsa himoyalanmaydi (noto'g'ri joyni himoyalagandan ko'ra yaxshiroq)."""
+    boxes: list[Box] = []
+    for bbox in matched:
+        for faces, origin in zip(detections, source_box, strict=True):
+            if any(_iou(bbox, face.bbox) >= TRACK_IOU for face in faces):
+                boxes.append(origin)
+    size = jpeg_dimensions(main_frame)
+    if size is not None and size[0] > 0 and size[1] > 0 and width > 0 and height > 0:
+        scale_x, scale_y = width / size[0], height / size[1]
+        boxes.extend(
+            (
+                float(bbox[0]) * scale_x,
+                float(bbox[1]) * scale_y,
+                float(bbox[2]) * scale_x,
+                float(bbox[3]) * scale_y,
+            )
+            for bbox in matched
+        )
+    return boxes
+
+
 async def _zoom_recheck(
     faces: list,
     matched_boxes: tuple,
@@ -686,7 +781,25 @@ async def _zoom_recheck(
     bir vaqtdagi kameralar soni) -> bitta 4K kadr -> faqat o'sha yuzlar
     atrofidagi hududlarda detektsiya -> AYNAN shu funksiyaning o'zi
     (allow_zoom=False), ya'ni moslik, sifat darvozasi, galereya va davomat
-    yozuvi odatdagi ko'rinishdan farq qilmaydi."""
+    yozuvi odatdagi ko'rinishdan farq qilmaydi.
+
+    STATIK FILTR bilan bog'lanish (2026-09-20 da topilgan xato). Ichki
+    chaqiruv allow_zoom=False bilan ketadi, ya'ni u statik ramkalar
+    xotirasiga HECH NARSA yozmaydi. Natijada faqat zoom orqali tanilayotgan
+    odam — aynan zoom uchun yaratilgan holat — `note_matched` ni hech qachon
+    ko'rmasdi, `_note_static_faces` esa o'sha substream ramkasini har kadrda
+    `observe()` ga berib turardi. Chegara to'lgach (40 ta hit / ~90 daqiqa)
+    o'tirgan odam "plakat" deb belgilanardi va undan keyin na solishtirilar,
+    na zoom qilinardi — ya'ni butunlay ko'rinmas bo'lib qolardi.
+
+    Shuning uchun zoom passida tanilgan har bir yuz substream
+    koordinatalariga qaytariladi va o'sha joy himoyalanadi:
+      * yuz topilgan HUDUD (roi) qaysi nomzod ramkasidan olingan bo'lsa,
+        o'sha ramka — u aynan statik xotiradagi ramka;
+      * qo'shimcha ravishda 4K ramkaning o'zi ham miqyoslab qaytariladi
+        (odam kadr olinguncha biroz siljigan bo'lishi mumkin).
+    Moslik bo'lmagan hudud esa himoyalanmaydi — devordagi plakat oldingidek
+    kuzatilaveradi."""
     if not settings.face_zoom_enabled or camera is None:
         return []
     # Kamera allaqachon asosiy oqimda — yaqinlashtiradigan joyi yo'q.
@@ -714,13 +827,29 @@ async def _zoom_recheck(
         if not main_frame:
             return []
         rois = [face_zoom.roi_for_box(box, width, height, margin=settings.face_zoom_margin) for box in boxes]
+        # return_exceptions: bitta hudud xato bersa ham qolganlari
+        # KUTILADI. Aks holda gather birinchi xatoda qaytardi, qolgan
+        # detektsiya vazifalari esa 4K kadr ustida ishlashda davom etib
+        # (inference sloti band), natijasi hech kim tomonidan olinmasdi.
         detections = await asyncio.gather(
-            *(detect_faces(main_frame, priority=PRIORITY_ATTENDANCE, roi=roi) for roi in rois)
+            *(detect_faces(main_frame, priority=PRIORITY_ATTENDANCE, roi=roi) for roi in rois),
+            return_exceptions=True,
         )
-        zoom_faces = face_zoom.merge_zoom_faces(list(detections))
+        good: list[list] = []
+        # Qaysi hudud qaysi nomzod ramkasidan olingani — moslik topilsa
+        # o'sha ramkani statik filtrdan himoyalash uchun kerak.
+        source_box: list[Box] = []
+        for box, detection in zip(boxes, detections, strict=True):
+            if isinstance(detection, BaseException):
+                logger.warning("zoom region detection failed", exc_info=detection)
+                continue
+            good.append(detection)
+            source_box.append(box)
+        zoom_faces = face_zoom.merge_zoom_faces(good)
         recognition_stats.record_zoom_faces(camera_key, [recognition_stats.face_height_px(f) for f in zoom_faces])
         if not zoom_faces:
             return []
+        zoom_matched: list = []
         records = await process_camera_frame(
             main_frame,
             db,
@@ -732,7 +861,13 @@ async def _zoom_recheck(
             student_module_active=student_module_active,
             faces=zoom_faces,
             allow_zoom=False,
+            matched_boxes_out=zoom_matched,
         )
+        if zoom_matched:
+            static_faces.static_face_store.note_matched(
+                camera_key,
+                _zoom_matches_in_substream(zoom_matched, good, source_box, main_frame, width, height),
+            )
         recognition_stats.record_zoom_matches(camera_key, len(records))
         if records:
             logger.info(

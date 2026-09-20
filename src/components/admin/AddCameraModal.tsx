@@ -107,7 +107,7 @@ export default function AddCameraModal({
   const { buildings } = useBuildings();
   const isEdit = !!camera;
   const [form, setForm] = useState<FormState>(toForm(camera));
-  const { zones } = useCameraZones(form.building || undefined);
+  const { zones, reload: reloadZones } = useCameraZones(form.building || undefined);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>> & { form?: string }>({});
   const [testState, setTestState] = useState<TestState>('idle');
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
@@ -123,8 +123,11 @@ export default function AddCameraModal({
       setTestResult(null);
       setPtzProbeState('idle');
       setPtzProbe(null);
+      // Oyna oxirgi ochilgandan beri zona (xona) ro'yxati o'zgargan
+      // bo'lishi mumkin — avtoto'ldirish eskirmasin.
+      reloadZones();
     }
-  }, [open, camera]);
+  }, [open, camera, reloadZones]);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));

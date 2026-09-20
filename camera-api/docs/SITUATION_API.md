@@ -245,7 +245,7 @@ interface PersonProfile {
   recentVisits: Array<{
     id: string; date: string; camera: string; building: string | null; zone: string | null;
     firstSeen: string; lastSeen: string; durationMinutes: number; sightings: number;
-  }>; // `to` kunining oxirigacha bo'lgan oxirgi 20 tashrif, yangisi birinchi
+  }>; // from..to oralig'idagi oxirgi 20 tashrif, yangisi birinchi
 }
 ```
 
@@ -385,15 +385,18 @@ interface Wall {
   date: string; generatedAt: string;
   students: Counts; staff: Counts;
   studentsDataAvailable: boolean;
-  topUnits: WallUnit[];     // bugungi rate bo'yicha eng yuqori 5 bo'linma (rate null va "lavozim" qatori kirmaydi)
-  bottomUnits: WallUnit[];  // eng past 5
+  topUnits: WallUnit[];     // bugungi rate bo'yicha eng yuqori 5 bo'linma (rate null, "lavozim" qatori va
+                            // o'lchangani 3 kishidan kam bo'linma kirmaydi)
+  bottomUnits: WallUnit[];  // eng past 5 (xuddi shu mezon bilan)
   lastArrivals: Overview["lastArrivals"];  // oxirgi 12 ta
   highEvents: Array<{ id: string; moduleName: string; cameraName: string; building: string;
                       time: string; status: string }>;  // ochiq, "yuqori", sinovsiz; yangisi birinchi, 5 ta
-  camerasOnline: number; camerasTotal: number;
+  camerasOnline: number; camerasTotal: number;  // camerasTotal — faol ("faol" holatdagi) kameralar
+  highOpen: number;          // ochiq "yuqori" hodisalarning to'liq soni (highEvents — faqat 5 tasi)
   enrollment: Enrollment;
   spotlight: Array<{ kind: "unit" | "group"; id: string; name: string; rate: number | null }>;
-  // bugun ma'lumoti (present + absent > 0) bor bo'linmalar, keyin guruhlar — nom bo'yicha. Ekran navbat bilan
+  // bugun ma'lumoti (present + absent > 0) va o'lchangani ≥3 kishi bo'lgan bo'linmalar, keyin (faqat
+  // studentsDataAvailable bo'lsa) guruhlar — nom bo'yicha. Ekran navbat bilan
   // ko'rsatadi: unit → GET /kafedras/{id}, group → GET /groups/{id}
 }
 interface WallUnit { id: string; name: string; kind: string; total: number; present: number; rate: number | null }

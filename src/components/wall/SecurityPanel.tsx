@@ -23,14 +23,21 @@ export function SecurityPanel({
   events,
   camerasOnline,
   camerasTotal,
+  highOpen,
   freshIds,
 }: {
   events: WallHighEvent[];
   camerasOnline: number;
+  /** Faol kameralar (maxraj) — ataylab o'chirilganlari kirmaydi. */
   camerasTotal: number;
+  /** Ochiq "yuqori" hodisalarning to'liq soni; ro'yxat 5 ta bilan cheklangan. */
+  highOpen?: number;
   freshIds: ReadonlySet<string>;
 }) {
   const camPct = camerasTotal > 0 ? (camerasOnline / camerasTotal) * 100 : null;
+  // Ro'yxat 5 ta bilan cheklangan: sonni ro'yxat uzunligidan olish
+  // 12 ta ochiq hodisani ekranda "5" qilib ko'rsatardi.
+  const openCount = Math.max(highOpen ?? 0, events.length);
   return (
     <WallPanel area="E" title="Xavfsizlik" icon={<ShieldAlert />}>
       <div className="mb-[0.9em] flex shrink-0 items-center gap-[1em]">
@@ -38,12 +45,14 @@ export function SecurityPanel({
         <div className="min-w-0">
           <div className="text-[1.05em] font-medium text-fg">Kameralar tarmoqda</div>
           <div className="text-[0.8em] text-muted">
-            {camerasTotal - camerasOnline > 0 ? `${camerasTotal - camerasOnline} tasi javob bermayapti` : "Hammasi ishlayapti"}
+            {camerasTotal - camerasOnline > 0
+              ? `${camerasTotal} ta faol kameradan ${camerasTotal - camerasOnline} tasi javob bermayapti`
+              : 'Hammasi ishlayapti'}
           </div>
         </div>
         <div className="ml-auto text-right">
-          <div className={cn('text-[2em] font-semibold leading-none tabular-nums', events.length ? 'text-danger' : 'text-success')}>
-            {events.length}
+          <div className={cn('text-[2em] font-semibold leading-none tabular-nums', openCount ? 'text-danger' : 'text-success')}>
+            {openCount}
           </div>
           <div className="mt-[0.3em] text-[0.7em] text-muted">ochiq, yuqori</div>
         </div>
@@ -80,6 +89,11 @@ export function SecurityPanel({
               </li>
             );
           })}
+          {openCount > events.length && (
+            <li className="shrink-0 text-center text-[0.75em] text-muted">
+              yana {openCount - events.length} ta ochiq hodisa — ro'yxatda so'nggi {events.length} tasi
+            </li>
+          )}
         </ul>
       )}
     </WallPanel>

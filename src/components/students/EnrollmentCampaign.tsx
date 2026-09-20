@@ -38,6 +38,9 @@ const TARGET_KEY = 'talabalar.yuz.maqsad';
 /** Institut bo'yicha davomat ko'rsatila boshlanadigan chegara (server: students.pct >= 5). */
 const INSTITUTE_READY_PCT = 5;
 
+/** Fakultet ro'yxatda topilmaganda — nol ko'rsatkich (bo'sh sahifa o'rniga). */
+const EMPTY_ENROLL_COUNTS: EnrollCounts = { total: 0, confirmed: 0, pending: 0, none: 0, pct: null };
+
 type Stage = '' | 'none' | 'progress' | 'done';
 const STAGES: { value: Stage; label: string }[] = [
   { value: 'none', label: 'Boshlanmagan (0%)' },
@@ -84,7 +87,9 @@ export function EnrollmentCampaign({ facultyId, today, withDate }: { facultyId?:
     if (!data) return null;
     if (!scoped) return data.enrollment.students;
     const f = data.enrollment.byFaculty.find((x) => (facultyId === NO_FACULTY_ID ? x.id === null : x.id === facultyId));
-    return f ?? null;
+    // Fakultet ro'yxatda yo'q (masalan "Fakultetsiz" talaba qolmagan) —
+    // sahifa bo'sh qolmasin, nol ko'rsatkich bilan chiziladi.
+    return f ?? EMPTY_ENROLL_COUNTS;
   }, [data, scoped, facultyId]);
 
   const facultyOptions = useMemo(
@@ -107,11 +112,15 @@ export function EnrollmentCampaign({ facultyId, today, withDate }: { facultyId?:
         (!stage || stageOf(g) === stage),
     );
   }, [data, query, faculty, course, stage]);
+  // Sarlavhadagi uchta son AYNAN jadvaldagi qatorlardan hisoblanadi.
+  // Ilgari ular filtrlanmagan to'liq ro'yxatdan olinardi: qidiruv yoki
+  // fakultet tanlanganda tepadagi "12 boshlanmagan" jadvaldagi 2 ta
+  // qatorga zid chiqardi.
   const stageCounts = useMemo(() => {
     const out = { none: 0, progress: 0, done: 0 };
-    for (const g of data?.groups ?? []) if (g.total > 0) out[stageOf(g) as 'none' | 'progress' | 'done']++;
+    for (const g of rows) out[stageOf(g) as 'none' | 'progress' | 'done']++;
     return out;
-  }, [data]);
+  }, [rows]);
 
   const filterFields: FilterFieldEntry[] = [
     { kind: 'search', value: query, onChange: setQuery, placeholder: 'Guruh nomi…' },

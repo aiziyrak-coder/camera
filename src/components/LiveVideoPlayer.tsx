@@ -53,6 +53,13 @@ interface LiveVideoPlayerProps {
    * almashtiriladi. priority=true bo'lsa ikkalasi ham chaqirilmaydi. */
   acquireSlot?: (id: string, onRevoked: () => void) => Promise<void>;
   releaseSlot?: (id: string) => void;
+  /** Oqim manzilining O'ZI yaroqsiz bo'lganda chaqiriladi (403 — imzo
+   * muddati tugagan yoki imzosiz havola, 404 — MediaMTX'da yo'l yo'q).
+   * Bunday holatda AYNAN SHU manzilni qayta so'rash hech qachon yordam
+   * bermaydi: egasi kameralar ro'yxatini yangilab, yangi imzolangan
+   * havola olishi kerak (useWallCameras.refreshStreams). Chaqiruv
+   * cheklangan: pleyer buni faqat fatal xatoda, backoff bilan qiladi. */
+  onStreamUnavailable?: () => void;
 }
 
 const LOAD_TIMEOUT_MS = 30_000;
@@ -109,18 +116,36 @@ export default function LiveVideoPlayer({
   onZonePointAdd,
   acquireSlot = acquireStreamSlot,
   releaseSlot = releaseStreamSlot,
+  onStreamUnavailable,
 }: LiveVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [loading, setLoading] = useState(true);
+  /** Manzilning o'zi rad etilgan (403) — imzo muddati tugagan. Bu boshqa
+   * xatolardan farq qiladi: "qayta urinilmoqda" emas, "havola yangilanmoqda". */
+  const [expired, setExpired] = useState(false);
+  // Effekt bog'liqligiga tushmasligi uchun ref orqali: chaqiruvchi har
+  // renderda yangi funksiya bersa ham oqim uzilib qayta ulanmaydi.
+  const unavailableRef = useRef(onStreamUnavailable);
+  unavailableRef.current = onStreamUnavailable;
   const hlsRetriesRef = useRef(0); // HLS.js's own in-attempt network/media recovery count
   const attemptRef = useRef(0); // how many whole attach cycles have been tried, for backoff + the error threshold
   const detection = useLiveDetection(cameraId, showDetections && !error);
+  // `startDelayMs` — faqat BIRINCHI ulanishni siljitish uchun (panjarada
+  // hamma pleyer bir vaqtda ulanmasin). Uni effekt bog'liqligiga qo'yish
+  // mumkin emas: panjaradagi bitta kamera oflayn bo'lishi yoki bitta
+  // katak kattalashtirilishi qolgan kataklarning kechikishini
+  // surib yuboradi va O'SHA PAYTDA ishlab turgan oqimlar uzilib, qaytadan
+  // ulanardi (ekran qorayib olardi). Ref orqali — qiymat o'zgarsa ham
+  // effekt qayta ishga tushmaydi.
+  const startDelayRef = useRef(startDelayMs);
+  startDelayRef.current = startDelayMs;
 
   useEffect(() => {
     setError(false);
     setRetrying(false);
+    setExpired(false);
     setLoading(true);
     hlsRetriesRef.current = 0;
     attemptRef.current = 0;
@@ -134,6 +159,16 @@ export default function LiveVideoPlayer({
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let liveEdgeTimer: ReturnType<typeof setInterval> | null = null;
     let onVisible: (() => void) | null = null;
+    // `attach()` qo'ygan <video> hodisa tinglovchilarini olib tashlaydi.
+    // Har qayta urinish (scheduleRetry -> start -> attach) yangi
+    // tinglovchi qo'yadi; `{ once: true }` esa ULAR ISHGA TUSHSAGINA
+    // o'zini o'chiradi. Oqim ishga tushmayotgan kamerada (aynan qayta
+    // urinish aylanmasiga tushadigan holat) ular hech qachon ishlamaydi
+    // va bir necha soat davomida bitta <video> elementida yuzlab
+    // tinglovchi (har biri eski effekt yopilmasini ushlab turadi)
+    // to'planib qolardi; eskisi keyinroq ishga tushib, hali ulanmagan
+    // pleyerni "tayyor" deb belgilab ham qo'yardi.
+    let detachMediaListeners: (() => void) | null = null;
 
     function clearAllTimers() {
       if (loadTimer) clearTimeout(loadTimer);
@@ -143,6 +178,8 @@ export default function LiveVideoPlayer({
     }
 
     function teardownPlayback() {
+      detachMediaListeners?.();
+      detachMediaListeners = null;
       hlsInstance?.destroy();
       hlsInstance = null;
       video!.removeAttribute('src');
@@ -169,6 +206,7 @@ export default function LiveVideoPlayer({
         setLoading(false);
         setError(false);
         setRetrying(false);
+        setExpired(false);
         attemptRef.current = 0;
       }
     }
@@ -229,8 +267,8 @@ export default function LiveVideoPlayer({
         : { default: null as unknown as typeof import('hls.js').default };
       if (cancelled) return;
 
-      if (isHls && HlsLib.isSupported()) {
-
+      const usedHlsJs = isHls && HlsLib.isSupported();
+      if (usedHlsJs) {
         hlsInstance = new HlsLib({
           enableWorker: true,
           lowLatencyMode: true,
@@ -260,10 +298,29 @@ export default function LiveVideoPlayer({
         });
         hlsInstance.on(HlsLib.Events.ERROR, (_event, data) => {
           const code = data.response?.code;
+          // 403 — nginx imzoni rad etdi (muddati tugagan yoki imzosiz
+          // havola). AYNAN SHU manzilni qayta so'rash hech qachon
+          // yordam bermaydi, faqat serverni bezovta qiladi: darhol
+          // egasidan yangi imzolangan havola so'raymiz va sekin
+          // backoff bilan kutamiz (manzil o'zgarsa effekt qaytadan
+          // ishga tushadi). Ilgari 403 oddiy fatal xato sifatida
+          // qayta-qayta urinilardi va operator "yuklab bo'lmadi"
+          // deganidan boshqa hech narsa ko'rmasdi.
+          if (data.type === HlsLib.ErrorTypes.NETWORK_ERROR && code === 403) {
+            if (!cancelled) setExpired(true);
+            unavailableRef.current?.();
+            markFailed();
+            return;
+          }
           const retryableNetwork =
             data.type === HlsLib.ErrorTypes.NETWORK_ERROR &&
             (code === 404 || code === 401 || code === 500 || code === 0);
           if (!data.fatal && !retryableNetwork) return;
+          if (retryableNetwork && hlsRetriesRef.current >= MAX_RETRIES && code === 404) {
+            // MediaMTX'da yo'l yo'q — ro'yxatdagi manzil eskirgan bo'lishi
+            // mumkin, egasidan yangisini so'raymiz.
+            unavailableRef.current?.();
+          }
           if (retryableNetwork && hlsRetriesRef.current < MAX_RETRIES) {
             hlsRetriesRef.current += 1;
             hlsInstance?.startLoad(-1);
@@ -276,18 +333,21 @@ export default function LiveVideoPlayer({
           }
           markFailed();
         });
-      } else {
-        video.src = streamUrl!;
-        video.addEventListener('loadeddata', markReady, { once: true });
       }
 
-      video.addEventListener(
-        'playing',
-        () => {
-          if (video.videoWidth > 0) markReady();
-        },
-        { once: true },
-      );
+      const onLoadedData = () => markReady();
+      const onPlaying = () => {
+        if (video.videoWidth > 0) markReady();
+      };
+      if (!usedHlsJs) {
+        video.src = streamUrl!;
+        video.addEventListener('loadeddata', onLoadedData);
+      }
+      video.addEventListener('playing', onPlaying);
+      detachMediaListeners = () => {
+        video.removeEventListener('loadeddata', onLoadedData);
+        video.removeEventListener('playing', onPlaying);
+      };
 
       try {
         await video.play();
@@ -338,11 +398,28 @@ export default function LiveVideoPlayer({
     let lastTime = -1;
     let lastProgressAt = Date.now();
     function checkFrozen() {
-      if (cancelled || !video || !hlsInstance || document.visibilityState !== 'visible') {
+      // Nazorat FAQAT haqiqatan tasvir chiqayotgan pleyer uchun ishlaydi
+      // (readyState + videoWidth). Hali ulanmagan, navbatda turgan yoki
+      // fon yorlig'idagi pleyerda hisoblagich nolga qaytariladi, ya'ni
+      // sog'lom oqimda bekorga ishga tushmaydi.
+      //
+      // Ilgari bu yerda `!hlsInstance` sharti ham bor edi va nazorat
+      // hls.js ISHLATILMAGAN yo'llarda — Safari/iOS'ning o'z HLS
+      // pleyerida va MP4/WebM manbalarda — umuman ishlamasdi: aynan
+      // o'sha brauzerlarda qotib qolgan tasvir hech qachon o'z-o'zidan
+      // tuzalmasdi.
+      if (
+        cancelled ||
+        !video ||
+        document.visibilityState !== 'visible' ||
+        video.readyState < 2 ||
+        video.videoWidth === 0
+      ) {
         lastProgressAt = Date.now();
+        lastTime = -1;
         return;
       }
-      if (video.readyState >= 2 && video.paused) {
+      if (video.paused) {
         // Brauzer ijroni to'xtatgan (masalan fon yorlig'idan qaytganda) —
         // muted video uchun qayta boshlash ruxsat etilgan.
         void video.play().catch(() => undefined);
@@ -352,7 +429,7 @@ export default function LiveVideoPlayer({
         lastProgressAt = Date.now();
         return;
       }
-      if (video.videoWidth > 0 && Date.now() - lastProgressAt > FROZEN_AFTER_MS) {
+      if (Date.now() - lastProgressAt > FROZEN_AFTER_MS) {
         lastProgressAt = Date.now();
         lastTime = -1;
         scheduleRetry();
@@ -374,7 +451,7 @@ export default function LiveVideoPlayer({
 
     startTimer = setTimeout(() => {
       if (!cancelled) void start();
-    }, startDelayMs);
+    }, startDelayRef.current);
 
     return () => {
       cancelled = true;
@@ -384,26 +461,41 @@ export default function LiveVideoPlayer({
       teardownPlayback();
       releaseQueueSlot();
     };
-  }, [streamUrl, startDelayMs, priority, acquireSlot, releaseSlot]);
+  }, [streamUrl, priority, acquireSlot, releaseSlot]);
 
   if (!streamUrl) return null;
 
-  if (error) {
-    return (
-      <div className={`absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-white/60 ${className}`}>
-        <VideoOff size={20} />
-        <span className="text-[11px] font-medium">Video oqimini yuklab bo&apos;lmadi</span>
-        <span className="text-[10px] text-white/40">Qayta urinilmoqda...</span>
-      </div>
-    );
-  }
+  // DIQQAT: <video> elementi HECH QACHON render daraxtidan chiqarilmaydi.
+  // Ilgari `error` holatida butun komponent o'rniga xato matni qaytarilardi;
+  // effekt esa qayta urinishda davom etib, DOM'dan chiqib ketgan (React
+  // tomonidan ajratilgan) eski elementga ulanardi. Oqim qaytganda
+  // `markReady` xato holatini o'chirar, React esa YANGI, bo'sh <video>
+  // elementini chizardi — hls.js hamon eskisiga ulangan. Natija: taxminan
+  // 3 daqiqalik uzilishdan keyin katak abadiy qora bo'lib qolardi va uni
+  // faqat sahifani yangilash tiklardi. Endi xato/kutish holati video
+  // ustidagi qatlam sifatida ko'rsatiladi.
+  const overlay = error || expired ? 'error' : loading ? 'loading' : null;
 
   return (
     <>
-      {loading && (
+      {overlay && (
         <div className="absolute inset-0 z-[1] flex flex-col items-center justify-center gap-1.5 bg-black/70">
-          <Loader2 size={22} className="animate-spin text-white/60" />
-          {retrying && <span className="text-[10px] font-medium text-white/60">Navbatda...</span>}
+          {overlay === 'error' ? (
+            <>
+              <VideoOff size={20} className="text-white/60" />
+              <span className="text-[11px] font-medium text-white/60">
+                {expired ? "Oqim havolasi muddati tugagan" : "Video oqimini yuklab bo'lmadi"}
+              </span>
+              <span className="text-[10px] text-white/40">
+                {expired ? 'Havola yangilanmoqda...' : 'Qayta urinilmoqda...'}
+              </span>
+            </>
+          ) : (
+            <>
+              <Loader2 size={22} className="animate-spin text-white/60" />
+              {retrying && <span className="text-[10px] font-medium text-white/60">Navbatda...</span>}
+            </>
+          )}
         </div>
       )}
       <video

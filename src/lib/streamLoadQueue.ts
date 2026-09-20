@@ -29,7 +29,14 @@ interface Holder {
 }
 
 const activeHolders: Holder[] = [];
-const waiters: Array<{ id: string; grant: () => void }> = [];
+/** `cancel` — joy berilmasdan navbatdan chiqarilganda promise'ni hal qiladi.
+ * Busiz kutayotgan karta unmount bo'lganda uning `await acquireStreamSlot(...)`
+ * i ABADIY osilib qolardi: to'xtatilgan `start()` funksiyasi (va u ushlab
+ * turgan butun effekt yopilmasi — video element, hls instansiyasi, kamera
+ * ma'lumoti) varaq umri davomida xotirada qolardi. Soatlab ochiq turadigan
+ * situatsion markaz ekranida, setka har almashganda, shunday "o'lik" yopilmalar
+ * to'planib borardi. */
+const waiters: Array<{ id: string; grant: () => void; cancel: () => void }> = [];
 let rotationTimer: ReturnType<typeof setInterval> | null = null;
 
 function grant(id: string, revoke: () => void) {
@@ -41,7 +48,16 @@ function rotateIfDue() {
   const oldest = activeHolders[0];
   if (Date.now() - oldest.acquiredAt < MIN_HOLD_MS) return;
   activeHolders.shift();
-  oldest.revoke(); // caller tears down and calls releaseStreamSlot(id), which promotes the next waiter
+  // Joyni AVVAL kutayotganga beramiz, keyin chetlatamiz. Aks holda
+  // chetlatilgan tomon (LiveVideoPlayer.onRevoked) darhol, o'sha
+  // chaqiruv ichida qayta `acquireStreamSlot` qiladi va endigina
+  // bo'shagan joyni o'ziga qaytarib oladi — navbatdagilar abadiy
+  // kutib qolardi, ko'rinib turgan kartalar esa har 4 soniyada
+  // bekorga uzilib-ulanib turardi.
+  const next = waiters.shift();
+  if (next) next.grant();
+  oldest.revoke();
+  stopRotationTimerIfIdle();
 }
 
 function ensureRotationTimer() {
@@ -74,6 +90,7 @@ export function acquireStreamSlot(id: string, onRevoked: () => void): Promise<vo
         grant(id, onRevoked);
         resolve();
       },
+      cancel: resolve,
     });
     ensureRotationTimer();
     rotateIfDue();
@@ -85,10 +102,19 @@ export function acquireStreamSlot(id: string, onRevoked: () => void): Promise<vo
  * chiqib ketgan) holat uchun ishlaydi. */
 export function releaseStreamSlot(id: string): void {
   const activeIdx = activeHolders.findIndex((h) => h.id === id);
-  if (activeIdx !== -1) activeHolders.splice(activeIdx, 1);
-
-  const waiterIdx = waiters.findIndex((w) => w.id === id);
-  if (waiterIdx !== -1) waiters.splice(waiterIdx, 1);
+  if (activeIdx !== -1) {
+    activeHolders.splice(activeIdx, 1);
+  } else {
+    // FAQAT egasi bo'lmaganda navbatdan olib tashlaymiz. Ilgari ikkalasi
+    // ham bajarilardi: bir xil manzil ikki joyda ishlatilganda (bitta
+    // kamera devorda ikki marta) egasining bo'shatishi navbatdagi
+    // nusxani ham jimgina o'chirib yuborardi — uning promise'i hech
+    // qachon hal bo'lmay, karta abadiy "Navbatda..." holatida qolardi.
+    const waiterIdx = waiters.findIndex((w) => w.id === id);
+    // Promise'ni JOY BERMASDAN hal qilamiz: chaqiruvchi (LiveVideoPlayer.start)
+    // uyg'onib, o'zining `cancelled` bayrog'ini ko'radi va jimgina chiqadi.
+    if (waiterIdx !== -1) waiters.splice(waiterIdx, 1)[0].cancel();
+  }
 
   if (activeHolders.length < MAX_CONCURRENT) {
     const next = waiters.shift();

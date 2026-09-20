@@ -25,6 +25,7 @@ export default function SystemPage() {
     <Page
       title="Tizim"
       subtitle={tab === 'holat' ? "Server, AI, video oqimlar va kamera tarmog'i holati" : 'Barcha muhim amallar: kim, qachon, nima qildi'}
+      breadcrumbs={[{ label: 'Sozlamalar' }, { label: 'Tizim' }]}
       tabs={TABS}
       actions={tab === 'holat' ? <IconButton icon={RefreshCw} label="Yangilash" variant="secondary" size="sm" onClick={refreshNow} /> : undefined}
     >

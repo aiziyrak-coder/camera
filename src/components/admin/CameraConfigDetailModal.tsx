@@ -91,7 +91,11 @@ export default function CameraConfigDetailModal({
           {/* Video maydoni mavzudan qat'i nazar qora — kadr shunday ko'rinadi. */}
           <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-card bg-black">
             {camera.status === 'faol' && (
-              <LiveVideoPlayer streamUrl={camera.streamUrl} cameraId={camera.id} showDetections={showDetections} />
+              /* `priority`: yakka pleyer umumiy HLS navbatini (streamLoadQueue,
+                 MAX 8) chetlab o'tadi. Busiz, boshqa ekranda ochiq turgan
+                 kartalar navbatni to'ldirgan bo'lsa, admin kamerani ochganda
+                 25 soniyagacha "Navbatda..." holatida qotib turardi. */
+              <LiveVideoPlayer streamUrl={camera.streamUrl} cameraId={camera.id} showDetections={showDetections} priority />
             )}
             {camera.status === 'faol' && camera.streamUrl && (
               <Button

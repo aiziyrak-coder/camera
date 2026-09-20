@@ -1,6 +1,7 @@
-import { LogOut, Menu as MenuIcon, Minimize2, MonitorUp, Moon, PanelLeftClose, PanelLeftOpen, Presentation, Search, Sun } from 'lucide-react';
+import { LogOut, Menu as MenuIcon, Minimize2, MonitorUp, Moon, PanelLeftClose, PanelLeftOpen, Presentation, Search, Sun, WifiOff } from 'lucide-react';
 import { branding } from '../../lib/branding';
 import type { Role } from '../../lib/auth';
+import type { LiveStatus } from '../../lib/realtime';
 import { useViewDate } from '../../lib/viewDate';
 import { Avatar, Button, DatePicker, IconButton, Menu, cn, focusRing, formatUzDate, useTheme, type Crumb } from '../../ui';
 import { ROLE_LABEL, openWallScreen } from './navConfig';
@@ -23,6 +24,34 @@ interface TopbarProps {
   onOpenSearch?: () => void;
   /** Devor ekrani (/markaz-ekran) ko'rsatilsinmi (huquq bo'yicha). */
   wallScreen?: boolean;
+  /** Jonli (WebSocket) ulanish holati — uzilganini AYTISH shart. */
+  live?: LiveStatus;
+}
+
+/** Jonli yangilanish to'xtaganini ko'rsatuvchi yorliq.
+ *
+ *  Bunisiz ekran jonli ko'rinardi, lekin emas edi: ulanish uzilganda
+ *  ro'yxat shunchaki yangilanishdan to'xtardi va operator eski holatga
+ *  qarab "tinch" deb o'ylab o'tirardi. Devor ekrani kun bo'yi ochiq
+ *  turadi — aynan u yerda bu eng xavfli. */
+export function LiveIndicator({ status, compact = false }: { status: LiveStatus; compact?: boolean }) {
+  if (status === 'live' || status === 'off') return null;
+  const retrying = status === 'connecting';
+  const text = retrying ? 'Jonli yangilanish uzildi — qayta ulanmoqda' : "Jonli yangilanish to'xtadi — sahifani yangilang";
+  return (
+    <span
+      role="status"
+      title={text}
+      className={cn(
+        'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] font-medium',
+        retrying ? 'border-warning/40 bg-warning-soft text-warning' : 'border-danger/40 bg-danger-soft text-danger',
+      )}
+    >
+      <WifiOff size={13} aria-hidden="true" className={retrying ? 'animate-pulse' : undefined} />
+      <span className={compact ? 'sr-only' : 'hidden lg:inline'}>{retrying ? 'Qayta ulanmoqda…' : "Jonli yangilanish to'xtadi"}</span>
+      {compact && <span className="sr-only">{text}</span>}
+    </span>
+  );
 }
 
 
@@ -55,12 +84,12 @@ function ViewDateControl({ compact }: { compact?: boolean }) {
   return <DatePicker value={date} onChange={setDate} quick={!compact} stepper size="sm" compact={compact} ariaLabel="Ko'rilayotgan sana" className="min-w-0" />;
 }
 
-export function Topbar({ crumbs, showDate, onOpenMobileNav, mobileNavOpen, sidebarCollapsed, onToggleSidebar, presentation, bell, userName, role, onLogout, onOpenSearch, wallScreen }: TopbarProps) {
+export function Topbar({ crumbs, showDate, onOpenMobileNav, mobileNavOpen, sidebarCollapsed, onToggleSidebar, presentation, bell, userName, role, onLogout, onOpenSearch, wallScreen, live = 'off' }: TopbarProps) {
   const { preference, toggleTheme } = useTheme();
   const dark = preference === 'dark';
 
   if (presentation.active) {
-    return <PresentationBar crumbs={crumbs} showDate={showDate} onExit={presentation.exit} bell={bell} />;
+    return <PresentationBar crumbs={crumbs} showDate={showDate} onExit={presentation.exit} bell={bell} live={live} />;
   }
 
   return (
@@ -106,6 +135,7 @@ export function Topbar({ crumbs, showDate, onOpenMobileNav, mobileNavOpen, sideb
       </div>
 
       <div className="flex items-center gap-0.5">
+        <LiveIndicator status={live} />
         {bell.enabled && <EventsBell count={bell.count} onOpen={bell.onOpen} />}
         <IconButton icon={dark ? Sun : Moon} label={dark ? "Yorug' mavzu" : "Qorong'i mavzu"} onClick={toggleTheme} className="hidden sm:inline-flex" />
         {wallScreen && <IconButton icon={MonitorUp} label="Katta ekran (devor) — yangi oynada" onClick={openWallScreen} className="hidden md:inline-flex" />}
@@ -140,7 +170,7 @@ export function Topbar({ crumbs, showDate, onOpenMobileNav, mobileNavOpen, sideb
 }
 
 /** Devor ekrani uchun yuqori panel: katta soat, sana, sahifa nomi, chiqish. */
-function PresentationBar({ crumbs, showDate, onExit, bell }: { crumbs: Crumb[]; showDate: boolean; onExit: () => void; bell: TopbarProps['bell'] }) {
+function PresentationBar({ crumbs, showDate, onExit, bell, live = 'off' }: { crumbs: Crumb[]; showDate: boolean; onExit: () => void; bell: TopbarProps['bell']; live?: LiveStatus }) {
   const { date } = useViewDate();
   const title = crumbs[crumbs.length - 1]?.label;
   return (
@@ -160,6 +190,7 @@ function PresentationBar({ crumbs, showDate, onExit, bell }: { crumbs: Crumb[]; 
       {showDate && <span className="hidden text-sm font-medium text-muted md:inline">{formatUzDate(date, { weekday: true })}</span>}
       <LiveClock seconds className="text-2xl" />
       <SystemStatus showLabel={false} />
+      <LiveIndicator status={live} />
       {bell.enabled && <EventsBell count={bell.count} onOpen={bell.onOpen} />}
       <Button variant="secondary" size="sm" icon={Minimize2} onClick={onExit} title="Taqdimot rejimidan chiqish (Esc)">
         Chiqish

@@ -22,6 +22,7 @@ import {
   FilterBar,
   Button,
   cn,
+  formatNumber,
   formatPercent,
   formatUzDate,
   useShell,
@@ -191,7 +192,8 @@ export default function GroupPage() {
   const [tab, setTab] = useUrlTab(tabs, { defaultTab: 'talabalar' });
 
   const students = useMemo(() => data?.students ?? [], [data]);
-  const ready = data ? hasAttendanceData(data.group.totals) : true;
+  // Talabasi yo'q guruh "Yuz topshirish" bilan ochilmaydi (yig'iladigan yuz yo'q).
+  const ready = data ? data.group.totals.total === 0 || hasAttendanceData(data.group.totals) : true;
   const [mode, setMode] = useUrlTab(MODES, { param: MODE_PARAM, defaultTab: ready ? 'davomat' : 'yuz' });
   const rawFace = params.get(FACE_PARAM);
   const faceFilter: FaceFilter = mode === 'yuz' && (rawFace === 'bor' || rawFace === 'yoq') ? rawFace : 'all';
@@ -268,7 +270,7 @@ export default function GroupPage() {
     : { label: 'Fakultet' };
   const subtitle = data
     ? [
-        "Har bir talabaning surati va bugungi holati",
+        isToday ? 'Har bir talabaning surati va bugungi holati' : 'Har bir talabaning surati va shu kungi holati',
         data.group.faculty ?? 'Fakultetsiz',
         data.group.course ? `${data.group.course}-kurs` : null,
         `${data.students.length} talaba`,
@@ -340,7 +342,7 @@ export default function GroupPage() {
                 <div className="flex items-center gap-4 sm:flex-col sm:gap-1.5">
                   <ProgressRing value={facePct} tone={enrollTone(facePct)} size={presentation ? 120 : 96} sublabel="yuzi bor" ariaLabel={`Yuz topshirgan ${formatPercent(facePct)}`} />
                   <p className="text-xs text-muted sm:text-center">
-                    <span className="font-semibold tabular-nums text-fg">{faced}</span> / {students.length} talaba
+                    <span className="font-semibold tabular-nums text-fg">{formatNumber(faced)}</span> / {formatNumber(students.length)} talaba
                   </p>
                 </div>
                 <div className="flex min-w-0 flex-1 flex-col gap-3">
@@ -372,7 +374,7 @@ export default function GroupPage() {
               <div className="flex items-center gap-4 sm:flex-col sm:gap-1.5">
                 <ProgressRing value={totals.rate} size={presentation ? 120 : 96} sublabel="davomat" ariaLabel={`Guruh davomati ${formatPercent(totals.rate)}`} />
                 <p className="text-xs text-muted sm:text-center">
-                  <span className="font-semibold tabular-nums text-fg">{totals.present}</span> / {totals.present + totals.absent + totals.notYet} keldi
+                  <span className="font-semibold tabular-nums text-fg">{formatNumber(totals.present)}</span> / {formatNumber(totals.present + totals.absent + totals.notYet)} keldi
                 </p>
               </div>
               <div className="min-w-0 flex-1">
@@ -656,7 +658,7 @@ function TrendTab({ points }: { points: TrendPoint[] }) {
           hint={worst ? formatUzDate(worst.date, { weekday: true, year: false }) : undefined}
           tone="danger"
         />
-        <StatTile label="Kelmagan / kech kelgan" value={`${absentTotal} / ${lateTotal}`} hint="14 kun davomida jami qayd etilgan holatlar" />
+        <StatTile label="Kelmagan / kech kelgan" value={`${formatNumber(absentTotal)} / ${formatNumber(lateTotal)}`} hint="14 kun davomida jami qayd etilgan holatlar" />
       </div>
       <div className="grid gap-5 xl:grid-cols-2">
         <Card>

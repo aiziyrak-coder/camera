@@ -216,6 +216,39 @@ export function loadRecent(storage: ReadStore | null = safeStorage()): RecentIte
   }
 }
 
+/**
+ * So'nggi tanlovlardan FOYDALANUVCHI HOZIR OCHA OLADIGANLARINI qoldiradi.
+ *
+ * Ro'yxat brauzerda saqlanadi va rol/huquq o'zgarganini bilmaydi. Shu
+ * bilan bir kompyuterda ishlagan (yoki roli pasaytirilgan) odam Ctrl+K
+ * bosishi bilan "Hodisalar", "Talabalar" yoki boshqa birovning
+ * shaxs sahifasini ko'rardi — va bosganda bo'sh/"huquq yo'q" ekranga
+ * tushardi. Endi ochib bo'lmaydigan yozuv umuman ko'rinmaydi.
+ *
+ * `allowedPages` — menyuda hozir ko'rinayotgan manzillar; `allowKind` —
+ * tur bo'yicha huquq (shaxs, guruh, kamera…); `allowPath` — roldan
+ * kelib chiqqan qo'shimcha cheklov (kamera mas'uli — ikki sahifa).
+ */
+export function visibleRecent(
+  items: readonly RecentItem[],
+  {
+    allowedPages,
+    allowKind,
+    allowPath,
+  }: {
+    allowedPages: ReadonlySet<string>;
+    allowKind: (kind: string) => boolean;
+    allowPath?: (to: string) => boolean;
+  },
+): RecentItem[] {
+  return items.filter((item) => {
+    const path = item.to.split('?')[0];
+    if (allowPath && !allowPath(path)) return false;
+    if (item.kind === 'page') return allowedPages.has(path);
+    return allowKind(item.kind);
+  });
+}
+
 /** Yangi tanlovni boshiga qo'shadi (takrorlarsiz), yangi ro'yxatni qaytaradi. */
 export function pushRecent(item: RecentItem, storage: RWStore | null = safeStorage()): RecentItem[] {
   const next = [item, ...loadRecent(storage).filter((r) => !(r.kind === item.kind && r.id === item.id))].slice(0, RECENT_LIMIT);

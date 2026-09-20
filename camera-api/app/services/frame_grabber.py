@@ -228,9 +228,21 @@ async def grab_main_stream_frame_once(camera: Camera, *, wait_seconds: float | N
     faqat shu bir necha soniya yashaydi.
 
     None qaytadi: to'g'ridan-to'g'ri RTSP o'chirilgan, kamera allaqachon
-    asosiy oqimda (u holda zoom keraksiz — o'quvchisini yopib bo'lmaydi)
-    yoki oqim kadr bermadi."""
+    asosiy oqimda (u holda zoom keraksiz — o'quvchisini yopib bo'lmaydi),
+    asosiy oqim yaqinda kadr bermagani uchun hozir "jazo muddati"da yoki
+    oqim shu safar ham kadr bermadi.
+
+    ORQAGA CHEKINISH (backoff) zoom uchun ham amal qiladi. Ilgari
+    _main_stream_failed_until faqat odatdagi yo'lni to'xtatardi: kadr
+    bermayotgan 4K oqimga zoom baribir har face_zoom_interval_seconds da
+    urinib, face_zoom_wait_seconds gacha (8 s) kutib turardi — va shu
+    davrda kirish/chiqish sweep'ining 6 ta slotidan biri band bo'lardi,
+    muddat esa hech qachon uzaymasdi. Endi: bloklangan kamera umuman
+    urinmaydi, kadr bermagan urinish esa muddatni uzaytiradi, muvaffaqiyatli
+    urinish uni bekor qiladi."""
     if not settings.ai_use_direct_rtsp:
+        return None
+    if _main_stream_blocked(camera):
         return None
     source = rtsp_url_for_camera(camera, substream=False)
     if not source or source == camera_video_source(camera):
@@ -240,10 +252,12 @@ async def grab_main_stream_frame_once(camera: Camera, *, wait_seconds: float | N
         while time.monotonic() < deadline:
             latest = await get_cached_frame_with_seq(source)
             if latest is not None:
+                _note_main_stream_result(camera, ok=True)
                 return latest[0]
             if is_stream_known_broken(source):
-                return None
+                break
             await asyncio.sleep(_POLL_SECONDS)
+        _note_main_stream_result(camera, ok=False)
         return None
     finally:
         await stop_stream_reader(source)

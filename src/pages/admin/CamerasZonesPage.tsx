@@ -38,7 +38,7 @@ import { ROOM_TYPE_LABELS, ROOM_TYPE_OPTIONS } from '../../lib/cameraRoles';
 import { useAuth } from '../../lib/auth';
 import { usePermissions } from '../../lib/permissions';
 import { useCameraModuleOptions } from '../../lib/useCameraModuleOptions';
-import { useServerPage } from '../../lib/useServerPage';
+import { invalidateServerPageCache, useServerPage } from '../../lib/useServerPage';
 import { useBuildings } from '../../lib/useBuildings';
 import { useCameraZones } from '../../lib/useCameraZones';
 import type { CameraConfig, CameraSummary } from '../../types';
@@ -150,7 +150,7 @@ export default function CamerasZonesPage() {
   const [locationOpen, setLocationOpen] = useState(false);
 
   const [summary, setSummary] = useState<CameraSummary | null>(null);
-  const { zones } = useCameraZones(buildingFilter || undefined);
+  const { zones, reload: reloadZones } = useCameraZones(buildingFilter || undefined);
 
   const {
     items: cameras,
@@ -307,13 +307,24 @@ export default function CamerasZonesPage() {
     });
   }
 
-  function handleModulesSaved(saved: CameraConfig) {
+  /** Ro'yxatni qayta oladi VA keshdagi eski sahifalarni tashlaydi.
+   *  Faqat `reload()` bo'lsa, boshqa filtr kombinatsiyasiga o'tib
+   *  qaytilganda keshdan o'zgarishdan OLDINGI ro'yxat chiqardi. */
+  function refreshCameras() {
+    invalidateServerPageCache('/api/cameras');
     reload();
+    // Zona ro'yxati kameralardan yig'iladi: kamera qo'shilsa/o'chirilsa
+    // yoki zonasi almashsa, filtr tanlagichi ham yangilanishi kerak.
+    reloadZones();
+  }
+
+  function handleModulesSaved(saved: CameraConfig) {
+    refreshCameras();
     if (viewing?.id === saved.id) setViewing(saved);
   }
 
   function afterLocationChange() {
-    reload();
+    refreshCameras();
     loadSummary();
   }
 
@@ -598,8 +609,7 @@ export default function CamerasZonesPage() {
         open={addOpen}
         onClose={() => setAddOpen(false)}
         onSave={(cam) => {
-          reload();
-          loadSummary();
+          afterLocationChange();
           setEditingModules(cam);
         }}
       />
@@ -611,8 +621,8 @@ export default function CamerasZonesPage() {
         <CameraLocationEditModal camera={editing} onClose={() => setEditing(null)} onSave={afterLocationChange} />
       )}
       <CameraLocationEditModal camera={locating} onClose={() => setLocating(null)} onSave={afterLocationChange} />
-      <CameraImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={() => reload()} />
-      <CameraRolesImportModal open={rolesOpen} onClose={() => setRolesOpen(false)} onDone={() => reload()} />
+      <CameraImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={afterLocationChange} />
+      <CameraRolesImportModal open={rolesOpen} onClose={() => setRolesOpen(false)} onDone={afterLocationChange} />
       <CameraConfigDetailModal
         camera={viewing}
         onClose={() => setViewing(null)}
@@ -624,8 +634,8 @@ export default function CamerasZonesPage() {
             : undefined
         }
       />
-      <CameraZoneModal open={!!drawingZone} camera={drawingZone} onClose={() => setDrawingZone(null)} onSave={() => reload()} />
-      <CameraZoneModal mode="faceRoi" open={!!drawingDoor} camera={drawingDoor} onClose={() => setDrawingDoor(null)} onSave={() => reload()} />
+      <CameraZoneModal open={!!drawingZone} camera={drawingZone} onClose={() => setDrawingZone(null)} onSave={refreshCameras} />
+      <CameraZoneModal mode="faceRoi" open={!!drawingDoor} camera={drawingDoor} onClose={() => setDrawingDoor(null)} onSave={refreshCameras} />
       <CameraModulesModal open={!!editingModules} camera={editingModules} onClose={() => setEditingModules(null)} onSave={handleModulesSaved} />
       <CameraLocationModal
         open={locationOpen}
@@ -633,8 +643,7 @@ export default function CamerasZonesPage() {
         onClose={() => setLocationOpen(false)}
         onSaved={(updated) => {
           setSelected(new Set());
-          reload();
-          loadSummary();
+          afterLocationChange();
           toast.success(`${updated} ta kameraning joylashuvi yangilandi`);
         }}
       />

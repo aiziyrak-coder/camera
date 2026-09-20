@@ -2,22 +2,38 @@ import { Cctv } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import LiveVideoPlayer from '../LiveVideoPlayer';
 import { fetchAllPages } from '../../lib/apiClient';
-import { isCameraOnline } from '../../lib/videoWall';
+import { isCameraOnline, pruneCameraIds } from '../../lib/videoWall';
 import type { CameraFeed } from '../../types';
 import { WallPanel } from './primitives';
 
 /** 2–4 jonli kamera. Kanal kengligini tejash uchun faqat tanlangan
  *  (yoki birinchi onlayn) kameralar; onlayn kamera yo'q bo'lsa panel
- *  umuman chiqmaydi (`onEmpty`). */
-export function CamerasPanel({ ids, onAvailability }: { ids: string[]; onAvailability: (has: boolean) => void }) {
+ *  umuman chiqmaydi (`onEmpty`).
+ *
+ *  `onPrune` — sozlamalarda o'chirilgan kamera ekran sozlamasida abadiy
+ *  osilib qolmasligi uchun: ro'yxat ishonchli kelganda, endi mavjud
+ *  bo'lmagan identifikatorlarsiz ro'yxat qaytariladi. */
+export function CamerasPanel({
+  ids,
+  onAvailability,
+  onPrune,
+}: {
+  ids: string[];
+  onAvailability: (has: boolean) => void;
+  onPrune?: (ids: string[]) => void;
+}) {
   const [cams, setCams] = useState<CameraFeed[] | null>(null);
+  /** Oxirgi xatosiz va bo'sh bo'lmagan javob — faqat shu asosda tozalanadi. */
+  const [knownIds, setKnownIds] = useState<ReadonlySet<string> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const load = () =>
       fetchAllPages<CameraFeed>('/api/public/cameras', undefined, {}, 500)
         .then((items) => {
-          if (!cancelled) setCams(items);
+          if (cancelled) return;
+          setCams(items);
+          if (items.length > 0) setKnownIds(new Set(items.map((c) => c.id)));
         })
         .catch(() => {
           /* oflayn — oxirgi ro'yxat qoladi */
@@ -29,6 +45,12 @@ export function CamerasPanel({ ids, onAvailability }: { ids: string[]; onAvailab
       window.clearInterval(t);
     };
   }, []);
+
+  useEffect(() => {
+    if (!onPrune || ids.length === 0) return;
+    const next = pruneCameraIds(ids, knownIds);
+    if (next !== ids) onPrune([...next]);
+  }, [ids, knownIds, onPrune]);
 
   const picked = useMemo(() => {
     const online = (cams ?? []).filter((c) => isCameraOnline(c) && c.streamUrl);

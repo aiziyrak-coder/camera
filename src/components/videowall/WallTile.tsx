@@ -46,6 +46,7 @@ export default function WallTile({
   onRemove,
   onDropCamera,
   onDropTile,
+  onStreamUnavailable,
 }: {
   index: number;
   cameraId: string | null;
@@ -65,6 +66,9 @@ export default function WallTile({
   onRemove: (index: number) => void;
   onDropCamera: (index: number, cameraId: string) => void;
   onDropTile: (from: number, to: number) => void;
+  /** Oqim manzili yaroqsiz (403/404) — kameralar ro'yxatini yangilab,
+   * yangi imzolangan havola olish kerak. */
+  onStreamUnavailable?: () => void;
 }) {
   const [ref, inView] = useInView<HTMLDivElement>();
   const [dragOver, setDragOver] = useState(false);
@@ -140,6 +144,7 @@ export default function WallTile({
           priority
           startDelayMs={startDelayMs}
           fit={maximized ? 'contain' : 'cover'}
+          onStreamUnavailable={onStreamUnavailable}
         />
       )}
 

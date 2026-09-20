@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Faculty, StudentStaff
 
+from tests.conftest import ENROLL_CODE
+
 # Same fixtures test_biometrics.py uses — a real detectable face (t1.jpg)
 # and a different real person (Tom Hanks) to exercise the multi-frame
 # consistency check with a genuine mismatch, not a synthetic one.
@@ -75,7 +77,7 @@ async def an_enrollable_record(db_session: AsyncSession, seeded) -> StudentStaff
 class TestEnrollmentLookup:
     async def test_lookup_finds_record_by_passport(self, client: AsyncClient, an_enrollable_record):
         resp = await client.post(
-            "/api/public/enrollment/lookup", json={"passportSeries": "AD", "passportNumber": "1234567"}
+            "/api/public/enrollment/lookup", json={"code": ENROLL_CODE, "passportSeries": "AD", "passportNumber": "1234567"}
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -85,13 +87,13 @@ class TestEnrollmentLookup:
 
     async def test_lookup_is_case_and_space_insensitive_on_series(self, client: AsyncClient, an_enrollable_record):
         resp = await client.post(
-            "/api/public/enrollment/lookup", json={"passportSeries": " ad ", "passportNumber": "1234567"}
+            "/api/public/enrollment/lookup", json={"code": ENROLL_CODE, "passportSeries": " ad ", "passportNumber": "1234567"}
         )
         assert resp.status_code == 200
 
     async def test_lookup_unknown_passport_is_404(self, client: AsyncClient, seeded):
         resp = await client.post(
-            "/api/public/enrollment/lookup", json={"passportSeries": "ZZ", "passportNumber": "9999999"}
+            "/api/public/enrollment/lookup", json={"code": ENROLL_CODE, "passportSeries": "ZZ", "passportNumber": "9999999"}
         )
         assert resp.status_code == 404
 
@@ -103,7 +105,7 @@ class TestEnrollmentSubmit:
     ):
         resp = await client.post(
             f"/api/public/enrollment/{an_enrollable_record.id}/submit",
-            data={"passportSeries": "AD", "passportNumber": "1234567", "consent": "true"},
+            data={"code": ENROLL_CODE, "passportSeries": "AD", "passportNumber": "1234567", "consent": "true"},
             files=three_frames(),
         )
         assert resp.status_code == 200
@@ -113,7 +115,7 @@ class TestEnrollmentSubmit:
     async def test_submit_rejects_mismatched_passport(self, client: AsyncClient, an_enrollable_record):
         resp = await client.post(
             f"/api/public/enrollment/{an_enrollable_record.id}/submit",
-            data={"passportSeries": "AD", "passportNumber": "0000000"},
+            data={"code": ENROLL_CODE, "passportSeries": "AD", "passportNumber": "0000000"},
             files=three_frames(),
         )
         assert resp.status_code == 403
@@ -128,7 +130,7 @@ class TestEnrollmentSubmit:
         other = OTHER_FACE_IMAGE_PATH.read_bytes()
         resp = await client.post(
             f"/api/public/enrollment/{an_enrollable_record.id}/submit",
-            data={"passportSeries": "AD", "passportNumber": "1234567", "consent": "true"},
+            data={"code": ENROLL_CODE, "passportSeries": "AD", "passportNumber": "1234567", "consent": "true"},
             files=[
                 ("photos", ("a.jpg", same, "image/jpeg")),
                 ("photos", ("b.png", other, "image/png")),
@@ -145,7 +147,7 @@ class TestEnrollmentSubmit:
 
         resp = await client.post(
             f"/api/public/enrollment/{an_enrollable_record.id}/submit",
-            data={"passportSeries": "AD", "passportNumber": "1234567", "consent": "true"},
+            data={"code": ENROLL_CODE, "passportSeries": "AD", "passportNumber": "1234567", "consent": "true"},
             files=three_frames(),
         )
         assert resp.status_code == 409
@@ -159,7 +161,7 @@ class TestEnrollmentSubmit:
         Endi kameradan uch burchak talab qilinadi."""
         resp = await client.post(
             f"/api/public/enrollment/{an_enrollable_record.id}/submit",
-            data={"passportSeries": "AD", "passportNumber": "1234567", "consent": "true"},
+            data={"code": ENROLL_CODE, "passportSeries": "AD", "passportNumber": "1234567", "consent": "true"},
             files=[("photos", ("a.jpg", FACE_IMAGE_PATH.read_bytes(), "image/jpeg"))],
         )
         assert resp.status_code == 422
@@ -172,7 +174,7 @@ class TestEnrollmentSubmit:
         blank = b"not an image at all"
         resp = await client.post(
             f"/api/public/enrollment/{an_enrollable_record.id}/submit",
-            data={"passportSeries": "AD", "passportNumber": "1234567", "consent": "true"},
+            data={"code": ENROLL_CODE, "passportSeries": "AD", "passportNumber": "1234567", "consent": "true"},
             files=[
                 ("photos", ("a.jpg", blank, "image/jpeg")),
                 ("photos", ("b.jpg", blank, "image/jpeg")),
@@ -184,7 +186,7 @@ class TestEnrollmentSubmit:
     async def test_no_photo_at_all_is_rejected(self, client: AsyncClient, an_enrollable_record):
         resp = await client.post(
             f"/api/public/enrollment/{an_enrollable_record.id}/submit",
-            data={"passportSeries": "AD", "passportNumber": "1234567", "consent": "true"},
+            data={"code": ENROLL_CODE, "passportSeries": "AD", "passportNumber": "1234567", "consent": "true"},
         )
         assert resp.status_code == 422
 
@@ -201,7 +203,7 @@ class TestSelfRegistration:
     ):
         resp = await client.post(
             "/api/public/enrollment/register",
-            json={
+            json={"code": ENROLL_CODE, 
                 "fullName": "Yangi Talaba",
                 "type": "talaba",
                 "groupOrPosition": "301-guruh",
@@ -228,7 +230,7 @@ class TestSelfRegistration:
     async def test_the_new_record_can_be_found_by_lookup_afterwards(self, client: AsyncClient):
         await client.post(
             "/api/public/enrollment/register",
-            json={
+            json={"code": ENROLL_CODE, 
                 "fullName": "Qaytgan Talaba",
                 "type": "talaba",
                 "groupOrPosition": "302-guruh",
@@ -238,7 +240,7 @@ class TestSelfRegistration:
         )
         resp = await client.post(
             "/api/public/enrollment/lookup",
-            json={"passportSeries": "AB", "passportNumber": "1112223"},
+            json={"code": ENROLL_CODE, "passportSeries": "AB", "passportNumber": "1112223"},
         )
         assert resp.status_code == 200
         assert resp.json()["fullName"] == "Qaytgan Talaba"
@@ -251,7 +253,7 @@ class TestSelfRegistration:
         human."""
         resp = await client.post(
             "/api/public/enrollment/register",
-            json={
+            json={"code": ENROLL_CODE, 
                 "fullName": "Boshqa Ism",
                 "type": "talaba",
                 "groupOrPosition": "999-guruh",
@@ -279,7 +281,7 @@ class TestSelfRegistration:
         exist."""
         await client.post(
             "/api/public/enrollment/register",
-            json={
+            json={"code": ENROLL_CODE, 
                 "fullName": "Kichik Harf",
                 "type": "xodim",
                 "groupOrPosition": "Laborant",
@@ -289,14 +291,14 @@ class TestSelfRegistration:
         )
         resp = await client.post(
             "/api/public/enrollment/lookup",
-            json={"passportSeries": "AB", "passportNumber": "5556667"},
+            json={"code": ENROLL_CODE, "passportSeries": "AB", "passportNumber": "5556667"},
         )
         assert resp.status_code == 200
 
     async def test_an_unknown_faculty_is_rejected(self, client: AsyncClient):
         resp = await client.post(
             "/api/public/enrollment/register",
-            json={
+            json={"code": ENROLL_CODE, 
                 "fullName": "Fakultetsiz Talaba",
                 "type": "talaba",
                 "groupOrPosition": "303-guruh",

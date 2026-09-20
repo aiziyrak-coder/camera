@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Check, FlaskConical, ImageOff, UserCheck, X } from 'lucide-react';
 import { Badge, Button, StatusBadge, cn } from '../../ui';
 import SlaBadge from './SlaBadge';
@@ -5,17 +6,42 @@ import { SEVERITY_STRIPE } from '../../lib/eventLabels';
 import { relativeTime } from '../../lib/uzDate';
 import type { AIEvent } from '../../types';
 
+/** Kamera nomi — hodisada NUSXA qilib saqlanadi (app/services/event_bus.py),
+ *  shuning uchun kamera keyinchalik o'chirilsa ham nom qoladi. Lekin juda
+ *  eski yozuvlarda (yoki nomsiz import qilingan kamerada) u bo'sh bo'lishi
+ *  mumkin: ilgari bunday hodisa qatorida shunchaki BO'SH joy ko'rinardi va
+ *  operator hodisa qayerda bo'lganini umuman bilolmasdi. */
+export function cameraLabel(event: Pick<AIEvent, 'cameraName' | 'cameraId'>): string {
+  if (event.cameraName?.trim()) return event.cameraName;
+  return event.cameraId ? "Kamera o'chirilgan" : "Kamera noma'lum";
+}
+
 type Decision = 'tasdiqlangan' | 'rad_etilgan';
 
-/** Hodisa kadri (kichik). Kadr saqlanmagan bo'lsa — joy egallovchi. */
+/** Hodisa kadri (kichik). Kadr saqlanmagan — yoki YUKLANMAGAN bo'lsa
+ *  (havola muddati tugagan, saqlash xizmati ishlamayapti) — joy egallovchi.
+ *
+ *  Ilgari faqat `snapshotUrl` bor-yo'qligi tekshirilardi: havola bor,
+ *  lekin rasm ochilmasa (MinIO o'chgan, presigned havola eskirgan)
+ *  brauzerning sinib qolgan rasm belgisi ko'rinardi — operator buni
+ *  "kadr yo'q" deb emas, "dastur buzuq" deb o'qirdi. */
 export function EventThumb({ event, className }: { event: AIEvent; className: string }) {
-  return event.snapshotUrl ? (
-    <img src={event.snapshotUrl} alt="" loading="lazy" className={cn(className, 'object-cover')} />
-  ) : (
-    <div className={cn(className, 'flex items-center justify-center bg-surface-2 text-subtle')}>
-      <ImageOff size={16} aria-hidden="true" />
-    </div>
-  );
+  const [failed, setFailed] = useState(false);
+  // Boshqa hodisaga o'tilganda eski xato qolib ketmasin.
+  useEffect(() => setFailed(false), [event.snapshotUrl]);
+
+  if (!event.snapshotUrl || failed) {
+    return (
+      <div
+        className={cn(className, 'flex items-center justify-center bg-surface-2 text-subtle')}
+        title={failed ? "Kadrni yuklab bo'lmadi" : 'Kadr saqlanmagan'}
+      >
+        <ImageOff size={16} aria-hidden="true" />
+        <span className="sr-only">{failed ? "Kadrni yuklab bo'lmadi" : 'Kadr saqlanmagan'}</span>
+      </div>
+    );
+  }
+  return <img src={event.snapshotUrl} alt="" loading="lazy" onError={() => setFailed(true)} className={cn(className, 'object-cover')} />;
 }
 
 /** Navbat / sinov kartasi: kadr, nima va qayerda, SLA, ikki qaror tugmasi. */
@@ -56,7 +82,7 @@ export default function ReviewCard({
         <p className="font-semibold text-fg">{event.moduleName}</p>
         {event.personName && <p className="text-[13px] text-fg">{event.personName}</p>}
         <p className="text-xs text-muted">
-          {event.cameraName}
+          {cameraLabel(event)}
           {event.building ? ` · ${event.building}` : ''} · ishonch <span className="tabular-nums">{event.confidence}%</span>
         </p>
         {event.details?.reason && (

@@ -43,6 +43,8 @@ export function QuickSearch({
   const [people, setPeople] = useState<StudentStaffRecord[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchedFor, setSearchedFor] = useState('');
+  /** Ikkala so'rov ham yiqildi — "topilmadi" emas, xato ko'rsatiladi. */
+  const [failed, setFailed] = useState(false);
   const text = useDebouncedValue(query.trim(), 250);
 
   useEffect(() => {
@@ -51,6 +53,7 @@ export function QuickSearch({
       setPeople([]);
       setSearchedFor('');
       setSearching(false);
+      setFailed(false);
       return;
     }
     const controller = new AbortController();
@@ -67,6 +70,7 @@ export function QuickSearch({
       if (controller.signal.aborted) return;
       setGroups(g.status === 'fulfilled' ? g.value.slice(0, GROUP_LIMIT) : []);
       setPeople(p.status === 'fulfilled' ? p.value.items.slice(0, PEOPLE_LIMIT) : []);
+      setFailed(g.status === 'rejected' && p.status === 'rejected');
       setHighlight(0);
       setSearchedFor(text);
       setSearching(false);
@@ -101,7 +105,13 @@ export function QuickSearch({
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'ArrowDown' && options.length) {
       event.preventDefault();
-      setOpen(true);
+      // Ro'yxat yopiq edi — birinchi bosish uni ochadi va BIRINCHI natijani
+      // belgilaydi (ilgari u birinchisini o'tkazib yuborardi).
+      if (!open) {
+        setOpen(true);
+        setHighlight(0);
+        return;
+      }
       setHighlight((h) => (h + 1) % options.length);
     } else if (event.key === 'ArrowUp' && options.length) {
       event.preventDefault();
@@ -116,7 +126,9 @@ export function QuickSearch({
   }
 
   const trimmed = query.trim();
-  const showEmpty = open && !searching && trimmed.length >= MIN_QUERY && searchedFor === trimmed && options.length === 0;
+  const settled = open && !searching && trimmed.length >= MIN_QUERY && searchedFor === trimmed && options.length === 0;
+  const showEmpty = settled && !failed;
+  const showError = settled && failed;
   const showList = open && options.length > 0;
 
   return (
@@ -227,6 +239,12 @@ export function QuickSearch({
       {showEmpty && (
         <p className="absolute z-30 mt-1.5 w-full rounded-card border border-border bg-surface px-3 py-3 text-center text-sm text-muted shadow-pop">
           «{trimmed}» bo'yicha guruh ham, talaba ham topilmadi
+        </p>
+      )}
+
+      {showError && (
+        <p role="alert" className="absolute z-30 mt-1.5 w-full rounded-card border border-danger/40 bg-surface px-3 py-3 text-center text-sm text-danger shadow-pop">
+          Qidiruvni bajarib bo&apos;lmadi — ulanishni tekshirib, qayta urinib ko&apos;ring
         </p>
       )}
     </div>

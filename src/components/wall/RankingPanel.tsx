@@ -3,13 +3,13 @@ import type { WallUnit } from '../../lib/wallApi';
 import { cn, TONE_SOLID, TONE_TEXT, toneForRate } from '../../ui';
 import { WallPanel } from './primitives';
 
-function UnitBar({ unit, rank }: { unit: WallUnit; rank: number }) {
+function UnitBar({ unit, rank }: { unit: WallUnit; rank: number | null }) {
   const tone = toneForRate(unit.rate);
   const pct = unit.rate ?? 0;
   return (
     <li className="min-w-0 shrink-0">
       <div className="flex items-baseline gap-[0.5em] text-[0.85em]">
-        <span className="w-[1.2em] shrink-0 tabular-nums text-muted">{rank}</span>
+        <span className="w-[1.2em] shrink-0 tabular-nums text-muted">{rank ?? '·'}</span>
         <span className="min-w-0 flex-1 truncate text-fg">{unit.name}</span>
         <span className="shrink-0 tabular-nums text-muted">
           {unit.present}/{unit.total}
@@ -28,7 +28,7 @@ function UnitBar({ unit, rank }: { unit: WallUnit; rank: number }) {
   );
 }
 
-function Group({ title, units, startRank }: { title: string; units: WallUnit[]; startRank: (i: number) => number }) {
+function Group({ title, units, startRank }: { title: string; units: WallUnit[]; startRank?: (i: number) => number }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="mb-[0.4em] shrink-0 text-[0.75em] font-medium text-muted">{title}</div>
@@ -37,7 +37,7 @@ function Group({ title, units, startRank }: { title: string; units: WallUnit[]; 
       ) : (
         <ul className="flex min-h-0 flex-1 flex-col justify-evenly gap-[0.2em] overflow-hidden">
           {units.map((u, i) => (
-            <UnitBar key={u.id} unit={u} rank={startRank(i)} />
+            <UnitBar key={u.id} unit={u} rank={startRank ? startRank(i) : null} />
           ))}
         </ul>
       )}
@@ -61,7 +61,9 @@ export function RankingPanel({
     <WallPanel area="D" title="Bo'linmalar reytingi" icon={<Trophy />} aside={<span>bugungi davomat</span>}>
       <div className="flex min-h-0 flex-1 flex-col gap-[0.6em]">
         <Group title="Eng yaxshi 5" units={top} startRank={(i) => i + 1} />
-        {bottomOnly.length > 0 && <Group title="Diqqat talab" units={bottomOnly} startRank={(i) => i + 1} />}
+        {/* Bu ro'yxat — eng pastdagilar; "1, 2, 3" raqamlari uni yaxshi
+            o'rin kabi ko'rsatardi, shuning uchun raqamlanmaydi. */}
+        {bottomOnly.length > 0 && <Group title="Diqqat talab — eng past" units={bottomOnly} />}
         <div className="flex shrink-0 items-center gap-[0.8em] rounded-[0.8em] bg-warning-soft px-[0.9em] py-[0.6em]">
           <Timer className="h-[1.6em] w-[1.6em] shrink-0 text-warning" />
           <div className="min-w-0 flex-1 leading-tight">

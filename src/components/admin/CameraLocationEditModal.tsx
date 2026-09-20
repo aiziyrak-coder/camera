@@ -63,7 +63,7 @@ export default function CameraLocationEditModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<{ name?: string; zone?: string }>({});
-  const { zones } = useCameraZones(building || undefined);
+  const { zones, reload: reloadZones } = useCameraZones(building || undefined);
   // Monitoring devoridagi kamera obyektida xona turi yo'q — u yerdan
   // ochilganda bu maydonlar ko'rsatilmaydi va YUBORILMAYDI (aks holda
   // saqlash admin belgilagan turni jimgina o'chirib yuborardi).
@@ -81,7 +81,10 @@ export default function CameraLocationEditModal({
     setFaceDirection(camera.faceDirection ?? '');
     setError(null);
     setFieldErrors({});
-  }, [camera]);
+    // Oyna ochilganda zona (xona) ro'yxati qayta olinadi — boshqa joyda
+    // qo'shilgan xona nomi shu yerda ham chiqsin.
+    reloadZones();
+  }, [camera, reloadZones]);
 
   useEffect(() => {
     if (!camera || !token) return;

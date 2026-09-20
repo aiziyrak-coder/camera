@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api, buildQuery } from './apiClient';
 import { useAuth } from './auth';
 
@@ -16,6 +16,11 @@ export function useCameraZones(building?: string) {
   const { token } = useAuth();
   const [zones, setZones] = useState<CameraZone[]>([]);
   const [loading, setLoading] = useState(true);
+  /** Qayta so'rash sanog'i — kamera qo'shilgani/tahrirlangani yoki
+   * o'chirilgani zona ro'yxatini o'zgartiradi, sahifani to'liq
+   * yangilamasdan ko'rinishi uchun. */
+  const [nonce, setNonce] = useState(0);
+  const reload = useCallback(() => setNonce((value) => value + 1), []);
 
   useEffect(() => {
     if (!token) return;
@@ -35,7 +40,7 @@ export function useCameraZones(building?: string) {
     return () => {
       cancelled = true;
     };
-  }, [token, building]);
+  }, [token, building, nonce]);
 
-  return { zones, loading };
+  return { zones, loading, reload };
 }

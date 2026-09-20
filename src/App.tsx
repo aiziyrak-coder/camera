@@ -4,13 +4,14 @@ import AppShell from './layouts/AppShell';
 import MinimalLayout from './layouts/MinimalLayout';
 import { RequireAuth, RequirePermission, RequireRole } from './layouts/guards';
 import { legacyRedirect } from './layouts/legacyRoutes';
-import { ALL_NAV_ITEMS } from './layouts/shell/navConfig';
+import { ALL_NAV_ITEMS, homeForRole } from './layouts/shell/navConfig';
 import LoginPage from './pages/admin/LoginPage';
 import ResetPasswordPage from './pages/admin/ResetPasswordPage';
 import { useAuth } from './lib/auth';
 import { usePermissions } from './lib/permissions';
 import { lazyPage } from './lib/lazyPage';
-import { PageSkeleton, ThemeProvider } from './ui';
+import { ButtonLink, EmptyState, PageSkeleton, ThemeProvider } from './ui';
+import { FileQuestion } from 'lucide-react';
 
 // Har sahifa alohida JS bo'lagi sifatida faqat ochilganda yuklanadi.
 // lazyPage deploydan keyin eskirgan bo'lak so'ralsa sahifani bir marta
@@ -63,6 +64,30 @@ function SettingsIndex() {
   const { can } = usePermissions();
   const first = ALL_NAV_ITEMS.find((item) => item.to.startsWith('/sozlamalar/') && (!item.permission || can(item.permission, role)));
   return <Navigate to={first?.to ?? '/'} replace />;
+}
+
+/** Mavjud bo'lmagan manzil.
+ *
+ *  Ilgari bu yerda `<Navigate to="/" replace />` turardi: xato yozilgan
+ *  yoki eskirgan havola foydalanuvchini hech qanday izohsiz bosh
+ *  sahifaga tashlardi — u esa havolani ishladi deb o'ylab, nega boshqa
+ *  sahifa ochilganini tushunmay qolardi (cheklangan rolda esa ustiga
+ *  yana bir yo'naltirish qo'shilardi). Endi nima bo'lganini aytamiz. */
+function NotFound() {
+  const { pathname } = useLocation();
+  const { role } = useAuth();
+  return (
+    <EmptyState
+      icon={FileQuestion}
+      title="Sahifa topilmadi"
+      description={`"${pathname}" manzili mavjud emas. Havola eskirgan yoki xato yozilgan bo'lishi mumkin — chap menyudan kerakli bo'limni tanlang.`}
+      action={
+        <ButtonLink variant="primary" to={homeForRole(role)}>
+          Bosh sahifaga
+        </ButtonLink>
+      }
+    />
+  );
 }
 
 function Minimal() {
@@ -156,12 +181,15 @@ export default function App() {
               <Route element={<RequireRole roles={['super-admin']} />}>
                 <Route path="/sozlamalar/ui" element={<StyleGuidePage />} />
               </Route>
+              {/* Noma'lum manzil — qobiq ichida, menyu joyida qoladi.
+                  Tizimga kirmagan foydalanuvchi esa RequireAuth orqali
+                  /kirish'ga (qaytish manzili bilan) tushadi. */}
+              <Route path="*" element={<NotFound />} />
             </Route>
           </Route>
 
           <Route path="/admin/*" element={<LegacyRedirect />} />
           <Route path="/admin" element={<LegacyRedirect />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
     </ThemeProvider>

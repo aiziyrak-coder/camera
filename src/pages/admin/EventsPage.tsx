@@ -6,6 +6,7 @@ import {
   Check,
   CheckCheck,
   CheckCircle2,
+  Download,
   FlaskConical,
   Gauge,
   Inbox,
@@ -48,9 +49,10 @@ import {
 import EventDrawer from '../../components/events/EventDrawer';
 import EventsPager from '../../components/events/EventsPager';
 import ResolveDialog from '../../components/events/ResolveDialog';
-import ReviewCard, { EventThumb } from '../../components/events/ReviewCard';
+import ReviewCard, { EventThumb, cameraLabel } from '../../components/events/ReviewCard';
 import SlaBadge from '../../components/events/SlaBadge';
-import { ApiError, api, isAbortError } from '../../lib/apiClient';
+import { ApiError, api, fetchAllPages, isAbortError } from '../../lib/apiClient';
+import { exportRowsAsCsv } from '../../lib/csvExport';
 import { useAuth } from '../../lib/auth';
 import { usePermissions } from '../../lib/permissions';
 import { SEVERITY_TONE, STATUS_LABEL } from '../../lib/eventLabels';
@@ -83,6 +85,10 @@ const PERIOD_OPTIONS = [
 
 // Sinov namunasi hajmi: bir o'tirishda baholash oson, lekin aniqlik uchun yetarli.
 const TRIAL_SAMPLE_SIZE = 12;
+// Eksport chegaralari: bitta so'rovda 500 (API ning yuqori chegarasi),
+// jami 5000 qator — undan kattasi brauzerni ham, Excel'ni ham qiynaydi.
+const EXPORT_PAGE_SIZE = 500;
+const EXPORT_MAX_ROWS = 5000;
 
 function errorText(err: unknown): string {
   return err instanceof ApiError ? err.message : "Tarmoq xatosi — server bilan bog'lanib bo'lmadi";
@@ -197,6 +203,13 @@ export default function EventsPage() {
     [setParams],
   );
 
+  // TESKARI SANA ORALIG'I. "Sanadan" > "Sanagacha" bo'lsa (havoladan
+  // kelgan ?from=&to=, yoki qo'lda yozilgan sana) server MANTIQAN bo'sh
+  // ro'yxat qaytaradi — ekranda esa "Filtrlarga mos hodisa topilmadi"
+  // turardi va operator hodisa yo'q deb o'ylardi. Endi sabab aytiladi va
+  // ma'nosiz so'rov umuman yuborilmaydi.
+  const rangeInvalid = Boolean(from && to && from > to);
+
   const { items, page, setPage, totalPages, total, pageSize, loading, error, reload } = useServerPage<AIEvent>(
     '/api/events',
     {
@@ -212,7 +225,7 @@ export default function EventsPage() {
       sort: quick === 'muddati' ? 'due' : queue ? 'severity' : undefined,
     },
     queue ? 12 : 20,
-    { enabled: !trialView },
+    { enabled: !trialView && !rangeInvalid },
   );
 
   // Sinov namunasi: tasodifiy tanlangan, hali baholanmagan sinov signallari.
@@ -467,6 +480,71 @@ export default function EventsPage() {
     }
   }
 
+  // ---------------------------------------------------------------- eksport
+  //
+  // Hodisalar jurnali tekshiruv (komissiya, prokuratura so'rovi, oylik
+  // hisobot) uchun ko'pincha jadval ko'rinishida kerak bo'ladi va uni
+  // qo'lda ko'chirishning iloji yo'q — 4300 ta yozuv. Eksport JORIY
+  // FILTRGA bo'ysunadi: ekranda ko'rinayotgan narsa yuklanadi, shuning
+  // uchun natija kutilganidan boshqacha chiqmaydi. Kadr havolalari
+  // (shaxsiy ma'lumot) faylga TUSHMAYDI.
+  const [exporting, setExporting] = useState(false);
+
+  async function exportCsv() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const rows = await fetchAllPages<AIEvent>(
+        '/api/events',
+        token,
+        {
+          severity: severity || undefined,
+          status: queue ? QUEUE_STATUSES : statusFilter || undefined,
+          assignedTo: quick === 'mening' ? 'me' : quick === 'tayinlanmagan' ? 'none' : undefined,
+          overdue: quick === 'muddati' ? 'true' : undefined,
+          moduleCodes: moduleCode || undefined,
+          building: building || undefined,
+          from: from || undefined,
+          to: to || undefined,
+          search: search.trim() || undefined,
+        },
+        EXPORT_PAGE_SIZE,
+        EXPORT_MAX_ROWS,
+      );
+      if (rows.length === 0) {
+        toast.error('Joriy filtrga mos hodisa yo’q — eksport qilishga narsa yo’q');
+        return;
+      }
+      exportRowsAsCsv(
+        ['Vaqt', 'Kriteriya', 'Kamera', 'Bino', 'Shaxs', 'Ishonch %', 'Muhimlik', 'Holat', "Mas'ul", 'Muddat', "Ko'rib chiqdi", 'Yechim'],
+        rows.map((event) => [
+          event.timestamp,
+          `№${event.moduleCode} ${event.moduleName}`,
+          cameraLabel(event),
+          event.building ?? '',
+          event.personName ?? '',
+          event.confidence,
+          event.severity,
+          STATUS_LABEL[event.status] ?? event.status,
+          event.assignedToName ?? '',
+          event.dueAt ?? '',
+          event.reviewedBy ?? '',
+          event.resolutionNote ?? '',
+        ]),
+        `hodisalar-${todayInTashkent()}.csv`,
+      );
+      toast.success(
+        rows.length >= EXPORT_MAX_ROWS
+          ? `${formatCount(rows.length)} ta yozuv yuklandi (eng ko'pi) — oraliqni toraytiring`
+          : `${formatCount(rows.length)} ta yozuv yuklandi`,
+      );
+    } catch (err) {
+      toast.error(errorText(err));
+    } finally {
+      setExporting(false);
+    }
+  }
+
   async function confirmDelete() {
     if (!deleting) return;
     try {
@@ -629,7 +707,7 @@ export default function EventsPage() {
       cell: (event) => (
         <input
           type="checkbox"
-          aria-label={`${event.moduleName} hodisasini tanlash`}
+          aria-label={`${event.moduleName} (${cameraLabel(event)}, ${event.timestamp}) hodisasini tanlash`}
           checked={selected.has(event.id)}
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
@@ -672,7 +750,7 @@ export default function EventsPage() {
       mobileLabel: 'Kamera',
       cell: (event) => (
         <span className="block min-w-0">
-          <span className="block text-fg">{event.cameraName}</span>
+          <span className={cn('block', event.cameraName?.trim() ? 'text-fg' : 'italic text-subtle')}>{cameraLabel(event)}</span>
           {event.building && <span className="hidden text-xs text-muted md:block">{event.building}</span>}
         </span>
       ),
@@ -862,9 +940,16 @@ export default function EventsPage() {
       tabParam="korinish"
       defaultTab="navbat"
       actions={
-        <Button icon={RefreshCw} onClick={trialView ? () => setSampleNonce((n) => n + 1) : refreshAll} loading={!trialView && loading && rows.length > 0}>
-          Yangilash
-        </Button>
+        <>
+          {!trialView && (
+            <Button icon={Download} onClick={exportCsv} loading={exporting} disabled={exporting}>
+              Excel uchun yuklash (CSV)
+            </Button>
+          )}
+          <Button icon={RefreshCw} onClick={trialView ? () => setSampleNonce((n) => n + 1) : refreshAll} loading={!trialView && loading && rows.length > 0}>
+            Yangilash
+          </Button>
+        </>
       }
       toolbar={toolbar}
     >
@@ -923,6 +1008,18 @@ export default function EventsPage() {
             loading={!summary && !summaryError}
           />
         </div>
+      )}
+
+      {!trialView && rangeInvalid && (
+        <ErrorState
+          title="Sana oralig'i teskari"
+          message={`Boshlanish sanasi (${from}) tugash sanasidan (${to}) keyin turibdi — shuning uchun so'rov yuborilmadi.`}
+        />
+      )}
+      {!trialView && rangeInvalid && (
+        <Button className="self-start" onClick={() => setParam({ from: to, to: from })}>
+          Sanalarni almashtirish
+        </Button>
       )}
 
       {!trialView && pendingNew > 0 && (

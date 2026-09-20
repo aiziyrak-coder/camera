@@ -16,7 +16,7 @@ from sqlalchemy import select
 from app.models import AuditLog, StudentStaff
 from app.routers import enrollment, students_staff
 from app.services.face_matching import load_candidate_matrix
-from tests.conftest import auth_headers
+from tests.conftest import ENROLL_CODE, auth_headers
 
 PINFL = "31234567890123"
 FRAMES = [("photos", (f"{step}.jpg", b"jpeg", "image/jpeg")) for step in ("front", "left", "right")]
@@ -61,11 +61,11 @@ def fake_face_pipeline(monkeypatch, request):
 async def _register_and_submit(client: AsyncClient) -> dict:
     resp = await client.post(
         "/api/public/enrollment/register",
-        json={"fullName": "Begona Odam Aliyevich", "type": "talaba", "groupOrPosition": "1-kurs, DI-101", "pinfl": PINFL},
+        json={"code": ENROLL_CODE, "fullName": "Begona Odam Aliyevich", "type": "talaba", "groupOrPosition": "1-kurs, DI-101", "pinfl": PINFL},
     )
     assert resp.status_code == 201, resp.text
     record_id = resp.json()["recordId"]
-    resp = await client.post(f"/api/public/enrollment/{record_id}/submit", data={"pinfl": PINFL, "consent": "true"}, files=FRAMES)
+    resp = await client.post(f"/api/public/enrollment/{record_id}/submit", data={"code": ENROLL_CODE, "pinfl": PINFL, "consent": "true"}, files=FRAMES)
     assert resp.status_code == 200, resp.text
     return {"id": record_id, **resp.json()}
 
@@ -90,11 +90,11 @@ class TestSelfRegisteredFaceWaits:
     async def test_lookup_says_it_is_waiting_and_a_new_scan_is_allowed(self, client: AsyncClient):
         await _register_and_submit(client)
 
-        resp = await client.post("/api/public/enrollment/lookup", json={"pinfl": PINFL})
+        resp = await client.post("/api/public/enrollment/lookup", json={"code": ENROLL_CODE, "pinfl": PINFL})
         assert resp.json()["alreadyEnrolled"] is False
         assert resp.json()["awaitingApproval"] is True
         record_id = resp.json()["recordId"]
-        again = await client.post(f"/api/public/enrollment/{record_id}/submit", data={"pinfl": PINFL, "consent": "true"}, files=FRAMES)
+        again = await client.post(f"/api/public/enrollment/{record_id}/submit", data={"code": ENROLL_CODE, "pinfl": PINFL, "consent": "true"}, files=FRAMES)
         assert again.status_code == 200
         assert again.json()["biometricsStatus"] == "kutilmoqda"
 
@@ -106,7 +106,7 @@ class TestSelfRegisteredFaceWaits:
 
         resp = await client.post(
             f"/api/public/enrollment/{record.id}/submit",
-            data={"pinfl": "30000000000001", "consent": "true"},
+            data={"code": ENROLL_CODE, "pinfl": "30000000000001", "consent": "true"},
             files=FRAMES,
         )
 
@@ -236,7 +236,7 @@ class TestImpersonationOfAnImportedPerson:
 
         resp = await client.post(
             f"/api/public/enrollment/{victim.id}/submit",
-            data={"pinfl": "51234567890123", "consent": "true"},
+            data={"code": ENROLL_CODE, "pinfl": "51234567890123", "consent": "true"},
             files=FRAMES,
         )
         assert resp.status_code == 200, resp.text
@@ -250,7 +250,7 @@ class TestImpersonationOfAnImportedPerson:
         await db_session.commit()
         resp = await client.post(
             f"/api/public/enrollment/{person.id}/submit",
-            data={"pinfl": "61234567890123", "consent": "true"},
+            data={"code": ENROLL_CODE, "pinfl": "61234567890123", "consent": "true"},
             files=FRAMES,
         )
         assert resp.status_code == 200, resp.text

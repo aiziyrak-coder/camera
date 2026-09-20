@@ -14,6 +14,18 @@ class LoginResponse(CamelModel):
     user_name: str
 
 
+class SessionResponse(CamelModel):
+    """GET /api/auth/me — joriy sessiya haqiqati.
+
+    Rol tokenda emas, BAZADA: mijoz uni kirish paytida olib localStorage'da
+    12 soat saqlaydi, lekin admin rolni shu orada o'zgartirishi mumkin.
+    Mijoz vaqti-vaqti bilan shu yerdan so'rab, menyusini haqiqatga
+    moslaydi (yoki 401 olib, sessiyani tozalaydi)."""
+
+    role: str
+    user_name: str
+
+
 class ForgotPasswordIn(CamelModel):
     login: str
 

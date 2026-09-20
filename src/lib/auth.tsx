@@ -21,7 +21,17 @@ export type AuthResult =
   | { ok: true; userName: string; role: Role; token: string | null }
   | { ok: false; error: string };
 
-const STORAGE_KEY = 'camera-auth';
+export const STORAGE_KEY = 'camera-auth';
+
+const ROLES: readonly Role[] = ['super-admin', 'admin', 'kamera-masuli'];
+
+function isRole(value: unknown): value is Role {
+  return typeof value === 'string' && (ROLES as readonly string[]).includes(value);
+}
+
+/** Boshqa oynada (tab) sessiya o'zgargani bilinishi uchun eng kam vaqt —
+ *  `storage` hodisasi darhol keladi, bu esa faqat fokusdagi tekshiruv. */
+export const SESSION_RECHECK_MS = 60_000;
 
 /** Demo rejimda kirish mumkin bo'lgan rollar. Kamera mas'uli bu yerda
  * ATAYLAB yo'q: u faqat haqiqiy backend bilan ishlaydigan rol. */
@@ -35,14 +45,41 @@ export const DEMO_CREDENTIALS: Record<DemoRole, { login: string; password: strin
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+const EMPTY: AuthState = { role: null, userName: null, token: null };
+
+/** Saqlangan sessiyani O'QIYDI VA TEKSHIRADI.
+ *
+ *  Ilgari `JSON.parse` natijasi qanday bo'lsa shundayligicha holatga
+ *  tushardi: localStorage'ga qo'lda (yoki eski versiyadan qolgan)
+ *  `{"role":"buxgalter"}` yozilsa, `ROLE_COLUMN[role]` undefined bo'lib
+ *  menyu bo'sh, sahifa esa oq qolardi — chiqib qayta kirmaguncha. Endi
+ *  noma'lum rol umuman sessiya emas: foydalanuvchi kirish sahifasiga
+ *  tushadi. */
+function parseAuth(raw: string | null): AuthState {
+  if (!raw) return EMPTY;
+  try {
+    const data = JSON.parse(raw) as Record<string, unknown>;
+    if (!data || typeof data !== 'object' || !isRole(data.role)) return EMPTY;
+    return {
+      role: data.role,
+      userName: typeof data.userName === 'string' ? data.userName : null,
+      token: typeof data.token === 'string' ? data.token : null,
+    };
+  } catch {
+    return EMPTY;
+  }
+}
+
 function readAuth(): AuthState {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { token: null, ...JSON.parse(raw) } as AuthState;
+    return parseAuth(localStorage.getItem(STORAGE_KEY));
   } catch {
-    /* ignore */
+    return EMPTY;
   }
-  return { role: null, userName: null, token: null };
+}
+
+function sameSession(a: AuthState, b: AuthState): boolean {
+  return a.role === b.role && a.userName === b.userName && a.token === b.token;
 }
 
 interface LoginResponse {
@@ -130,6 +167,80 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     return () => setUnauthorizedHandler(null);
   }, []);
+
+  // BOSHQA OYNA (tab) bilan bitta sessiya.
+  //
+  // Bir brauzerda ikki tab ochiq bo'lishi — bu ilovada odatiy hol (devor
+  // ekrani + ish tabi). Ilgari har tab o'z nusxasini ushlab turardi:
+  // birida "Chiqish" bosilsa, ikkinchisi ilovani ko'rsatishda davom
+  // etardi va har so'rovda 401 olardi (yoki teskarisi — boshqa hisob
+  // bilan kirilgach, eski tab hali ham eski rol menyusini chizardi).
+  // `storage` hodisasi faqat BOSHQA tablarda ishlaydi — aynan kerakli joy.
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== STORAGE_KEY) return;
+      // key === null — localStorage butunlay tozalangan.
+      const next = event.key === null ? readAuth() : parseAuth(event.newValue);
+      setState((current) => (sameSession(current, next) ? current : next));
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  // ROL SERVERDA O'ZGARSA — MENYU O'ZGARSIN.
+  //
+  // Rol endi har so'rovda bazadan o'qiladi (app/dependencies.py), lekin
+  // mijoz uni kirish paytida olib 12 soat (JWT TTL) saqlab turardi:
+  // lavozimidan olingan odam o'z ekranida "Super Admin" yozuvini va to'liq
+  // menyuni ko'rib yurardi — bosgan har tugmasi 403 bilan qaytsa ham.
+  // GET /api/auth/me — bitta yengil so'rov: ochilganda va oyna yana fokusga
+  // kelganda (lekin daqiqada bir martadan ko'p emas — so'rov to'lqini
+  // bo'lmasin). 401 bo'lsa apiClient sessiyani o'zi tozalaydi.
+  const lastCheck = useRef(0);
+  useEffect(() => {
+    if (!isBackendConfigured || !state.token) return;
+    let cancelled = false;
+    const token = state.token;
+
+    const check = () => {
+      const now = Date.now();
+      if (now - lastCheck.current < SESSION_RECHECK_MS) return;
+      lastCheck.current = now;
+      api
+        .get<{ role: Role; userName: string }>('/api/auth/me', token)
+        .then((session) => {
+          if (cancelled || !isRole(session.role)) return;
+          setState((current) => {
+            if (current.token !== token) return current; // sessiya allaqachon almashgan
+            if (current.role === session.role && current.userName === session.userName) return current;
+            const next: AuthState = { role: session.role, userName: session.userName, token };
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+            } catch {
+              /* saqlab bo'lmadi — xotirada baribir to'g'ri */
+            }
+            return next;
+          });
+        })
+        .catch(() => {
+          /* tarmoq xatosi — eski rol bilan davom etamiz, 401 bo'lsa
+             setUnauthorizedHandler allaqachon tozalagan */
+        });
+    };
+
+    lastCheck.current = 0;
+    check();
+    const onFocus = () => {
+      if (document.visibilityState !== 'hidden') check();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, [state.token]);
 
   function login(role: Role, userName: string, token: string | null = null) {
     const next: AuthState = { role, userName, token };

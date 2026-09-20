@@ -11,8 +11,9 @@ from datetime import datetime, time, timedelta, timezone
 import pytest
 from httpx import AsyncClient
 
-from app.models import Event
+from app.models import Event, PresenceVisit
 from app.services import hisobot
+from app.timezone import INSTITUTE_TZ
 from tests.conftest import auth_headers
 from tests.situation_world import _record, _situation_settings, world  # noqa: F401 — pytest fikstura
 
@@ -128,6 +129,17 @@ async def test_staff_early_leave_and_coat(client, admin, world, db_session):
     today = world.today
     monday = today - timedelta(days=today.weekday() + 7)  # o'tgan haftaning dushanbasi
     db_session.add(_record(world.people.rahimov, monday, "keldi", "07:50", "15:00"))
+    # "Erta ketdi" deyish uchun dalil kerak: o'sha kuni odam kameralarda bir
+    # necha marta ko'rilgan va oxirgi ko'rinish aynan 15:00 (app/services/
+    # attendance_policy.early_leave_verdict).
+    db_session.add(
+        PresenceVisit(
+            student_staff_id=world.people.rahimov.id,
+            first_seen_at=datetime.combine(monday, time(7, 50), tzinfo=INSTITUTE_TZ),
+            last_seen_at=datetime.combine(monday, time(15, 0), tzinfo=INSTITUTE_TZ),
+            sightings=9,
+        )
+    )
     db_session.add(Event(camera_name="Kirish-1", building="Bosh bino", module_code=10, module_name="Oq xalat",
                          group="C", confidence=50, severity="past", status="tasdiqlangan",
                          occurred_at=datetime.combine(monday, time(10, 0), tzinfo=timezone.utc)))

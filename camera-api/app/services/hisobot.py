@@ -29,9 +29,11 @@ from typing import Any, Callable, Iterable
 from sqlalchemy import and_, false, func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AIModuleConfig, AttendanceRecord, Event, LessonAttendance, LessonSession, StudentStaff
+from app.models import (AIModuleConfig, AttendanceRecord, Event, LessonAttendance, LessonSession, PresenceVisit,
+                        StudentStaff)
 from app.services import situation as svc
-from app.services.attendance_policy import Policy, load_policy
+from app.services.attendance_policy import (EARLY_NA, EARLY_UNKNOWN, EARLY_YES, Policy, early_leave_verdict,
+                                            load_policy)
 from app.services.event_status import REJECTED_STATUSES, fold_review_counts
 from app.services.staff_export import split_course
 from app.timezone import INSTITUTE_TZ, INSTITUTE_TZ_NAME
@@ -176,10 +178,11 @@ class Att:
     absent: int = 0
     late_minutes: int = 0
     early: int = 0
-    checked_out: int = 0  # erta ketishni baholash mumkin bo'lgan kunlar
+    checked_out: int = 0  # erta ketish bo'yicha HUKM chiqarilgan kunlar
+    unknown: int = 0      # baholab bo'lmagan kunlar ("aniqlanmadi")
 
     def add(self, other: "Att") -> "Att":
-        for name in ("present", "late", "absent", "late_minutes", "early", "checked_out"):
+        for name in ("present", "late", "absent", "late_minutes", "early", "checked_out", "unknown"):
             setattr(self, name, getattr(self, name) + getattr(other, name))
         return self
 
@@ -249,20 +252,15 @@ async def _attendance(db: AsyncSession, data: Data, cond) -> None:
     policy, kind = data.policy, data.kind
     start_t = policy.start_for(kind)
     start_min = start_t.hour * 60 + start_t.minute
-    end_min = policy.work_end.hour * 60 + policy.work_end.minute
     today = svc.today()
     status = AttendanceRecord.status
     present = status.in_(PRESENT)
-    # Erta ketish: oxirgi ko'rilgan payt (check_out) ish tugashidan oldin,
-    # faqat o'tgan ish kunlari (bugungi check_out hali yakuniy emas).
-    can_judge = and_(present, AttendanceRecord.check_out.is_not(None), AttendanceRecord.date < today,
-                     func.extract("isodow", AttendanceRecord.date).in_(policy.work_days))
-    early = and_(can_judge, _minutes(AttendanceRecord.check_out) < end_min)
     late_min = func.coalesce(func.sum(_minutes(AttendanceRecord.check_in) - start_min).filter(
         and_(status == "kech_keldi", AttendanceRecord.check_in.is_not(None))), 0)
+    # Erta ketish bu yerda SANALMAYDI: uning qoidasi ko'rinishlar tarixiga
+    # tayanadi va SQL'da takrorlanmaydi — _early_leave() ga qarang.
     cols = (func.count().filter(present), func.count().filter(status == "kech_keldi"),
-            func.count().filter(status == "kelmadi"), late_min, func.count().filter(early),
-            func.count().filter(can_judge))
+            func.count().filter(status == "kelmadi"), late_min)
     base = (
         select(*cols)
         .select_from(AttendanceRecord)
@@ -292,7 +290,75 @@ async def _attendance(db: AsyncSession, data: Data, cond) -> None:
             late = max(0, check_in.hour * 60 + check_in.minute - start_min) if (
                 st == "kech_keldi" and check_in is not None) else 0
             data.day_rows[pid] = {"status": st, "check_in": check_in, "check_out": check_out, "source": source,
-                                  "late": late}
+                                  "late": late, "early": EARLY_NA}
+
+
+async def _sightings(db: AsyncSession, data: Data, cond) -> dict[tuple[uuid.UUID, date_type], tuple[time_type, int]]:
+    """(odam, kun) -> (oxirgi ko'rinish payti, jami ko'rinishlar soni).
+
+    Manba — presence_visits (app/models/presence_visit.py): bitta kameradagi
+    ketma-ket ko'rinishlar bitta tashrifga birlashtirilgan, `sightings` esa
+    necha marta ko'rilganini saqlaydi. Erta ketish qaroriga aynan shu son
+    kerak: bir marta ko'rinish "o'sha payt ketdi" degani emas."""
+    start_at, end_at = _bounds(data.start, min(data.end, svc.today()))
+    local_last = func.timezone(INSTITUTE_TZ_NAME, PresenceVisit.last_seen_at)
+    rows = await db.execute(
+        select(PresenceVisit.student_staff_id, func.date(local_last), func.max(local_last),
+               func.sum(PresenceVisit.sightings))
+        .select_from(PresenceVisit)
+        .join(StudentStaff, StudentStaff.id == PresenceVisit.student_staff_id)
+        .where(cond)
+        .where(PresenceVisit.last_seen_at >= start_at)
+        .where(PresenceVisit.last_seen_at < end_at)
+        .group_by(PresenceVisit.student_staff_id, func.date(local_last))
+    )
+    return {
+        (pid, day): (moment.time().replace(microsecond=0), int(count or 0))
+        for pid, day, moment, count in rows.all()
+    }
+
+
+async def _early_leave(db: AsyncSession, data: Data, cond) -> None:
+    """"Erta ketdi" / "aniqlanmadi" — odam va kun bo'yicha.
+
+    Qoida bu yerda YOZILMAGAN: u app/services/attendance_policy.py dagi
+    early_leave_verdict() — odam kartasi (app/routers/attendance.py) bilan
+    aynan bitta. Ilgari uch xil hisob bor edi va hisobotdagi eng yumshog'i
+    ("check_out ish tugashidan oldin") productionda 64 qatordan 54 tasini
+    "erta ketdi" deb ko'rsatgan edi — direktor o'qiydigan hisobotda o'ylab
+    topilgan ommaviy muammo.
+
+    Baholab bo'lmagan kunlar `unknown` ga yig'iladi va hisobotda alohida
+    ko'rsatiladi: "0 ta erta ketish" deb jim o'tish — yolg'on."""
+    seen = await _sightings(db, data, cond)
+    rows = await db.execute(
+        select(AttendanceRecord.student_staff_id, AttendanceRecord.date, AttendanceRecord.status,
+               AttendanceRecord.check_in, AttendanceRecord.check_out, AttendanceRecord.source)
+        .select_from(AttendanceRecord)
+        .join(StudentStaff, StudentStaff.id == AttendanceRecord.student_staff_id)
+        .where(cond)
+        .where(AttendanceRecord.date.between(data.start, min(data.end, svc.today())))
+        .where(AttendanceRecord.status.in_(PRESENT))
+    )
+    for pid, day, status, check_in, check_out, source in rows.all():
+        last_seen, count = seen.get((pid, day), (None, None))
+        verdict = early_leave_verdict(
+            status=status, day=day, check_in=check_in, check_out=check_out,
+            last_seen=last_seen, sightings=count, source=source, policy=data.policy,
+        )
+        if data.start == data.end and pid in data.day_rows:
+            data.day_rows[pid]["early"] = verdict
+        if verdict == EARLY_NA:
+            continue
+        for bucket in (data.att.get(pid), data.att_daily.get(day)):
+            if bucket is None:
+                continue
+            if verdict == EARLY_UNKNOWN:
+                bucket.unknown += 1
+                continue
+            bucket.checked_out += 1
+            if verdict == EARLY_YES:
+                bucket.early += 1
 
 
 def _tri_cols(ok, late, miss):
@@ -397,6 +463,7 @@ async def collect(db: AsyncSession, kind: str, start: date_type, end: date_type,
         cond = and_(cond, StudentStaff.id.in_([m.id for m in members]) if members else StudentStaff.id.is_(None))
 
     await _attendance(db, data, cond)
+    await _early_leave(db, data, cond)
     if kind == "talaba":
         await _student_lessons(db, data, cond)
         await _named_events(db, data, SLEEP_CODE)
@@ -513,8 +580,12 @@ def indicator(data: Data, key: str) -> tuple[str, str]:
         n = _sum_att(data, members).late
         return str(n), "warning" if n else "neutral"
     if key == "erta_ketish":
-        n = _sum_att(data, members).early
-        return str(n), "warning" if n else "neutral"
+        a = _sum_att(data, members)
+        if a.checked_out == 0 and a.unknown:
+            # Hech bir kun bo'yicha hukm chiqarib bo'lmadi — "0" emas, "—":
+            # nol "hammasi joyida" degan noto'g'ri taassurot qoldirardi.
+            return "—", "neutral"
+        return str(a.early), "warning" if a.early else "neutral"
     if key in ("dars_otkazish", "dars_qatnashish"):
         rate = _sum_tri(data, members).rate
         return _fmt_pct(rate), _rate_tone(rate)
@@ -602,6 +673,14 @@ def note_for(data: Data, key: str) -> str | None:
         if missing:
             parts.append(f"{len(data.members)} kishidan {missing} tasining yuzi tizimga kiritilmagan — ular kameraga "
                          "tushsa ham tanilmaydi.")
+    if key == "erta_ketish":
+        # Halollik: baholab bo'lmagan kunlar "erta ketmadi" deb jimgina
+        # o'tkazilmaydi, sahifa tepasida ochiq aytiladi.
+        a = _sum_att(data, data.members)
+        if a.unknown:
+            parts.append(f"{a.unknown} kunni baholab bo'lmadi ({a.checked_out} kun bo'yicha hukm chiqarildi): "
+                         "odam o'sha kuni kamerada bir martadan ko'p ko'rinmagan, shuning uchun oxirgi ko'rinishni "
+                         "\"ketish payti\" deb hisoblash uchun asos yo'q.")
     return " ".join(parts) or None
 
 
@@ -622,7 +701,8 @@ def _att_values(data: Data):
         if a is None or a.present + a.absent == 0:
             return None
         return {"rate": a.rate, "present": a.present, "late": a.late, "absent": a.absent,
-                "late_avg": round(a.late_minutes / a.late) if a.late else None, "early": a.early}
+                "late_avg": round(a.late_minutes / a.late) if a.late else None, "early": a.early,
+                "unknown": a.unknown}
     return values
 
 
@@ -636,13 +716,16 @@ def _day_spec(data: Data, key: str) -> Spec:
     AttendanceRecord qatoridan olinadi."""
     policy, kind = data.policy, data.kind
     late_after = _hhmm(policy.late_after(kind))
-    end_min = policy.work_end.hour * 60 + policy.work_end.minute
     enrolled = {m.id: m.enrolled for m in data.members}
-    judgeable = data.start < svc.today() and policy.is_work_day(data.start) and policy.track_last_seen
 
+    # Qaror _early_leave() da, umumiy qoida bo'yicha chiqarilgan (day_rows
+    # ichida) — bu yerda faqat o'qiladi. Ilgari shu jadval o'zining alohida
+    # ("check_out ish tugashidan oldin") hisobini yuritardi.
     def left_early(row: dict) -> bool:
-        out = row.get("check_out")
-        return bool(judgeable and out is not None and out.hour * 60 + out.minute < end_min)
+        return row.get("early") == EARLY_YES
+
+    def unjudged(row: dict) -> bool:
+        return row.get("early") == EARLY_UNKNOWN
 
     def note_of(row: dict | None, pid: uuid.UUID) -> str:
         if row is None:
@@ -657,6 +740,8 @@ def _day_spec(data: Data, key: str) -> Spec:
             parts.append("Kun davomida hech bir kamerada ko'rinmadi")
         if left_early(row):
             parts.append(f"ish tugashidan ({_hhmm(policy.work_end)}) oldin ketgan")
+        elif unjudged(row):
+            parts.append("qachon ketgani aniqlanmadi — kun davomida kamerada yetarlicha ko'rinmagan")
         if row.get("source") and row["source"] != "kamera":
             parts.append(f"manba: {SOURCE_LABEL.get(row['source'], row['source'])}")
         return ", ".join(parts)
@@ -695,7 +780,8 @@ def _day_spec(data: Data, key: str) -> Spec:
             return a.rate, f"{a.present} keldi · {a.absent} kelmadi"
         if key == "kechikish":
             return a.late, f"kelgan {a.present} kishining {_fmt_pct(svc.pct(a.late, a.present))} i"
-        return a.early, f"tekshirilgan {a.checked_out} kunning {_fmt_pct(svc.pct(a.early, a.checked_out))} i"
+        tail = f", {a.unknown} tasida aniqlanmadi" if a.unknown else ""
+        return a.early, f"hukm chiqarilgan {a.checked_out} yozuvning {_fmt_pct(svc.pct(a.early, a.checked_out))} i{tail}"
 
     cols = [
         {"key": "holat", "label": "Holati", "unit": "", "better": "none", "type": "text"},
@@ -740,8 +826,10 @@ def spec_for(data: Data, key: str) -> Spec | None:
 
         def gv(ms):
             a = _sum_att(data, ms)
-            return a.early, f"tekshirilgan kunlarning {_fmt_pct(svc.pct(a.early, a.checked_out))} i"
-        return Spec([col("early", "Erta ketdi", "kun"), col("present", "Kelgan kunlari", "kun", "up")],
+            tail = f", yana {a.unknown} kun aniqlanmadi" if a.unknown else ""
+            return a.early, f"hukm chiqarilgan kunlarning {_fmt_pct(svc.pct(a.early, a.checked_out))} i{tail}"
+        return Spec([col("early", "Erta ketdi", "kun"), col("unknown", "Aniqlanmadi", "kun", "none"),
+                     col("present", "Kelgan kunlari", "kun", "up")],
                     values, "early", True, gv, "ta")
     if key in ("dars_otkazish", "dars_qatnashish"):
         teacher = key == "dars_otkazish"
@@ -869,13 +957,16 @@ def _tiles(data: Data, key: str) -> list[dict]:
         early_people = sum(1 for p in people_with if p.early)
         return [
             _tile("Erta ketish holatlari", a.early, "ta",
-                  f"Tekshirish mumkin bo'lgan {a.checked_out} kunning "
+                  f"Hukm chiqarilgan {a.checked_out} kunning "
                   f"{_fmt_pct(svc.pct(a.early, a.checked_out))} i", "warning"),
             _tile("Erta ketgan kishilar", early_people, "kishi", f"Yozuvi bor {len(people_with)} kishidan", "warning"),
-            _tile("Ish tugash vaqti", _hhmm(data.policy.work_end), "",
-                  "Shundan oldin oxirgi marta ko'ringan bo'lsa — erta ketgan"),
-            _tile("Tekshirilgan kunlar", a.checked_out, "kun",
-                  "O'tgan ish kunlari; bugungi kun hali tugamagani uchun hisobga olinmaydi"),
+            # Halollik plitkasi: baholab bo'lmagan kunlar 0 ga qo'shilmaydi.
+            _tile("Aniqlab bo'lmadi", a.unknown, "kun",
+                  "Kamera o'sha kuni odamni yetarlicha ko'rmagan — qachon ketgani noma'lum",
+                  "warning" if a.unknown else "neutral"),
+            _tile("Hukm chiqarilgan kunlar", a.checked_out, "kun",
+                  f"O'tgan ish kunlari, ish tugashi {_hhmm(data.policy.work_end)}; bugungi kun hali tugamagani "
+                  "uchun hisobga olinmaydi"),
         ]
     if key in ("dars_otkazish", "dars_qatnashish"):
         t = _sum_tri(data, ms)
@@ -976,16 +1067,21 @@ def summary_lines(data: Data, key: str, scope: str) -> list[str]:
                              f"{_fmt_pct(svc.pct(a.late, a.present))} i. O'rtacha {avg} daqiqa kech "
                              f"(kech kelish — {late_after} dan keyin birinchi marta ko'rinish).")
         else:
+            # "Aniqlanmadi" ATAYLAB alohida aytiladi: kamera qoplamasi siyrak
+            # bo'lgan joyda "0 ta erta ketish" ham, "hamma erta ketdi" ham
+            # bir xil yolg'on.
+            unsure = (f" Yana {a.unknown} kunni baholab bo'lmadi: kamera o'sha kuni odamni yetarlicha ko'rmagan, "
+                      "shuning uchun qachon ketgani aniqlanmadi.") if a.unknown else ""
             if a.checked_out == 0:
-                lines.append(f"{scope}: erta ketishni tekshirib bo'ladigan kun yo'q — bugungi kun hisobga olinmaydi, "
-                             "o'tgan ish kunlarida esa odamning oxirgi ko'rinishi yozilmagan.")
+                lines.append(f"{scope}: erta ketish haqida hukm chiqarib bo'ladigan kun yo'q — bugungi kun hisobga "
+                             f"olinmaydi, qolgan kunlarda esa dalil yetarli emas.{unsure}")
             elif a.early == 0:
                 lines.append(f"{scope}: {when} hech kim ish tugashidan ({_hhmm(data.policy.work_end)}) oldin "
-                             f"ketmadi — {a.checked_out} kun tekshirildi.")
+                             f"ketmadi — {a.checked_out} kun bo'yicha hukm chiqarildi.{unsure}")
             else:
                 lines.append(f"{scope}: {when} {a.early} marta ish tugashidan ({_hhmm(data.policy.work_end)}) oldin "
-                             f"ketilgan — tekshirilgan {a.checked_out} kunning "
-                             f"{_fmt_pct(svc.pct(a.early, a.checked_out))} i.")
+                             f"ketilgan — hukm chiqarilgan {a.checked_out} kunning "
+                             f"{_fmt_pct(svc.pct(a.early, a.checked_out))} i.{unsure}")
     elif key in ("dars_otkazish", "dars_qatnashish"):
         t = _sum_tri(data, ms)
         if t.total == 0:

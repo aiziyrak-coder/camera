@@ -24,6 +24,14 @@ yuritiladi va ommaviy import qilingan xodimlarda pasport ma'lumotlari
 umuman yo'q. Pasport yo'li ilgari shu tarzda ro'yxatdan o'tganlar uchun
 saqlanadi.
 
+GURUH KODI (2026-09-20). JSHSHIR — sir emas: u hujjatda yozilgan va
+kadrlar ro'yxatlarida bor. Tiriklik tekshiruvi esa "tirik odam"ni
+isbotlaydi, "AYNAN SHU odam"ni emas. Shuning uchun har bir topshirishda
+odamning GURUHIGA (xodimda — bo'limiga) berilgan 6 belgili kod ham
+so'raladi: u og'zaki aytiladi yoki chop etilgan QR kartada beriladi.
+Kodsiz yoki boshqa guruhning kodi bilan kelgan so'rov rad etiladi va
+javob yozuv bor-yo'qligini oshkor qilmaydi (app/services/enrollment_code.py).
+
 ROZILIK. /submit biometrik ma'lumotni qayta ishlashga rozilik belgisini
 (`consent=true`) kutadi — settings.consent_required_for_enrollment
 yoqilgan bo'lsa, usiz kadrlar umuman o'qilmaydi. Rozilik vaqti va matn
@@ -55,11 +63,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.audit import log_action
 from app.config import settings
 from app.database import get_db
-from app.models import Faculty, StudentStaff
+from app.dependencies import CurrentUser, require_permission
+from app.models import EnrollmentCode, Faculty, StudentStaff
 from app.rate_limit import limiter
 from app.schemas.enrollment import (
+    EnrollmentCodeIn,
+    EnrollmentCodeOut,
     EnrollmentFacultyOut,
     PoseCheckOut,
     EnrollmentLookupIn,
@@ -67,6 +79,7 @@ from app.schemas.enrollment import (
     EnrollmentRegisterIn,
     EnrollmentSubmitOut,
 )
+from app.services import enrollment_code as codes
 from app.services.face_matching import announce_roster_change
 from app.services.inference_gate import PRIORITY_LIVE
 from app.services.privacy import record_consent
@@ -205,14 +218,16 @@ async def lookup_person(
     body: EnrollmentLookupIn,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> EnrollmentLookupOut:
+    """Shaxsni topadi — JSHSHIR/pasport VA guruh kodi bilan birga.
+
+    Kod shu yerda ham talab qilinadi. Ilgari bu endpoint bepul so'rov
+    oynasi edi: JSHSHIRni bilgan (yoki taxmin qilgan) har kim odamning
+    ism-sharifini va guruhini bilib olardi. Endi kodsiz so'rov ham,
+    noto'g'ri kodli so'rov ham, mavjud bo'lmagan JSHSHIR ham AYNAN bir
+    xil javob oladi — ya'ni javobdan hech narsa o'rganib bo'lmaydi."""
     record = await _find_person(db, body.pinfl, body.passport_series, body.passport_number)
-    if record is None:
-        detail = (
-            "Bunday JSHSHIR bilan yozuv topilmadi"
-            if body.pinfl
-            else "Bunday pasport ma'lumotlari bilan yozuv topilmadi"
-        )
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail)
+    if record is None or not await codes.verify_for_record(db, record, body.code):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, codes.LOOKUP_FAIL_MESSAGE)
     return _lookup_out(record)
 
 
@@ -250,7 +265,14 @@ async def register_self(
 
     Cheklov (3/minute) va pasport takrorlanmasligi tekshiruvi ataylab:
     endpoint ochiq, ya'ni uni bazani to'ldirish uchun ishlatib bo'lmasligi
-    kerak."""
+    kerak.
+
+    KOD bu yerda ham majburiy. Bunday odamning hali guruhi yo'q, shuning
+    uchun institutda amal qilayotgan ISTALGAN kod qabul qilinadi — kod
+    "menga bu kartani institutda berishdi" degan yagona dalil."""
+    if await codes.find_valid_code(db, body.code) is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, codes.WRONG_CODE_MESSAGE)
+
     pinfl = _normalize_pinfl(body.pinfl)
     series, number = _normalize(body.passport_series, body.passport_number)
 
@@ -259,6 +281,15 @@ async def register_self(
         # Yozuv allaqachon bor — yangisini yaratmaymiz, borini qaytaramiz.
         # Aks holda bitta odam uchun ikkita yozuv paydo bo'lardi va
         # davomat ikkiga bo'linib ketardi.
+        #
+        # Lekin borini qaytarish — bu ismni va guruhni aytish. Shuning
+        # uchun u faqat kod AYNAN shu odamning guruhiniki bo'lganda
+        # qaytariladi. Aks holda bu yo'l /lookup ni chetlab o'tib
+        # birovning ismini bilib olish usuliga aylanardi: istalgan kod
+        # bilan begona JSHSHIRni yuborib, javobda ismni ko'rish kifoya
+        # bo'lardi.
+        if not await codes.verify_for_record(db, existing, body.code):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, codes.WRONG_CODE_MESSAGE)
         return _lookup_out(existing)
 
     faculty_id = None
@@ -290,6 +321,8 @@ async def register_self(
         existing = await _find_person(db, body.pinfl, body.passport_series, body.passport_number)
         if existing is None:
             raise
+        if not await codes.verify_for_record(db, existing, body.code):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, codes.WRONG_CODE_MESSAGE) from None
         return _lookup_out(existing)
     await db.refresh(record)
     logger.info("self-service registration created", extra={"record_id": str(record.id)})
@@ -409,7 +442,16 @@ async def submit_enrollment(
     passport_series: Annotated[str | None, Form(alias="passportSeries")] = None,
     passport_number: Annotated[str | None, Form(alias="passportNumber")] = None,
     consent: Annotated[bool, Form(alias="consent")] = False,
+    code: Annotated[str | None, Form(alias="code")] = None,
 ) -> EnrollmentSubmitOut:
+    # Shaxs ma'lumoti umuman yuborilmagan bo'lsa — bu so'rovning o'z
+    # shakli haqidagi xato va u hech narsa oshkor qilmaydi.
+    if not _normalize_pinfl(pinfl) and not all(_normalize(passport_series, passport_number)):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "JSHSHIR yoki pasport ma'lumotlari yuborilishi kerak",
+        )
+
     record_uuid = _as_uuid(record_id)
     record = None
     if record_uuid is not None:
@@ -417,8 +459,15 @@ async def submit_enrollment(
             select(StudentStaff).options(selectinload(StudentStaff.faculty)).where(StudentStaff.id == record_uuid)
         )
         record = result.scalar_one_or_none()
-    if record is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Yozuv topilmadi")
+
+    # GURUH KODI — birinchi darvoza, hamma narsadan oldin.
+    #
+    # Yo'q yozuv ham, noto'g'ri kod ham, kodsiz so'rov ham AYNAN bir xil
+    # javob oladi. Agar "yozuv topilmadi" alohida xabar bo'lsa, kodni
+    # bilmagan odam ham yozuv identifikatorlarini birma-bir sinab, kim
+    # bor-yo'qligini aniqlay olardi.
+    if record is None or not await codes.verify_for_record(db, record, code):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, codes.WRONG_CODE_MESSAGE)
 
     # Identifikatsiya /lookup dagi bilan AYNAN bir xil tekshiriladi.
     # Bu ataylab: aks holda /lookup ni chetlab o'tib, to'g'ridan-to'g'ri
@@ -492,6 +541,12 @@ async def submit_enrollment(
     # replaces (a re-enrollment) removed afterwards so it doesn't sit in
     # object storage unreferenced — see app/storage.py's
     # delete_files_quietly for why both matter.
+    #
+    # ESKI RASM YANGISI SAQLANGUNCHA O'CHIRILMAYDI. Bu tartib majburiy:
+    # "kutilmoqda" holatidagi yozuv ustiga qayta topshirilganda eski rasm
+    # oldin o'chirilsa va yangisini saqlash (yoki commit) yiqilsa, odam
+    # umuman rasmsiz qolardi — ya'ni bitta muvaffaqiyatsiz so'rov
+    # birovning yuzini yo'q qilib yuborardi.
     previous_key = record.biometric_photo_key
     _file_id, key = await asyncio.to_thread(upload_file, frames[0], "face.jpg", "image/jpeg", "biometrics")
     record.biometric_photo_key = key
@@ -514,7 +569,15 @@ async def submit_enrollment(
             extra={"record_id": record_id, "self_registered": record.self_registered, "reason": reason},
         )
 
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        # Commit yiqildi — bazada hali ESKI kalit turibdi, ya'ni eski
+        # rasmga hech narsa tegmaydi. Yangi yuklangan fayl esa
+        # ortiqcha bo'lib qoladi va o'sha o'chiriladi.
+        await db.rollback()
+        await delete_files_quietly([key])
+        raise
     if previous_key and previous_key != key:
         await delete_files_quietly([previous_key])
     logger.info(
@@ -528,3 +591,81 @@ async def submit_enrollment(
         biometrics_status=record.biometrics_status,
         awaiting_approval=record.awaiting_approval,
     )
+
+
+# ─────────────────────────────── Admin: guruh kodlari ───────────────────────────────
+#
+# Ochiq yo'ldan farqli o'laroq bu yerga faqat "registerPeople" huquqi
+# bor foydalanuvchi kiradi. Kod — dekanat qo'lidagi kalit, shuning uchun
+# uni kim yangilagani audit jurnaliga yoziladi.
+
+codes_router = APIRouter(prefix="/api/enrollment-codes", tags=["enrollment"])
+
+
+def _target(body: EnrollmentCodeIn) -> tuple[str, str, str]:
+    """So'rovdagi qamrov va nomdan (qamrov, kalit, ko'rinadigan nom)."""
+    if body.scope == codes.SCOPE_ALL:
+        return codes.SCOPE_ALL, "", codes.ALL_UNIT_NAME
+    name = " ".join((body.unit or "").split())
+    if not name:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Guruh yoki bo'lim nomi kiritilmagan")
+    return body.scope, codes.unit_key(name), name
+
+
+def _code_out(row: EnrollmentCode) -> EnrollmentCodeOut:
+    return EnrollmentCodeOut(
+        scope=row.scope,
+        unit_name=row.unit_name or codes.ALL_UNIT_NAME,
+        code=row.code,
+        created_at=row.created_at,
+        expires_at=row.expires_at,
+    )
+
+
+@codes_router.get("", response_model=list[EnrollmentCodeOut])
+async def list_enrollment_codes(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
+) -> list[EnrollmentCodeOut]:
+    """Barcha kodlar — qamrov, so'ng nom bo'yicha."""
+    rows = (
+        await db.execute(select(EnrollmentCode).order_by(EnrollmentCode.scope, EnrollmentCode.unit_name))
+    ).scalars().all()
+    return [_code_out(row) for row in rows]
+
+
+@codes_router.post("/unit", response_model=EnrollmentCodeOut)
+async def get_enrollment_code(
+    body: EnrollmentCodeIn,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
+) -> EnrollmentCodeOut:
+    """Bitta guruh (yoki bo'lim) kodini ko'rsatadi.
+
+    Kodi hali bo'lmagan guruhga u shu yerda yaratiladi: yangi guruh
+    ochilganda admin alohida tugma qidirib yurmasligi kerak, kartani
+    esa shu zahoti chop etish kerak bo'ladi. Nomi POST tanasida
+    yuboriladi — guruh nomida chiziqcha ham, bo'sh joy ham bo'ladi."""
+    scope, key, name = _target(body)
+    row = await codes.ensure_code(db, scope, key, name)
+    await db.commit()
+    return _code_out(row)
+
+
+@codes_router.post("/regenerate", response_model=EnrollmentCodeOut)
+async def regenerate_enrollment_code(
+    body: EnrollmentCodeIn,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
+) -> EnrollmentCodeOut:
+    """Kodni yangilaydi — eski kod shu zahoti ishlamay qoladi.
+
+    Kod guruh chatiga tashlangan yoki tarqalib ketgan bo'lsa, yagona
+    to'g'ri harakat shu. Yangi kartani qayta chop etish kerak bo'ladi."""
+    scope, key, name = _target(body)
+    row = await codes.regenerate_code(db, scope, key, name, body.expires_at)
+    await log_action(db, request, current_user.id, f"Ro'yxatdan o'tish kodi yangilandi: {name}", "Talabalar")
+    await db.commit()
+    logger.info("enrollment code regenerated", extra={"scope": scope, "unit": name})
+    return _code_out(row)

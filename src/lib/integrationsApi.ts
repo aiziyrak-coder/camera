@@ -1,5 +1,6 @@
 import { api, buildQuery, type CallOptions, type Page } from './apiClient';
 import { config } from './config';
+import { ipAddress } from './validation';
 import type { Tone } from '../ui/tones';
 
 /* ── Turlar (camera-api/app/schemas/integrations.py bilan mos) ── */
@@ -300,7 +301,12 @@ export function validateDeviceForm(form: DeviceForm, isEdit: boolean): Partial<R
     if (!Number.isInteger(port) || port < 1 || port > 65535) errors.port = 'Port 1–65535 oralig\'ida';
   }
   if (form.kind === 'hikvision') {
+    // Manzil shakli tekshiriladi: ilgari "kamera-1" kabi matn ham qabul
+    // qilinardi (server ham uni oddiy satr deb saqlaydi), keyin qurilma
+    // abadiy "xato" holatida turib, sababi tushunarsiz bo'lardi.
     if (!form.ip.trim()) errors.ip = 'IP manzilni kiriting';
+    else errors.ip = ipAddress(form.ip);
+    if (!errors.ip) delete errors.ip;
     if (!form.username.trim()) errors.username = 'Loginni kiriting';
     if (!isEdit && !form.password) errors.password = 'Parolni kiriting';
   }

@@ -541,6 +541,9 @@ class EnrollMissingOut(CamelModel):
     total: int = 0
     missing: list[EnrollMissingPersonOut]
     enroll_url: str
+    #: Guruhning ro'yxatdan o'tish kodi — kartada chop etiladi va
+    #: havolaga ham qo'shiladi (app/services/enrollment_code.py).
+    enroll_code: str = ""
 
 
 class WallUnitOut(CamelModel):
@@ -579,6 +582,9 @@ class WallOut(CamelModel):
     last_arrivals: list[ArrivalOut]
     high_events: list[WallEventOut]
     cameras_online: int = 0
+    # faol (ishlashi kerak bo'lgan) kameralar soni
     cameras_total: int = 0
+    # ochiq yuqori xavfli hodisalarning to'liq soni (high_events — so'nggi 5 tasi)
+    high_open: int = 0
     enrollment: EnrollmentOut
     spotlight: list[SpotlightOut]

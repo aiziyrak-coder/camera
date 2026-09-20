@@ -124,3 +124,31 @@ describe('peopleSearchLink', () => {
     expect(peopleSearchLink('Ali Valiyev')).toBe('/reestr?search=Ali+Valiyev');
   });
 });
+
+/**
+ * QA: Hikvision qurilmasining IP manzili shakl bo'yicha tekshirilmasdi —
+ * "kamera-1" yoki "192.168.1" ham saqlanardi (backend uni oddiy satr deb
+ * qabul qiladi). Qurilma keyin abadiy "xato" holatida turib qolardi va
+ * admin sababini tushunmasdi.
+ */
+describe('validateDeviceForm — IP manzil shakli', () => {
+  const hik = { ...EMPTY_DEVICE_FORM, name: 'Kirish', kind: 'hikvision' as const, username: 'admin', password: 'x' };
+
+  it("to'g'ri IP qabul qilinadi", () => {
+    expect(validateDeviceForm({ ...hik, ip: '192.168.1.50' }, false).ip).toBeUndefined();
+  });
+
+  it("noto'g'ri IP rad etiladi", () => {
+    expect(validateDeviceForm({ ...hik, ip: 'kamera-1' }, false).ip).toBeTruthy();
+    expect(validateDeviceForm({ ...hik, ip: '192.168.1' }, false).ip).toBeTruthy();
+    expect(validateDeviceForm({ ...hik, ip: '999.1.1.1' }, false).ip).toBeTruthy();
+  });
+
+  it("bo'sh IP uchun xabar «kiriting» bo'lib qoladi", () => {
+    expect(validateDeviceForm({ ...hik, ip: '' }, false).ip).toBe('IP manzilni kiriting');
+  });
+
+  it('webhook qurilmasida IP talab qilinmaydi', () => {
+    expect(validateDeviceForm({ ...EMPTY_DEVICE_FORM, name: 'W', kind: 'webhook', ip: '' }, false).ip).toBeUndefined();
+  });
+});

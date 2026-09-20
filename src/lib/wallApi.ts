@@ -61,7 +61,10 @@ export interface Wall {
   lastArrivals: LastArrival[];
   highEvents: WallHighEvent[];
   camerasOnline: number;
+  /** Faol (ishlashi kerak bo'lgan) kameralar — "nofaol"lari kirmaydi. */
   camerasTotal: number;
+  /** Ochiq "yuqori" hodisalarning to'liq soni (`highEvents` — faqat 5 tasi). */
+  highOpen?: number;
   enrollment: WallEnrollment;
   spotlight: SpotlightItem[];
 }

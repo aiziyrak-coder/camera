@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Clock, LogIn, LogOut, Save } from 'lucide-react';
 import { Button, Card, ErrorState, Field, Input, Page, Skeleton, useToast } from '../../ui';
+import { Notice } from '../../components/settings/kit';
 import { ApiError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
+import { usePermissions } from '../../lib/permissions';
 import {
   addMinutes,
   getAttendancePolicy,
   saveAttendancePolicy,
+  validateAttendancePolicy,
+  type AttendancePolicyErrors,
   type AttendancePolicyInput,
 } from '../../lib/attendancePolicyApi';
 
@@ -22,11 +26,17 @@ const DAYS: [number, string][] = [
 
 /** Ish vaqti: kim "kech keldi" hisoblanishi shu yerda belgilanadi. */
 const SUBTITLE = "Kim o'z vaqtida, kim kech kelgani shu qoidadan hisoblanadi";
+const BREADCRUMBS = [{ label: 'Sozlamalar' }, { label: 'Ish vaqti' }];
 
 export default function WorkHoursPage() {
-  const { token } = useAuth();
+  const { token, role } = useAuth();
+  const { can } = usePermissions();
   const toast = useToast();
+  const canEdit = can('manageAttendance', role);
   const [form, setForm] = useState<AttendancePolicyInput | null>(null);
+  /** Serverdan kelgan asl nusxa — "o'zgardimi?" shundan aniqlanadi. */
+  const [saved, setSaved] = useState<AttendancePolicyInput | null>(null);
+  const [errors, setErrors] = useState<AttendancePolicyErrors>({});
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [nonce, setNonce] = useState(0);
@@ -34,14 +44,17 @@ export default function WorkHoursPage() {
   useEffect(() => {
     getAttendancePolicy(token)
       .then((p) => {
-        setForm({
+        const next: AttendancePolicyInput = {
           staffStart: p.staffStart,
           studentStart: p.studentStart,
           graceMinutes: p.graceMinutes,
           workEnd: p.workEnd,
           workDays: p.workDays,
           trackLastSeen: p.trackLastSeen,
-        });
+        };
+        setForm(next);
+        setSaved(next);
+        setErrors({});
         setError(null);
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Qoidani yuklab bo'lmadi"));
@@ -51,14 +64,14 @@ export default function WorkHoursPage() {
   // yuklangan holatga o'tganda sahifa boshi sakrardi.
   if (error) {
     return (
-      <Page title="Ish vaqti" subtitle={SUBTITLE}>
+      <Page title="Ish vaqti" subtitle={SUBTITLE} breadcrumbs={BREADCRUMBS}>
         <ErrorState message={error} onRetry={() => setNonce((n) => n + 1)} />
       </Page>
     );
   }
   if (!form) {
     return (
-      <Page title="Ish vaqti" subtitle={SUBTITLE}>
+      <Page title="Ish vaqti" subtitle={SUBTITLE} breadcrumbs={BREADCRUMBS}>
         <Skeleton className="h-80 rounded-card" />
       </Page>
     );
@@ -68,11 +81,19 @@ export default function WorkHoursPage() {
   const set = (patch: Partial<AttendancePolicyInput>) => setForm({ ...current, ...patch });
   const staffLate = addMinutes(current.staffStart, current.graceMinutes);
   const studentLate = addMinutes(current.studentStart, current.graceMinutes);
+  const dirty = saved !== null && JSON.stringify(saved) !== JSON.stringify(current);
 
   async function save() {
+    const found = validateAttendancePolicy(current);
+    setErrors(found);
+    if (Object.keys(found).length > 0) {
+      toast.error("Qoida saqlanmadi — qizil bilan belgilangan maydonlarni to'g'rilang");
+      return;
+    }
     setSaving(true);
     try {
       const res = await saveAttendancePolicy(token, current);
+      setSaved(current);
       toast.success(
         res.recomputed
           ? `Saqlandi. Oxirgi 60 kundagi ${res.recomputed} ta yozuv yangi qoida bo'yicha qayta hisoblandi`
@@ -89,22 +110,34 @@ export default function WorkHoursPage() {
     <Page
       title="Ish vaqti"
       subtitle={SUBTITLE}
+      breadcrumbs={BREADCRUMBS}
       actions={
-        <Button variant="primary" icon={Save} disabled={saving} onClick={save}>
-          {saving ? 'Saqlanmoqda…' : 'Saqlash'}
-        </Button>
+        <span title={canEdit ? undefined : "Davomatni boshqarish huquqi yo'q — Foydalanuvchilar bo'limida yoqiladi"}>
+          <Button variant="primary" icon={Save} loading={saving} disabled={!canEdit || !dirty} onClick={save}>
+            Saqlash
+          </Button>
+        </span>
       }
     >
+      {!canEdit && (
+        <Notice tone="neutral">
+          Qoidani faqat ko&apos;rib turibsiz. O&apos;zgartirish uchun &quot;Davomat&quot; huquqi kerak.
+        </Notice>
+      )}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <Card className="space-y-5 p-5">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Xodimlar ish boshlanishi">
+          <fieldset disabled={!canEdit} className="grid gap-4 border-0 p-0 sm:grid-cols-2">
+            <Field label="Xodimlar ish boshlanishi" error={errors.staffStart}>
               <Input type="time" value={current.staffStart} onChange={(e) => set({ staffStart: e.target.value })} />
             </Field>
-            <Field label="Talabalar dars boshlanishi">
+            <Field label="Talabalar dars boshlanishi" error={errors.studentStart}>
               <Input type="time" value={current.studentStart} onChange={(e) => set({ studentStart: e.target.value })} />
             </Field>
-            <Field label="Kechikishga ruxsat (daqiqa)" hint="Shu daqiqagacha kelganlar o'z vaqtida hisoblanadi">
+            <Field
+              label="Kechikishga ruxsat (daqiqa)"
+              error={errors.graceMinutes}
+              hint="Shu daqiqagacha kelganlar o'z vaqtida hisoblanadi"
+            >
               <Input
                 type="number"
                 min={0}
@@ -113,10 +146,10 @@ export default function WorkHoursPage() {
                 onChange={(e) => set({ graceMinutes: Math.max(0, Math.min(180, Number(e.target.value) || 0)) })}
               />
             </Field>
-            <Field label="Ish tugashi" hint="Undan oldin oxirgi marta ko'ringan — erta ketgan">
+            <Field label="Ish tugashi" error={errors.workEnd} hint="Undan oldin oxirgi marta ko'ringan — erta ketgan">
               <Input type="time" value={current.workEnd} onChange={(e) => set({ workEnd: e.target.value })} />
             </Field>
-          </div>
+          </fieldset>
 
           <div>
             <p className="mb-2 text-[13px] font-medium text-fg">Ish kunlari</p>
@@ -128,6 +161,7 @@ export default function WorkHoursPage() {
                     key={day}
                     type="button"
                     aria-pressed={on}
+                    disabled={!canEdit}
                     onClick={() =>
                       set({
                         workDays: on
@@ -137,8 +171,8 @@ export default function WorkHoursPage() {
                     }
                     className={
                       on
-                        ? 'h-9 w-11 rounded-control border border-primary bg-primary text-[13px] font-medium text-primary-fg'
-                        : 'h-9 w-11 rounded-control border border-border bg-surface-2 text-[13px] font-medium text-muted hover:text-fg'
+                        ? 'h-9 w-11 rounded-control border border-primary bg-primary text-[13px] font-medium text-primary-fg disabled:opacity-60'
+                        : 'h-9 w-11 rounded-control border border-border bg-surface-2 text-[13px] font-medium text-muted hover:text-fg disabled:opacity-60'
                     }
                   >
                     {label}
@@ -146,13 +180,20 @@ export default function WorkHoursPage() {
                 );
               })}
             </div>
-            <p className="mt-1.5 text-xs text-muted">Dam olish kunlari kech qolish hisoblanmaydi</p>
+            {errors.workDays ? (
+              <p role="alert" className="mt-1.5 text-xs font-medium text-danger">
+                {errors.workDays}
+              </p>
+            ) : (
+              <p className="mt-1.5 text-xs text-muted">Dam olish kunlari kech qolish hisoblanmaydi</p>
+            )}
           </div>
 
           <label className="flex items-start gap-2.5 text-[13px] text-fg">
             <input
               type="checkbox"
               className="mt-0.5 h-4 w-4"
+              disabled={!canEdit}
               checked={current.trackLastSeen}
               onChange={(e) => set({ trackLastSeen: e.target.checked })}
             />
@@ -190,7 +231,7 @@ export default function WorkHoursPage() {
               <LogOut size={15} className="mt-0.5 shrink-0 text-primary" aria-hidden="true" />
               <span>
                 <b className="text-fg">Ketish vaqti</b> — kunning oxirgi ko&apos;rinishi.{' '}
-                <b className="tabular-nums text-fg">{current.workEnd}</b> dan oldin bo&apos;lsa — erta ketgan.
+                <b className="tabular-nums text-fg">{current.workEnd || '—'}</b> dan oldin bo&apos;lsa — erta ketgan.
               </span>
             </li>
             <li className="text-xs">

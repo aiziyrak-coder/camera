@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
@@ -33,6 +34,11 @@ class EnrollmentLookupIn(CamelModel):
     pinfl: str | None = Field(default=None, max_length=32)
     passport_series: str | None = Field(default=None, min_length=2, max_length=4)
     passport_number: str | None = Field(default=None, min_length=5, max_length=10)
+    #: Guruh kodi. Sxemada MAJBURIY emas — usiz kelgan so'rov ham
+    #: "topilmadi" degan AYNAN bir xil javob olishi kerak. Majburiy
+    #: qilsak, kodsiz so'rov 422, noto'g'ri kod esa 404 qaytarardi va
+    #: shu farqning o'zi "kod to'g'ri edi" degan ma'lumotni berardi.
+    code: str | None = Field(default=None, max_length=16)
 
     @field_validator("pinfl", mode="before")
     @classmethod
@@ -83,6 +89,8 @@ class EnrollmentRegisterIn(CamelModel):
     pinfl: str | None = Field(default=None, max_length=32)
     passport_series: str | None = Field(default=None, min_length=2, max_length=4)
     passport_number: str | None = Field(default=None, min_length=5, max_length=10)
+    #: Kod bu yerda ham kerak (qarang: EnrollmentLookupIn.code).
+    code: str | None = Field(default=None, max_length=16)
 
     @field_validator("pinfl", mode="before")
     @classmethod
@@ -104,6 +112,29 @@ class EnrollmentRegisterIn(CamelModel):
 class EnrollmentFacultyOut(CamelModel):
     id: str
     name: str
+
+
+class EnrollmentCodeOut(CamelModel):
+    """Guruh (yoki bo'lim) uchun ro'yxatdan o'tish kodi — admin uchun."""
+
+    scope: str
+    unit_name: str
+    code: str
+    created_at: datetime | None = None
+    expires_at: datetime | None = None
+
+
+class EnrollmentCodeIn(CamelModel):
+    """Qaysi guruhning kodi: qamrov + nom.
+
+    Nom aynan panelda ko'rinadigan nom (guruh nomi yoki fakultet nomi) —
+    solishtirishda u o'zi tozalanadi, ya'ni "DI-2301" va " di-2301 "
+    bitta guruh."""
+
+    scope: Literal["guruh", "bolim", "umumiy"] = "guruh"
+    unit: str = Field(default="", max_length=160)
+    #: Faqat yangilashda: kod shu paytdan keyin ishlamaydi (bo'sh — muddatsiz).
+    expires_at: datetime | None = None
 
 
 class PoseCheckOut(CamelModel):

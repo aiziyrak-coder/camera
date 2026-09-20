@@ -123,3 +123,28 @@ describe('Excel eksport manzili', () => {
     expect(url).toContain('unit=u1');
   });
 });
+
+describe("«Tozalash» yozilayotgan qidiruvni ham tozalaydi", () => {
+  it('debounce hali tugamagan matn tozalashdan keyin qaytib kelmaydi', async () => {
+    vi.useFakeTimers();
+    try {
+      const onChange = vi.fn();
+      const onReset = vi.fn();
+      // `state.q` bo'sh: foydalanuvchi endigina yozdi, 350 ms hali o'tmagan.
+      render(<ReportFilters state={studentState()} options={OPTIONS} onChange={onChange} onReset={onReset} />);
+
+      const box = screen.getByRole('searchbox', { name: /qidirish/i });
+      fireEvent.change(box, { target: { value: 'Ali' } });
+      // Debounce tugamasidan "Tozalash" bosiladi.
+      fireEvent.click(screen.getByRole('button', { name: /Tozalash/ }));
+      vi.advanceTimersByTime(1000);
+
+      expect(onReset).toHaveBeenCalledTimes(1);
+      // Tozalangandan keyin qidiruv qayta qo'llanmasligi kerak.
+      expect(onChange).not.toHaveBeenCalledWith({ q: 'Ali' });
+      expect((box as HTMLInputElement).value).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

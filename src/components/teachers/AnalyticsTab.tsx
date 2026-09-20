@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CalendarCheck2, Clock3, Timer, UserX } from 'lucide-react';
 import {
@@ -32,10 +32,12 @@ import {
 } from '../../lib/situationApi';
 import { useViewDate } from '../../lib/viewDate';
 import { DeltaBadge, Heatmap, TrendChart, TrendLegend, clockToMinutes } from '../analytics';
-import { ANALYTICS_PRESETS, useAnalyticsPeriod } from './analyticsPeriod';
+import { ANALYTICS_PRESETS, useAnalyticsPeriod, useUrlChoice } from './analyticsPeriod';
 import { useLoader } from './useLoader';
 
 type KindFilter = 'all' | 'kafedra' | 'dekanat' | 'bolim';
+
+const KIND_FILTERS: readonly KindFilter[] = ['all', 'kafedra', 'dekanat', 'bolim'];
 
 function kpiDelta(value: number | null | undefined, better: 'up' | 'down', suffix: string, digits = 1) {
   if (value === null || value === undefined) return null;
@@ -62,7 +64,8 @@ export function AnalyticsTab() {
   const [period, setPeriod] = useAnalyticsPeriod();
   const navigate = useNavigate();
   const { withDate } = useViewDate();
-  const [kind, setKind] = useState<KindFilter>('all');
+  // Bo'linma turi URL'da — yangilashdan keyin ham o'sha jadval qaytadi.
+  const [kind, setKind] = useUrlChoice<KindFilter>('turi', KIND_FILTERS, 'all');
   const key = `${period.from}:${period.to}`;
   const range = { from: period.from, to: period.to, type: 'xodim' as const };
   const summary = useLoader(`s:${key}`, (signal) => getAnalyticsSummary(range, { signal }), { group: 'summary' });
@@ -133,7 +136,9 @@ export function AnalyticsTab() {
     }
     return { start, end: end + 1 };
   }, [hm]);
-  const lateMax = hm ? Math.max(1, ...hm.weekdays.map((w) => w.lateRate ?? 0)) : 1;
+  // Haqiqiy maksimum (avval 1 dan boshlangani uchun barcha kechikish 1% dan
+  // past bo'lgan haftada ustunlar ko'rinmay, "eng yomon kun" ham belgilanmasdi).
+  const lateMax = hm ? Math.max(0, ...hm.weekdays.map((w) => w.lateRate ?? 0)) : 0;
 
   return (
     <>
@@ -222,19 +227,23 @@ export function AnalyticsTab() {
         </Card>
         <Card>
           <CardHeader title="Kechikish — hafta kunlari" subtitle="Kelganlardan kech qolganlar ulushi" />
-          {!hm ? (
+          {/* Xato bo'lsa skelet abadiy aylanib turmasin — bu ikkala karta ham
+              bitta issiqlik xaritasi so'rovidan chiziladi. */}
+          {heatmap.error && !hm ? (
+            <ErrorState message={heatmap.error} onRetry={heatmap.reload} />
+          ) : !hm ? (
             <Skeleton className="h-52 w-full" />
           ) : (
             <ul className="space-y-2.5">
               {hm.weekdays.map((w) => {
-                const worst = w.lateRate !== null && w.lateRate === lateMax;
+                const worst = lateMax > 0 && w.lateRate !== null && w.lateRate === lateMax;
                 return (
                   <li key={w.weekday} className="grid grid-cols-[2.5rem_1fr_3.5rem] items-center gap-2 text-sm">
                     <span className={cn('font-medium', worst ? 'text-fg' : 'text-muted')}>{w.label}</span>
                     <span className="h-3 overflow-hidden rounded-full bg-surface-2">
                       <span
                         className={cn('block h-full rounded-full transition-[width] duration-500', worst ? 'bg-warning' : 'bg-warning/45')}
-                        style={{ width: `${((w.lateRate ?? 0) / lateMax) * 100}%` }}
+                        style={{ width: lateMax > 0 ? `${((w.lateRate ?? 0) / lateMax) * 100}%` : '0%' }}
                       />
                     </span>
                     <span className="text-right tabular-nums text-fg">

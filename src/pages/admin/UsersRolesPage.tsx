@@ -40,7 +40,7 @@ export default function UsersRolesPage() {
   const [editing, setEditing] = useState<AdminUser | null>(null);
   const [deleting, setDeleting] = useState<AdminUser | null>(null);
   const { role: myRole, token } = useAuth();
-  const { matrix, toggle } = usePermissions();
+  const { matrix, toggle, saveError, clearSaveError } = usePermissions();
   const {
     items: users,
     page,
@@ -232,6 +232,18 @@ export default function UsersRolesPage() {
         />
       ) : (
         <div className="flex flex-col gap-3">
+          {saveError && (
+            <Notice
+              tone="danger"
+              action={
+                <Button size="sm" onClick={clearSaveError}>
+                  Yopish
+                </Button>
+              }
+            >
+              {saveError}
+            </Notice>
+          )}
           {canEdit ? (
             <Notice tone="info">
               Bu yerdagi sozlamalar navigatsiya menyusi va eksport tugmalarini haqiqatda cheklaydi — &quot;Admin&quot;
