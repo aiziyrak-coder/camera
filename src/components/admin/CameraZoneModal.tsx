@@ -24,13 +24,13 @@ const MODE_TEXT: Record<ZoneMode, { title: string; endpoint: string; hint: strin
   restricted: {
     title: 'Taqiqlangan zona',
     endpoint: 'zone-polygon',
-    hint: "Video ustiga bosib ko'pburchak nuqtalarini belgilang (kamida 3 ta). Nuqtalar oq nuqta bilan ko'rsatiladi, zona qizil rangda to'ldiriladi.",
+    hint: 'Video ustiga bosib nuqta qo‘ying (kamida 3 ta).',
     clear: 'Zonani olib tashlash',
   },
   faceRoi: {
     title: 'Eshik hududi (yuz qidiriladigan joy)',
     endpoint: 'face-roi',
-    hint: "Odamlar yuzi aniq ko'rinadigan joyni — eshik yoki turniket atrofini — belgilang (kamida 3 ta nuqta). AI yuzni faqat shu hududda, to'liq sifatda qidiradi: yuzlar kattaroq ko'rinadi, CPU kamroq sarflanadi.",
+    hint: 'Eshik atrofini belgilang (kamida 3 ta nuqta).',
     clear: 'Hududni olib tashlash',
   },
 };
@@ -90,7 +90,7 @@ export default function CameraZoneModal({
       onSave(saved);
       return true;
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi");
+      setError(err instanceof ApiError ? err.message : 'Tarmoq xatosi');
       return false;
     } finally {
       setSaving(false);
@@ -185,7 +185,7 @@ export default function CameraZoneModal({
 
           {confirming === 'clear' && (
             <Notice tone="warning" title={`${text.clear}?`}>
-              <p>Saqlangan hudud butunlay o&apos;chiriladi va buni ortga qaytarib bo&apos;lmaydi.</p>
+              <p>Saqlangan hudud butunlay o&apos;chiriladi.</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 <Button size="sm" variant="primary" loading={saving} onClick={() => submit(null)}>
                   Ha, olib tashlansin

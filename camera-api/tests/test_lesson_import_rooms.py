@@ -99,3 +99,86 @@ class TestImport:
         result = await _post(client, files, apply=False)
         assert result["errors"] == []
         assert (result["withCamera"], result["withTeacher"]) == (1, 1)
+
+
+# ─────────────────────────────── Haftalik jadval (namuna + yoyish)
+
+WEEKLY_CSV = (
+    "guruh;hafta kuni;boshlanish;xona;fan;o'qituvchi\n"
+    "DI-1625;Seshanba;08:30;211;Anatomiya;Salohiddinov Akmal Koxorovich\n"
+    "DI-1625;Juma;10:00;305;Fiziologiya;\n"
+)
+
+
+async def _post_weekly(client: AsyncClient, text: str, *, dan: str, gacha: str, apply: bool) -> dict:
+    headers = await auth_headers(client, "admin", "admin123")
+    resp = await client.post(
+        f"/api/lesson-sessions/import-haftalik?dan={dan}&gacha={gacha}&apply={str(apply).lower()}",
+        headers=headers,
+        files={"file": ("haftalik.csv", text.encode("utf-8"), "text/csv")},
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+async def test_weekly_schedule_is_expanded_over_the_period(client: AsyncClient, world, db_session):
+    """Bitta haftalik qator — oraliqdagi har bir shu kunga bitta dars."""
+    body = await _post_weekly(client, WEEKLY_CSV, dan="2026-09-01", gacha="2026-09-30", apply=True)
+
+    # Sentabr 2026: 5 ta seshanba, 4 ta juma.
+    assert body["imported"] == 9
+    assert body["weeks"] == 5
+    # Xonasi bor dars kameraga bog'lanadi, 305 esa yo'q — ochiq aytiladi.
+    assert body["withCamera"] == 5
+    assert body["unmatchedRooms"] == ["305"]
+
+    sessions = (await db_session.execute(select(LessonSession))).scalars().all()
+    dates = sorted({s.date.isoformat() for s in sessions})
+    assert dates[0] == "2026-09-01"
+    assert dates[-1] == "2026-09-29"
+
+
+async def test_weekly_preview_writes_nothing(client: AsyncClient, world, db_session):
+    body = await _post_weekly(client, WEEKLY_CSV, dan="2026-09-01", gacha="2026-09-07", apply=False)
+    assert body["preview"] is True and body["imported"] == 2
+    assert (await db_session.execute(select(LessonSession))).scalars().first() is None
+
+
+async def test_weekly_repeat_upload_does_not_duplicate(client: AsyncClient, world):
+    await _post_weekly(client, WEEKLY_CSV, dan="2026-09-01", gacha="2026-09-07", apply=True)
+    again = await _post_weekly(client, WEEKLY_CSV, dan="2026-09-01", gacha="2026-09-07", apply=True)
+    assert again["imported"] == 0 and again["skipped"] == 2
+
+
+async def test_weekly_bad_range_is_refused(client: AsyncClient, world):
+    headers = await auth_headers(client, "admin", "admin123")
+    resp = await client.post(
+        "/api/lesson-sessions/import-haftalik?dan=2026-10-01&gacha=2026-09-01",
+        headers=headers,
+        files={"file": ("h.csv", WEEKLY_CSV.encode("utf-8"), "text/csv")},
+    )
+    assert resp.status_code == 422
+
+
+async def test_weekly_without_weekday_column_says_so(client: AsyncClient, world):
+    headers = await auth_headers(client, "admin", "admin123")
+    resp = await client.post(
+        "/api/lesson-sessions/import-haftalik?dan=2026-09-01&gacha=2026-09-07",
+        headers=headers,
+        files={"file": ("h.csv", b"guruh;boshlanish\nDI-1625;08:30\n", "text/csv")},
+    )
+    assert resp.status_code == 422
+    assert "Hafta kuni" in resp.json()["detail"]
+
+
+async def test_template_download_lists_real_groups_and_rooms(client: AsyncClient, world):
+    headers = await auth_headers(client, "admin", "admin123")
+    resp = await client.get("/api/lesson-sessions/namuna.xlsx", headers=headers)
+    assert resp.status_code == 200
+    assert "namuna.xlsx" in resp.headers["content-disposition"]
+
+    from openpyxl import load_workbook
+
+    wb = load_workbook(io.BytesIO(resp.content))
+    rooms = [wb["Xonalar"].cell(row, 1).value for row in range(2, wb["Xonalar"].max_row + 1)]
+    assert "211" in rooms

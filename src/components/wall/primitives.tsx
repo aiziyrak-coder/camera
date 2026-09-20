@@ -8,7 +8,6 @@ export function WallPanel({
   title,
   icon,
   aside,
-  code,
   children,
   className,
 }: {
@@ -16,8 +15,6 @@ export function WallPanel({
   title: string;
   icon?: ReactNode;
   aside?: ReactNode;
-  /** O'ng burchakdagi xizmat kodi: "A-01", "KAM". */
-  code?: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
@@ -40,7 +37,6 @@ export function WallPanel({
         {icon && <span className="text-muted [&>svg]:h-[1em] [&>svg]:w-[1em]">{icon}</span>}
         <h2 className="intel-micro !text-[0.62em] !text-fg">{title}</h2>
         {aside && <div className="ms-auto flex items-center gap-[0.5em] text-[0.7em] text-muted">{aside}</div>}
-        {code && <span className={cn('intel-code text-[0.62em] text-subtle', !aside && 'ms-auto')}>{code}</span>}
       </header>
       <div className="relative flex min-h-0 flex-1 flex-col p-[0.8em]">{children}</div>
     </section>

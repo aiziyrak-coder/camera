@@ -48,10 +48,7 @@ function FaceGrid({ detail }: { detail: SpotlightDetail }) {
                 {showNames && (
                   <div className="mt-[0.35em] w-full text-center leading-tight">
                     <div className="truncate font-medium text-fg">{f.fullName.split(' ').slice(0, 2).join(' ')}</div>
-                    {/* "—" ning ma'nosi ekranda ko'rinmasdi. */}
-                    <div className="intel-code text-muted" title={f.checkIn ? 'Kelgan vaqti' : 'Hali kelmagan'}>
-                      {f.checkIn ?? '—'}
-                    </div>
+                    <div className="intel-code text-muted">{f.checkIn ?? '—'}</div>
                   </div>
                 )}
               </div>
@@ -132,7 +129,6 @@ export function SpotlightPanel({
       area="C"
       title="Diqqat markazida"
       icon={<Sparkles />}
-      code="C-03"
       aside={total > 0 ? <CodeText className="text-[0.95em]">{index + 1} / {total}</CodeText> : null}
     >
       {layers.length === 0 ? (
@@ -140,17 +136,7 @@ export function SpotlightPanel({
         // emas, "yuklanmoqda". Ikkalasini bir xil yozish chalg'itardi.
         <div className="flex flex-1 flex-col items-center justify-center text-center text-muted">
           <Sparkles className="mb-[0.5em] h-[2.5em] w-[2.5em] opacity-50" />
-          {total > 0 ? (
-            <>
-              <div>Ma'lumot yuklanmoqda…</div>
-              <div className="text-[0.8em]">Navbatdagi bo'linma tafsiloti kutilmoqda</div>
-            </>
-          ) : (
-            <>
-              <div>Bugun hali ko'rsatiladigan bo'linma yoki guruh yo'q</div>
-              <div className="text-[0.8em]">Birinchi kelishlardan so'ng navbat bilan ko'rsatiladi</div>
-            </>
-          )}
+          <div>{total > 0 ? 'Yuklanmoqda…' : "Bo'linma yo'q"}</div>
         </div>
       ) : (
         <div className="relative min-h-0 flex-1">

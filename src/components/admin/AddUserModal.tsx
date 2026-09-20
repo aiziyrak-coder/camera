@@ -102,7 +102,7 @@ export default function AddUserModal({
       reset();
       onClose();
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi";
+      const message = err instanceof ApiError ? err.message : 'Tarmoq xatosi';
       setErrors({ form: message });
     } finally {
       setSubmitting(false);
@@ -141,13 +141,13 @@ export default function AddUserModal({
           <Field label="Login" required error={errors.login}>
             <Input placeholder="a.alimov" value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="off" />
           </Field>
-          <Field label="Rol" required error={errors.role} hint="Huquqlarni “Huquqlar matritsasi” bo'limida sozlash mumkin.">
+          <Field label="Rol" required error={errors.role} hint="Huquqlar matritsasida sozlanadi">
             <Select value={role} onChange={(v) => setRole(v as AdminUser['role'])} options={roleOptions} placeholder="Tanlang" className="sm:w-full" />
           </Field>
           <Field label="Email" hint="Ixtiyoriy">
             <Input type="email" placeholder="a.alimov@fjsti.uz" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />
           </Field>
-          <Field label="Telefon" error={errors.phone} hint="Ixtiyoriy — SMS bildirishnomalar uchun">
+          <Field label="Telefon" error={errors.phone} hint="Ixtiyoriy — SMS uchun">
             <Input type="tel" placeholder="+998 90 123 45 67" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="off" />
           </Field>
           <Field label="Parol" required error={errors.password} hint="Kamida 8 belgi">

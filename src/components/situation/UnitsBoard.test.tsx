@@ -39,10 +39,8 @@ const show = (props: Partial<Parameters<typeof UnitsBoard>[0]> & { units?: Kafed
         loading={false}
         error={null}
         onRetry={() => {}}
-        countedLabel={`${items.length} ta bo'linma bugun ishga kelgan xodimlar ulushi bo'yicha saralandi`}
-        emptyTitle="Bo'linmalarni hali taqqoslab bo'lmaydi"
-        emptyDescription="Xodimlar kela boshlagach taxta o'zi to'ladi."
-        errorTitle="Bo'linmalar ro'yxatini olib bo'lmadi"
+        emptyTitle="Ma'lumot yo'q"
+        errorTitle="Ro'yxat olinmadi"
         {...rest}
       />
     </MemoryRouter>,
@@ -50,22 +48,23 @@ const show = (props: Partial<Parameters<typeof UnitsBoard>[0]> & { units?: Kafed
 };
 
 describe('UnitsBoard', () => {
-  it("yuklanayotganda '0 ta bo'linma saralandi' deyilmaydi", () => {
+  it('yuklanayotganda taxta emas, yuklanish holati ko\'rinadi', () => {
     show({ loading: true });
-    expect(screen.queryByText(/0 ta bo'linma/)).toBeNull();
     expect(screen.getByText(/yuklanmoqda/i)).toBeInTheDocument();
   });
 
   it("eski ma'lumot ustida xato bo'lsa — jim qolinmaydi", () => {
     show({ units: [unit('a', 90), unit('b', 70)], error: 'Tarmoq xatosi' });
-    expect(screen.getByText(/Oxirgi yangilanish muvaffaqiyatsiz/)).toBeInTheDocument();
+    expect(screen.getByText(/Yangilanmadi/)).toBeInTheDocument();
     expect(screen.getByText(/Tarmoq xatosi/)).toBeInTheDocument();
   });
 
   it("ma'lumot bor va xato yo'q bo'lsa ogohlantirish chiqmaydi", () => {
     show({ units: [unit('a', 90), unit('b', 70)] });
-    expect(screen.queryByText(/Oxirgi yangilanish muvaffaqiyatsiz/)).toBeNull();
-    expect(screen.getByText(/2 ta bo'linma/)).toBeInTheDocument();
+    expect(screen.queryByText(/Yangilanmadi/)).toBeNull();
+    // Son endi panel ramkasida (sahifada); taxtada qatorlarning o'zi turadi.
+    expect(screen.getByText('Kafedra a')).toBeInTheDocument();
+    expect(screen.getByText('Kafedra b')).toBeInTheDocument();
   });
 
   it('svetofor hukmi rang bilan birga harf sifatida ham chiqadi', () => {

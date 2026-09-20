@@ -38,6 +38,6 @@ describe('TodayPanel — foizning qamrovi', () => {
     render(
       <TodayPanel students={counts()} staff={counts()} studentsDataAvailable studentsEnroll={enroll} />,
     );
-    expect(screen.getAllByText(/yuzi ro'yxatdan o'tgan — foiz faqat shular bo'yicha/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/1 030 \/ 6 912 yuz/).length).toBeGreaterThan(0);
   });
 });

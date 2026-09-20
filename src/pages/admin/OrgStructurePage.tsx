@@ -6,8 +6,6 @@ import {
   CodeText,
   ConfirmDialog,
   DataTable,
-  DocumentFooter,
-  DocumentHeader,
   ErrorState,
   FilterBar,
   IntelPanel,
@@ -23,8 +21,6 @@ import {
   type FilterFieldEntry,
   type TabItem,
 } from '../../ui';
-import { buildReference, unitCode } from '../../components/admin/registryCodes';
-import { branding } from '../../lib/branding';
 import AddBuildingModal from '../../components/admin/AddBuildingModal';
 import AddDepartmentModal from '../../components/admin/AddDepartmentModal';
 import AddFacultyModal from '../../components/admin/AddFacultyModal';
@@ -64,28 +60,20 @@ export function deleteConsequences(target: DeleteTarget, groupsInFaculty: number
   if (kind === 'building') {
     const building = item as Building;
     return {
-      lost: ['Binoning qavat rasmlari (qavat sxemalari)'],
+      lost: ['Qavat sxemalari'],
       kept: [
-        building.cameraCount > 0
-          ? `${formatNumber(building.cameraCount)} ta kamera — o'chmaydi, lekin binosiz qoladi va binolar bo'yicha filtrda ko'rinmaydi`
-          : "Kameralar (bu binoda biriktirilgani yo'q)",
-        "Bu binodagi kafedralar — o'chmaydi, binosi bo'sh qoladi",
-        "Turniket qurilmalari — o'chmaydi, binosi bo'sh qoladi",
+        building.cameraCount > 0 ? `${formatNumber(building.cameraCount)} ta kamera — binosiz qoladi` : 'Kameralar',
+        'Kafedralar — binosiz qoladi',
+        'Turniketlar — binosiz qoladi',
       ],
     };
   }
   if (kind === 'faculty') {
     const faculty = item as Faculty;
     return {
-      lost: [
-        groupsInFaculty > 0
-          ? `${formatNumber(groupsInFaculty)} ta guruh — fakultet bilan birga o'chadi`
-          : "Fakultetga biriktirilgan guruhlar (hozircha yo'q)",
-      ],
+      lost: [groupsInFaculty > 0 ? `${formatNumber(groupsInFaculty)} ta guruh` : 'Guruhlar (hozircha yo‘q)'],
       kept: [
-        faculty.studentCount > 0
-          ? `${formatNumber(faculty.studentCount)} ta talaba — reestrda qoladi, lekin fakultetsiz bo'ladi`
-          : 'Talabalar reestri',
+        faculty.studentCount > 0 ? `${formatNumber(faculty.studentCount)} ta talaba — fakultetsiz qoladi` : 'Talabalar reestri',
         'Davomat tarixi',
       ],
     };
@@ -93,11 +81,9 @@ export function deleteConsequences(target: DeleteTarget, groupsInFaculty: number
   if (kind === 'group') {
     const group = item as StudentGroup;
     return {
-      lost: ["Guruh ro'yxatdan chiqadi (guruh kesimidagi davomat sahifasi ochilmaydi)"],
+      lost: ['Guruh kesimidagi davomat sahifasi'],
       kept: [
-        group.studentCount > 0
-          ? `${formatNumber(group.studentCount)} ta talaba — reestrda qoladi`
-          : 'Talabalar reestri',
+        group.studentCount > 0 ? `${formatNumber(group.studentCount)} ta talaba` : 'Talabalar reestri',
         'Davomat tarixi',
       ],
     };
@@ -106,9 +92,7 @@ export function deleteConsequences(target: DeleteTarget, groupsInFaculty: number
   return {
     lost: ["Kafedra bo'yicha filtr"],
     kept: [
-      department.cameraCount > 0
-        ? `${formatNumber(department.cameraCount)} ta kamera — o'chmaydi, kafedrasiz qoladi`
-        : "Kameralar (bu kafedrada biriktirilgani yo'q)",
+      department.cameraCount > 0 ? `${formatNumber(department.cameraCount)} ta kamera — kafedrasiz qoladi` : 'Kameralar',
       'Xodimlar reestri',
     ],
   };
@@ -138,32 +122,14 @@ function RowActions({ children }: { children: ReactNode }) {
   );
 }
 
-function NameCell({ code, name, hint }: { code: string; name: string; hint?: ReactNode }) {
-  return (
-    <span className="flex min-w-0 items-baseline gap-2">
-      {/* Xizmat kodi — bo'linmani nomini takrorlamasdan ko'rsatish uchun. */}
-      <CodeText className="shrink-0 text-[11px] text-subtle">{code}</CodeText>
-      <span className="min-w-0">
-        <span className="block truncate text-[13px] font-medium text-fg">{name}</span>
-        {hint && <span className="block truncate text-[11px] text-muted">{hint}</span>}
-      </span>
-    </span>
-  );
+function NameCell({ name }: { name: string }) {
+  return <span className="block min-w-0 truncate text-[13px] font-medium text-fg">{name}</span>;
 }
 
 /** Sanoq ustuni — monoshrift, tabulyatsiyali: ustma-ust raqamlar tekis turadi. */
 function Count({ value }: { value: number | null | undefined }) {
   if (value === null || value === undefined) return <span className="text-subtle">kiritilmagan</span>;
   return <CodeText className="text-[12px] text-fg">{formatNumber(value)}</CodeText>;
-}
-
-/** Hujjat qachon ekranga chiqarilgani. */
-function stamp(): string {
-  try {
-    return new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Tashkent' }).format(new Date());
-  } catch {
-    return new Date().toISOString().slice(0, 16).replace('T', ' ');
-  }
 }
 
 export default function OrgStructurePage() {
@@ -220,7 +186,7 @@ export default function OrgStructurePage() {
       })
       .catch((err: unknown) => {
         if (isAbortError(err)) return;
-        setError(err instanceof ApiError ? err.message : "Tuzilmani yuklab bo'lmadi — ulanishni tekshiring");
+        setError(err instanceof ApiError ? err.message : "Tuzilmani yuklab bo'lmadi");
         setLoading(false);
       });
     return () => controller.abort();
@@ -278,28 +244,6 @@ export default function OrgStructurePage() {
     [groups],
   );
 
-  /**
-   * Bo'linma kodlari — BIN-01, FAK-02, GUR-03, KAF-04.
-   *
-   * Tartib FILTRDAN EMAS, butun ro'yxatdan (nom bo'yicha) olinadi:
-   * shuning uchun qidiruv yozilganda ham «FAK-03» o'sha fakultet
-   * bo'lib qoladi va ikki nusxadagi kod bir-biriga mos tushadi.
-   */
-  const codes = useMemo(() => {
-    const map = new Map<string, string>();
-    const assign = (prefix: string, items: { id: string; name: string }[]) => {
-      [...items]
-        .sort((a, b) => a.name.localeCompare(b.name, 'uz'))
-        .forEach((item, index) => map.set(`${prefix}:${item.id}`, unitCode(prefix, index)));
-    };
-    assign('BIN', buildings);
-    assign('FAK', faculties);
-    assign('GUR', groups);
-    assign('KAF', departments);
-    return map;
-  }, [buildings, faculties, groups, departments]);
-  const codeOf = useCallback((prefix: string, id: string) => codes.get(`${prefix}:${id}`) ?? `${prefix}-??`, [codes]);
-
   async function confirmDelete() {
     if (!deleteTarget) return;
     const { kind, item } = deleteTarget;
@@ -338,7 +282,7 @@ export default function OrgStructurePage() {
     {
       key: 'name',
       header: 'Korpus',
-      cell: (b) => <NameCell code={codeOf('BIN', b.id)} name={b.name} />,
+      cell: (b) => <NameCell name={b.name} />,
       sortValue: (b) => b.sortOrder ?? b.name,
     },
     {
@@ -377,7 +321,7 @@ export default function OrgStructurePage() {
   ];
 
   const facultyColumns: DataTableColumn<Faculty>[] = [
-    { key: 'name', header: 'Fakultet', cell: (f) => <NameCell code={codeOf('FAK', f.id)} name={f.name} />, sortValue: (f) => f.name },
+    { key: 'name', header: 'Fakultet', cell: (f) => <NameCell name={f.name} />, sortValue: (f) => f.name },
     { key: 'courses', header: 'Kurslar', align: 'right', cell: (f) => <Count value={f.courseCount} />, sortValue: (f) => f.courseCount, sortFirst: 'desc' },
     {
       key: 'groups',
@@ -404,7 +348,7 @@ export default function OrgStructurePage() {
   ];
 
   const groupColumns: DataTableColumn<StudentGroup>[] = [
-    { key: 'name', header: 'Guruh', cell: (g) => <NameCell code={codeOf('GUR', g.id)} name={g.name} />, sortValue: (g) => g.name },
+    { key: 'name', header: 'Guruh', cell: (g) => <NameCell name={g.name} />, sortValue: (g) => g.name },
     {
       key: 'faculty',
       header: 'Fakultet',
@@ -428,18 +372,15 @@ export default function OrgStructurePage() {
   ];
 
   const departmentColumns: DataTableColumn<Department>[] = [
-    { key: 'name', header: 'Kafedra', cell: (d) => <NameCell code={codeOf('KAF', d.id)} name={d.name} />, sortValue: (d) => d.name },
+    { key: 'name', header: 'Kafedra', cell: (d) => <NameCell name={d.name} />, sortValue: (d) => d.name },
     {
       key: 'building',
       header: 'Bino',
       cell: (d) =>
         d.buildingName ? (
-          <span className="flex min-w-0 items-baseline gap-2">
-            <CodeText className="shrink-0 text-[11px] text-subtle">{d.buildingId ? codeOf('BIN', d.buildingId) : 'BIN-??'}</CodeText>
-            <span className="min-w-0 truncate text-[13px] text-muted">{d.buildingName}</span>
-          </span>
+          <span className="block min-w-0 truncate text-[13px] text-muted">{d.buildingName}</span>
         ) : (
-          <StatusLamp status="warn" label="Bino ko'rsatilmagan" />
+          <StatusLamp status="warn" label="Binosiz" />
         ),
       sortValue: (d) => d.buildingName || null,
     },
@@ -459,9 +400,9 @@ export default function OrgStructurePage() {
   ];
 
   const searchPlaceholder: Record<TabId, string> = {
-    binolar: 'Korpus nomi…',
-    fakultetlar: 'Fakultet nomi…',
-    guruhlar: 'Guruh nomi…',
+    binolar: 'Korpus…',
+    fakultetlar: 'Fakultet…',
+    guruhlar: 'Guruh…',
     kafedralar: 'Kafedra yoki bino…',
   };
 
@@ -511,15 +452,8 @@ export default function OrgStructurePage() {
 
   const common = { loading, loadingRows: 5, dense: true, maxHeight: 'none' } as const;
 
-  // Tuzilma varag'ining raqami — bo'lim va filtrlardan, vaqtdan emas.
-  const reference = useMemo(
-    () => buildReference('TUZ', [tab], [query, facultyFilter, courseFilter]),
-    [tab, query, facultyFilter, courseFilter],
-  );
-  const generatedAt = useMemo(stamp, [reference, buildings, faculties, groups, departments]);
-
   const SECTION: Record<TabId, { title: string; shown: number; total: number }> = {
-    binolar: { title: "O'quv korpuslari", shown: shownBuildings.length, total: buildings.length },
+    binolar: { title: 'Korpuslar', shown: shownBuildings.length, total: buildings.length },
     fakultetlar: { title: 'Fakultetlar', shown: shownFaculties.length, total: faculties.length },
     guruhlar: { title: 'Guruhlar', shown: shownGroups.length, total: groups.length },
     kafedralar: { title: 'Kafedralar', shown: shownDepartments.length, total: departments.length },
@@ -533,11 +467,6 @@ export default function OrgStructurePage() {
   return (
     <Page
       title="Tashkiliy tuzilma"
-      subtitle={
-        canEdit
-          ? "Binolar, fakultetlar, guruhlar va kafedralar — institut tuzilmasi boshqaruvi"
-          : "Binolar, fakultetlar, guruhlar va kafedralar — faqat ko'rish"
-      }
       tabs={tabs}
       actions={
         canEdit && (
@@ -546,9 +475,7 @@ export default function OrgStructurePage() {
             icon={Plus}
             onClick={() => setAddOpen(tab)}
             disabled={loading || error !== null}
-            // O'chirilgan tugma sababsiz qolmasin: "Guruh qo'shish" fakultetlar
-            // ro'yxatini talab qiladi, shuning uchun yuklanmaguncha bosilmaydi.
-            title={error ? "Tuzilma yuklanmadi — avval qayta urinib ko'ring" : loading ? 'Tuzilma yuklanmoqda…' : undefined}
+            title={error ? 'Tuzilma yuklanmadi' : loading ? 'Yuklanmoqda…' : undefined}
           >
             {ADD_LABEL[tab]}
           </Button>
@@ -556,42 +483,27 @@ export default function OrgStructurePage() {
       }
       toolbar={error ? undefined : toolbar}
     >
-      {/* 1. Hujjat blanki: institut tuzilmasi, qaysi bo'lim, nechta birlik. */}
-      <DocumentHeader
-        org={branding.orgFullName}
-        title="Tashkiliy tuzilma"
-        reference={reference}
-        generatedAt={generatedAt}
-        readouts={[
-          { label: "Bo'lim", value: section.title },
-          { label: 'Binolar', value: loading ? '—' : `${formatNumber(buildings.length)} ta` },
-          { label: 'Fakultet / guruh', value: loading ? '—' : `${formatNumber(faculties.length)} / ${formatNumber(groups.length)}` },
-          { label: 'Kafedralar', value: loading ? '—' : `${formatNumber(departments.length)} ta` },
-        ]}
-      />
-
       {error ? (
         <ErrorState variant="block" message={error} onRetry={reload} className="border border-border bg-surface" />
       ) : (
         <>
           {tab === 'binolar' && (
-            <IntelPanel title={section.title} code={reference} right={sectionRight} brackets={false}>
+            <IntelPanel title={section.title} right={sectionRight}>
             <DataTable
               {...common}
-              ariaLabel="O'quv korpuslari"
+              ariaLabel="Korpuslar"
               columns={buildingColumns}
               rows={shownBuildings}
               rowKey={(b) => b.id}
               defaultSort={{ key: 'name', dir: 'asc' }}
-              emptyTitle={query ? 'Korpus topilmadi' : "Hozircha korpus qo'shilmagan"}
-              emptyDescription={query ? "Qidiruv so'zini o'zgartiring." : "Kameralarni joylashtirish uchun avval o'quv korpuslarini kiriting."}
+              emptyTitle={query ? 'Korpus topilmadi' : "Korpus qo'shilmagan"}
               emptyAction={emptyAction('binolar')}
             />
             </IntelPanel>
           )}
 
           {tab === 'fakultetlar' && (
-            <IntelPanel title={section.title} code={reference} right={sectionRight} brackets={false}>
+            <IntelPanel title={section.title} right={sectionRight}>
             <DataTable
               {...common}
               ariaLabel="Fakultetlar"
@@ -600,14 +512,14 @@ export default function OrgStructurePage() {
               rowKey={(f) => f.id}
               onRowClick={canOpenAttendance ? (f) => navigate(situationPaths.faculty(f.id)) : undefined}
               defaultSort={{ key: 'name', dir: 'asc' }}
-              emptyTitle={query ? 'Fakultet topilmadi' : "Hozircha fakultet qo'shilmagan"}
+              emptyTitle={query ? 'Fakultet topilmadi' : "Fakultet qo'shilmagan"}
               emptyAction={emptyAction('fakultetlar')}
             />
             </IntelPanel>
           )}
 
           {tab === 'guruhlar' && (
-            <IntelPanel title={section.title} code={reference} right={sectionRight} brackets={false}>
+            <IntelPanel title={section.title} right={sectionRight}>
             <DataTable
               {...common}
               ariaLabel="Guruhlar"
@@ -616,8 +528,7 @@ export default function OrgStructurePage() {
               rowKey={(g) => g.id}
               onRowClick={canOpenAttendance ? (g) => navigate(situationPaths.group(g.name)) : undefined}
               defaultSort={{ key: 'name', dir: 'asc' }}
-              emptyTitle={filtersActive ? 'Guruh topilmadi' : "Hozircha guruh qo'shilmagan"}
-              emptyDescription={filtersActive ? "Filtrlarni o'zgartiring yoki tozalang." : undefined}
+              emptyTitle={filtersActive ? 'Guruh topilmadi' : "Guruh qo'shilmagan"}
               emptyAction={emptyAction('guruhlar')}
             />
             </IntelPanel>
@@ -625,11 +536,7 @@ export default function OrgStructurePage() {
 
           {tab === 'kafedralar' && (
             <>
-              <p className="border border-border bg-surface px-3 py-2 text-[13px] leading-relaxed text-fg">
-                Kafedra — bino ichidagi tashkiliy birlik. Monitoringda kameralar avval bino, so&apos;ngra kafedra bo&apos;yicha
-                filtrlanadi, shuning uchun har bir kafedrani o&apos;z binosiga biriktirish ma&apos;qul.
-              </p>
-              <IntelPanel title={section.title} code={reference} right={sectionRight} brackets={false}>
+              <IntelPanel title={section.title} right={sectionRight}>
               <DataTable
                 {...common}
                 ariaLabel="Kafedralar"
@@ -638,15 +545,12 @@ export default function OrgStructurePage() {
                 rowKey={(d) => d.id}
                 onRowClick={canOpenAttendance ? (d) => navigate(situationPaths.kafedra(d.id)) : undefined}
                 defaultSort={{ key: 'name', dir: 'asc' }}
-                emptyTitle={query ? 'Kafedra topilmadi' : "Hozircha kafedra qo'shilmagan"}
+                emptyTitle={query ? 'Kafedra topilmadi' : "Kafedra qo'shilmagan"}
                 emptyAction={emptyAction('kafedralar')}
               />
               </IntelPanel>
             </>
           )}
-          <DocumentFooter
-            note={`Xizmat uchun. Varaq ${reference} raqami bilan tizimda tuzilgan. Kodlar (BIN-…, FAK-…, GUR-…, KAF-…) butun ro'yxatdan, nom bo'yicha beriladi — filtr ularni o'zgartirmaydi.`}
-          />
         </>
       )}
 
@@ -708,8 +612,7 @@ export default function OrgStructurePage() {
             return (
               <div className="flex flex-col gap-2">
                 <p>
-                  <span className="font-medium text-fg">«{deleteTarget.item.name}»</span> butunlay o&apos;chiriladi. Bu amalni
-                  qaytarib bo&apos;lmaydi.
+                  <span className="font-medium text-fg">«{deleteTarget.item.name}»</span> butunlay o&apos;chiriladi.
                 </p>
                 <p className="font-medium text-danger">Birga o&apos;chadi:</p>
                 <ul className="list-disc space-y-0.5 pl-5">

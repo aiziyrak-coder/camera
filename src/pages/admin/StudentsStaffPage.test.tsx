@@ -6,10 +6,8 @@ import { MemoryRouter } from 'react-router-dom';
 /**
  * QA: shaxslar reestri.
  *
- *  - "Kutilmoqda" va "Yuzi yo'q" kartochkalari bir xil filtrga olib
- *    boradi: «Tasdiqlanmagan» filtri missing + pending ni qamrab oladi.
- *    Ilgari "Yuzi yo'q" faqat `missing` sonini ko'rsatib, bosilganda
- *    undan ko'p qator chiqarardi.
+ *  - Yagona «Tasdiqlanmagan» o'lchovi missing + pending ni qamrab oladi
+ *    va o'sha filtrga olib boradi (ilgari ikkita alohida kartochka edi).
  *  - ?search= URL'dan bir marta o'qiladi va olib tashlanadi.
  */
 
@@ -56,12 +54,14 @@ function renderPage(search = '') {
 }
 
 describe('StudentsStaffPage — holat kartochkalari', () => {
-  it("«Kutilmoqda» kartochkasi ham «Tasdiqlanmagan» filtriga olib boradi", async () => {
+  it("«Tasdiqlanmagan» o'lchovi missing + pending ni qamrab oladi", async () => {
     seenParams.length = 0;
     renderPage();
-    await waitFor(() => expect(screen.getAllByText('Kutilmoqda').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('Tasdiqlanmagan').length).toBeGreaterThan(0));
 
-    const tile = screen.getAllByText('Kutilmoqda')[0].closest('button');
+    const tile = screen.getAllByText('Tasdiqlanmagan')[0].closest('button');
+    // missing (3) + pending (1) — ikkalasi bitta sonda.
+    expect(tile?.textContent).toContain('4');
     expect(tile).not.toBeNull();
     fireEvent.click(tile as HTMLElement);
 

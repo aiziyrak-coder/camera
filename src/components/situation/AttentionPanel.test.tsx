@@ -32,7 +32,7 @@ describe('AttentionPanel — manba kelmaganda', () => {
   it("manba kelmaganda 'Hammasi joyida' deyilmaydi, sabab yoziladi", () => {
     show({ unavailable: ['Guruhlar'] });
     expect(screen.queryByText('Hammasi joyida')).toBeNull();
-    expect(screen.getByText(/Guruhlar ma'lumoti serverdan kelmadi/)).toBeInTheDocument();
+    expect(screen.getByText(/Guruhlar ma'lumoti kelmadi/)).toBeInTheDocument();
   });
 
   it("muammo bor bo'lsa ham ro'yxat to'liq emasligi aytiladi", () => {
@@ -41,7 +41,7 @@ describe('AttentionPanel — manba kelmaganda', () => {
       unavailable: ['Hodisalar'],
     });
     expect(screen.getByText(/3 ta kamera aloqada emas/)).toBeInTheDocument();
-    expect(screen.getByText(/Hodisalar ma'lumoti serverdan kelmadi/)).toBeInTheDocument();
+    expect(screen.getByText(/Hodisalar ma'lumoti kelmadi/)).toBeInTheDocument();
   });
 });
 
@@ -65,9 +65,8 @@ describe('AttentionPanel — sarlavhadagi son', () => {
     expect(screen.getByText(/1 ta kamera aloqada emas/)).toBeInTheDocument();
   });
 
-  it("o'tgan kun ko'rilayotganda guruhlar sarlavhasida 'Bugun' yozilmaydi", () => {
+  it('davomati past guruhlar alohida bo\'limda ko\'rsatiladi', () => {
     show({
-      isToday: false,
       groups: [
         {
           name: '101-guruh',
@@ -87,6 +86,7 @@ describe('AttentionPanel — sarlavhadagi son', () => {
         },
       ],
     });
-    expect(screen.getByText(/Shu kuni eng kam talaba kelgan guruhlar/i)).toBeInTheDocument();
+    expect(screen.getByText(/Past guruhlar/i)).toBeInTheDocument();
+    expect(screen.getByText('101-guruh')).toBeInTheDocument();
   });
 });

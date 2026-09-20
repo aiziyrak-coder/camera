@@ -24,18 +24,12 @@ export default function SystemPage() {
   return (
     <Page
       title="Tizim"
-      subtitle={tab === 'holat' ? "Server, AI, video oqimlar va kamera tarmog'i holati" : 'Barcha muhim amallar: kim, qachon, nima qildi'}
       breadcrumbs={[{ label: 'Sozlamalar' }, { label: 'Tizim' }]}
       tabs={TABS}
       actions={tab === 'holat' ? <IconButton icon={RefreshCw} label="Yangilash" variant="secondary" size="sm" onClick={refreshNow} /> : undefined}
     >
       {tab === 'holat' ? (
-        <SystemHealthTab
-          tick={tick}
-          canAi={can('configureAi', role)}
-          canCameras={can('editCameraLocation', role)}
-          canResync={can('systemSettings', role)}
-        />
+        <SystemHealthTab tick={tick} canResync={can('systemSettings', role)} />
       ) : (
         <AuditLogTab canExport={can('exportData', role)} />
       )}

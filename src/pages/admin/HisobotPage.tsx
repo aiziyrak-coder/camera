@@ -4,11 +4,10 @@ import { CalendarDays, Download, LayoutGrid, List, Printer, TriangleAlert } from
 import {
   Button,
   CodeText,
-  DocumentFooter,
   DocumentHeader,
   ErrorState,
   IntelPanel,
-  MicroLabel,
+  Readout,
   Page,
   SkeletonCard,
   Tabs,
@@ -17,7 +16,7 @@ import {
   useToast,
   type TabItem,
 } from '../../ui';
-import { RATE_RAG, rag } from '../../ui/rag';
+import { RAG_LETTER, RAG_TEXT, RATE_RAG, rag } from '../../ui/rag';
 import CriteriaStrip from '../../components/hisobot/CriteriaStrip';
 import KpiStrip from '../../components/hisobot/KpiStrip';
 import PeopleTable from '../../components/hisobot/PeopleTable';
@@ -78,14 +77,6 @@ function stamp(): string {
   } catch {
     return new Date().toISOString().slice(0, 16).replace('T', ' ');
   }
-}
-
-/** Bo'linma nomidan barqaror xizmat kodi: FAK-01, KAF-07. Tartib —
- *  serverdan kelgan ro'yxat tartibi, shuning uchun bir hisobot ichida
- *  kod o'zgarmaydi. */
-function unitCode(section: HisobotSection, index: number): string {
-  const prefix = section === 'talabalar' ? 'GUR' : 'BOL';
-  return `${prefix}-${String(index + 1).padStart(2, '0')}`;
 }
 
 export default function HisobotPage() {
@@ -149,9 +140,8 @@ export default function HisobotPage() {
   const board: BoardItem[] = useMemo(() => {
     const rows = data?.report.breakdown?.rows ?? [];
     const unit = data?.report.breakdown?.unit ?? '';
-    return rows.map((row, index) => ({
+    return rows.map((row) => ({
       id: row.id,
-      code: unitCode(state.section, index),
       name: row.name,
       value: row.value,
       unit,
@@ -171,10 +161,6 @@ export default function HisobotPage() {
     });
   }, [board]);
 
-  const attention = useMemo(
-    () => sortedBoard.filter((item) => boardRag(item, RATE_RAG) === 'qizil'),
-    [sortedBoard],
-  );
 
   const canDrill = data ? drillPatch(state, '_') !== null : false;
 
@@ -237,29 +223,37 @@ export default function HisobotPage() {
       }
     >
       <div className="flex min-w-0 flex-col gap-3">
-        {/* 1. Hujjat blanki — kim, nima, qaysi davr, qaysi raqam ostida. */}
-        <DocumentHeader
-          org={branding.orgFullName}
-          title={
-            state.view === 'tabel'
-              ? 'Davomat tabeli'
-              : state.section === 'xodimlar'
-                ? 'Xodimlar davomati'
-                : 'Talabalar davomati'
-          }
-          reference={reference}
-          generatedAt={generatedAt}
-          readouts={[
-            { label: 'Qamrov', value: scope ?? '—', title: scope ?? undefined },
-            { label: state.view === 'tabel' ? 'Oy' : 'Davr', value: period },
-            { label: "Ro'yxatda", value: population },
-            {
-              label: 'Umumiy holat',
-              value: headline ? `${Math.round(headline.value * 10) / 10}%` : '—',
-              title: headline?.label,
-            },
-          ]}
-        />
+        {/* Hujjat blanki faqat tabelda: u qog'ozga chiqadi va imzolanadi.
+            Boshqa ko'rinishlarda sarlavha va uchta raqam yetarli. */}
+        {tabel ? (
+          <DocumentHeader
+            org={branding.orgFullName}
+            title="Davomat tabeli"
+            reference={reference}
+            generatedAt={generatedAt}
+            readouts={[
+              { label: 'Qamrov', value: scope ?? '—', title: scope ?? undefined },
+              { label: 'Oy', value: period },
+              { label: "Ro'yxatda", value: population },
+            ]}
+          />
+        ) : (
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border border-border bg-surface px-3 py-2">
+            <Readout label="Qamrov" value={scope ?? '—'} title={scope ?? undefined} />
+            <Readout label="Davr" value={period} />
+            <Readout label="Ro'yxatda" value={population} />
+            {headline && (
+              <span className="ms-auto flex items-baseline gap-2">
+                <CodeText className={cn('text-[28px] font-semibold leading-none', RAG_TEXT[headline.tone])}>
+                  {Math.round(headline.value * 10) / 10}%
+                </CodeText>
+                <CodeText className={cn('text-[12px] font-bold', RAG_TEXT[headline.tone])}>
+                  {RAG_LETTER[headline.tone]}
+                </CodeText>
+              </span>
+            )}
+          </div>
+        )}
 
         {/* 2. Boshqaruv: bo'lim, ko'rinish, filtrlar. */}
         <div className="print-hide flex flex-col gap-2 border border-border bg-surface">
@@ -308,43 +302,17 @@ export default function HisobotPage() {
           <div className={cn('flex min-w-0 flex-col gap-3', report.loading && 'opacity-70 transition-opacity')}>
             {report.error && <StaleWarning message={report.error} onRetry={report.reload} />}
 
-            <IntelPanel title="Asosiy ko'rsatkichlar" code={reference}>
+            <IntelPanel title="Asosiy ko'rsatkichlar">
               <KpiStrip tiles={data.report.tiles} />
             </IntelPanel>
 
-            {data.report.summary.length > 0 && (
-              <p className="border border-border bg-surface px-3 py-2 text-[13px] leading-relaxed text-fg">
-                {data.report.summary.join(' ')}
-              </p>
-            )}
 
             {state.view === 'taxta' ? (
               <>
-                {attention.length > 0 && (
-                  <IntelPanel
-                    title="Chora talab qiladi"
-                    code={`${attention.length} ta`}
-                    className="border-danger/50"
-                  >
-                    <ul className="divide-y divide-border">
-                      {attention.slice(0, 6).map((item) => (
-                        <li key={item.id} className="flex items-center gap-3 px-3 py-2">
-                          <span aria-hidden="true" className="h-4 w-1 shrink-0 bg-danger" />
-                          <CodeText className="text-[11px] text-subtle">{item.code}</CodeText>
-                          <span className="min-w-0 flex-1 truncate text-[13px] text-fg">{item.name}</span>
-                          <CodeText className="text-[13px] font-semibold text-danger">
-                            {item.value === null ? '—' : `${Math.round(item.value)}%`}
-                          </CodeText>
-                        </li>
-                      ))}
-                    </ul>
-                  </IntelPanel>
-                )}
 
                 <IntelPanel
                   title={data.report.breakdown?.title ?? "Bo'linmalar holati"}
                   code={`${board.length} ta`}
-                  right={<MicroLabel>Yomoni birinchi</MicroLabel>}
                 >
                   <StatusBoard
                     items={sortedBoard}
@@ -360,15 +328,11 @@ export default function HisobotPage() {
               <IntelPanel
                 title={data.report.people_title}
                 code={`${data.report.people_total.toLocaleString('ru-RU')} ta`}
-                right={<MicroLabel>{data.report.people_hint}</MicroLabel>}
               >
                 <PeopleTable data={data} />
               </IntelPanel>
             )}
 
-            <DocumentFooter
-              note={`Xizmat uchun. Hujjat ${reference} raqami bilan tizimda tuzilgan; sonlar ${period} davri uchun.`}
-            />
           </div>
         )}
       </div>

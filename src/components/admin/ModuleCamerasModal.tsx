@@ -158,8 +158,8 @@ export default function ModuleCamerasModal({
       <EmptyState
         icon={VideoOff}
         compact
-        title="Hali kamera qo'shilmagan"
-        description="Modulni biriktirish uchun avval kamera qo'shing."
+        title="Kamera qo'shilmagan"
+        description="Avval kamera qo'shing."
         action={
           <ButtonLink to="/sozlamalar/kameralar" size="sm" onClick={onClose}>
             Kameralar sahifasi
@@ -229,7 +229,7 @@ export default function ModuleCamerasModal({
       open={open && !!module}
       onClose={onClose}
       title={module ? `№${module.code} — ${module.name}` : ''}
-      description="Qaysi kameralarda bu AI kriteriyasi ishlashi kerakligini belgilang. O‘chirilgan kamera bu modulni hisoblamaydi — tezroq aylanish va kamroq yuk."
+      description="Modul qaysi kameralarda ishlashini belgilang."
       size="lg"
       // Saqlanmagan o'zgarish bor bo'lsa fonni tasodifan bosish ularni
       // yo'qotmasin — foydalanuvchi ataylab "Bekor qilish"ni bossin.

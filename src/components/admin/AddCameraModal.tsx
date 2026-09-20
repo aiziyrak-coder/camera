@@ -147,7 +147,7 @@ export default function AddCameraModal({
   async function runPtzProbe() {
     const ipError = required(form.ip, 'IP manzil kiritilishi shart') ?? ipAddress(form.ip);
     const portError =
-      form.onvifPort.trim() === '' ? undefined : numberRange(form.onvifPort, 1, 65535, '1 dan 65535 gacha port kiriting');
+      form.onvifPort.trim() === '' ? undefined : numberRange(form.onvifPort, 1, 65535, '1–65535');
     if (ipError || portError) {
       setErrors((prev) => ({ ...prev, ip: ipError, onvifPort: portError }));
       return;
@@ -172,7 +172,7 @@ export default function AddCameraModal({
     } catch (err) {
       setPtzProbe({
         success: false,
-        message: err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi",
+        message: err instanceof ApiError ? err.message : 'Tarmoq xatosi',
         protocol: null,
         reachable: false,
         authenticated: false,
@@ -195,11 +195,11 @@ export default function AddCameraModal({
       building: form.building ? undefined : 'Binoni tanlang',
       zone: required(form.zone, 'Zona nomi kiritilishi shart'),
       fps: numberRange(form.fps, 1, 60, "1 dan 60 gacha bo'lgan qiymat kiriting"),
-      floor: form.floor.trim() === '' ? undefined : numberRange(form.floor, -5, 50, '-5 dan 50 gacha qavat raqamini kiriting'),
+      floor: form.floor.trim() === '' ? undefined : numberRange(form.floor, -5, 50, '-5 dan 50 gacha'),
       port: numberRange(form.port, 1, 65535, "1 dan 65535 gacha bo'lgan port kiriting"),
-      onvifPort: form.onvifPort.trim() === '' ? undefined : numberRange(form.onvifPort, 1, 65535, '1 dan 65535 gacha port kiriting'),
+      onvifPort: form.onvifPort.trim() === '' ? undefined : numberRange(form.onvifPort, 1, 65535, '1–65535'),
       ptzProtocol:
-        form.ptzEnabled && !form.ptzProtocol ? 'Protokolni tanlang yoki «PTZ ni tekshirish» bilan aniqlang' : undefined,
+        form.ptzEnabled && !form.ptzProtocol ? 'Protokolni tanlang' : undefined,
     };
     setErrors(next);
     return !Object.values(next).some(Boolean);
@@ -226,7 +226,7 @@ export default function AddCameraModal({
     } catch (err) {
       setTestResult({
         success: false,
-        message: err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi",
+        message: err instanceof ApiError ? err.message : 'Tarmoq xatosi',
         latencyMs: null,
         videoInfo: null,
       });
@@ -269,7 +269,7 @@ export default function AddCameraModal({
       onSave(saved);
       onClose();
     } catch (err) {
-      setErrors({ form: err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi" });
+      setErrors({ form: err instanceof ApiError ? err.message : 'Tarmoq xatosi' });
     } finally {
       setSaving(false);
     }
@@ -297,7 +297,7 @@ export default function AddCameraModal({
             variant="primary"
             loading={saving}
             disabled={!canSave}
-            title={canSave ? undefined : 'Avval «Ulanishni tekshirish» muvaffaqiyatli bo‘lishi kerak'}
+            title={canSave ? undefined : 'Avval ulanishni tekshiring'}
           >
             Saqlash
           </Button>
@@ -324,10 +324,10 @@ export default function AddCameraModal({
             <Input placeholder="/stream1" className="font-mono" value={form.rtspPath} onChange={(e) => set('rtspPath', e.target.value)} />
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="RTSP login" hint={isEdit ? "Bo'sh qoldirilsa, saqlangan login o'zgarmaydi" : 'Ixtiyoriy'}>
+            <Field label="RTSP login" hint={isEdit ? "Bo'sh — o'zgarmaydi" : 'Ixtiyoriy'}>
               <Input value={form.rtspUsername} onChange={(e) => set('rtspUsername', e.target.value)} autoComplete="off" />
             </Field>
-            <Field label="RTSP parol" hint={isEdit ? "Bo'sh qoldirilsa, saqlangan parol o'zgarmaydi" : 'Ixtiyoriy'}>
+            <Field label="RTSP parol" hint={isEdit ? "Bo'sh — o'zgarmaydi" : 'Ixtiyoriy'}>
               <Input type="password" value={form.rtspPassword} onChange={(e) => set('rtspPassword', e.target.value)} autoComplete="new-password" />
             </Field>
           </div>
@@ -364,7 +364,7 @@ export default function AddCameraModal({
           <Field
             label="Qavat"
             error={errors.floor}
-            hint="Monitoring markazi kameralarni shu bo'yicha qavatlarga ajratadi. Bo'sh qoldirilsa «Qavat belgilanmagan» guruhida qoladi."
+            hint="Bo'sh — «Qavat belgilanmagan»"
           >
             <Input type="number" min={-5} max={50} placeholder="Masalan: 3" value={form.floor} onChange={(e) => set('floor', e.target.value)} className="sm:max-w-[12rem]" />
           </Field>
@@ -396,19 +396,19 @@ export default function AddCameraModal({
             checked={form.isEntrance}
             onChange={(e) => set('isEntrance', e.target.checked)}
             label="Kirish/koridor kamerasi"
-            description="Davomat uchun bir necha kadr tekshiriladi — tez o'tib ketuvchini ushlash ehtimolini oshiradi."
+            description="Bir necha kadr tekshiriladi."
           />
           <Checkbox
             checked={form.isPerimeter}
             onChange={(e) => set('isPerimeter', e.target.checked)}
             label="Hovli / perimetr kamerasi"
-            description="Transport AI faqat shu kameralarda ishlaydi — bino oldi, avtoturargoh."
+            description="Transport AI faqat shu kameralarda."
           />
           <Checkbox
             checked={form.isExit}
             onChange={(e) => set('isExit', e.target.checked)}
             label="Chiqish kamerasi"
-            description="Faqat shu kamerada ko'rinish «ketdi» deb belgilanadi — boshqa ichki kameralar davomatni tasdiqlaydi, lekin ketishni belgilamaydi."
+            description="Faqat shu kamerada «ketdi» belgilanadi."
           />
         </fieldset>
 

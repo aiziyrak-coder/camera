@@ -1,7 +1,7 @@
 import KpiStrip from '../../components/hisobot/KpiStrip';
 import { RagLegend, StatusBoard, type BoardItem } from '../../components/hisobot/board';
 import TabelView from '../../components/reports/TabelView';
-import { IntelPanel, MicroLabel } from '../../ui';
+import { IntelPanel } from '../../ui';
 import WallTile from '../../components/videowall/WallTile';
 import { buildCameraCodes } from '../../components/videowall/cameraCode';
 import type { CameraFeed } from '../../types';
@@ -65,13 +65,13 @@ const CAMERAS: CameraFeed[] = [
 const NOOP = () => {};
 
 const BOARD: BoardItem[] = [
-  { id: 'u1', code: 'BOL-01', name: 'Ichki kasalliklar kafedrasi', value: 96.2, unit: '%', detail: '52/54 keldi', headcount: 54 },
-  { id: 'u2', code: 'BOL-02', name: 'Jarrohlik kafedrasi', value: 91, unit: '%', detail: '41/45 keldi', headcount: 45 },
-  { id: 'u3', code: 'BOL-03', name: 'Pediatriya kafedrasi', value: 82.4, unit: '%', detail: '28/34 keldi', headcount: 34 },
-  { id: 'u4', code: 'BOL-04', name: 'Farmakologiya kafedrasi', value: 76, unit: '%', detail: '19/25 keldi', headcount: 25 },
-  { id: 'u5', code: 'BOL-05', name: "Jamoat salomatligi kafedrasi", value: 61.5, unit: '%', detail: '16/26 keldi', headcount: 26 },
-  { id: 'u6', code: 'BOL-06', name: 'Xo’jalik bo’limi', value: 48, unit: '%', detail: '12/25 keldi', headcount: 25 },
-  { id: 'u7', code: 'BOL-07', name: 'Axborot texnologiyalari bo’limi', value: null, unit: '%', detail: "yuzi ro'yxatda yo'q", headcount: 9 },
+  { id: 'u1', name: 'Ichki kasalliklar kafedrasi', value: 96.2, unit: '%', detail: '52/54 keldi', headcount: 54 },
+  { id: 'u2', name: 'Jarrohlik kafedrasi', value: 91, unit: '%', detail: '41/45 keldi', headcount: 45 },
+  { id: 'u3', name: 'Pediatriya kafedrasi', value: 82.4, unit: '%', detail: '28/34 keldi', headcount: 34 },
+  { id: 'u4', name: 'Farmakologiya kafedrasi', value: 76, unit: '%', detail: '19/25 keldi', headcount: 25 },
+  { id: 'u5', name: "Jamoat salomatligi kafedrasi", value: 61.5, unit: '%', detail: '16/26 keldi', headcount: 26 },
+  { id: 'u6', name: 'Xo’jalik bo’limi', value: 48, unit: '%', detail: '12/25 keldi', headcount: 25 },
+  { id: 'u7', name: 'Axborot texnologiyalari bo’limi', value: null, unit: '%', detail: "yuzi ro'yxatda yo'q", headcount: 9 },
 ];
 
 const TILES = [
@@ -148,10 +148,10 @@ export default function PreviewPage() {
 
       <h1 className="intel-micro mb-4 mt-10 !text-fg">Dizayn ko&apos;rigi — holat taxtasi</h1>
       <div className="flex flex-col gap-3">
-        <IntelPanel title="Asosiy ko&apos;rsatkichlar" code="FERMI/HLT/20260921/XDM-0001">
+        <IntelPanel title="Asosiy ko&apos;rsatkichlar">
           <KpiStrip tiles={TILES} />
         </IntelPanel>
-        <IntelPanel title="Bo&apos;linmalar holati" code="7 ta" right={<MicroLabel>Yomoni birinchi</MicroLabel>}>
+        <IntelPanel title="Bo&apos;linmalar holati" code="7 ta">
           <StatusBoard items={BOARD} onOpen={NOOP} />
           <RagLegend />
         </IntelPanel>

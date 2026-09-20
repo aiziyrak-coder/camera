@@ -267,12 +267,21 @@ async def _group_faculty(db: AsyncSession, lookups: _Lookups, group: str) -> str
 
 
 async def import_lesson_sessions(
-    db: AsyncSession, raw: bytes, *, filename: str = "", apply: bool = True
+    db: AsyncSession,
+    raw: bytes,
+    *,
+    filename: str = "",
+    apply: bool = True,
+    prepared: tuple[list[str], list[dict[str, object]]] | None = None,
 ) -> LessonSessionImportResultOut:
     """Jadvalni o'qiydi; `apply` bo'lsa darslarni sessiyaga qo'shadi (commit
-    chaqiruvchida, audit yozuvi bilan birga)."""
+    chaqiruvchida, audit yozuvi bilan birga).
+
+    `prepared` — fayl allaqachon o'qilgan va qatorlar tayyorlangan bo'lsa
+    (haftalik jadval sanalarga yoyilgandan keyin): bir xil quvurdan
+    o'tsin, xona/o'qituvchi/takror mantig'i ikki joyda takrorlanmasin."""
     try:
-        header, rows = _read_rows(raw, filename)
+        header, rows = prepared if prepared is not None else _read_rows(raw, filename)
     except Exception:
         logger.exception("lesson import: file could not be read")
         return LessonSessionImportResultOut(

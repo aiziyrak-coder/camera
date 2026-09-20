@@ -68,7 +68,7 @@ export default function CameraConfigDetailModal({
     try {
       setProbe(await ptzApi.probe(cameraId));
     } catch (err) {
-      setProbeError(err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi");
+      setProbeError(err instanceof ApiError ? err.message : 'Tarmoq xatosi');
     } finally {
       setProbing(false);
     }

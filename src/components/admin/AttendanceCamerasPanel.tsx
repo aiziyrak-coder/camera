@@ -175,15 +175,15 @@ export function AttendanceCamerasPanel() {
         <StatTile
           label="Davomatni yozadigan kameralar"
           value={`${data.attendanceEnabled} / ${data.total}`}
-          hint="Odam kelgan hisoblanadi, agar shu kameralardan birortasi uni kun bo'yi birinchi marta tanisa"
+          hint="Kelishni shular belgilaydi"
         />
         <StatTile
           label="Aloqada / tasvir bermoqda"
           value={`${data.online} / ${data.video}`}
           tone={data.video < data.attendanceEnabled ? 'warning' : 'success'}
-          hint="Tasvir bermayotgan kamera hech kimni tanimaydi"
+          hint="Tasvirsiz kamera hech kimni tanimaydi"
         />
-        <StatTile label="Bugun kimnidir tanigan kameralar" value={data.recognizingToday} hint="Qolganlari bugun hech kimni tanimadi" />
+        <StatTile label="Bugun tanigan" value={data.recognizingToday} />
         <StatTile
           label="Bugun tanilgan odamlar"
           value={data.peopleRecognizedToday}

@@ -30,7 +30,7 @@ const seconds = (value: number) => `${formatNumber(value, 1)} s`;
  */
 export function AiRuntimeCard({ resource }: { resource: LiveResource<SystemAiStatus> }) {
   return (
-    <IntelPanel title="AI infratuzilma" code="SYS-AI" right={<MeasuredAt resource={resource} />}>
+    <IntelPanel title="AI infratuzilma" brackets={false} right={<MeasuredAt resource={resource} />}>
       <ResourceBody resource={resource} lines={6}>
         {(ai) => {
           const sweeps = ai.sweeps ?? [];
@@ -67,7 +67,7 @@ export function AiRuntimeCard({ resource }: { resource: LiveResource<SystemAiSta
                   label={pollSeconds > 0 ? `Oxirgi siklda (har ${formatDuration(pollSeconds)})` : 'Oxirgi siklda'}
                   value={formatNumber(ai.lastTick.modulesRan)}
                   unit="modul"
-                  hint={`${formatNumber(ai.lastTick.criticalRan)} kritik · ${formatNumber(ai.lastTick.standardRan)} standart${tickAt ? ` · ${tickAt}` : ''}`}
+                  hint={tickAt ?? undefined}
                 />
                 <Metric
                   label="Parallel slotlar"
@@ -76,37 +76,37 @@ export function AiRuntimeCard({ resource }: { resource: LiveResource<SystemAiSta
                   // max = 0 bo'lsa 0 >= 0 rost bo'lib, bo'sh navbat sariq ko'rinardi:
                   // o'lchanmagan slot hukmsiz ("yoq") qoladi.
                   verdict={rag(slotLoad, SLOT_RAG)}
-                  hint={slotLoad === null ? "Slot sozlanmagan" : `${formatNumber(slotLoad, 0)}% band`}
+                  hint={slotLoad === null ? 'Sozlanmagan' : `${formatNumber(slotLoad, 0)}%`}
                 />
                 <Metric
                   label="Yuz tanish navbati"
                   value={`${gate.inUse} / ${gate.max}`}
                   unit="band/jami"
                   verdict={rag(gate.waiting, QUEUE_RAG)}
-                  hint={gate.waiting > 0 ? `${gate.waiting} ta kutmoqda` : "Navbat yo'q"}
+                  hint={gate.waiting > 0 ? `${gate.waiting} kutmoqda` : undefined}
                 />
               </div>
 
               <div className="divide-y divide-border border-b border-border">
                 {(ai.entranceWatchers ?? 0) > 0 ? (
                   <StatusLine tone="success">
-                    Kirish/chiqish davomati: <CodeText>{ai.entranceWatchers}</CodeText> ta kamera doimiy kuzatuvda — har yangi kadr tahlil qilinadi
+                    Kirish/chiqish: <CodeText>{ai.entranceWatchers}</CodeText> ta kamera doimiy kuzatuvda
                   </StatusLine>
                 ) : (
                   entrance && (
                     <StatusLine tone="success">
-                      Kirish/chiqish davomati: har <CodeText>{formatDuration(entrance.intervalSeconds)}</CodeText>, oxirgisi{' '}
-                      <CodeText>{seconds(entrance.lastDurationSeconds)}</CodeText> davom etdi (<CodeText>{formatNumber(entrance.runs)}</CodeText> marta)
+                      Kirish/chiqish: har <CodeText>{formatDuration(entrance.intervalSeconds)}</CodeText>, oxirgisi{' '}
+                      <CodeText>{seconds(entrance.lastDurationSeconds)}</CodeText>
                     </StatusLine>
                   )
                 )}
                 {ai.lastTick.modulesRan > 0 && (
                   <StatusLine tone={ai.lastTick.skippedOverlap ? 'warning' : 'neutral'}>
                     Eng uzun modul <CodeText>{seconds(ai.lastTick.durationSeconds)}</CodeText> ishladi
-                    {ai.lastTick.skippedOverlap ? " — ustma-ust tushgani uchun bir sikl o'tkazib yuborildi" : ''}
+                    {ai.lastTick.skippedOverlap ? " — bir sikl o'tkazildi" : ''}
                   </StatusLine>
                 )}
-                {paused.length > 0 && <StatusLine tone="info">Tirband soat — davomat ustuvor, pauzada: {paused.map((s) => sweepLabel(s.name)).join(', ')}</StatusLine>}
+                {paused.length > 0 && <StatusLine tone="info">Pauzada: {paused.map((s) => sweepLabel(s.name)).join(', ')}</StatusLine>}
                 {lagging.length > 0 && <StatusLine tone="warning">Kechikayotgan: {lagging.map((s) => sweepLabel(s.name)).join(', ')}</StatusLine>}
                 {failing.length > 0 && <StatusLine tone="danger">Xato bergan: {failing.map((s) => sweepLabel(s.name)).join(', ')}</StatusLine>}
               </div>
@@ -119,13 +119,10 @@ export function AiRuntimeCard({ resource }: { resource: LiveResource<SystemAiSta
                     <ChevronDown size={14} className="ms-auto text-subtle transition-transform group-open:rotate-180" aria-hidden="true" />
                   </summary>
                   <ul className="divide-y divide-border border-t border-border">
-                    {sweeps.map((sweep, index) => {
+                    {sweeps.map((sweep) => {
                       const state = sweepState(sweep);
                       return (
-                        <li key={sweep.name} className="flex items-center gap-3 px-2.5 py-1.5" title={sweep.lastError ?? undefined}>
-                          <CodeText className="w-[52px] shrink-0 text-[11px] text-subtle">
-                            VAZ-{String(index + 1).padStart(2, '0')}
-                          </CodeText>
+                        <li key={sweep.name} className="flex items-center gap-3 px-2.5 py-1.5">
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-[13px] text-fg">{sweepLabel(sweep.name)}</p>
                             <p className="intel-code truncate text-[11px] text-muted">
@@ -134,7 +131,6 @@ export function AiRuntimeCard({ resource }: { resource: LiveResource<SystemAiSta
                               {sweep.failures > 0 ? ` · ${formatNumber(sweep.failures)} xato` : ''}
                               {formatServerTime(sweep.lastFinishedAt) ? ` · ${formatServerTime(sweep.lastFinishedAt)}` : ''}
                             </p>
-                            {/* Xato matni faqat `title`da edi — sichqonchasiz va klaviaturada ko'rinmasdi. */}
                             {sweep.lastError && <p className="mt-0.5 break-words text-xs text-danger">Xato: {sweep.lastError}</p>}
                           </div>
                           <StatusLamp className={cn('shrink-0')} status={state.status} label={state.label} pulse={sweep.running} />

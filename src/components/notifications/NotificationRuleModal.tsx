@@ -43,7 +43,7 @@ const EMPTY: FormState = {
 };
 
 const CHANNEL_OPTIONS = [
-  { value: 'telegram' as const, label: 'Telegram', description: "Shaxsiy chat, guruh yoki kanal", icon: Send },
+  { value: 'telegram' as const, label: 'Telegram', description: 'Chat, guruh yoki kanal', icon: Send },
   { value: 'sms' as const, label: 'SMS', description: 'Eskiz.uz orqali telefon raqamiga', icon: MessageSquare },
 ];
 
@@ -168,7 +168,7 @@ export default function NotificationRuleModal({
       onSaved(saved);
       onClose();
     } catch (err) {
-      setErrors({ form: err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi" });
+      setErrors({ form: err instanceof ApiError ? err.message : 'Tarmoq xatosi' });
     } finally {
       setSaving(false);
     }
@@ -178,8 +178,8 @@ export default function NotificationRuleModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={rule ? 'Qoidani tahrirlash' : 'Yangi bildirishnoma qoidasi'}
-      description="Kim, qaysi kanal orqali va qanday signallar haqida xabar oladi."
+      title={rule ? 'Qoidani tahrirlash' : 'Yangi qoida'}
+      description="Kim, qaysi kanal, qanday signal."
       size="lg"
       dismissible={!saving}
       footer={
@@ -197,7 +197,7 @@ export default function NotificationRuleModal({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
           <Field label="Qoida nomi" required error={errors.name}>
             <Input
-              placeholder="Masalan: Navbatchi operatorlar"
+              placeholder="Masalan: Navbatchilar"
               value={form.name}
               onChange={(e) => {
                 set('name', e.target.value);
@@ -224,7 +224,7 @@ export default function NotificationRuleModal({
             yaratib qo'yib, nega xabar kelmasligini bilmay qolardi. */}
         {channelUnconfigured && (
           <Notice tone="warning">
-            {`«${form.channel === 'sms' ? 'SMS' : 'Telegram'}» kanali serverda sozlanmagan — qoida saqlanadi, lekin xabar yuborilmaydi (jurnalga sababi yoziladi).`}
+            {`«${form.channel === 'sms' ? 'SMS' : 'Telegram'}» kanali sozlanmagan — xabar yuborilmaydi.`}
           </Notice>
         )}
 
@@ -285,7 +285,7 @@ export default function NotificationRuleModal({
 
         {eventKindsSelected && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Eng kam og'irlik darajasi" hint="Faqat AI hodisalari uchun">
+            <Field label="Eng kam og'irlik" hint="Faqat AI hodisalari">
               <Select
                 value={form.minSeverity}
                 onChange={(v) => set('minSeverity', v as EventSeverity | '')}

@@ -60,10 +60,10 @@ describe('NotificationRuleModal — sozlanmagan kanal', () => {
   it('SMS sozlanmagan bo\'lsa, SMS tanlanganda ogohlantiradi', () => {
     render(<NotificationRuleModal open rule={null} status={STATUS} onClose={() => {}} onSaved={() => {}} />);
 
-    expect(screen.queryByText(/serverda sozlanmagan/i)).toBeNull();
+    expect(screen.queryByText(/kanali sozlanmagan/i)).toBeNull();
 
     fireEvent.click(screen.getByRole('radio', { name: /SMS/i }));
 
-    expect(screen.getByText(/serverda sozlanmagan/i)).toBeTruthy();
+    expect(screen.getByText(/kanali sozlanmagan/i)).toBeTruthy();
   });
 });

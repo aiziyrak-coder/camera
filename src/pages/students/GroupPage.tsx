@@ -1,21 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, CalendarCheck, CalendarClock, LayoutGrid, QrCode, RefreshCw, Rows3, ScanFace, SearchX, TrendingUp, Users, ZoomIn } from 'lucide-react';
+import { ArrowLeft, CalendarCheck, CalendarClock, LayoutGrid, QrCode, RefreshCw, ScanFace, SearchX, TrendingUp, Users } from 'lucide-react';
 import {
   Badge,
   ButtonLink,
   CodeText,
   DataTable,
-  DocumentFooter,
-  DocumentHeader,
   EmptyState,
   ErrorState,
   IconButton,
   IntelPanel,
   MicroLabel,
   Page,
-  PersonCard,
-  PersonGrid,
   Select,
   Skeleton,
   StatusLamp,
@@ -34,9 +30,7 @@ import {
   type TabItem,
 } from '../../ui';
 import { RATE_RAG, rag } from '../../ui/rag';
-import { KpiReadout, RateCell, StaleNote, StatusMark, stamp } from '../../components/attendance/readout';
-import { dayReference, idToken, unitCode } from '../../components/attendance/references';
-import { branding } from '../../lib/branding';
+import { KpiReadout, RateCell, StaleNote, StatusMark } from '../../components/attendance/readout';
 import { getGroup, situationPaths, type GroupDetail, type GroupStudent, type Lesson, type TrendPoint } from '../../lib/situationApi';
 import {
   STATUS_META,
@@ -47,7 +41,6 @@ import {
   enrolledPct,
   hasAttendanceData,
   filterStudents,
-  isAwaiting,
   sortStudents,
   statusMeta,
   type StudentFilter,
@@ -73,9 +66,6 @@ const MODES: TabItem<ModeId>[] = [
 ];
 
 type TabId = 'talabalar' | 'darslar' | 'dinamika';
-type Density = 'normal' | 'large';
-/** Ro'yxat — asosiy ko'rinish; setka suratlar kerak bo'lganda. */
-type Layout = 'royxat' | 'setka';
 
 const FILTER_PARAM = 'holat';
 const QUERY_PARAM = 'qidiruv';
@@ -86,7 +76,7 @@ const TAB_PARAM = 'tab';
 // tushunarsiz holatga olib kelardi.
 const FILTERS: StudentFilter[] = ['all', 'keldi', 'kech_keldi', 'kelmadi', 'kutilmoqda', 'malumot_yoq'];
 const SORT_OPTIONS: { value: StudentSort; label: string }[] = [
-  { value: 'status', label: 'Avval kelmaganlar' },
+  { value: 'status', label: 'Kelmaganlar' },
   { value: 'arrival', label: 'Kelish vaqti' },
   { value: 'name', label: 'Ism bo\'yicha' },
 ];
@@ -95,15 +85,6 @@ const REFRESH_MS = 60_000;
 
 function parseFilter(raw: string | null): StudentFilter {
   return FILTERS.includes(raw as StudentFilter) ? (raw as StudentFilter) : 'all';
-}
-
-/** Talabaning kuni bir og'iz so'z bilan. "—" o'rniga holatning O'ZI
- *  yoziladi: bo'sh chiziqcha nimani anglatishini hech kim bilmasdi. */
-function arrivalNote(student: GroupStudent): string {
-  if (student.checkOut) return `ketdi ${student.checkOut}`;
-  if (student.status === 'kutilmoqda') return 'hali kelmadi';
-  if (student.status === 'kelmadi') return 'kelmadi';
-  return 'kirdi';
 }
 
 function GroupSkeleton() {
@@ -152,8 +133,6 @@ export default function GroupPage() {
     [patchParams],
   );
   const [sort, setSort] = usePersistedState<StudentSort>('talabalar.guruh.saralash', 'status');
-  const [density, setDensity] = usePersistedState<Density>('talabalar.guruh.olcham', 'normal');
-  const [layout, setLayout] = usePersistedState<Layout>('talabalar.guruh.royxat', 'royxat');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [flash, setFlash] = useState<Record<string, number>>({});
@@ -234,9 +213,6 @@ export default function GroupPage() {
     return sortStudents(byFace, sort);
   }, [students, filter, query, sort, mode, faceFilter]);
   const photos = useMemo(() => new Map(students.map((s) => [s.id, s])), [students]);
-  // Xizmat raqami — serverdan kelgan tartibda: qatorni telefonda aytish,
-  // qog'ozda belgilash uchun. Filtr yoki saralash raqamni ko'chirmaydi.
-  const rowCodes = useMemo(() => new Map(students.map((s, i) => [s.id, unitCode('T', i)])), [students]);
   const selectedIndex = selectedId ? visible.findIndex((s) => s.id === selectedId) : -1;
   const selected = selectedIndex >= 0 ? visible[selectedIndex] : selectedId ? (photos.get(selectedId) ?? null) : null;
 
@@ -304,21 +280,9 @@ export default function GroupPage() {
     ? { label: data.group.faculty ?? 'Fakultetsiz', to: withDate(situationPaths.faculty(data.group.facultyId)) }
     : { label: 'Fakultet' };
   const subtitle = data
-    ? [
-        isToday ? 'Har bir talabaning surati va bugungi holati' : 'Har bir talabaning surati va shu kungi holati',
-        data.group.faculty ?? 'Fakultetsiz',
-        data.group.course ? `${data.group.course}-kurs` : null,
-        `${data.students.length} talaba`,
-        formatUzDate(date, { weekday: true }),
-      ]
-        .filter(Boolean)
-        .join(' · ')
+    ? [data.group.faculty ?? 'Fakultetsiz', `${data.students.length} talaba`, formatUzDate(date, { weekday: true })].join(' · ')
     : formatUzDate(date, { weekday: true });
 
-  const reference = dayReference(`GUR-${idToken(groupName)}`, date);
-  const generatedAt = useMemo(stamp, [date, data]);
-  const minItemWidth = presentation ? (density === 'large' ? 220 : 172) : density === 'large' ? 196 : 148;
-  const effectiveLayout: Layout = presentation ? 'setka' : layout;
 
   return (
     <Page
@@ -355,35 +319,18 @@ export default function GroupPage() {
         <div className="border border-border bg-surface">
           <ErrorState
             variant="block"
-            title={/topilmadi/i.test(group.error) ? 'Guruh topilmadi' : "Guruh ma'lumotini olib bo'lmadi"}
+            title={/topilmadi/i.test(group.error) ? 'Guruh topilmadi' : "Guruhni ochib bo'lmadi"}
             message={group.error}
             onRetry={group.reload}
           />
           <div className="flex justify-center pb-8">
             <ButtonLink to={withDate(situationPaths.faculties)} icon={ArrowLeft} variant="ghost">
-              Fakultetlarga qaytish
+              Orqaga
             </ButtonLink>
           </div>
         </div>
       ) : data && totals ? (
         <div className="flex min-w-0 flex-col gap-3">
-          {/* 1. Hujjat blanki. */}
-          <DocumentHeader
-            org={branding.orgFullName}
-            title={`${groupName} guruhi — ${mode === 'yuz' ? 'yuz topshirish' : 'kunlik davomat'}`}
-            reference={reference}
-            generatedAt={generatedAt}
-            readouts={[
-              { label: 'Fakultet', value: data.group.faculty ?? 'Fakultetsiz' },
-              { label: 'Kurs', value: data.group.course ? `${data.group.course}-kurs` : '—' },
-              { label: 'Kun', value: formatUzDate(date, { weekday: true }) },
-              {
-                label: mode === 'yuz' ? 'Yuzi topshirilgan' : 'Umumiy holat',
-                value: mode === 'yuz' ? formatPercent(facePct, 1) : formatPercent(totals.rate, 1),
-              },
-            ]}
-          />
-
           {group.error && <StaleNote message={group.error} onRetry={group.reload} />}
 
           {!presentation && (
@@ -399,40 +346,20 @@ export default function GroupPage() {
               right={
                 students.length - faced > 0 ? (
                   <Button variant="secondary" size="sm" icon={QrCode} onClick={() => setEnrollTarget({ name: groupName, faculty: data.group.faculty })}>
-                    Topshirmaganlar va QR karta
+                    QR karta
                   </Button>
                 ) : undefined
               }
             >
               <StatusFilterTiles tiles={faceTiles} total={students.length} value={faceFilter} onChange={setFaceFilter} big={presentation} />
-              <p className="border-t border-border px-3 py-2 text-[12px] leading-snug text-muted">
-                {ready
-                  ? "Yuzlar yetarli yig'ilgan — «Davomat» ko'rinishida bugungi holat ko'rinadi."
-                  : "Kamera faqat yuzi ro'yxatdan o'tgan talabani taniydi. Guruhning yarmidan ko'pi topshirgach, davomat foizi haqiqatga yaqin bo'ladi."}
-              </p>
             </IntelPanel>
           ) : (
-            <IntelPanel title="Kunlik holat" code={reference}>
+            <IntelPanel title="Kunlik holat">
               <KpiReadout
-                className="lg:grid-cols-4"
+                className="lg:grid-cols-2"
                 items={[
-                  {
-                    label: 'Kelganlar ulushi',
-                    value: formatPercent(totals.rate, 1),
-                    rate: hasAttendanceData(totals) ? totals.rate : null,
-                    hint: `${formatNumber(totals.present)} / ${formatNumber(totals.present + totals.absent + totals.notYet)} keldi`,
-                  },
-                  { label: "Yuzi ro'yxatda", value: formatPercent(facePct, 1), hint: `${formatNumber(faced)} / ${formatNumber(students.length)} talaba` },
-                  { label: 'Kech keldi', value: formatNumber(totals.late), unit: 'talaba' },
-                  {
-                    label: isToday ? 'Hali kelmagan' : "Ma'lumot yo'q",
-                    value: formatNumber(isToday ? totals.notYet : totals.noData + totals.dayOff),
-                    unit: 'talaba',
-                    hint:
-                      !isToday && totals.dayOff > 0
-                        ? `Kamera tanimagan ${formatNumber(totals.noData)} · dam olish kuni ${formatNumber(totals.dayOff)}`
-                        : undefined,
-                  },
+                  { label: 'Keldi', value: formatPercent(totals.rate, 1), rate: hasAttendanceData(totals) ? totals.rate : null },
+                  { label: 'Yuzi bor', value: formatPercent(facePct, 1) },
                 ]}
               />
               <div className="border-t border-border">
@@ -446,24 +373,18 @@ export default function GroupPage() {
           {tab === 'talabalar' && (
             <StudentsTab
               visible={visible}
-              codes={rowCodes}
               total={students.length}
               filter={mode === 'yuz' ? 'all' : filter}
               query={query}
               onQuery={setQuery}
               sort={sort}
               onSort={setSort}
-              layout={effectiveLayout}
-              onLayout={setLayout}
-              density={density}
-              onDensity={setDensity}
               onResetFilter={resetFilters}
               onOpen={openStudent}
               selectedId={selectedId}
               enrollMode={mode === 'yuz'}
               flash={flash}
               liveFeed={liveFeed}
-              minItemWidth={minItemWidth}
               presentation={presentation}
             />
           )}
@@ -476,9 +397,6 @@ export default function GroupPage() {
 
           {tab === 'dinamika' && <TrendTab points={data.trend} />}
 
-          <DocumentFooter
-            note={`Xizmat uchun. Hujjat ${reference} raqami bilan tizimda tuzilgan; holatlar ${formatUzDate(date, { weekday: true })} kuni uchun. Yuzi ro'yxatdan o'tmagan talabaning kuni "ma'lumot yo'q" — "kelmadi" degani emas.`}
-          />
         </div>
       ) : null}
 
@@ -497,18 +415,15 @@ export default function GroupPage() {
   );
 }
 
-/** Ro'yxatdagi bitta talaba — 32 px li qator: kod, ism, holat belgisi,
- *  monoshrift kelish/ketish vaqti. */
+/** Ro'yxatdagi bitta talaba — 32 px li qator: ism, holat belgisi, kelgan vaqti. */
 function RosterRow({
   student,
-  code,
   selected,
   fresh,
   enrollMode,
   onOpen,
 }: {
   student: GroupStudent;
-  code: string;
   selected: boolean;
   fresh: boolean;
   enrollMode: boolean;
@@ -524,23 +439,18 @@ function RosterRow({
         onClick={() => onOpen(student.id)}
         aria-pressed={selected}
         className={cn(
-          'grid w-full grid-cols-[3.25rem_minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-1 text-left sm:grid-cols-[3.25rem_minmax(0,1fr)_7rem_4.5rem_4.5rem_6rem]',
+          'grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-1 text-left sm:grid-cols-[minmax(0,1fr)_7rem_4.5rem]',
           selected ? 'bg-primary-soft' : 'hover:bg-surface-2',
           fresh && 'shadow-[inset_2px_0_0_rgb(var(--c-success))]',
           focusRing,
         )}
       >
-        <CodeText className="text-[11px] text-subtle">{code}</CodeText>
         <span className="min-w-0">
           {/* Odam ismi — proza: sans shriftda qoladi. */}
           <span className="block truncate text-[13px] font-medium text-fg" title={student.fullName}>
             {student.fullName}
           </span>
-          {faceless && (
-            <span className="intel-micro !text-warning" title="Kamera bu talabani taniy olmaydi — yuzi ro'yxatdan o'tmagan">
-              {student.biometricsStatus === 'kutilmoqda' ? 'Yuzi tekshiruvda' : "Yuzi ro'yxatda yo'q"}
-            </span>
-          )}
+          {faceless && <span className="intel-micro !text-warning">Yuzi yo&apos;q</span>}
         </span>
         <span className="justify-self-end sm:justify-self-start">
           {enrollMode && faceless ? (
@@ -550,8 +460,6 @@ function RosterRow({
           )}
         </span>
         <CodeText className="hidden text-[12px] text-fg sm:block">{student.checkIn ?? '—'}</CodeText>
-        <CodeText className="hidden text-[12px] text-muted sm:block">{student.checkOut ?? '—'}</CodeText>
-        <span className="intel-micro hidden truncate sm:block">{arrivalNote(student)}</span>
       </button>
     </li>
   );
@@ -559,44 +467,32 @@ function RosterRow({
 
 function StudentsTab({
   visible,
-  codes,
   total,
   filter,
   query,
   onQuery,
   sort,
   onSort,
-  layout,
-  onLayout,
-  density,
-  onDensity,
   onResetFilter,
   onOpen,
   selectedId,
   flash,
   liveFeed,
-  minItemWidth,
   presentation,
   enrollMode = false,
 }: {
   visible: GroupStudent[];
-  codes: Map<string, string>;
   total: number;
   filter: StudentFilter;
   query: string;
   onQuery: (value: string) => void;
   sort: StudentSort;
   onSort: (value: StudentSort) => void;
-  layout: Layout;
-  onLayout: (value: Layout) => void;
-  density: Density;
-  onDensity: (value: Density) => void;
   onResetFilter: () => void;
   onOpen: (id: string) => void;
   selectedId: string | null;
   flash: Record<string, number>;
   liveFeed: LiveAttendanceMessage[];
-  minItemWidth: number;
   presentation: boolean;
   enrollMode?: boolean;
 }) {
@@ -622,34 +518,7 @@ function StudentsTab({
         fields={filterFields}
         // Holat/yuz filtrlari bitta joyda tozalanadi (sahifa holati).
         onReset={onResetFilter}
-        end={
-          <>
-            <Select value={sort} onChange={(value) => onSort(value as StudentSort)} options={SORT_OPTIONS} ariaLabel="Saralash" size="md" />
-            {!presentation && (
-              <Tabs
-                variant="segmented"
-                size="sm"
-                ariaLabel="Ro'yxat ko'rinishi"
-                value={layout}
-                onChange={onLayout}
-                tabs={[
-                  { id: 'royxat' as const, label: "Ro'yxat", icon: Rows3 },
-                  { id: 'setka' as const, label: 'Suratlar', icon: LayoutGrid },
-                ]}
-              />
-            )}
-            {layout === 'setka' && (
-              <IconButton
-                icon={ZoomIn}
-                label={density === 'large' ? 'Oddiy o\'lcham' : 'Katta kartalar'}
-                variant="secondary"
-                pressed={density === 'large'}
-                className="hidden sm:inline-flex"
-                onClick={() => onDensity(density === 'large' ? 'normal' : 'large')}
-              />
-            )}
-          </>
-        }
+        end={<Select value={sort} onChange={(value) => onSort(value as StudentSort)} options={SORT_OPTIONS} ariaLabel="Saralash" size="md" />}
       />
 
       {liveFeed.length > 0 && (
@@ -669,17 +538,12 @@ function StudentsTab({
       )}
 
       {total === 0 ? (
-        <EmptyState
-          icon={Users}
-          title="Guruhda faol talaba yo'q"
-          description="Talabalar «Shaxslar reestri» bo'limida guruhga biriktiriladi. Shundan keyin ularning suratlari shu yerda ko'rinadi."
-        />
+        <EmptyState icon={Users} title="Guruhda talaba yo'q" description="Talabalar «Shaxslar reestri» bo'limida biriktiriladi." />
       ) : visible.length === 0 ? (
         <EmptyState
           compact
           icon={SearchX}
-          title="Mos talaba topilmadi"
-          description="Filtr yoki qidiruvni o'zgartirib ko'ring."
+          title="Talaba topilmadi"
           action={
             <Button size="sm" onClick={onResetFilter}>
               Filtrni tozalash
@@ -687,87 +551,25 @@ function StudentsTab({
           }
         />
       ) : (
-        <IntelPanel
-          title="Talabalar ro'yxati"
-          code={`${visible.length} / ${total}`}
-          right={<MicroLabel>Vaqt — Toshkent</MicroLabel>}
-        >
-          {layout === 'royxat' ? (
-            <>
-              {/* Ustun sarlavhalari — qog'ozdagi jadval kabi. */}
-              <div className="hidden grid-cols-[3.25rem_minmax(0,1fr)_7rem_4.5rem_4.5rem_6rem] gap-x-3 border-b border-border bg-surface-2 px-3 py-1 sm:grid">
-                <MicroLabel>Kod</MicroLabel>
-                <MicroLabel>Talaba</MicroLabel>
-                <MicroLabel>Holat</MicroLabel>
-                <MicroLabel>Kirdi</MicroLabel>
-                <MicroLabel>Chiqdi</MicroLabel>
-                <MicroLabel>Izoh</MicroLabel>
-              </div>
-              <ul className="grid grid-cols-1 gap-px bg-border">
-                {visible.map((student) => (
-                  <RosterRow
-                    key={student.id}
-                    student={student}
-                    code={codes.get(student.id) ?? 'T-00'}
-                    selected={student.id === selectedId}
-                    fresh={Boolean(flash[student.id])}
-                    enrollMode={enrollMode}
-                    onOpen={onOpen}
-                  />
-                ))}
-              </ul>
-            </>
-          ) : (
-            <PersonGrid minItemWidth={minItemWidth} className={cn('gap-px bg-border p-px', presentation && 'gap-0.5')}>
-              {visible.map((student) => {
-                const fresh = Boolean(flash[student.id]);
-                if (student.biometricsStatus !== 'tasdiqlangan') {
-                  return (
-                    <PersonCard
-                      key={student.id}
-                      name={student.fullName}
-                      photoUrl={student.photoUrl}
-                      status={enrollMode ? null : student.status === 'malumot_yoq' ? 'nomalum' : student.status}
-                      subtitle={
-                        <span
-                          className="text-warning"
-                          title="Kamera bu talabani taniy olmaydi — yuzi ro'yxatdan o'tmagan"
-                        >
-                          {student.biometricsStatus === 'kutilmoqda' ? 'Yuzi tekshiruvda' : "Yuzi ro'yxatda yo'q"}
-                        </span>
-                      }
-                      meta={enrollMode ? <span className="text-primary">QR bilan topshirish →</span> : undefined}
-                      onClick={() => onOpen(student.id)}
-                      selected={student.id === selectedId}
-                      className={cn('[&_img]:opacity-60 [&_img]:grayscale', presentation && '[&_p]:text-sm')}
-                    />
-                  );
-                }
-                return (
-                  <PersonCard
-                    key={student.id}
-                    name={student.fullName}
-                    photoUrl={student.photoUrl}
-                    status={student.status === 'malumot_yoq' ? 'nomalum' : student.status}
-                    time={student.checkIn}
-                    // Bu tarmoqqa faqat yuzi tasdiqlangan talaba tushadi, shuning
-                    // uchun "yuzi yo'q" shoxobchasi o'lik edi — olib tashlandi.
-                    subtitle={arrivalNote(student)}
-                    onClick={() => onOpen(student.id)}
-                    selected={student.id === selectedId}
-                    className={cn(
-                      isAwaiting(student.status) && '[&_img]:opacity-75 [&_img]:grayscale',
-                      fresh && 'border-success shadow-[inset_0_0_0_2px_rgb(var(--c-success))]',
-                      presentation && '[&_p]:text-sm',
-                    )}
-                  />
-                );
-              })}
-            </PersonGrid>
-          )}
-          <p className="border-t border-border px-3 py-1.5 text-[11px] text-muted">
-            Bu yerda bitta kun ko&apos;rsatiladi — kunlik holatga foiz hukmi (svetofor) qo&apos;yilmaydi. Talabaning davr bo&apos;yicha foizi uning o&apos;z sahifasida.
-          </p>
+        <IntelPanel title="Talabalar" code={`${visible.length} / ${total}`}>
+          {/* Ustun sarlavhalari — qog'ozdagi jadval kabi. */}
+          <div className="hidden grid-cols-[minmax(0,1fr)_7rem_4.5rem] gap-x-3 border-b border-border bg-surface-2 px-3 py-1 sm:grid">
+            <MicroLabel>Talaba</MicroLabel>
+            <MicroLabel>Holat</MicroLabel>
+            <MicroLabel>Kirdi</MicroLabel>
+          </div>
+          <ul className="grid grid-cols-1 gap-px bg-border">
+            {visible.map((student) => (
+              <RosterRow
+                key={student.id}
+                student={student}
+                selected={student.id === selectedId}
+                fresh={Boolean(flash[student.id])}
+                enrollMode={enrollMode}
+                onOpen={onOpen}
+              />
+            ))}
+          </ul>
         </IntelPanel>
       )}
     </>
@@ -785,11 +587,11 @@ function TrendTab({ points }: { points: TrendPoint[] }) {
   const columns: DataTableColumn<TrendPoint>[] = [
     { key: 'date', header: 'Sana', cell: (p) => formatUzDate(p.date, { weekday: true, year: false }), sortValue: (p) => p.date, mono: true },
     { key: 'present', header: 'Keldi', align: 'right', cell: (p) => p.present, sortValue: (p) => p.present },
-    { key: 'late', header: 'Kech keldi', align: 'right', cell: (p) => p.late, sortValue: (p) => p.late },
+    { key: 'late', header: 'Kech', align: 'right', cell: (p) => p.late, sortValue: (p) => p.late },
     { key: 'absent', header: 'Kelmadi', align: 'right', cell: (p) => p.absent, sortValue: (p) => p.absent },
     {
       key: 'rate',
-      header: 'Kelganlar ulushi',
+      header: 'Keldi',
       align: 'right',
       width: '9rem',
       // Yozuvi yo'q kunga hukm chiqarilmaydi — sababi yoziladi.
@@ -802,8 +604,8 @@ function TrendTab({ points }: { points: TrendPoint[] }) {
     return (
       <EmptyState
         icon={TrendingUp}
-        title="So'nggi 14 kunda birorta yozuv yo'q"
-        description="Bu guruhda hali hech kim kamerada tanilmagan — ehtimol talabalar yuzini ro'yxatdan o'tkazmagan. Birinchi kun qayd etilishi bilan grafik to'ladi."
+        title="14 kunda yozuv yo'q"
+        description="Hali hech kim kamerada tanilmagan."
       />
     );
   }
@@ -813,36 +615,32 @@ function TrendTab({ points }: { points: TrendPoint[] }) {
       <IntelPanel title="14 kunlik xulosa" code={`${withData.length} / ${points.length} kun`}>
         <KpiReadout
           items={[
-            { label: "14 kunlik o'rtacha", value: formatPercent(avg, 1), rate: avg, hint: "Ma'lumot bor kunlar bo'yicha" },
+            { label: "O'rtacha", value: formatPercent(avg, 1), rate: avg },
             {
-              label: "Eng ko'p kelgan kun",
+              label: 'Eng yaxshi kun',
               value: formatPercent(best?.rate ?? null, 1),
               rate: best?.rate ?? null,
               hint: best ? formatUzDate(best.date, { weekday: true, year: false }) : undefined,
             },
             {
-              label: 'Eng kam kelgan kun',
+              label: 'Eng yomon kun',
               value: formatPercent(worst?.rate ?? null, 1),
               rate: worst?.rate ?? null,
               hint: worst ? formatUzDate(worst.date, { weekday: true, year: false }) : undefined,
             },
-            {
-              label: 'Kelmagan / kech kelgan',
-              value: `${formatNumber(absentTotal)} / ${formatNumber(lateTotal)}`,
-              hint: '14 kun davomida jami qayd etilgan holatlar',
-            },
+            { label: 'Kelmadi / kech', value: `${formatNumber(absentTotal)} / ${formatNumber(lateTotal)}` },
           ]}
         />
       </IntelPanel>
       <div className="grid min-w-0 gap-3 xl:grid-cols-2">
-        <IntelPanel title="Kelgan talabalar ulushi" right={<MicroLabel>Punktir — 85% maqsad</MicroLabel>} bodyClassName="p-3">
+        <IntelPanel title="Keldi" right={<MicroLabel>Punktir — 85%</MicroLabel>} bodyClassName="p-3">
           <RateTrendChart points={points} />
         </IntelPanel>
-        <IntelPanel title="Kunlik holatlar" right={<MicroLabel>Keldi / kech / kelmadi</MicroLabel>} bodyClassName="p-3">
+        <IntelPanel title="Kunlik holatlar" bodyClassName="p-3">
           <StatusTrendChart points={points} />
         </IntelPanel>
       </div>
-      <IntelPanel title="Kun-kun jadval" code={`${points.length} qator`}>
+      <IntelPanel title="Kun-kun" code={`${points.length} qator`}>
         <DataTable
           ariaLabel="14 kunlik davomat jadvali"
           columns={columns}

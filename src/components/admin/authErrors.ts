@@ -16,7 +16,7 @@ import { ApiError, TIMEOUT_STATUS } from '../../lib/apiClient';
  * ayiriladi: "parol noto'g'ri" va "server ishlamayapti" — butunlay
  * boshqa-boshqa harakat talab qiladi.
  */
-export function authErrorMessage(err: unknown, fallback = "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi"): string {
+export function authErrorMessage(err: unknown, fallback = 'Tarmoq xatosi'): string {
   if (err instanceof ApiError) return authErrorFromStatus(err.status, err.message, fallback);
   return fallback;
 }

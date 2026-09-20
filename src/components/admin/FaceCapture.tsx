@@ -62,7 +62,7 @@ export default function FaceCapture({ onConfirm }: FaceCaptureProps) {
         if (cancelled) return;
         const message =
           err instanceof CameraTimeoutError
-            ? "Kamera javob bermayapti. Windows sozlamalarida (Sozlamalar → Maxfiylik va xavfsizlik → Kamera) brauzerga ruxsat berilganini tekshiring, so'ng qayta urinib ko'ring"
+            ? "Kamera javob bermayapti — tizim sozlamalarida ruxsatni tekshiring"
             : err instanceof DOMException && err.name === 'NotAllowedError'
               ? 'Kameradan foydalanishga ruxsat berilmadi'
               : err instanceof DOMException && err.name === 'NotFoundError'

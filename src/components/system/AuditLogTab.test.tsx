@@ -62,8 +62,11 @@ describe('AuditLogTab', () => {
     expect((await screen.findAllByText('20.09.2026 14:03:22')).length).toBeGreaterThan(0);
   });
 
-  it('plitkalar bosiladigan filtr ekanini matn bilan ham aytadi', async () => {
-    render(<AuditLogTab canExport={false} />);
-    expect((await screen.findAllByText(/bosing/)).length).toBe(3);
+  // Tushuntirish matni olib tashlandi; bosiladigan ekani endi `aria-pressed`
+  // orqali e'lon qilinadi — filtr holati hamon ekran o'quvchiga yetadi.
+  it('plitkalar bosiladigan filtr sifatida e’lon qilinadi', async () => {
+    const { container } = render(<AuditLogTab canExport={false} />);
+    await screen.findAllByRole('button');
+    expect(container.querySelectorAll('button[aria-pressed]').length).toBe(3);
   });
 });

@@ -5,8 +5,6 @@ import {
   RESOURCE_DANGER_AT,
   RESOURCE_RAG,
   RESOURCE_TONE_LABEL as TONE_LABEL,
-  RESOURCE_TONE_NOTE as TONE_NOTE,
-  RESOURCE_WARN_AT,
   resourceTone,
   type SystemResources,
 } from './systemTypes';
@@ -27,7 +25,7 @@ const GAUGES = [
  */
 export function ServerResourcesCard({ resource }: { resource: LiveResource<SystemResources> }) {
   return (
-    <IntelPanel title="Server resurslari" code="SYS-RES" right={<MeasuredAt resource={resource} />}>
+    <IntelPanel title="Server resurslari" right={<MeasuredAt resource={resource} />}>
       <ResourceBody resource={resource}>
         {(data) => {
           const alerts = data.alerts.filter((a) => a.metric !== 'security');
@@ -42,7 +40,7 @@ export function ServerResourcesCard({ resource }: { resource: LiveResource<Syste
                   const verdict = rag(value, RESOURCE_RAG);
                   const tone = resourceTone(value);
                   return (
-                    <li key={gauge.key} className="flex items-center gap-3 px-2.5 py-1.5" title={TONE_NOTE[tone]}>
+                    <li key={gauge.key} className="flex items-center gap-3 px-2.5 py-1.5">
                       <MicroLabel className="w-[92px] shrink-0">{gauge.label}</MicroLabel>
                       <span className="relative h-1.5 min-w-0 flex-1 bg-surface-2" aria-hidden="true">
                         <span
@@ -61,17 +59,10 @@ export function ServerResourcesCard({ resource }: { resource: LiveResource<Syste
                   );
                 })}
               </ul>
-              <p className="border-b border-border px-2.5 py-1.5 text-[11px] leading-relaxed text-subtle">
-                Me'yor — <CodeText>{RESOURCE_WARN_AT}%</CodeText> gacha, diqqat —{' '}
-                <CodeText>
-                  {RESOURCE_WARN_AT}–{RESOURCE_DANGER_AT}%
-                </CodeText>
-                , yuqori yuklama — <CodeText>{RESOURCE_DANGER_AT}%</CodeText> dan ortiq.
-              </p>
               <div className="grid grid-cols-2 gap-px border-b border-border bg-border">
                 {/* Chegarasi yo'q sanoqlar — svetoforsiz. */}
-                <Metric label="ffmpeg jarayonlari" value={formatNumber(data.ffmpegProcessCount)} unit="ta" hint="Video kodlash jarayonlari" />
-                <Metric label="Oqim o'quvchilari" value={formatNumber(data.streamReaderCount)} unit="ta" hint="AI tahlil qilayotgan oqimlar" />
+                <Metric label="ffmpeg" value={formatNumber(data.ffmpegProcessCount)} unit="ta" />
+                <Metric label="Oqim o'quvchilari" value={formatNumber(data.streamReaderCount)} unit="ta" />
               </div>
               {alerts.length > 0 ? (
                 <div className="divide-y divide-border">

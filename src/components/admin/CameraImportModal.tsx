@@ -76,7 +76,7 @@ export default function CameraImportModal({
       open={open}
       onClose={handleClose}
       title="SADP'dan kameralarni import qilish"
-      description="Hikvision SADP dasturidan eksport qilingan CSV fayl."
+      description="SADP eksport qilgan CSV fayl."
       size="md"
       dismissible={!uploading}
       footer={

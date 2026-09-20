@@ -63,7 +63,7 @@ export default function AddBuildingModal({
       onSave(saved);
       onClose();
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi");
+      setFormError(err instanceof ApiError ? err.message : 'Tarmoq xatosi');
     } finally {
       setSubmitting(false);
     }
@@ -95,7 +95,7 @@ export default function AddBuildingModal({
         <Field
           label="Qavatlar soni"
           error={floorsError}
-          hint="Monitoring markazidagi bino kesimi shuncha qavat chizadi — kamerasi hali biriktirilmagan qavat ham ko'rinadi."
+          hint="Bino kesimi shuncha qavat chizadi"
         >
           <Input type="number" min={1} max={50} placeholder="Masalan: 4" value={floors} onChange={(e) => setFloors(e.target.value)} />
         </Field>

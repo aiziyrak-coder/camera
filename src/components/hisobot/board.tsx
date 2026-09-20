@@ -1,4 +1,4 @@
-import { CodeText, MicroLabel, cn } from '../../ui';
+import { MicroLabel, cn } from '../../ui';
 import {
   RAG_FILL,
   RAG_LABEL,
@@ -7,7 +7,6 @@ import {
   RAG_TEXT,
   RATE_RAG,
   rag,
-  ragHint,
   type Rag,
   type RagThresholds,
 } from '../../ui/rag';
@@ -16,16 +15,14 @@ import {
  * Holat taxtasi — rahbar uchun asosiy ekran.
  *
  * Har katak bitta bo'linma: chap qirrasida svetofor chizig'i, ichida
- * xizmat kodi, nomi va katta raqam. Yomoni birinchi turadi — ko'z
- * avval chora kerak bo'lgan joyni ko'radi.
+ * nomi va katta raqam. Yomoni birinchi turadi — ko'z avval chora
+ * kerak bo'lgan joyni ko'radi.
  *
  * Rang YOLG'IZ ma'no tashimaydi: har katakda harf (Y/S/Q) ham bor.
  */
 
 export interface BoardItem {
   id: string;
-  /** Xizmat kodi: KAF-03, FAK-01. */
-  code: string;
   name: string;
   /** Asosiy son. null — o'lchanmagan. */
   value: number | null;
@@ -88,10 +85,7 @@ export function StatusBoard({
               {/* Svetofor chizig'i — katakning chap qirrasi. */}
               <span aria-hidden="true" className={cn('w-1 shrink-0 rounded-[1px]', RAG_SOLID[tone])} />
               <span className="flex min-w-0 flex-1 flex-col gap-1">
-                <span className="flex items-center gap-2">
-                  <CodeText className="text-[11px] text-subtle">{item.code}</CodeText>
-                  <span className="min-w-0 truncate text-[13px] font-medium text-fg">{item.name}</span>
-                </span>
+                <span className="min-w-0 truncate text-[13px] font-medium text-fg">{item.name}</span>
                 <span className="flex items-baseline gap-2">
                   <span className={cn('intel-code text-[20px] font-semibold leading-none', RAG_TEXT[tone])}>
                     {formatValue(item.value, item.unit)}
@@ -117,22 +111,25 @@ export function StatusBoard({
   );
 }
 
-/** Svetofor qoidasini ochiq aytadigan satr — hukm qayerdan kelganini
- *  hech kim taxmin qilmasin. */
-export function RagLegend({ thresholds = RATE_RAG, unit = '%' }: { thresholds?: RagThresholds; unit?: string }) {
+/** Svetofor qoidasi — bitta qator. */
+export function RagLegend({ thresholds = RATE_RAG }: { thresholds?: RagThresholds; unit?: string }) {
   const bands: Rag[] = ['yashil', 'sariq', 'qizil'];
+  const text: Record<Rag, string> = {
+    yashil: `${thresholds.ok}% dan`,
+    sariq: `${thresholds.warn}% dan`,
+    qizil: `${thresholds.warn}% dan past`,
+    yoq: '',
+  };
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border px-3 py-2">
-      <MicroLabel>Svetofor qoidasi</MicroLabel>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border px-3 py-1.5">
       {bands.map((band) => (
         <span key={band} className="flex items-center gap-1.5">
           <span aria-hidden="true" className={cn('h-2.5 w-2.5 rounded-[1px]', RAG_SOLID[band])} />
           <span className="intel-code text-[11px] text-muted">
-            {RAG_LETTER[band]} — {RAG_LABEL[band]}
+            {RAG_LETTER[band]} {text[band]}
           </span>
         </span>
       ))}
-      <span className="intel-code text-[11px] text-subtle">{ragHint(thresholds, unit)}</span>
     </div>
   );
 }

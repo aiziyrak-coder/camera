@@ -14,7 +14,7 @@ import { COVERAGE_RAG, type SystemCameraNetwork } from './systemTypes';
  */
 export function CameraNetworkCard({ resource }: { resource: LiveResource<SystemCameraNetwork> }) {
   return (
-    <IntelPanel title="Kamera tarmog'i" code="SYS-NET" right={<MeasuredAt resource={resource} />}>
+    <IntelPanel title="Kamera tarmog'i" brackets={false} right={<MeasuredAt resource={resource} />}>
       <ResourceBody resource={resource}>
         {(net) => {
           const sweptAt = formatServerTime(net.lastSweep.finishedAt);
@@ -50,15 +50,13 @@ export function CameraNetworkCard({ resource }: { resource: LiveResource<SystemC
                   value={formatNumber(net.offlineCameras)}
                   unit="ta"
                   tone={net.offlineCameras > 0 ? 'danger' : 'success'}
-                  hint="Hozir javob bermayapti"
                 />
                 <Metric
                   label="Uzoq vaqt offline"
                   value={formatNumber(net.chronicOfflineCount)}
                   unit="ta"
                   tone={net.chronicOfflineCount > 0 ? 'danger' : undefined}
-                  // Qizil raqam nimani anglatishini aytmasa, operator nima qilishni bilmaydi.
-                  hint={net.offlineAlertMinutes ? `${net.offlineAlertMinutes} daqiqadan ortiq` : 'Uzluksiz offline'}
+                  hint={net.offlineAlertMinutes ? `${net.offlineAlertMinutes} daqiqadan ortiq` : undefined}
                 />
                 {/* "24 s" emas — ko'rsatkich oxirgi 24 SOATdagi ogohlantirishlar soni. */}
                 <Metric
@@ -66,29 +64,20 @@ export function CameraNetworkCard({ resource }: { resource: LiveResource<SystemC
                   value={formatNumber(net.recentOfflineAlerts24h)}
                   unit="ta"
                   tone={net.recentOfflineAlerts24h > 0 ? 'warning' : undefined}
-                  hint="Offline haqida yuborilgan"
                 />
               </div>
               <div className="divide-y divide-border">
                 <StatusLine tone={net.lastSweep.skippedOverlap ? 'warning' : 'neutral'}>
-                  {/* Tekshiruv sahifa yangilanishidan mustaqil ishlaydi — qachon bo'lgani aytilmasa,
-                      eski natija jonli holat kabi o'qiladi. */}
                   Oxirgi tekshiruv{sweptAt ? <> (<CodeText>{sweptAt}</CodeText>)</> : null}:{' '}
                   <CodeText>
                     {formatNumber(net.lastSweep.reachable)}/{formatNumber(net.lastSweep.faolChecked)}
                   </CodeText>{' '}
-                  javob berdi, <CodeText>{formatNumber(net.lastSweep.durationSeconds, 1)} s</CodeText>
-                  {net.lastSweep.skippedOverlap ? " (ustma-ust tushib o'tkazildi)" : ''}
-                  {net.healthIntervalSeconds ? (
-                    <>
-                      {' · har '}
-                      <CodeText>{net.healthIntervalSeconds} s</CodeText> da takrorlanadi
-                    </>
-                  ) : null}
+                  javob berdi
+                  {net.lastSweep.skippedOverlap ? " — o'tkazildi" : ''}
                 </StatusLine>
                 {net.linkLocalIpCount > 0 && (
                   <StatusLine tone="warning">
-                    <CodeText>{net.linkLocalIpCount}</CodeText> ta kamerada <CodeText>169.254.x.x</CodeText> manzil — DHCP ishlamagan, IP sozlang
+                    <CodeText>{net.linkLocalIpCount}</CodeText> ta kamerada <CodeText>169.254.x.x</CodeText> — DHCP ishlamagan
                   </StatusLine>
                 )}
               </div>

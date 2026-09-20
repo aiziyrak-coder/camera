@@ -72,7 +72,7 @@ export function CamerasPanel({
 
   if (!has) return null;
   return (
-    <WallPanel area="F" title="Jonli kameralar" icon={<Cctv />} code="F-06">
+    <WallPanel area="F" title="Jonli kameralar" icon={<Cctv />}>
       <div
         className="grid min-h-0 flex-1 gap-[0.6em]"
         style={{ gridTemplateRows: `repeat(${picked.length > 2 ? Math.ceil(picked.length / 2) : picked.length}, minmax(0, 1fr))`, gridTemplateColumns: picked.length > 2 ? '1fr 1fr' : '1fr' }}

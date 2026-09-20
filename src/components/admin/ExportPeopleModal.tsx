@@ -28,13 +28,13 @@ const KIND_OPTIONS: { kind: ExportKind; title: string; description: string; icon
   {
     kind: 'people',
     title: "Ro'yxat",
-    description: "Har bir odam ism-familiyasi, JSHSHIR, fakultet, kurs/guruh yoki kafedra va yuz holati bilan",
+    description: 'Ism, JSHSHIR, bo‘linma va yuz holati',
     icon: Users,
   },
   {
     kind: 'stats',
     title: 'Statistika',
-    description: "Jami, tasdiqlagan, tasdiqlamagan va foiz — fakultet, kurs, guruh yoki kafedra kesimida",
+    description: 'Bo‘linmalar kesimida yig‘ma sonlar',
     icon: BarChart3,
   },
 ];
@@ -156,7 +156,7 @@ export default function ExportPeopleModal({
       URL.revokeObjectURL(url);
       onClose();
     } catch {
-      setError("Faylni tayyorlab bo'lmadi. Qayta urinib ko'ring.");
+      setError("Faylni tayyorlab bo'lmadi");
     } finally {
       setDownloading(false);
     }

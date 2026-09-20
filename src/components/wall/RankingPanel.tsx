@@ -44,7 +44,7 @@ function Group({ title, units, startRank }: { title: string; units: WallUnit[]; 
         <MicroLabel className="!text-[0.6em]">{title}</MicroLabel>
       </div>
       {units.length === 0 ? (
-        <div className="text-[0.78em] text-muted">Bugun hali birorta xodim kamerada ko'rinmadi</div>
+        <div className="text-[0.78em] text-muted">Ma'lumot yo'q</div>
       ) : (
         <ul className="flex min-h-0 flex-1 flex-col justify-evenly gap-[0.2em] overflow-hidden">
           {units.map((u, i) => (
@@ -72,27 +72,28 @@ export function RankingPanel({
   const topIds = new Set(top.map((u) => u.id));
   const bottomOnly = bottom.filter((u) => !topIds.has(u.id));
   return (
-    <WallPanel area="D" title="Bo'linmalar reytingi" icon={<Trophy />} aside={<MicroLabel>bugungi davomat</MicroLabel>} code="D-04">
+    <WallPanel area="D" title="Bo'linmalar reytingi" icon={<Trophy />}>
       <div className="flex min-h-0 flex-1 flex-col gap-[0.6em]">
         {/* "5" qattiq yozilgan edi: bo'linmalar kam bo'lsa ekranda
             3 ta qator turib, sarlavhada 5 deb yozilardi. */}
         <Group title={`Eng yaxshi ${top.length}`} units={top} startRank={(i) => i + 1} />
         {/* Bu ro'yxat — eng pastdagilar; "1, 2, 3" raqamlari uni yaxshi
             o'rin kabi ko'rsatardi, shuning uchun raqamlanmaydi. */}
-        {bottomOnly.length > 0 && <Group title="Diqqat talab — eng past" units={bottomOnly} />}
+        {bottomOnly.length > 0 && <Group title="Eng past" units={bottomOnly} />}
         <div className="flex shrink-0 items-center gap-[0.8em] border border-warning/50 bg-warning-soft px-[0.9em] py-[0.6em]">
           <Timer className="h-[1.6em] w-[1.6em] shrink-0 text-warning" />
           <div className="min-w-0 flex-1 leading-tight">
             {/* Ko'rsatkich kelmaganlarni ham sanaydi — sarlavha faqat
                 kechikish haqida edi va raqamni kam ko'rsatardi. */}
-            <MicroLabel className="intel-micro-wrap block !text-[0.62em] !text-fg">Takror kech qolgan yoki kelmagan xodimlar</MicroLabel>
-            <div className="mt-[0.25em] text-[0.68em] text-muted">
-              {chronic === null
-                ? chronicError
-                  ? "so'nggi 14 kunlik hisobni serverdan olib bo'lmadi"
-                  : "so'nggi 14 kunlik hisob yuklanmoqda…"
-                : "so'nggi 14 kunda ≥3 marta kech qolgan yoki kelmagan xodimlar"}
-            </div>
+            <MicroLabel
+              className="intel-micro-wrap block !text-[0.62em] !text-fg"
+              title="So'nggi 14 kunda uch va undan ko'p marta kech qolgan yoki kelmagan xodimlar"
+            >
+              Takror kechikkan
+            </MicroLabel>
+            {chronic === null && (
+              <div className="mt-[0.25em] text-[0.68em] text-muted">{chronicError ? 'olinmadi' : 'yuklanmoqda…'}</div>
+            )}
           </div>
           <div className="intel-code text-[2.4em] font-semibold leading-none text-warning">
             {chronic ?? <span className="text-muted" title="Hisob mavjud emas">—</span>}

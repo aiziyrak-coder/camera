@@ -127,7 +127,7 @@ export default function EditStudentStaffModal({
     if ((series || number) && !/^[A-Za-z]{2}$/.test(series)) next.passportSeries = '2 ta harf (masalan AD)';
     if ((series || number) && number.length !== 7) next.passportNumber = '7 ta raqam';
     if (f.type === 'talaba' && f.parentPhone.trim() && !normalizeUzPhone(f.parentPhone)) {
-      next.parentPhone = "Telefon raqami noto'g'ri (+998 90 123 45 67)";
+      next.parentPhone = "Raqam noto'g'ri (+998 90 123 45 67)";
     }
     return next;
   }
@@ -184,7 +184,7 @@ export default function EditStudentStaffModal({
       }
       onSave(updated);
     } catch (err) {
-      setErrors({ form: err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi" });
+      setErrors({ form: err instanceof ApiError ? err.message : 'Tarmoq xatosi' });
     } finally {
       setSaving(false);
     }
@@ -343,10 +343,10 @@ export default function EditStudentStaffModal({
                   <p className="text-sm font-semibold text-fg">Yuz rasmi</p>
                   <p className="text-xs text-muted">
                     {newFace
-                      ? 'Yangi rasm olindi — "Saqlash" bosilganda almashtiriladi'
+                      ? 'Yangi rasm — saqlashda almashtiriladi'
                       : record.biometricsStatus === 'tasdiqlangan'
                         ? `Tasdiqlangan${record.confirmedLabel ? ` · ${record.confirmedLabel}` : ''}`
-                        : 'Yuzi hali tasdiqlanmagan — davomatda tanilmaydi'}
+                        : 'Tasdiqlanmagan — davomatda tanilmaydi'}
                   </p>
                 </div>
               </div>
@@ -376,7 +376,7 @@ export default function EditStudentStaffModal({
       <ConfirmDialog
         open={confirmDiscard}
         title="O'zgarishlar saqlanmadi"
-        message="Oynani yopsangiz, kiritilgan o'zgarishlar va olingan yangi yuz surati yo'qoladi."
+        message="O'zgarishlar va yangi yuz surati yo'qoladi."
         confirmLabel="Ha, yopilsin"
         cancelLabel="Tahrirga qaytish"
         onCancel={() => setConfirmDiscard(false)}

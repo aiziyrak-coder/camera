@@ -11,7 +11,7 @@ import { canAssign, statusActions, type StatusAction } from '../../lib/eventWork
 import type { AIEvent, EventStatus } from '../../types';
 
 function errorText(err: unknown): string {
-  return err instanceof ApiError ? err.message : "Tarmoq xatosi — server bilan bog'lanib bo'lmadi";
+  return err instanceof ApiError ? err.message : 'Tarmoq xatosi';
 }
 
 const ACTION_ICON: Record<EventStatus, typeof CircleDot> = {
@@ -113,7 +113,7 @@ export default function EventWorkflowPanel({ event, onChanged }: { event: AIEven
           <span className="text-sm font-medium text-fg">{event.assignedToName ?? '—'}</span>
         )}
       </div>
-      {assigneesError && assignable && <p className="text-xs text-danger">Foydalanuvchilar ro&apos;yxatini yuklab bo&apos;lmadi</p>}
+      {assigneesError && assignable && <p className="text-xs text-danger">Ro&apos;yxat yuklanmadi</p>}
       {event.assignedAt && event.assignedToName && <p className="text-xs text-muted">Tayinlangan: {formatLocal(event.assignedAt)}</p>}
 
       {event.status === 'hal_qilindi' && event.resolutionNote && (

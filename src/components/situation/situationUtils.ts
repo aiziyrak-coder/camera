@@ -249,51 +249,7 @@ export function rankUnits<T extends RankableUnit>(units: readonly T[], n = 5, mi
   return { top, bottom, ranked: eligible.length };
 }
 
-/* ------------------------------------------------------------------
- * Hujjat raqami va holat taxtasi — "Institut holati" ekrani uchun.
- *
- * Raqam RENDER paytiga emas, ekran HOLATIGA bog'langan: bir xil kun va
- * bir xil kesim — doim bir xil kod. Shuning uchun tartib raqami
- * sanagichdan emas, tanlovning o'zidan (FNV-1a) chiqadi va testda
- * tekshiriladi.
- * ---------------------------------------------------------------- */
-
-/** Tashkilot kodi — boshqa muassasaga o'rnatishda almashtiriladi. */
-export const SITUATION_ORG_CODE = 'FERMI';
-
-export type SituationMode = 'xodimlar' | 'talabalar';
-
-const SITUATION_SECTION_CODE: Record<SituationMode, string> = { xodimlar: 'XDM', talabalar: 'TLB' };
-
-function referenceSerial(parts: readonly (string | null | undefined)[]): string {
-  const key = parts.map((p) => (p ?? '').trim()).filter(Boolean).join('|');
-  if (!key) return '0001';
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < key.length; i += 1) {
-    hash ^= key.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return String((hash % 9998) + 2).padStart(4, '0');
-}
-
-/**
- * Ekran hujjat raqami: `FERMI/SIT/20260920/XDM-0001`.
- *   TASHKILOT / EKRAN TURI / KUN / KESIM-TARTIB
- * Bugungi (tugallanmagan) kun va yakunlangan kun bir xil kod olmaydi —
- * chop etilgan varaqda qaysi holat ekani ko'rinib tursin.
- */
-export function situationReference(input: {
-  date: string;
-  mode: SituationMode;
-  /** Bugun — kun hali tugamagan; tartib raqami boshqacha bo'ladi. */
-  isToday?: boolean;
-  org?: string;
-}): string {
-  const org = (input.org ?? SITUATION_ORG_CODE).toUpperCase();
-  const period = input.date.replace(/-/g, '');
-  const serial = referenceSerial([input.isToday ? 'jonli' : '', input.mode === 'talabalar' ? 'tlb' : '']);
-  return `${org}/SIT/${period}/${SITUATION_SECTION_CODE[input.mode]}-${serial}`;
-}
+/* --- Holat taxtasi — "Institut holati" ekrani uchun. --- */
 
 /** Foizni taxta katagi uchun yaxlitlash (null — o'lchanmagan). */
 function boardRate(rate: number | null): number | null {

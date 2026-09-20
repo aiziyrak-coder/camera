@@ -4,15 +4,11 @@ import { ArrowLeft, CalendarCheck, LayoutGrid, RefreshCw, Rows3, ScanFace, Searc
 import {
   Button,
   ButtonLink,
-  CodeText,
   DataTable,
-  DocumentFooter,
-  DocumentHeader,
   EmptyState,
   ErrorState,
   IconButton,
   IntelPanel,
-  MicroLabel,
   Page,
   SearchInput,
   Select,
@@ -29,9 +25,7 @@ import {
 } from '../../ui';
 import { RATE_RAG, rag } from '../../ui/rag';
 import { RagLegend, StatusBoard, type BoardItem } from '../../components/hisobot/board';
-import { KpiReadout, RateCell, RuledSection, StaleNote, stamp, worstFirst } from '../../components/attendance/readout';
-import { dayReference, idToken, unitCode } from '../../components/attendance/references';
-import { branding } from '../../lib/branding';
+import { KpiReadout, RateCell, RuledSection, StaleNote, worstFirst } from '../../components/attendance/readout';
 import { NO_FACULTY_ID, getFaculty, getGroups, situationPaths, type CourseBlock, type Counts, type GroupStat } from '../../lib/situationApi';
 import { courseLabel, enrolledPct, groupsToCourses, hasAttendanceData, normalizeText, sortGroups, sumCounts, type GroupSortKey } from '../../lib/studentAttendance';
 import { usePersistedState } from '../../lib/usePersistedState';
@@ -55,8 +49,8 @@ interface FacultyView {
 }
 
 const SORTS: { value: GroupSortKey; label: string }[] = [
-  { value: 'rate-asc', label: 'Avval past davomat' },
-  { value: 'rate-desc', label: 'Avval yuqori davomat' },
+  { value: 'rate-asc', label: 'Past davomat' },
+  { value: 'rate-desc', label: 'Yuqori davomat' },
   { value: 'name', label: 'Nomi bo\'yicha' },
 ];
 
@@ -137,15 +131,6 @@ export default function FacultyPage() {
   );
   const [course, setCourse] = useUrlTab(courseTabs, { param: COURSE_PARAM, defaultTab: 'all' });
 
-  // Xizmat kodi — serverdan kelgan tartibda, bir marta. Ekranda saralash
-  // yoki qidiruv kodni ko'chirmaydi: GUR-07 doim o'sha guruh.
-  const codes = useMemo(() => {
-    const map = new Map<string, string>();
-    let index = 0;
-    for (const c of data?.courses ?? []) for (const g of c.groups) map.set(g.name, unitCode('GUR', index++));
-    return map;
-  }, [data]);
-
   const blocks = useMemo(() => {
     const needle = normalizeText(query);
     return (data?.courses ?? [])
@@ -172,8 +157,6 @@ export default function FacultyPage() {
   const groupCount = data?.courses.reduce((n, c) => n + c.groups.length, 0) ?? 0;
 
   const title = data?.name ?? (facultyId === NO_FACULTY_ID ? 'Fakultetsiz' : 'Fakultet');
-  const reference = dayReference(`FAK-${idToken(facultyId)}`, date);
-  const generatedAt = useMemo(stamp, [date, data]);
   const scopeLabel = searching ? "Topilgan guruhlar bo'yicha" : course === 'all' ? "Fakultet bo'yicha" : (blocks[0]?.label ?? 'Kurs bo\'yicha');
 
   /** Guruhlar → holat taxtasi kataklari. */
@@ -181,60 +164,51 @@ export default function FacultyPage() {
     (groups: GroupStat[]): BoardItem[] =>
       groups.map((g) => ({
         id: g.name,
-        code: codes.get(g.name) ?? 'GUR-00',
         name: g.name,
         value: measured(g) ? g.rate : null,
         unit: '%',
         detail:
           g.total === 0
-            ? "Guruhga hali talaba biriktirilmagan"
+            ? "Talaba yo'q"
             : measured(g)
               ? `${formatNumber(g.present)} / ${formatNumber(g.present + g.absent + g.notYet)} keldi`
-              : `Yuzi ro'yxatda ${formatPercent(enrolledPct(g))} — davomat hali o'lchanmaydi`,
+              : `Yuzi ro'yxatda ${formatPercent(enrolledPct(g))}`,
         headcount: g.total,
       })),
-    [codes],
+    [],
   );
 
   const columns: DataTableColumn<GroupStat>[] = [
-    {
-      key: 'code',
-      header: 'Kod',
-      width: '5.5rem',
-      mono: true,
-      sortValue: (g) => codes.get(g.name) ?? '',
-      cell: (g) => <CodeText className="text-[12px] text-subtle">{codes.get(g.name)}</CodeText>,
-    },
     { key: 'name', header: 'Guruh', cell: (g) => <span className="text-[13px] font-medium text-fg">{g.name}</span>, sortValue: (g) => g.name },
     // Ilgari kursi ko'rsatilmagan guruhda izohsiz "—" turardi — endi sababi yoziladi.
     { key: 'course', header: 'Kurs', cell: (g) => courseLabel(g.course), sortValue: (g) => g.course, hideOnMobile: true },
-    { key: 'total', header: 'Jami talaba', align: 'right', cell: (g) => formatNumber(g.total), sortValue: (g) => g.total },
+    { key: 'total', header: 'Jami', align: 'right', cell: (g) => formatNumber(g.total), sortValue: (g) => g.total },
     {
       key: 'faces',
-      header: "Yuzi ro'yxatda",
+      header: 'Yuzi bor',
       align: 'right',
       hideOnMobile: true,
       sortValue: (g) => enrolledPct(g),
       cell: (g) => (
         <span
           className={hasAttendanceData(g) ? undefined : 'font-semibold text-warning'}
-          title="Kamera faqat yuzi ro'yxatdan o'tgan talabani taniy oladi"
+          title="Kamera faqat yuzi topshirilgan talabani taniydi"
         >
           {formatPercent(enrolledPct(g))}
         </span>
       ),
     },
     // Math.max — CountsLegend bilan bir xil: buzuq ma'lumotda "-1" chiqmasin.
-    { key: 'on', header: "O'z vaqtida", align: 'right', cell: (g) => formatNumber(Math.max(0, g.present - g.late)), sortValue: (g) => Math.max(0, g.present - g.late) },
+    { key: 'on', header: 'Vaqtida', align: 'right', cell: (g) => formatNumber(Math.max(0, g.present - g.late)), sortValue: (g) => Math.max(0, g.present - g.late) },
     { key: 'late', header: 'Kech keldi', align: 'right', cell: (g) => formatNumber(g.late), sortValue: (g) => g.late },
     { key: 'absent', header: 'Kelmadi', align: 'right', cell: (g) => formatNumber(g.absent), sortValue: (g) => g.absent },
     // O'tgan kunda "hali kelmagan" bo'lmaydi (server pending=false) — o'rniga
     // kamera taniy olmagan (yuzi yo'q) va dam olish kunlari ko'rsatiladi.
     isToday
-      ? { key: 'notYet', header: 'Hali kelmagan', align: 'right' as const, cell: (g: GroupStat) => formatNumber(g.notYet), sortValue: (g: GroupStat) => g.notYet }
+      ? { key: 'notYet', header: 'Kutilmoqda', align: 'right' as const, cell: (g: GroupStat) => formatNumber(g.notYet), sortValue: (g: GroupStat) => g.notYet }
       : {
           key: 'noData',
-          header: "Ma'lumot yo'q",
+          header: "Yozuv yo'q",
           align: 'right' as const,
           cell: (g: GroupStat) => (
             <span title={g.dayOff > 0 ? `Kamera tanimagan ${g.noData} · dam olish kuni ${g.dayOff}` : 'Kamera tanimagan'}>
@@ -246,7 +220,7 @@ export default function FacultyPage() {
         },
     {
       key: 'rate',
-      header: 'Kelganlar ulushi',
+      header: 'Keldi',
       align: 'right',
       width: '9rem',
       sortValue: (g) => g.rate,
@@ -265,7 +239,7 @@ export default function FacultyPage() {
   return (
     <Page
       title={title}
-      subtitle={`Fakultetdagi har bir guruhda ${isToday ? 'bugun' : 'shu kuni'} nechta talaba kelgani${data ? ` · ${groupCount} guruh, ${formatNumber(data.totals.total)} talaba` : ''} · ${formatUzDate(date, { weekday: true })}`}
+      subtitle={`${data ? `${groupCount} guruh · ` : ''}${formatUzDate(date, { weekday: true })}`}
       breadcrumbs={[{ label: 'Talabalar', to: withDate(situationPaths.faculties) }, { label: title }]}
       actions={<IconButton icon={RefreshCw} label="Yangilash" variant="secondary" onClick={faculty.reload} loading={faculty.refreshing} />}
       tabs={data ? VIEWS : undefined}
@@ -284,57 +258,31 @@ export default function FacultyPage() {
           <ErrorState variant="block" title={/topilmadi/i.test(faculty.error) ? 'Fakultet topilmadi' : undefined} message={faculty.error} onRetry={faculty.reload} />
           <div className="flex justify-center pb-8">
             <ButtonLink to={withDate(situationPaths.faculties)} icon={ArrowLeft} variant="ghost">
-              Fakultetlarga qaytish
+              Orqaga
             </ButtonLink>
           </div>
         </div>
       ) : data ? (
         <div className="flex min-w-0 flex-col gap-3">
-          {/* 1. Hujjat blanki — qaysi bo'linma, qaysi kun, qancha odam. */}
-          <DocumentHeader
-            org={branding.orgFullName}
-            title={`${title} — guruhlar kesimi`}
-            reference={reference}
-            generatedAt={generatedAt}
-            readouts={[
-              { label: 'Kun', value: formatUzDate(date, { weekday: true }) },
-              { label: 'Kurslar', value: `${data.courses.length} ta` },
-              { label: 'Guruhlar', value: `${groupCount} ta` },
-              { label: 'Talabalar', value: `${formatNumber(data.totals.total)} ta` },
-              { label: 'Umumiy holat', value: formatPercent(data.totals.rate, 1) },
-            ]}
-          />
-
           {faculty.error && <StaleNote message={faculty.error} onRetry={faculty.reload} />}
 
           <Tabs tabs={courseTabs} value={course} onChange={setCourse} ariaLabel="Kurslar" />
 
           {summary && (
-            <IntelPanel title="Tanlangan qamrov" code={reference}>
+            <IntelPanel title={scopeLabel}>
               {/* Qamrov nomi va foiz maxraji BITTA qatorda: "nimadan" degan
                   savol ekranni tark etmasin. */}
-              <p className="border-b border-border px-3 py-1.5 text-[13px] font-medium text-fg">
-                {scopeLabel}
-                <span className="intel-code ms-2 font-normal text-muted">
+              <p className="border-b border-border px-3 py-1.5 text-[13px] text-muted">
+                <span className="intel-code">
                   {formatNumber(summary.present)} / {formatNumber(summary.present + summary.absent + summary.notYet)} keldi
                 </span>
               </p>
               <KpiReadout
-                className="lg:grid-cols-5"
+                className="lg:grid-cols-3"
                 items={[
-                  { label: 'Kelganlar ulushi', value: formatPercent(summary.rate, 1), rate: summary.rate },
-                  { label: "O'z vaqtida", value: formatNumber(Math.max(0, summary.present - summary.late)), unit: 'talaba' },
+                  { label: 'Keldi', value: formatPercent(summary.rate, 1), rate: summary.rate },
                   { label: 'Kech keldi', value: formatNumber(summary.late), unit: 'talaba' },
                   { label: 'Kelmadi', value: formatNumber(summary.absent), unit: 'talaba' },
-                  {
-                    label: isToday ? 'Hali kelmagan' : "Ma'lumot yo'q",
-                    value: formatNumber(isToday ? summary.notYet : summary.noData + summary.dayOff),
-                    unit: 'talaba',
-                    hint:
-                      !isToday && summary.dayOff > 0
-                        ? `Kamera tanimagan ${formatNumber(summary.noData)} · dam olish kuni ${formatNumber(summary.dayOff)}`
-                        : undefined,
-                  },
                 ]}
               />
             </IntelPanel>
@@ -366,23 +314,23 @@ export default function FacultyPage() {
           {groupCount === 0 ? (
             <EmptyState
               icon={Users}
-              title="Bu fakultetda guruh yo'q"
-              description="Talabalar «Shaxslar reestri» bo'limida guruhlarga biriktiriladi. Shundan keyin guruhlar shu yerda ko'rinadi."
+              title="Guruh yo'q"
+              description="Guruhlar «Shaxslar reestri» bo'limida biriktiriladi."
             />
           ) : flat.length === 0 ? (
             <EmptyState
               compact
               icon={SearchX}
-              title="Guruh topilmadi"
-              description={course === 'all' ? undefined : "Qidirilayotgan guruh boshqa kursda bo'lishi mumkin."}
+              title="Topilmadi"
+              description={course === 'all' ? undefined : "Boshqa kursda bo'lishi mumkin."}
               action={
                 <Button size="sm" onClick={resetSearch}>
-                  {course === 'all' ? 'Qidiruvni tozalash' : 'Qidiruv va kurs filtrini tozalash'}
+                  Tozalash
                 </Button>
               }
             />
           ) : view === 'table' ? (
-            <IntelPanel title="Guruhlar — batafsil" code={`${tableRows.length} qator`}>
+            <IntelPanel title="Guruhlar" code={`${tableRows.length} qator`}>
               <DataTable
                 ariaLabel="Guruhlar"
                 columns={columns}
@@ -394,12 +342,7 @@ export default function FacultyPage() {
               />
             </IntelPanel>
           ) : (
-            <IntelPanel
-              title="Guruhlar holati"
-              code={`${flat.length} ta`}
-              right={<MicroLabel>{sort === 'rate-asc' ? 'Yomoni birinchi' : sort === 'rate-desc' ? 'Yaxshisi birinchi' : 'Nomi bo\'yicha'}</MicroLabel>}
-              bodyClassName="flex flex-col"
-            >
+            <IntelPanel title="Guruhlar" code={`${flat.length} ta`} bodyClassName="flex flex-col">
               {/* Kurs bloklari — suzib yurgan kartalar emas, chiziq bilan
                   ajratilgan bo'limlar. */}
               {blocks
@@ -407,12 +350,10 @@ export default function FacultyPage() {
                 .map((block) => (
                   <RuledSection
                     key={block.label}
-                    title={course === 'all' ? block.label : `${block.label} — tanlangan kurs`}
-                    code={`${block.groups.length} ta`}
+                    title={block.label}
                     meta={
                       <span className="intel-code text-[11px] text-muted">
-                        {block.groups.length} guruh · {formatNumber(block.totals.total)} talaba · davomat{' '}
-                        <span className="font-semibold text-fg">{formatPercent(block.totals.rate)}</span>
+                        {block.groups.length} guruh · {formatNumber(block.totals.total)} talaba
                       </span>
                     }
                   >
@@ -426,9 +367,6 @@ export default function FacultyPage() {
             </IntelPanel>
           )}
 
-          <DocumentFooter
-            note={`Xizmat uchun. Hujjat ${reference} raqami bilan tizimda tuzilgan; sonlar ${formatUzDate(date, { weekday: true })} kuni uchun. Yuzi ro'yxatdan o'tmagan talaba foizga kirmaydi.`}
-          />
         </div>
       ) : null}
     </Page>

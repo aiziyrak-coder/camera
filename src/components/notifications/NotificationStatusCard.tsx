@@ -54,7 +54,7 @@ export default function NotificationStatusCard({
             status.telegramConfigured ? (
               <>
                 {status.telegramBotUsername ? <CodeText>@{status.telegramBotUsername}</CodeText> : 'Bot nomi aniqlanmadi'}
-                {status.telegramPollingEnabled ? ' · /start buyruqlari qabul qilinadi' : " · polling o'chiq"}
+                {status.telegramPollingEnabled ? ' · /start yoqilgan' : " · polling o'chiq"}
               </>
             ) : (
               <>
@@ -88,7 +88,6 @@ export default function NotificationStatusCard({
                 <StatusLamp status={status.parentArrivalEnabled ? 'ok' : 'idle'} label={`Kelganda: ${status.parentArrivalEnabled ? 'yoqilgan' : "o'chiq"}`} />
                 <StatusLamp status={status.parentAbsenceEnabled ? 'ok' : 'idle'} label={`Kelmaganda: ${status.parentAbsenceEnabled ? 'yoqilgan' : "o'chiq"}`} />
               </span>
-              <span className="mt-0.5 block text-[12px] text-subtle">Har bir talaba uchun alohida yoqiladi (Reestr → tahrirlash).</span>
             </>
           }
         />
@@ -100,8 +99,7 @@ export default function NotificationStatusCard({
 
   return (
     <IntelPanel
-      title="Kanallar holati"
-      code="KNL-01"
+      title="Kanallar"
       right={
         <Button size="sm" icon={Send} onClick={onTest} disabled={!status}>
           Sinov xabari
@@ -109,9 +107,6 @@ export default function NotificationStatusCard({
       }
     >
       {body}
-      <p className="border-t border-border px-3 py-2 text-[12px] leading-4 text-muted">
-        Qiymatlar serverning .env faylidan o&apos;qiladi — bu ekrandan o&apos;zgartirib bo&apos;lmaydi.
-      </p>
     </IntelPanel>
   );
 }

@@ -9,7 +9,6 @@ import {
   EmptyState,
   ErrorState,
   IntelPanel,
-  MicroLabel,
   Skeleton,
   Tabs,
   Toolbar,
@@ -21,8 +20,7 @@ import {
 } from '../../ui';
 import { RATE_RAG, rag } from '../../ui/rag';
 import { RagLegend, StatusBoard, type BoardItem } from '../hisobot/board';
-import { KpiReadout, RateCell, RuledSection, worstFirst } from '../attendance/readout';
-import { unitCode, unitKindPrefix } from '../attendance/references';
+import { KpiReadout, RateCell, worstFirst } from '../attendance/readout';
 import { getAnalyticsUnits, getLessons, situationPaths, type KafedraStat, type UnitKind } from '../../lib/situationApi';
 import { summarizeKafedras, summarizePunctuality, unitKindLabel } from '../../lib/teachersApi';
 import { usePersistedState } from '../../lib/usePersistedState';
@@ -68,27 +66,14 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
   // yo'q" dan farq qilmasdi — sabab endi tooltipda aytiladi.
   const trendFailed = Boolean(trends.error && !trends.data);
   const trendHint = trendFailed
-    ? "O'zgarishni hisoblab bo'lmadi — trend so'rovi yiqildi"
-    : `${formatUzRange(week.from, week.to)} davomati undan oldingi 7 kunga nisbatan`;
+    ? "O'zgarishni hisoblab bo'lmadi"
+    : `${formatUzRange(week.from, week.to)} — oldingi 7 kunga nisbatan`;
 
   const all = useMemo(() => loader.data ?? [], [loader.data]);
   const counts = useMemo(() => {
     const c: Record<UnitKind, number> = { kafedra: 0, dekanat: 0, bolim: 0, lavozim: 0 };
     for (const u of all) c[u.kind] = (c[u.kind] ?? 0) + 1;
     return c;
-  }, [all]);
-  // Xizmat kodi TURDAN va serverdan kelgan tartibdan chiqadi: KAF-03 filtr
-  // almashganda ham, saralashdan keyin ham o'sha bo'linma bo'lib qoladi.
-  const codes = useMemo(() => {
-    const seen: Record<string, number> = {};
-    const map = new Map<string, string>();
-    for (const u of all) {
-      const prefix = unitKindPrefix(u.kind);
-      const index = seen[prefix] ?? 0;
-      seen[prefix] = index + 1;
-      map.set(u.id, unitCode(prefix, index));
-    }
-    return map;
   }, [all]);
   const rows = useMemo(() => (kind === 'all' ? all : all.filter((u) => u.kind === kind)), [all, kind]);
   const summary = useMemo(() => summarizeKafedras(rows), [rows]);
@@ -114,7 +99,6 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
         const decided = k.present + k.absent + k.notYet;
         return {
           id: k.id,
-          code: codes.get(k.id) ?? 'BOL-00',
           name: k.name,
           value: decided > 0 ? k.rate : null,
           unit: '%',
@@ -124,26 +108,17 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
             k.late > 0 ? `${k.late} kech` : null,
             k.absent > 0 ? `${k.absent} kelmadi` : null,
             k.notYet > 0 ? `${k.notYet} hali kelmagan` : null,
-            k.noData > 0 ? `${k.noData} yuzi ro'yxatda yo'q` : null,
           ]
             .filter(Boolean)
             .join(' · '),
           headcount: k.staffTotal,
         };
       }),
-    [rows, codes],
+    [rows],
   );
   const sortedBoard = useMemo(() => worstFirst(board), [board]);
 
   const columns: DataTableColumn<KafedraStat>[] = [
-    {
-      key: 'code',
-      header: 'Kod',
-      width: '5.5rem',
-      mono: true,
-      sortValue: (k) => codes.get(k.id) ?? '',
-      cell: (k) => <CodeText className="text-[12px] text-subtle">{codes.get(k.id)}</CodeText>,
-    },
     {
       key: 'name',
       header: "Bo'linma",
@@ -159,7 +134,7 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
         </div>
       ),
     },
-    { key: 'staffTotal', header: 'Jami xodim', align: 'right', sortValue: (k) => k.staffTotal, sortFirst: 'desc' },
+    { key: 'staffTotal', header: 'Jami', align: 'right', sortValue: (k) => k.staffTotal, sortFirst: 'desc' },
     {
       key: 'decided',
       // O'tgan kunni ko'rayotganda "Bugun" yolg'on sarlavha edi.
@@ -179,7 +154,7 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
     { key: 'absent', header: 'Kelmadi', align: 'right', sortValue: (k) => k.absent, sortFirst: 'desc' },
     {
       key: 'notYet',
-      header: 'Hali kelmagan',
+      header: 'Kutilmoqda',
       align: 'right',
       hideOnMobile: true,
       sortValue: (k) => k.notYet,
@@ -207,7 +182,7 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
     { key: 'lessonsToday', header: isToday ? 'Bugungi darslar' : 'Shu kungi darslar', align: 'right', hideOnMobile: true, sortValue: (k) => k.lessonsToday, sortFirst: 'desc' },
     {
       key: 'lessonIssues',
-      header: "O'qituvchi kech kirgan / kirmagan",
+      header: 'Kech / kirmagan',
       align: 'right',
       hideOnMobile: true,
       sortValue: (k) => k.teacherLateLessons + k.teacherMissedLessons,
@@ -232,7 +207,7 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
     // Lavozimi bor, lekin bo'linmasi yozilmagan xodimlar (productionda 139 ta).
     // Bu tab bo'lmasa kafedra + dekanat + bo'lim "Hammasi" ga teng chiqmaydi
     // va o'sha odamlar faqat "Hammasi" da ko'rinib, ko'zdan qochadi.
-    { id: 'lavozim' as const, label: "Bo'linmasi yozilmagan", count: counts.lavozim || null },
+    { id: 'lavozim' as const, label: 'Biriktirilmagan', count: counts.lavozim || null },
   ];
 
   return (
@@ -258,52 +233,37 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
         <TeacherSearch />
       </Toolbar>
 
-      <IntelPanel
-        title="Asosiy ko'rsatkichlar"
-        code={`${rows.length} bo'linma`}
-        right={<MicroLabel>{isToday ? 'Bugun' : formatUzRange(date, date)}</MicroLabel>}
-      >
+      <IntelPanel title="Asosiy ko'rsatkichlar" code={`${rows.length} ta`}>
         <KpiReadout
           className={hasLessons ? 'lg:grid-cols-4' : 'lg:grid-cols-2'}
           items={[
             {
-              label: 'Xodimlar keldi',
+              label: 'Keldi',
               value: loader.loading ? '…' : summary.present,
-              // Maxraj AYNAN foiz maxraji (holati aniqlangan xodimlar). Ilgari
-              // bu yerda jami xodim turardi: "10 / 20" yozilib, yonidagi
-              // foiz 83,3% (10 / 12) ni ko'rsatardi — ikki xil maxraj.
+              // Maxraj AYNAN foiz maxraji (holati aniqlangan xodimlar) — jami
+              // xodim emas, aks holda yonidagi foiz boshqa maxrajdan chiqardi.
               unit: `/ ${summary.decided}`,
               rate: staffRate,
-              hint:
-                staffRate === null
-                  ? undefined
-                  : `Holati aniq ${summary.decided} xodimdan ${formatPercent(staffRate)} keldi${
-                      summary.noData ? ` · yana ${summary.noData} xodimning yuzi ro'yxatdan o'tmagan — foizga kirmaydi` : ''
-                    }`,
+              // Maxraj jami xodimdan kichik — sababsiz u tushunarsiz qoladi.
+              hint: staffRate === null ? undefined : `Holati aniq ${summary.decided} xodimdan`,
             },
             {
-              label: 'Kech kelgan xodimlar',
+              label: 'Kech keldi',
               value: loader.loading ? '…' : summary.late,
               unit: 'kishi',
-              hint: `Bundan tashqari ${summary.absent} kishi umuman kelmagan`,
             },
             ...(hasLessons
               ? [
                   {
-                    label: "Darsga o'z vaqtida kirgan",
+                    label: "Darsga o'z vaqtida",
                     value: formatPercent(punctuality?.rate),
                     rate: punctuality?.rate ?? null,
-                    hint: punctuality
-                      ? `Tekshirilgan ${punctuality.onTime + punctuality.late + punctuality.missed} darsdan ${punctuality.onTime} tasiga o'qituvchi o'z vaqtida kirgan${
-                          kind === 'all' ? '' : ' · barcha bo‘linmalar bo‘yicha'
-                        }${lessonsCapped ? ` · bu kunda ${lessons.data?.total} dars bor, foiz birinchi ${LESSON_PAGE_SIZE} tasidan hisoblangan` : ''}`
-                      : undefined,
+                    hint: lessonsCapped ? `Birinchi ${LESSON_PAGE_SIZE} darsdan` : undefined,
                   },
                   {
-                    label: "Kech kirgan yoki kirilmagan darslar",
+                    label: 'Muammoli darslar',
                     value: summary.lateLessons + summary.missedLessons,
-                    unit: 'dars',
-                    hint: `${isToday ? 'Bugungi' : 'Shu kungi'} ${summary.lessons} darsdan: ${summary.lateLessons} tasiga kech kirgan · ${summary.missedLessons} tasiga umuman kirmagan`,
+                    unit: `/ ${summary.lessons}`,
                   },
                 ]
               : []),
@@ -323,22 +283,15 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
         <EmptyState
           icon={Building2}
           title={kind === 'all' ? "Bo'linmalar yo'q" : `${kindTabs.find((t) => t.id === kind)?.label} topilmadi`}
-          description="Bo'linmalar ro'yxati alohida kiritilmaydi — u xodimlar reestridagi lavozim va bo'lim yozuvlaridan avtomatik yig'iladi."
+          description="Ro'yxat xodimlar reestridan yig'iladi."
         />
       ) : effectiveView === 'board' ? (
-        <IntelPanel
-          title="Bo'linmalar holati"
-          code={`${rows.length} ta`}
-          right={<MicroLabel>Yomoni birinchi</MicroLabel>}
-          bodyClassName="flex flex-col"
-        >
-          <RuledSection title={kindTabs.find((t) => t.id === kind)?.label ?? 'Hammasi'} code={`${rows.length} ta`}>
-            <StatusBoard items={sortedBoard} onOpen={(id) => navigate(withDate(situationPaths.kafedra(id)))} />
-          </RuledSection>
+        <IntelPanel title="Bo'linmalar" code={`${rows.length} ta`} bodyClassName="flex flex-col">
+          <StatusBoard items={sortedBoard} onOpen={(id) => navigate(withDate(situationPaths.kafedra(id)))} />
           <RagLegend />
         </IntelPanel>
       ) : (
-        <IntelPanel title="Bo'linmalar — batafsil" code={`${rows.length} qator`}>
+        <IntelPanel title="Bo'linmalar" code={`${rows.length} qator`}>
           <DataTable
             columns={columns}
             rows={rows}

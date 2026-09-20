@@ -7,8 +7,6 @@ import {
   CodeText,
   ConfirmDialog,
   DataTable,
-  DocumentFooter,
-  DocumentHeader,
   IconButton,
   IntelPanel,
   MicroLabel,
@@ -26,8 +24,6 @@ import { Notice, Switch, pagerFooter } from '../../components/settings/kit';
 import { api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { invalidateServerPageCache, useServerPage } from '../../lib/useServerPage';
-import { buildReference, recordCode } from '../../components/admin/registryCodes';
-import { branding } from '../../lib/branding';
 import { PERMISSION_LABELS, usePermissions, type PermissionKey } from '../../lib/permissions';
 import type { AdminUser } from '../../types';
 
@@ -42,23 +38,9 @@ const ROLE_TONE: Record<AdminUser['role'], Tone> = {
 
 type TabId = 'foydalanuvchilar' | 'huquqlar';
 
-/** Ustun sarlavhasi — bosh harfli mikro-yorliq (blankdagi ustun nomi). */
-function ColumnHead({ label, note }: { label: string; note?: string }) {
-  return (
-    <span className="flex flex-col items-center gap-0.5">
-      <MicroLabel className="!text-fg">{label}</MicroLabel>
-      {note && <MicroLabel>{note}</MicroLabel>}
-    </span>
-  );
-}
-
-/** Hujjat qachon ekranga chiqarilgani. */
-function stamp(): string {
-  try {
-    return new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Tashkent' }).format(new Date());
-  } catch {
-    return new Date().toISOString().slice(0, 16).replace('T', ' ');
-  }
+/** Ustun sarlavhasi — bosh harfli mikro-yorliq. */
+function ColumnHead({ label }: { label: string }) {
+  return <MicroLabel className="!text-fg">{label}</MicroLabel>;
 }
 
 export default function UsersRolesPage() {
@@ -106,7 +88,7 @@ export default function UsersRolesPage() {
   function deleteBlockReason(user: AdminUser): string | null {
     if (userName && user.name === userName) return "O'zingizni o'chira olmaysiz";
     if (user.role === 'Super Admin' && myRole !== 'super-admin') {
-      return "Super Admin hisobini faqat Super Admin o'chira oladi";
+      return "Faqat Super Admin o'chira oladi";
     }
     return null;
   }
@@ -121,14 +103,6 @@ export default function UsersRolesPage() {
   }
 
   const userColumns: DataTableColumn<AdminUser>[] = [
-    {
-      // Hisob kodi — hujjatda va murojaatda ismni takrorlamaslik uchun.
-      key: 'code',
-      header: 'Kod',
-      width: '6.5rem',
-      mono: true,
-      cell: (u) => <CodeText className="text-[12px] text-subtle">{recordCode('FOY', u.id)}</CodeText>,
-    },
     {
       key: 'name',
       header: 'Foydalanuvchi',
@@ -163,10 +137,8 @@ export default function UsersRolesPage() {
             {u.email && <p className="truncate text-fg">{u.email}</p>}
             <p className="flex flex-wrap items-center gap-1.5 text-muted">
               {u.phone && <CodeText className="text-[12px]">{u.phone}</CodeText>}
-              {/* Yalang'och "Telegram" nishoni nimani bildirishi tushunarsiz
-                  edi — bu telefon raqami emas, bog'langan Telegram hisobi. */}
               {u.telegramLinked && (
-                <Badge tone="success" size="sm" title="Telegram hisobi bog'langan — bildirishnomalar shu yerga keladi">
+                <Badge tone="success" size="sm">
                   Telegram
                 </Badge>
               )}
@@ -228,31 +200,26 @@ export default function UsersRolesPage() {
   const permissionColumns: DataTableColumn<PermissionKey>[] = [
     {
       key: 'permission',
-      header: <ColumnHead label="Huquq / ruxsat" />,
+      header: <ColumnHead label="Huquq" />,
       sortValue: (key) => PERMISSION_LABELS[key],
-      cell: (key, index) => (
-        <span className="flex min-w-0 items-baseline gap-2">
-          <CodeText className="shrink-0 text-[11px] text-subtle">{`HQ-${String(index + 1).padStart(2, '0')}`}</CodeText>
-          <span className="min-w-0 text-[13px] font-medium text-fg">{PERMISSION_LABELS[key]}</span>
-        </span>
-      ),
+      cell: (key) => <span className="block min-w-0 text-[13px] font-medium text-fg">{PERMISSION_LABELS[key]}</span>,
     },
     {
       key: 'superAdmin',
-      header: <ColumnHead label="Super Admin" note="Qulflangan" />,
+      header: <ColumnHead label="Super Admin" />,
       align: 'center',
       width: '9rem',
       cell: (key) => (
         <PermissionMark
           granted={matrix[key].superAdmin}
-          lockedReason="Super Admin huquqlari o'zgarmaydi — aks holda tizimga kirish yo'li yopilib qolardi"
+          lockedReason="Super Admin huquqlari o'zgarmaydi"
           label={`${PERMISSION_LABELS[key]} — Super Admin`}
         />
       ),
     },
     {
       key: 'admin',
-      header: <ColumnHead label="Admin" note={canEdit ? "O'zgartirsa bo'ladi" : "Faqat ko'rish"} />,
+      header: <ColumnHead label="Admin" />,
       align: 'center',
       width: '9rem',
       cell: (key) => (
@@ -266,7 +233,7 @@ export default function UsersRolesPage() {
     },
     {
       key: 'cameraSteward',
-      header: <ColumnHead label="Kamera mas'uli" note={canEdit ? "O'zgartirsa bo'ladi" : "Faqat ko'rish"} />,
+      header: <ColumnHead label="Kamera mas'uli" />,
       align: 'center',
       width: '9rem',
       cell: (key) => (
@@ -280,14 +247,9 @@ export default function UsersRolesPage() {
     },
   ];
 
-  // Varaq raqami — bo'lim va ro'yxat hajmidan; vaqt ishtirok etmaydi.
-  const reference = buildReference('ACL', [tab], [String(total), String(permissionKeys.length), canEdit ? 'tahrir' : 'korish']);
-  const generatedAt = stamp();
-
   return (
     <Page
       title="Foydalanuvchilar"
-      subtitle="Tizimga kiruvchi xodimlar, ularning rollari va rollar huquqlari."
       breadcrumbs={[{ label: 'Sozlamalar' }, { label: 'Foydalanuvchilar' }]}
       actions={
         <Button variant="primary" icon={Plus} onClick={() => setModalOpen(true)}>
@@ -296,22 +258,8 @@ export default function UsersRolesPage() {
       }
       tabs={tabs}
     >
-      {/* 1. Hujjat blanki: kim kira oladi va qaysi rol nimaga haqli. */}
-      <DocumentHeader
-        org={branding.orgFullName}
-        title={tab === 'huquqlar' ? 'Rollar huquqlari varag‘i' : 'Tizim foydalanuvchilari'}
-        reference={reference}
-        generatedAt={generatedAt}
-        readouts={[
-          { label: 'Hisoblar', value: loading && users.length === 0 ? '—' : `${total} ta` },
-          { label: 'Rollar', value: '3 ta', title: "Super Admin, Admin, Kamera mas'uli" },
-          { label: 'Huquqlar', value: `${permissionKeys.length} ta` },
-          { label: 'Sizning huquqingiz', value: canEdit ? "O'zgartirish" : "Faqat ko'rish" },
-        ]}
-      />
-
       {tab === 'foydalanuvchilar' ? (
-        <IntelPanel title="Tizim foydalanuvchilari" code={reference} right={<MicroLabel>{total} ta hisob</MicroLabel>} brackets={false}>
+        <IntelPanel title="Foydalanuvchilar" right={<MicroLabel>{total} ta</MicroLabel>}>
         <DataTable
           dense
           columns={userColumns}
@@ -324,7 +272,6 @@ export default function UsersRolesPage() {
           error={users.length === 0 ? error : null}
           onRetry={reload}
           emptyTitle="Foydalanuvchi yo'q"
-          emptyDescription="Tizimga kirishi kerak bo'lgan xodimni qo'shing va unga rol bering."
           emptyAction={
             <Button variant="primary" icon={UserPlus} onClick={() => setModalOpen(true)}>
               Foydalanuvchi qo&apos;shish
@@ -357,50 +304,24 @@ export default function UsersRolesPage() {
               {saveError}
             </Notice>
           )}
-          {canEdit ? (
-            <Notice tone="info">
-              Bu yerdagi sozlamalar navigatsiya menyusi va eksport tugmalarini haqiqatda cheklaydi — &quot;Admin&quot;
-              sifatida kirsangiz, o&apos;chirilgan bo&apos;limlar menyuda ko&apos;rinmaydi. Super Admin huquqlari
-              o&apos;zgarmaydi.
-            </Notice>
-          ) : (
+          {!canEdit && (
             <Notice tone="neutral" icon={Lock}>
-              Faqat Super Admin tahrirlashi mumkin. Bu sozlamalar navigatsiya menyusi va eksport tugmalarini haqiqatda
-              cheklaydi.
+              Faqat Super Admin tahrirlaydi.
             </Notice>
           )}
-          <IntelPanel
-            title="Huquqlar matritsasi"
-            code={reference}
-            right={<MicroLabel>{permissionKeys.length} ta qator · 3 ta rol</MicroLabel>}
-            brackets={false}
-          >
+          <IntelPanel title="Huquqlar matritsasi" right={<MicroLabel>{permissionKeys.length} ta</MicroLabel>}>
             <DataTable
               dense
               columns={permissionColumns}
               rows={permissionKeys}
               rowKey={(key) => key}
               emptyTitle="Huquqlar yuklanmadi"
-              emptyDescription="Server huquqlar matritsasini qaytarmadi — sahifani yangilang."
               maxHeight="none"
               ariaLabel="Huquqlar matritsasi"
             />
-            {/* Belgilar izohi: qulf nima uchun turganini varaqning o'zi aytadi. */}
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-border px-3 py-1.5">
-              <MicroLabel>Belgilar</MicroLabel>
-              <span className="intel-code text-[11px] text-muted">✓ — ruxsat bor</span>
-              <span className="intel-code text-[11px] text-muted">✕ — ruxsat yo&apos;q</span>
-              <span className="intel-code inline-flex items-center gap-1 text-[11px] text-muted">
-                <Lock size={11} aria-hidden="true" /> — qulflangan (Super Admin ustuni o&apos;zgarmaydi)
-              </span>
-            </div>
           </IntelPanel>
         </div>
       )}
-
-      <DocumentFooter
-        note={`Xizmat uchun. Varaq ${reference} raqami bilan tizimda tuzilgan. Bu yerdagi belgilar navigatsiya menyusi va eksport tugmalarini haqiqatda cheklaydi.`}
-      />
 
       <AddUserModal
         open={modalOpen}
@@ -423,7 +344,7 @@ export default function UsersRolesPage() {
         title="Foydalanuvchini o'chirish"
         message={
           deleting
-            ? `"${deleting.name}" (${deleting.login}) foydalanuvchisini o'chirishni tasdiqlaysizmi? Bu amalni ortga qaytarib bo'lmaydi.`
+            ? `"${deleting.name}" (${deleting.login}) o'chiriladi. Qaytarib bo'lmaydi.`
             : ''
         }
         confirmLabel="O'chirish"
@@ -468,9 +389,6 @@ function PermissionMark({
       >
         {granted ? <Check size={13} aria-hidden="true" /> : <X size={13} aria-hidden="true" />}
       </span>
-      {/* Qulf belgisi ko'rinadigan sabab: ilgari faqat tooltip bor edi va
-          klaviatura bilan yurgan foydalanuvchi uni umuman ko'rmasdi.
-          Endi qulf yonida so'zi ham turadi — belgi yolg'iz qolmaydi. */}
       {lockedReason && (
         <span className="inline-flex items-center gap-1 text-subtle" title={lockedReason}>
           <Lock size={11} aria-hidden="true" />

@@ -8,7 +8,6 @@ import {
   mergeArrivals,
   peakHour,
   share,
-  situationReference,
   teacherOnTimeRate,
   unitBoardItems,
   worstFirst,
@@ -69,23 +68,6 @@ const kafedra = (id: string, over: Partial<KafedraStat> = {}): KafedraStat => ({
   teacherLateLessons: 0,
   teacherMissedLessons: 0,
   ...over,
-});
-
-describe('situationReference', () => {
-  it("bir xil holat — bir xil kod (vaqtga bog'liq emas)", () => {
-    const a = situationReference({ date: '2026-09-20', mode: 'xodimlar', isToday: true });
-    const b = situationReference({ date: '2026-09-20', mode: 'xodimlar', isToday: true });
-    expect(a).toBe(b);
-    expect(a).toMatch(/^FERMI\/SIT\/20260920\/XDM-\d{4}$/);
-  });
-
-  it('yakunlangan kun, kesim va tashkilot kodga kiradi', () => {
-    expect(situationReference({ date: '2026-09-20', mode: 'talabalar' })).toMatch(/^FERMI\/SIT\/20260920\/TLB-\d{4}$/);
-    expect(situationReference({ date: '2026-09-20', mode: 'xodimlar' })).not.toBe(
-      situationReference({ date: '2026-09-20', mode: 'xodimlar', isToday: true }),
-    );
-    expect(situationReference({ date: '2026-09-20', mode: 'xodimlar', org: 'test' })).toContain('TEST/SIT/');
-  });
 });
 
 describe('holat taxtasi kataklari', () => {

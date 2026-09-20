@@ -50,7 +50,7 @@ export default function AddFacultyModal({
       setErrors({});
       onClose();
     } catch (err) {
-      setErrors({ form: err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi" });
+      setErrors({ form: err instanceof ApiError ? err.message : 'Tarmoq xatosi' });
     } finally {
       setSubmitting(false);
     }

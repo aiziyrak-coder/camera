@@ -92,7 +92,7 @@ export default function EditUserModal({
       onSave(saved);
       onClose();
     } catch (err) {
-      setErrors({ form: err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi" });
+      setErrors({ form: err instanceof ApiError ? err.message : 'Tarmoq xatosi' });
     } finally {
       setSaving(false);
     }
@@ -114,7 +114,7 @@ export default function EditUserModal({
       setResetDone(true);
       setNewPassword('');
     } catch (err) {
-      setResetError(err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi");
+      setResetError(err instanceof ApiError ? err.message : 'Tarmoq xatosi');
     } finally {
       setResetSubmitting(false);
     }

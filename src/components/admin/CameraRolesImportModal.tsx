@@ -99,7 +99,7 @@ export default function CameraRolesImportModal({
       open={open}
       onClose={handleClose}
       title="Xona turlari (CSV)"
-      description="Kameralarning xona turi va raqamini ommaviy belgilash."
+      description="Xona turini ommaviy belgilash."
       size="lg"
       dismissible={!busy}
       footer={

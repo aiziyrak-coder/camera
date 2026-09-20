@@ -84,7 +84,7 @@ export default function TestMessageModal({
       setResult(res);
       onSent();
     } catch (err2) {
-      setSendError(err2 instanceof ApiError ? err2.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi");
+      setSendError(err2 instanceof ApiError ? err2.message : 'Tarmoq xatosi');
     } finally {
       setSending(false);
     }
@@ -97,7 +97,7 @@ export default function TestMessageModal({
       open={open}
       onClose={onClose}
       title="Sinov xabari"
-      description="Kanal sozlamalari to'g'riligini darhol tekshiring — natija jurnalga ham yoziladi."
+      description="Natija jurnalga ham yoziladi."
       size="md"
       dismissible={!sending}
       footer={
@@ -122,7 +122,7 @@ export default function TestMessageModal({
             options={CHANNEL_OPTIONS}
           />
         </Field>
-        {status && !channelReady && <Notice tone="warning">Bu kanal serverda sozlanmagan — xabar yuborilmaydi, jurnalga sababi yoziladi.</Notice>}
+        {status && !channelReady && <Notice tone="warning">Kanal sozlanmagan — xabar yuborilmaydi.</Notice>}
         <Field label={channel === 'telegram' ? 'Telegram chat ID' : 'Telefon raqami'} required error={fieldError}>
           <Input
             placeholder={channel === 'telegram' ? '123456789 yoki -100…' : '+998 90 123 45 67'}

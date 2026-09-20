@@ -39,7 +39,7 @@ export default function SelfEnrollmentReviewModal({ record, onClose, onDone }: P
       const updated = await api.post<StudentStaffRecord>(`/api/students-staff/${record.id}/biometrics/${decision}`, {}, token);
       onDone(decision, updated);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi");
+      setError(err instanceof Error ? err.message : 'Tarmoq xatosi');
       setPending(null);
     }
   }
@@ -50,7 +50,7 @@ export default function SelfEnrollmentReviewModal({ record, onClose, onDone }: P
       onClose={pending ? () => undefined : onClose}
       dismissible={!pending}
       title="Yuzni tasdiqlash"
-      description="Bu odam ochiq sahifada o'zini o'zi ro'yxatdan o'tkazdi. Tasdiqlaganingizdan keyin kameralar uni taniydi va davomatga yozadi."
+      description="O'zini o'zi ro'yxatdan o'tkazgan. Tasdiqlansa, kameralar taniydi."
       size="sm"
       footer={
         <>
@@ -60,7 +60,7 @@ export default function SelfEnrollmentReviewModal({ record, onClose, onDone }: P
             onClick={() => decide('reject')}
             loading={pending === 'reject'}
             disabled={pending !== null}
-            title="Rasm va yuz ma'lumoti o'chiriladi, odam qayta yuborishi mumkin"
+            title="Rasm va yuz ma'lumoti o'chiriladi"
             className="text-danger hover:text-danger"
           >
             Rad etish

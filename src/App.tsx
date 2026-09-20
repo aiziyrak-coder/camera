@@ -2,7 +2,7 @@ import { Suspense } from 'react';
 import { Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import AppShell from './layouts/AppShell';
 import MinimalLayout from './layouts/MinimalLayout';
-import { RequireAuth, RequirePermission, RequireRole } from './layouts/guards';
+import { RequireAuth, RequirePermission } from './layouts/guards';
 import PreviewPage from './pages/dev/PreviewPage';
 import { legacyRedirect } from './layouts/legacyRoutes';
 import { ALL_NAV_ITEMS, homeForRole } from './layouts/shell/navConfig';
@@ -21,6 +21,7 @@ const EnrollmentPage = lazyPage(() => import('./pages/public/EnrollmentPage'));
 
 // Yangi sahifalar (2-bosqichda to'ldiriladi).
 const SituationPage = lazyPage(() => import('./pages/situation/SituationPage'));
+const ConsoleShell = lazyPage(() => import('./console/ConsoleShell'));
 const FacultiesPage = lazyPage(() => import('./pages/students/FacultiesPage'));
 const FacultyPage = lazyPage(() => import('./pages/students/FacultyPage'));
 const GroupPage = lazyPage(() => import('./pages/students/GroupPage'));
@@ -29,20 +30,17 @@ const KafedraPage = lazyPage(() => import('./pages/teachers/KafedraPage'));
 const PersonPage = lazyPage(() => import('./pages/person/PersonPage'));
 const WorkHoursPage = lazyPage(() => import('./pages/settings/WorkHoursPage'));
 const SystemPage = lazyPage(() => import('./pages/settings/SystemPage'));
-const StyleGuidePage = lazyPage(() => import('./pages/settings/StyleGuidePage'));
 
 // Mavjud sahifalar — yangi manzillarda, 2-bosqichda dizayn tizimiga ko'chiriladi.
 const EventsPage = lazyPage(() => import('./pages/admin/EventsPage'));
+const DarsJadvaliPage = lazyPage(() => import('./pages/admin/DarsJadvaliPage'));
 const HisobotPage = lazyPage(() => import('./pages/admin/HisobotPage'));
 const VideoWallPage = lazyPage(() => import('./pages/admin/VideoWallPage'));
 const StudentsStaffPage = lazyPage(() => import('./pages/admin/StudentsStaffPage'));
 const OrgStructurePage = lazyPage(() => import('./pages/admin/OrgStructurePage'));
 const CamerasZonesPage = lazyPage(() => import('./pages/admin/CamerasZonesPage'));
-const AIModulesPage = lazyPage(() => import('./pages/admin/AIModulesPage'));
 const NotificationsPage = lazyPage(() => import('./pages/admin/NotificationsPage'));
-const IntegrationsPage = lazyPage(() => import('./pages/admin/IntegrationsPage'));
 const UsersRolesPage = lazyPage(() => import('./pages/admin/UsersRolesPage'));
-const PrivacyPage = lazyPage(() => import('./pages/admin/PrivacyPage'));
 const WallScreenPage = lazyPage(() => import('./pages/wall/WallScreenPage'));
 
 /** Eski /admin/* havolalari (xatcho'p, e-mail, Telegram) — yangi manzilga. */
@@ -113,11 +111,15 @@ export default function App() {
           {/* Dizayn ko'rigi — faqat ishlab chiqish rejimida (`npm run dev`).
               Ishlab chiqarish yig'masiga tushmaydi. */}
           {import.meta.env.DEV && <Route path="/dev-korik" element={<PreviewPage />} />}
+          {/* Konsolni tizimga kirmasdan ko'rish — faqat ishlab chiqishda. */}
+          {import.meta.env.DEV && <Route path="/dev-konsol" element={<ConsoleShell />} />}
           <Route element={<PublicPage />}>
             <Route path="/royxatdan-otish" element={<EnrollmentPage />} />
           </Route>
 
           <Route element={<RequireAuth />}>
+            {/* Konsol — bosh ekran: yon menyusiz, bitta oyna. */}
+            <Route path="/" element={<ConsoleShell />} />
             {/* Videodevor — ikkinchi monitor uchun menyusiz, to'liq ekran. */}
             <Route element={<RequirePermission permission="viewLive" />}>
               <Route path="/videodevor/ekran" element={<VideoWallPage standalone />} />
@@ -128,9 +130,10 @@ export default function App() {
             </Route>
 
             <Route element={<AppShell />}>
-              <Route path="/" element={<SituationPage />} />
+              <Route path="/holat" element={<SituationPage />} />
 
               <Route element={<RequirePermission permission="manageAttendance" />}>
+                <Route path="/dars-jadvali" element={<DarsJadvaliPage />} />
                 <Route path="/talabalar" element={<FacultiesPage />} />
                 <Route path="/talabalar/fakultet/:facultyId" element={<FacultyPage />} />
                 <Route path="/talabalar/guruh/:groupName" element={<GroupPage />} />
@@ -160,30 +163,23 @@ export default function App() {
               <Route element={<RequirePermission permission="editCameraLocation" />}>
                 <Route path="/sozlamalar/kameralar" element={<CamerasZonesPage />} />
               </Route>
-              <Route element={<RequirePermission permission="configureAi" />}>
-                <Route path="/sozlamalar/ai" element={<AIModulesPage />} />
-              </Route>
               <Route element={<RequirePermission permission="manageNotifications" />}>
                 <Route path="/sozlamalar/bildirishnomalar" element={<NotificationsPage />} />
-              </Route>
-              <Route element={<RequirePermission permission="manageIntegrations" />}>
-                <Route path="/sozlamalar/integratsiyalar" element={<IntegrationsPage />} />
               </Route>
               <Route element={<RequirePermission permission="manageRoles" />}>
                 <Route path="/sozlamalar/foydalanuvchilar" element={<UsersRolesPage />} />
               </Route>
-              <Route element={<RequirePermission permission="managePrivacy" />}>
-                <Route path="/sozlamalar/maxfiylik" element={<PrivacyPage />} />
-              </Route>
               <Route element={<RequirePermission permission="manageAttendance" />}>
                 <Route path="/sozlamalar/ish-vaqti" element={<WorkHoursPage />} />
               </Route>
+              {/* Olib tashlangan sahifalar (2026-09-21): keraksiz deb topildi.
+                  Eski havola va xatcho'plar bo'sh ekranga tushmasin. */}
+              <Route path="/sozlamalar/ai" element={<Navigate to="/sozlamalar/tizim" replace />} />
+              <Route path="/sozlamalar/integratsiyalar" element={<Navigate to="/sozlamalar/tizim" replace />} />
+              <Route path="/sozlamalar/maxfiylik" element={<Navigate to="/reestr" replace />} />
+              <Route path="/sozlamalar/ui" element={<Navigate to="/sozlamalar/tizim" replace />} />
               <Route element={<RequirePermission permission="systemSettings" />}>
                 <Route path="/sozlamalar/tizim" element={<SystemPage />} />
-              </Route>
-              {/* Uslub qo'llanmasi — menyuda yo'q, faqat ko'rib chiqish uchun. */}
-              <Route element={<RequireRole roles={['super-admin']} />}>
-                <Route path="/sozlamalar/ui" element={<StyleGuidePage />} />
               </Route>
               {/* Noma'lum manzil — qobiq ichida, menyu joyida qoladi.
                   Tizimga kirmagan foydalanuvchi esa RequireAuth orqali

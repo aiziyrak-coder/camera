@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Cpu, DoorOpen, Eye, FileUp, MapPin, MapPinned, Plus, ScanFace, Settings2, Video, type LucideIcon } from 'lucide-react';
 import AddCameraModal from '../../components/admin/AddCameraModal';
 import CameraImportModal from '../../components/admin/CameraImportModal';
@@ -14,12 +14,9 @@ import {
   Button,
   CodeText,
   DataTable,
-  DocumentFooter,
-  DocumentHeader,
   IntelPanel,
   MicroLabel,
   Page,
-  Readout,
   StatusLamp,
   TONE_TEXT,
   FilterBar,
@@ -36,10 +33,6 @@ import {
   type FilterFieldEntry,
   type Tone,
 } from '../../ui';
-import { buildReference, locationCode, recordCode } from './../../components/admin/registryCodes';
-import { api } from '../../lib/apiClient';
-import { branding } from '../../lib/branding';
-import { RAG_LABEL, RAG_LETTER, RAG_TEXT, RATE_RAG, rag } from '../../ui/rag';
 import { formatModuleSummary } from '../../lib/cameraModules';
 import { ROOM_TYPE_LABELS, ROOM_TYPE_OPTIONS } from '../../lib/cameraRoles';
 import { useAuth } from '../../lib/auth';
@@ -48,7 +41,7 @@ import { useCameraModuleOptions } from '../../lib/useCameraModuleOptions';
 import { invalidateServerPageCache, useServerPage } from '../../lib/useServerPage';
 import { useBuildings } from '../../lib/useBuildings';
 import { useCameraZones } from '../../lib/useCameraZones';
-import type { CameraConfig, CameraSummary } from '../../types';
+import type { CameraConfig } from '../../types';
 
 /** Holat chirog'i: rang yolg'iz emas — yonida doim so'z turadi. */
 const CAMERA_STATUS_LAMP: Record<CameraConfig['status'], IntelStatus> = {
@@ -56,15 +49,6 @@ const CAMERA_STATUS_LAMP: Record<CameraConfig['status'], IntelStatus> = {
   nofaol: 'idle',
   tamirda: 'warn',
 };
-
-/** Hujjat qachon ekranga chiqarilgani. */
-function stamp(): string {
-  try {
-    return new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Tashkent' }).format(new Date());
-  } catch {
-    return new Date().toISOString().slice(0, 16).replace('T', ' ');
-  }
-}
 
 const CAMERA_STATUS_LABEL: Record<CameraConfig['status'], string> = {
   faol: 'Faol',
@@ -135,7 +119,7 @@ const CAMERA_TABS: TabItem<CameraTabId>[] = [
 
 export default function CamerasZonesPage() {
   const [tab] = useUrlTab(CAMERA_TABS, { defaultTab: 'royxat' });
-  const { token, role } = useAuth();
+  const { role } = useAuth();
   const { can } = usePermissions();
   /** Kamera mas'uli faqat joylashuvni to'g'rilaydi: kamera qo'shish,
    * o'chirish, zona chizish va modul biriktirish unga ko'rinmaydi —
@@ -166,7 +150,6 @@ export default function CamerasZonesPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [locationOpen, setLocationOpen] = useState(false);
 
-  const [summary, setSummary] = useState<CameraSummary | null>(null);
   const { zones, reload: reloadZones } = useCameraZones(buildingFilter || undefined);
 
   const {
@@ -191,27 +174,6 @@ export default function CamerasZonesPage() {
     },
     PAGE_SIZE,
   );
-
-  /** Ko'rsatkichlar — bitta so'rov. Ilgari ular har ro'yxat yangilanganda
-   * uchta qo'shimcha so'rov bilan olinardi (`?status=...&pageSize=1`). */
-  const loadSummary = useCallback(
-    (signal?: AbortSignal) => {
-      if (!token) return;
-      api
-        .get<CameraSummary>('/api/cameras/summary', token, { signal })
-        .then(setSummary)
-        .catch(() => {
-          /* ko'rsatkichlarsiz ham sahifa ishlaydi */
-        });
-    },
-    [token],
-  );
-
-  useEffect(() => {
-    const controller = new AbortController();
-    loadSummary(controller.signal);
-    return () => controller.abort();
-  }, [loadSummary]);
 
   // Filtr o'zgarsa tanlov bekor qilinadi: ko'rinmayotgan kameraga
   // ommaviy amal qo'llash kutilmagan natija beradi.
@@ -350,7 +312,6 @@ export default function CamerasZonesPage() {
 
   function afterLocationChange() {
     refreshCameras();
-    loadSummary();
   }
 
   /** Saqlanganini AYTAMIZ. Oyna yopilib ro'yxat jimgina yangilanardi —
@@ -389,14 +350,6 @@ export default function CamerasZonesPage() {
       ),
     },
     {
-      // Qurilma kodi — reestrdagi asbobni nomisiz ko'rsatish uchun.
-      key: 'code',
-      header: 'Kod',
-      width: '6.5rem',
-      mono: true,
-      cell: (c) => <CodeText className="text-[12px] text-subtle">{recordCode('KM', c.id)}</CodeText>,
-    },
-    {
       key: 'name',
       header: 'Kamera / IP',
       cell: (c) => (
@@ -407,24 +360,21 @@ export default function CamerasZonesPage() {
       ),
     },
     {
-      // Joylashuv kodi: bino belgisi + qavat (2OQ·Q03). Qavati yo'q
-      // kamera bino sxemasida ko'rinmaydi — shuning uchun u yerda
-      // kodning o'rniga to'g'rilash havolasi turadi.
       key: 'location',
       header: 'Joylashuv',
       width: '11rem',
       cell: (c) => (
         <span className="flex min-w-0 flex-col gap-0.5">
+          <span className="max-w-[10rem] truncate text-[13px] text-fg" title={c.building || undefined}>
+            {c.building || "Binosiz"}
+          </span>
           {c.floor === null || c.floor === undefined ? (
-            <CellLink tone="warning" title="Qavatni belgilash" onClick={() => setEditing(c)}>
-              Qavat belgilanmagan
+            <CellLink title="Qavatni belgilash" tone="warning" onClick={() => setEditing(c)}>
+              Qavatsiz
             </CellLink>
           ) : (
-            <CodeText className="text-[12px] text-fg">{locationCode(c.building, c.floor)}</CodeText>
+            <CodeText className="text-[12px] text-muted">{c.floor}-qavat</CodeText>
           )}
-          <span className="max-w-[10rem] truncate text-[11px] text-muted" title={c.building || undefined}>
-            {c.building || "Bino ko'rsatilmagan"}
-          </span>
         </span>
       ),
     },
@@ -441,7 +391,7 @@ export default function CamerasZonesPage() {
       key: 'roomType',
       header: 'Xona turi',
       cell: (c) => (
-        <CellLink tone={c.effectiveRoomType ? undefined : 'warning'} title="Xona turini belgilash" onClick={() => setLocating(c)}>
+        <CellLink title="Xona turi" tone={c.effectiveRoomType ? undefined : 'warning'} onClick={() => setLocating(c)}>
           {c.effectiveRoomType ? (
             <>
               {ROOM_TYPE_LABELS[c.effectiveRoomType]}
@@ -456,13 +406,13 @@ export default function CamerasZonesPage() {
     },
     {
       key: 'modules',
-      header: 'Kamera nimani kuzatadi',
+      header: 'Kuzatadi',
       hideOnMobile: true,
       cell: (c) => {
         const moduleSummary = moduleOptions.length > 0 ? formatModuleSummary(moduleOptions, c) : '—';
         const custom = (c.excludedModuleCodes?.length ?? 0) > 0;
         return canManage ? (
-          <CellLink tone={custom ? 'warning' : undefined} title="AI modullarni sozlash" onClick={() => setEditingModules(c)}>
+          <CellLink title="AI modullar" tone={custom ? 'warning' : undefined} onClick={() => setEditingModules(c)}>
             {moduleSummary}
           </CellLink>
         ) : (
@@ -472,7 +422,7 @@ export default function CamerasZonesPage() {
     },
     {
       key: 'video',
-      header: 'Tasvir sifati',
+      header: 'Sifat',
       hideOnMobile: true,
       mono: true,
       cell: (c) => (
@@ -483,24 +433,15 @@ export default function CamerasZonesPage() {
     },
     {
       key: 'status',
-      header: 'Holati va aloqasi',
+      header: 'Holat',
       mobileLabel: 'Holat',
       width: '10rem',
       cell: (c) => (
         <div className="inline-flex flex-col items-end gap-0.5 md:items-start">
           <StatusLamp status={CAMERA_STATUS_LAMP[c.status]} label={CAMERA_STATUS_LABEL[c.status]} />
-          {/* «Faol» — operator NIYATI; javob berish esa oxirgi
-              tekshiruvdagi HAQIQAT. Ikkinchisi svetofor bilan. */}
+          {/* «Faol» — operator niyati; javob berish — oxirgi tekshiruvdagi haqiqat. */}
           {c.status === 'faol' && (
-            <span
-              title={
-                c.isReachable
-                  ? 'Oxirgi tekshiruvda kamera javob berdi'
-                  : "Kamera javob bermayapti — kabel uzilgan, elektr yo'q yoki tarmoq sozlamasi noto'g'ri bo'lishi mumkin"
-              }
-            >
-              <StatusLamp status={c.isReachable ? 'ok' : 'alert'} pulse={!c.isReachable} label={c.isReachable ? 'Ulangan' : "Javob yo'q"} />
-            </span>
+            <StatusLamp status={c.isReachable ? 'ok' : 'alert'} pulse={!c.isReachable} label={c.isReachable ? 'Ulangan' : "Javob yo'q"} />
           )}
         </div>
       ),
@@ -522,14 +463,7 @@ export default function CamerasZonesPage() {
               <RowAction
                 icon={DoorOpen}
                 label="Eshik"
-                // Ilgari ikkala holatda ham "AI yuzni faqat shu yerda
-                // qidiradi" deb yozilardi — hudud belgilanmaganda bu
-                // noto'g'ri: AI butun kadrni tekshiradi.
-                title={
-                  hasDoor
-                    ? 'Eshik hududi belgilangan — AI yuzni faqat shu yerda qidiradi'
-                    : "Eshik hududi belgilanmagan — AI butun kadrni tekshiradi. Hududni belgilash uchun bosing"
-                }
+                title={hasDoor ? 'Eshik hududi belgilangan' : 'Eshik hududi belgilanmagan'}
                 tone={hasDoor ? 'success' : 'warning'}
                 onClick={() => setDrawingDoor(c)}
               />
@@ -539,14 +473,14 @@ export default function CamerasZonesPage() {
                 <RowAction
                   icon={MapPinned}
                   label="Zona"
-                  title={hasZone ? 'Taqiqlangan zona belgilangan' : 'Taqiqlangan zonani belgilash'}
+                  title={hasZone ? 'Zona belgilangan' : 'Zonani belgilash'}
                   tone={hasZone ? 'danger' : undefined}
                   onClick={() => setDrawingZone(c)}
                 />
                 <RowAction
                   icon={Cpu}
                   label="Modullar"
-                  title={custom ? 'AI modullar — maxsus sozlama' : 'AI modullarni sozlash'}
+                  title={custom ? 'Maxsus sozlama' : 'Modullarni sozlash'}
                   tone={custom ? 'warning' : undefined}
                   onClick={() => setEditingModules(c)}
                 />
@@ -558,40 +492,22 @@ export default function CamerasZonesPage() {
     },
   ];
 
-  const withoutFloor = summary?.withoutFloor ?? 0;
-  // Ishlayotgan kameralarning ULUSHI — foiz, ya'ni svetofor qo'llanadi.
-  // Xom sanoqlar (nofaol, ta'mirda, qavatsiz) hukmsiz qoladi: ular
-  // yaxshimi yoki yomonmi, parkning hajmini bilmasdan aytib bo'lmaydi.
-  const reachablePercent = summary && summary.faol > 0 ? Math.round((summary.reachable / summary.faol) * 100) : null;
-  const reachableRag = rag(reachablePercent, RATE_RAG);
-
-  // Reestr varag'ining raqami — filtrlardan, vaqtdan emas.
-  const reference = buildReference('KAM', [tab, buildingFilter || 'BARCHA'], [
-    statusFilter,
-    floorFilter,
-    zoneFilter,
-    roomTypeFilter,
-    search.trim(),
-  ]);
-  const generatedAt = stamp();
-
   return (
     <Page
       title="Kameralar"
-      subtitle="Har bir kamera qaysi binoning qaysi qavatida va qanday xonada turgani. Joylashuv to'g'ri ko'rsatilsa, davomat va hodisalar to'g'ri hisoblanadi."
       breadcrumbs={[{ label: 'Sozlamalar' }, { label: 'Kameralar' }]}
       tabs={CAMERA_TABS}
       defaultTab="royxat"
       actions={
         tab === 'tanish' ? undefined : (
         <>
-          <Button icon={DoorOpen} onClick={() => setRolesOpen(true)} title="Xona turlarini jadval fayli orqali bir vaqtda ko'plab kameraga belgilash">
-            Xona turlarini fayldan yuklash
+          <Button icon={DoorOpen} onClick={() => setRolesOpen(true)}>
+            Xona turlari (fayl)
           </Button>
           {canManage && (
             <>
-              <Button icon={FileUp} onClick={() => setImportOpen(true)} title="Kameralarni qidirish dasturi (SADP) saqlagan fayldan ro'yxatni yuklash">
-                Kameralarni fayldan yuklash
+              <Button icon={FileUp} onClick={() => setImportOpen(true)}>
+                Fayldan yuklash
               </Button>
               <Button variant="primary" icon={Plus} onClick={() => setAddOpen(true)}>
                 Kamera qo&apos;shish
@@ -607,84 +523,6 @@ export default function CamerasZonesPage() {
         <AttendanceCamerasPanel />
       ) : (
         <>
-      {/* 1. Hujjat blanki: qurilma reestri, qaysi kesim, qanday holatda. */}
-      <DocumentHeader
-        org={branding.orgFullName}
-        title="Kameralar reestri"
-        reference={reference}
-        generatedAt={generatedAt}
-        readouts={[
-          { label: 'Qamrov', value: buildingFilter || 'Barcha binolar', title: buildingFilter || undefined },
-          { label: 'Ekranda', value: `${formatNumber(total)} ta kamera`, title: 'Joriy filtrga mos qurilmalar' },
-          {
-            label: 'Ishlatilmoqda',
-            value: summary ? `${formatNumber(summary.faol)} ta` : '—',
-            title: 'Operator «Faol» deb belgilagan kameralar',
-          },
-          {
-            label: 'Aloqa',
-            title: `Oxirgi tekshiruvda javob bergan faol kameralar ulushi — ${RAG_LABEL[reachableRag]}`,
-            value: (
-              <span className={cn('inline-flex items-baseline gap-1.5', RAG_TEXT[reachableRag])}>
-                {reachablePercent === null ? '—' : `${reachablePercent}%`}
-                <span className="text-[10px] font-bold">{RAG_LETTER[reachableRag]}</span>
-              </span>
-            ),
-          },
-        ]}
-      />
-
-      <IntelPanel
-        title="Park holati"
-        code={reference}
-        right={
-          summary && summary.reachable < summary.faol ? (
-            <StatusLamp status="alert" pulse label={`${formatNumber(summary.faol - summary.reachable)} ta javob bermadi`} />
-          ) : undefined
-        }
-      >
-        <div className="grid grid-cols-2 gap-x-6 gap-y-3 px-3 py-2.5 sm:grid-cols-3 xl:grid-cols-5">
-          {/* «Faol» — operator NIYATI, `reachable` esa oxirgi tekshiruvda
-              kamera haqiqatan javob bergani. Ikkalasi alohida turadi:
-              ilgari faqat niyat ko'rinardi va 40 ta kamera soatlab
-              javob bermasa ham katak yashil turardi. */}
-          <Readout label="Ishlatilmoqda" value={summary ? formatNumber(summary.faol) : '—'} title="Tizim ulardan tasvir oladi" />
-          <Readout
-            label="Javob bermoqda"
-            title={`Oxirgi tekshiruv — ${RAG_LABEL[reachableRag]}`}
-            value={
-              <span className={cn('inline-flex items-baseline gap-1.5', RAG_TEXT[reachableRag])}>
-                {summary ? formatNumber(summary.reachable) : '—'}
-                <span className="text-[10px] font-bold">{RAG_LETTER[reachableRag]}</span>
-              </span>
-            }
-          />
-          <Readout label="O'chirib qo'yilgan" value={summary ? formatNumber(summary.nofaol) : '—'} title="Tizim ularga umuman ulanmaydi" />
-          <Readout label="Ta'mirda" value={summary ? formatNumber(summary.tamirda) : '—'} title="Vaqtincha ishlatilmaydi" />
-          <div className="flex min-w-0 flex-col gap-0.5">
-            <MicroLabel>Qavati ko&apos;rsatilmagan</MicroLabel>
-            {/* Bosish filtrni YOQADI VA O'CHIRADI: ilgari uni orqaga
-                qaytarish uchun filtr panelidan qidirish kerak edi. */}
-            <button
-              type="button"
-              onClick={() => setFloorFilter(floorFilter === UNASSIGNED_FLOOR ? '' : UNASSIGNED_FLOOR)}
-              title={
-                floorFilter === UNASSIGNED_FLOOR
-                  ? "Quyidagi ro'yxatda faqat shular ko'rsatilmoqda — filtrni olib tashlash uchun bosing"
-                  : "Bunday kameralar bino sxemasida ko'rinmaydi. Ro'yxatni ochish uchun bosing"
-              }
-              className={cn(
-                'intel-code w-fit text-[13px] font-semibold underline decoration-dotted underline-offset-2',
-                withoutFloor > 0 ? 'text-warning' : 'text-fg',
-                focusRing,
-              )}
-            >
-              {summary ? formatNumber(withoutFloor) : '—'}
-            </button>
-          </div>
-        </div>
-      </IntelPanel>
-
       {selected.size > 0 && (
         /* Buyruq qatori — qalqib turgan tugmalar emas. */
         <div role="status" className="flex flex-wrap items-center gap-2 border border-border-strong bg-surface-2 px-3 py-1.5">
@@ -700,7 +538,7 @@ export default function CamerasZonesPage() {
         </div>
       )}
 
-      <IntelPanel title="Qurilmalar ro'yxati" code={reference} right={<MicroLabel>{formatNumber(total)} ta yozuv</MicroLabel>} brackets={false}>
+      <IntelPanel title="Kameralar" right={<MicroLabel>{formatNumber(total)} ta</MicroLabel>}>
       <DataTable
         ariaLabel="Kameralar"
         columns={columns}
@@ -716,14 +554,7 @@ export default function CamerasZonesPage() {
         // keshda qolgan eski sahifani qaytarib, muammo tuzalganday
         // ko'rsatishi mumkin edi.
         onRetry={refreshCameras}
-        emptyTitle={activeFilters > 0 ? 'Filtrlarga mos kamera topilmadi' : "Hali kamera qo'shilmagan"}
-        emptyDescription={
-          activeFilters > 0
-            ? "Qidiruv yoki filtrlarni o'zgartiring."
-            : canManage
-              ? "Kamerani qo'lda qo'shing yoki tayyor ro'yxatni fayldan yuklang."
-              : "Administrator kamera qo'shgandan keyin bu yerda ko'rinadi."
-        }
+        emptyTitle={activeFilters > 0 ? 'Kamera topilmadi' : "Kamera qo'shilmagan"}
         emptyAction={
           activeFilters > 0 ? (
             <Button size="sm" onClick={resetFilters}>
@@ -738,10 +569,6 @@ export default function CamerasZonesPage() {
         footer={pagerFooter({ page, totalPages, total, pageSize, onChange: setPage })}
       />
       </IntelPanel>
-
-      <DocumentFooter
-        note={`Xizmat uchun. Varaq ${reference} raqami bilan tizimda tuzilgan. Qurilma kodi (KM-…) va joylashuv kodi (bino·qavat) ro'yxatdagi kamerani nomisiz ko'rsatadi.`}
-      />
         </>
       )}
 

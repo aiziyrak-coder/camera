@@ -24,12 +24,14 @@ describe('RankingPanel', () => {
     expect(screen.getByText(/yuklanmoqda/)).toBeInTheDocument();
 
     rerender(<RankingPanel top={[unit('a', 90)]} bottom={[]} chronic={null} chronicError />);
-    expect(screen.getByText(/serverdan olib bo'lmadi/)).toBeInTheDocument();
+    expect(screen.getByText('olinmadi')).toBeInTheDocument();
   });
 
-  it('hisob kelganda tushuntirish emas, ta\'rif ko\'rsatiladi', () => {
+  it('hisob kelganda raqam yolg\'iz turadi — tushuntirish yo\'q', () => {
     render(<RankingPanel top={[unit('a', 90)]} bottom={[]} chronic={7} />);
     expect(screen.getByText('7')).toBeInTheDocument();
-    expect(screen.getByText(/3 marta kech qolgan yoki kelmagan/)).toBeInTheDocument();
+    // Yorliq qoladi, izoh esa sichqoncha ostiga (title) ko'chdi.
+    expect(screen.getByText('Takror kechikkan')).toBeInTheDocument();
+    expect(screen.queryByText(/yuklanmoqda|olinmadi/)).toBeNull();
   });
 });

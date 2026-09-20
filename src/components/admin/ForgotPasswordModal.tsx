@@ -73,7 +73,7 @@ export default function ForgotPasswordModal({ open, onClose }: { open: boolean; 
       open={open}
       onClose={handleClose}
       title="Parolni tiklash"
-      description="Hisobingizga bog'langan loginni kiriting — agar unga elektron pochta manzili biriktirilgan bo'lsa, tiklash havolasi shu manzilga yuboriladi."
+      description="Loginni kiriting — havola pochtangizga yuboriladi."
       size="sm"
       dismissible={!loading}
       footer={

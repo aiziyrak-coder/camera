@@ -5,8 +5,6 @@ import {
   CodeText,
   ConfirmDialog,
   DataTable,
-  DocumentFooter,
-  DocumentHeader,
   IconButton,
   IntelPanel,
   MicroLabel,
@@ -23,29 +21,14 @@ import NotificationStatusCard from '../../components/notifications/NotificationS
 import NotificationLogTable, { NotificationLogToolbar, type LogFilters } from '../../components/notifications/NotificationLogTable';
 import MyTelegramCard from '../../components/notifications/MyTelegramCard';
 import TestMessageModal from '../../components/notifications/TestMessageModal';
-import { notificationsReference } from '../../components/notifications/reference';
 import { ApiError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
-import { branding } from '../../lib/branding';
 import { useAiModules } from '../../lib/useAiModules';
 import { useApiResource } from '../../lib/useApiResource';
 import { useBuildings } from '../../lib/useBuildings';
 import { describeRuleFilters, kindLabel, notificationsApi, type NotificationRule, type NotificationStatus } from '../../lib/notificationsApi';
 
 type Tab = 'qoidalar' | 'kanallar' | 'jurnal';
-
-/** Hujjat tuzilgan payt — hisobot sahifasidagi bilan bir xil shaklda. */
-function stamp(): string {
-  try {
-    return new Intl.DateTimeFormat('ru-RU', {
-      dateStyle: 'short',
-      timeStyle: 'short',
-      timeZone: 'Asia/Tashkent',
-    }).format(new Date());
-  } catch {
-    return new Date().toISOString().slice(0, 16).replace('T', ' ');
-  }
-}
 
 export default function NotificationsPage() {
   const { token } = useAuth();
@@ -82,7 +65,7 @@ export default function NotificationsPage() {
       setRules(await notificationsApi.rules(token));
       setRulesError(null);
     } catch (err) {
-      setRulesError(err instanceof ApiError ? err.message : "Qoidalarni yuklab bo'lmadi — ulanishni tekshiring");
+      setRulesError(err instanceof ApiError ? err.message : "Qoidalarni yuklab bo'lmadi");
     } finally {
       setRulesLoading(false);
     }
@@ -142,26 +125,6 @@ export default function NotificationsPage() {
   }
 
   const noChannel = status && !status.telegramConfigured && !status.smsConfigured;
-  const enabledCount = rules.filter((r) => r.enabled).length;
-
-  // Hujjat raqami — bo'lim va (jurnalda) filtrlardan. Vaqtdan mustaqil.
-  const reference = useMemo(
-    () =>
-      notificationsReference({
-        tab,
-        parts: tab === 'jurnal' ? [logFilters.status, logFilters.channel, logFilters.kind, logFilters.search.trim()] : [],
-      }),
-    [tab, logFilters],
-  );
-  const generatedAt = useMemo(stamp, [tab, rules, status]);
-
-  /** Kanal holati — chiroq + SO'Z (rang yolg'iz ma'no tashimaydi). */
-  const channelLamp = (configured: boolean | undefined) =>
-    status ? (
-      <StatusLamp status={configured ? 'ok' : 'idle'} label={configured ? 'Sozlangan' : 'Sozlanmagan'} />
-    ) : (
-      <StatusLamp status="idle" label={statusError ? "Noma'lum" : 'Yuklanmoqda'} />
-    );
 
   const columns: DataTableColumn<NotificationRule>[] = [
     {
@@ -181,7 +144,7 @@ export default function NotificationsPage() {
     },
     {
       key: 'kinds',
-      header: 'Signal turlari',
+      header: 'Signallar',
       mobileLabel: 'Signallar',
       cell: (rule) => (
         <ul className="flex flex-wrap justify-end gap-x-2 gap-y-0.5 md:justify-start">
@@ -267,48 +230,14 @@ export default function NotificationsPage() {
       }
     >
       <div className="flex min-w-0 flex-col gap-3">
-        {/* 1. Hujjat blanki: kim, nima, qaysi raqam ostida, qaysi holatda. */}
-        <DocumentHeader
-          org={branding.orgFullName}
-          title="Bildirishnoma rejimi"
-          reference={reference}
-          generatedAt={generatedAt}
-          readouts={[
-            { label: 'Qamrov', value: tab === 'qoidalar' ? 'Qoidalar' : tab === 'kanallar' ? 'Kanallar' : 'Yetkazish jurnali' },
-            {
-              label: 'Qoidalar',
-              value: rulesLoading && rules.length === 0 ? '—' : `${enabledCount} / ${rules.length}`,
-              title: "Yoqilgan / jami. Bu — xom son: yaxshi yoki yomonligi tashkilot ehtiyojiga bog'liq, shuning uchun svetofor qo'yilmaydi.",
-            },
-            { label: 'Telegram', value: channelLamp(status?.telegramConfigured) },
-            { label: 'SMS', value: channelLamp(status?.smsConfigured) },
-            {
-              label: 'Ota-onaga xabar',
-              value: status ? (
-                <StatusLamp
-                  status={status.parentArrivalEnabled || status.parentAbsenceEnabled ? 'ok' : 'idle'}
-                  label={status.parentArrivalEnabled || status.parentAbsenceEnabled ? 'Yoqilgan' : "O'chiq"}
-                />
-              ) : (
-                <StatusLamp status="idle" label="Yuklanmoqda" />
-              ),
-            },
-          ]}
-        />
-
         {noChannel && tab !== 'jurnal' && (
-          <Notice tone="warning" title="Hech bir kanal sozlanmagan">
-            Qoidalar saqlanadi, lekin xabar yuborilmaydi. Server .env faylida <code className="font-mono">TELEGRAM_BOT_TOKEN</code> yoki Eskiz
-            sozlamalarini kiriting.
+          <Notice tone="warning" title="Kanal sozlanmagan">
+            Qoidalar saqlanadi, lekin xabar yuborilmaydi.
           </Notice>
         )}
 
         {tab === 'qoidalar' && (
-          <IntelPanel
-            title="Bildirishnoma qoidalari"
-            code={reference}
-            right={<MicroLabel>{rulesLoading && rules.length === 0 ? '—' : `${rules.length} ta`}</MicroLabel>}
-          >
+          <IntelPanel title="Qoidalar" right={<MicroLabel>{rulesLoading && rules.length === 0 ? '—' : `${rules.length} ta`}</MicroLabel>}>
             <DataTable
               columns={columns}
               rows={rules}
@@ -320,11 +249,10 @@ export default function NotificationsPage() {
               error={rulesError}
               onRetry={() => void loadRules()}
               dense
-              emptyTitle="Hali qoida yo'q"
-              emptyDescription="Qoida kim, qaysi kanal orqali va qanday signallar haqida xabar olishini belgilaydi. Masalan: yuqori darajali AI hodisalari — navbatchilar Telegram guruhiga."
+              emptyTitle="Qoida yo'q"
               emptyAction={
                 <Button variant="primary" icon={Plus} onClick={openCreate}>
-                  Birinchi qoidani qo'shish
+                  Yangi qoida
                 </Button>
               }
               ariaLabel="Bildirishnoma qoidalari"
@@ -340,11 +268,7 @@ export default function NotificationsPage() {
           </div>
         )}
 
-        {tab === 'jurnal' && <NotificationLogTable refreshKey={logRefresh} filters={logFilters} reference={reference} />}
-
-        <DocumentFooter
-          note={`Xizmat uchun. Hujjat ${reference} raqami bilan tizimda tuzilgan; kanal sozlamalari serverning .env faylidan o'qiladi.`}
-        />
+        {tab === 'jurnal' && <NotificationLogTable refreshKey={logRefresh} filters={logFilters} />}
       </div>
 
       <NotificationRuleModal open={modalOpen} rule={editing} status={status} onClose={() => setModalOpen(false)} onSaved={handleSaved} />
@@ -352,7 +276,7 @@ export default function NotificationsPage() {
       <ConfirmDialog
         open={!!deleting}
         title="Qoidani o'chirish"
-        message={`"${deleting?.name ?? ''}" qoidasi o'chiriladi — unga ko'ra xabarlar endi yuborilmaydi.`}
+        message={`"${deleting?.name ?? ''}" o'chiriladi — xabarlar yuborilmaydi.`}
         confirmLabel="O'chirish"
         onCancel={() => setDeleting(null)}
         onConfirm={handleDelete}

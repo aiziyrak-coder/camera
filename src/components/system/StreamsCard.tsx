@@ -26,7 +26,7 @@ export function StreamsCard({ resource, canResync }: { resource: LiveResource<Sy
   return (
     <IntelPanel
       title="Video oqimlar"
-      code="SYS-STR"
+      brackets={false}
       right={
         <span className="flex items-center gap-3">
           <MeasuredAt resource={resource} />
@@ -46,31 +46,27 @@ export function StreamsCard({ resource, canResync }: { resource: LiveResource<Sy
             <div>
               <div className="grid grid-cols-2 gap-px border-b border-border bg-border">
                 <Metric
-                  label="Ro'yxatdagi oqimlar"
+                  label="Oqimlar"
                   value={`${formatNumber(data.registeredStreams)} / ${formatNumber(data.faolCameras)}`}
                   unit={coverage === null ? undefined : `${formatNumber(coverage, 0)}%`}
                   verdict={rag(coverage, COVERAGE_RAG)}
-                  hint={missing > 0 ? `${missing} ta kamera oqimsiz` : 'Barcha faol kameralar'}
+                  hint={missing > 0 ? `${missing} ta oqimsiz` : undefined}
                 />
                 {/* Tugun soni — sozlamaga bog'liq sanoq, yaxshi/yomoni yo'q. */}
                 <Metric
                   label="Tugunlar"
                   value={data.shardingEnabled ? formatNumber(data.shardCount) : '1'}
                   unit={data.shardingEnabled ? 'shard' : 'tugun'}
-                  hint="Shluz tugunlari soni"
                 />
               </div>
               {/* Ro'yxat bo'sh bo'lsa ilgari bo'm-bo'sh ramka qolardi — sabab aytilmasdi. */}
               {data.shards.length === 0 ? (
-                <StatusLine tone="danger">MediaMTX tugunlari topilmadi — video oqimlar ishlamaydi, shluz sozlamalarini tekshiring</StatusLine>
+                <StatusLine tone="danger">MediaMTX tugunlari topilmadi — oqimlar ishlamaydi</StatusLine>
               ) : (
                 <ul className="divide-y divide-border border-b border-border">
                   {data.shards.map((shard) => (
                     <li key={shard.index} className="px-2.5 py-1.5 text-[13px]">
                       <div className="flex items-center gap-3">
-                        <CodeText className="shrink-0 text-[11px] text-subtle">
-                          MTX-{String(shard.index + 1).padStart(2, '0')}
-                        </CodeText>
                         <span className="min-w-0 flex-1 truncate text-fg">Tugun {shard.index + 1}</span>
                         <CodeText className="shrink-0 text-[12px] text-muted">
                           {formatNumber(shard.pathCount)} oqim · {formatNumber(shard.assignedCameras)} kamera
@@ -81,7 +77,6 @@ export function StreamsCard({ resource, canResync }: { resource: LiveResource<Sy
                           label={shard.reachable ? 'Ishlayapti' : "Aloqa yo'q"}
                         />
                       </div>
-                      {/* Qizil chiroqning sababi faqat `title`da edi — ko'rinmas tushuntirish. */}
                       {shard.error && <p className="mt-0.5 break-words text-xs text-danger">{shard.error}</p>}
                     </li>
                   ))}
@@ -96,7 +91,7 @@ export function StreamsCard({ resource, canResync }: { resource: LiveResource<Sy
         open={confirm}
         tone="primary"
         title="Oqimlarni qayta sinxronlash"
-        message="Barcha faol kameralar oqimlari MediaMTX'da qayta ro'yxatdan o'tkaziladi. Videodevorda bir necha soniya uzilish bo'lishi mumkin."
+        message="Barcha oqimlar qayta ro'yxatdan o'tadi. Videodevorda qisqa uzilish bo'ladi."
         confirmLabel="Sinxronlash"
         onCancel={() => setConfirm(false)}
         onConfirm={resync}

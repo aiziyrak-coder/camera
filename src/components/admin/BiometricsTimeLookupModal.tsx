@@ -243,7 +243,7 @@ export default function BiometricsTimeLookupModal({
 
           {suggestions.length > 1 && <p className="text-xs text-subtle">↑ ↓ — tanlash · Enter — aniqlash</p>}
 
-          {showEmpty && <EmptyState icon={SearchX} compact title={`«${trimmed}» bo'yicha hech kim topilmadi`} description="Familiyani yoki JSHSHIRni tekshiring." />}
+          {showEmpty && <EmptyState icon={SearchX} compact title={`«${trimmed}» bo'yicha hech kim topilmadi`} />}
         </div>
       )}
 

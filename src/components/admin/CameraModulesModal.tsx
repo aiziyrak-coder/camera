@@ -77,7 +77,7 @@ export default function CameraModulesModal({
       onSave(saved);
       onClose();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi");
+      setError(err instanceof ApiError ? err.message : 'Tarmoq xatosi');
     } finally {
       setSaving(false);
     }

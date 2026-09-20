@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Check, FlaskConical, ImageOff, UserCheck, X } from 'lucide-react';
-import { Badge, Button, CodeText, MicroLabel, StatusBadge, cn } from '../../ui';
-import { eventCode } from './eventCodes';
+import { Badge, Button, MicroLabel, StatusBadge, cn } from '../../ui';
 import SlaBadge from './SlaBadge';
 import { SEVERITY_STRIPE } from '../../lib/eventLabels';
 import { relativeTime } from '../../lib/uzDate';
@@ -80,9 +79,7 @@ export default function ReviewCard({
         </span>
       </button>
       <div className="flex flex-1 flex-col px-3 py-2.5">
-        {/* Kartaning xizmat kodi — jurnaldagi qator bilan bir xil. */}
         <p className="flex items-center gap-2">
-          <CodeText className="text-[11px] text-subtle">{eventCode(event.id)}</CodeText>
           <MicroLabel className="ms-auto">Ishonch {event.confidence}%</MicroLabel>
         </p>
         <p className="mt-0.5 font-semibold text-fg">{event.moduleName}</p>

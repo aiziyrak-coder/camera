@@ -71,7 +71,9 @@ describe('SituationPage', () => {
       </MemoryRouter>,
     );
     expect(await screen.findByText('Institut holati')).toBeInTheDocument();
-    // Kameralar katagi — aynan shu o'zgaruvchi obyekt bo'lib ketgan edi.
-    expect(await screen.findByText('Ishlab turgan kameralar')).toBeInTheDocument();
+    // Kameralar qatori — aynan shu o'zgaruvchi obyekt bo'lib ketgan edi.
+    // Yorliq qisqardi ("Ishlab turgan kameralar" → "Kameralar"), lekin
+    // tekshirilayotgan xulq o'sha: ko'rsatkichlar jadvali chiziladi.
+    expect((await screen.findAllByText('Kameralar')).length).toBeGreaterThan(0);
   });
 });

@@ -12,19 +12,6 @@ import { RagChip, boardRag, type BoardItem } from '../hisobot/board';
  * bo'linma kattaligini bilmasdan aytib bo'lmaydi, rang esa aniq hukm.
  */
 
-/** Hujjat tuzilgan vaqti — tizim bo'ylab Toshkent vaqtida. */
-export function stamp(): string {
-  try {
-    return new Intl.DateTimeFormat('ru-RU', {
-      dateStyle: 'short',
-      timeStyle: 'short',
-      timeZone: 'Asia/Tashkent',
-    }).format(new Date());
-  } catch {
-    return new Date().toISOString().slice(0, 16).replace('T', ' ');
-  }
-}
-
 const TONE_ORDER: Record<Rag, number> = { qizil: 0, sariq: 1, yashil: 2, yoq: 3 };
 
 /** Yomoni birinchi: rahbar ekranning yuqorisidan chora kerak bo'lgan joyni
@@ -37,7 +24,9 @@ export function worstFirst(items: BoardItem[], thresholds: RagThresholds = RATE_
     const av = a.value ?? Infinity;
     const bv = b.value ?? Infinity;
     if (av !== bv) return av - bv;
-    return a.code.localeCompare(b.code);
+    // Xizmat kodlari olib tashlandi — teng qiymatlar nom bo'yicha turadi,
+    // shunda tartib har renderda bir xil chiqadi.
+    return a.name.localeCompare(b.name);
   });
 }
 
@@ -171,7 +160,7 @@ export function StaleNote({ message, onRetry }: { message: string; onRetry: () =
       className="print-hide flex flex-wrap items-center gap-2 border border-warning/50 bg-warning-soft px-3 py-2 text-[13px] text-fg"
     >
       <TriangleAlert size={15} aria-hidden="true" className="shrink-0" />
-      <span>Ko&apos;rsatilayotgan ma&apos;lumot eskirgan bo&apos;lishi mumkin: {message}</span>
+      <span>Ma&apos;lumot eskirgan: {message}</span>
       <button type="button" onClick={onRetry} className="font-medium underline underline-offset-2">
         Qayta urinish
       </button>
@@ -181,21 +170,10 @@ export function StaleNote({ message, onRetry }: { message: string; onRetry: () =
 
 /** Chiziq bilan ajratilgan bo'lim sarlavhasi — suzib yurgan karta emas.
  *  Kurs bloklari va shunga o'xshash ichki guruhlar uchun. */
-export function RuledSection({
-  title,
-  code,
-  meta,
-  children,
-}: {
-  title: string;
-  code?: ReactNode;
-  meta?: ReactNode;
-  children: ReactNode;
-}) {
+export function RuledSection({ title, meta, children }: { title: string; meta?: ReactNode; children: ReactNode }) {
   return (
     <section className="min-w-0">
       <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-border-strong bg-surface-2 px-3 py-1.5">
-        {code && <CodeText className="text-[11px] text-subtle">{code}</CodeText>}
         <h3 className="intel-micro !text-fg">{title}</h3>
         {meta && <span className="ms-auto">{meta}</span>}
       </header>

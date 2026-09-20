@@ -26,8 +26,6 @@ export interface AttentionPanelProps {
    *  "Hammasi joyida" deb aytib bo'lmaydi — bo'sh ro'yxat "muammo yo'q"
    *  degani emas, "tekshirib bo'lmadi" degani. */
   unavailable?: readonly string[];
-  /** Ko'rilayotgan kun bugunmi — sarlavhalardagi "Bugun" shunga bog'liq. */
-  isToday?: boolean;
   big?: boolean;
 }
 
@@ -79,9 +77,9 @@ export function countAttentionIssues(input: {
 
 /** "Diqqat talab": muhim ochiq hodisalar, muddati o'tganlar, ishlamayotgan
  *  kameralar, davomati eng past guruhlar va darsga kechikkan o'qituvchilar. */
-export function AttentionPanel({ loading, events, cameras, groups, groupLink, teacherLessons, teacherLink, unavailable = [], isToday = true, big }: AttentionPanelProps) {
+export function AttentionPanel({ loading, events, cameras, groups, groupLink, teacherLessons, teacherLink, unavailable = [], big }: AttentionPanelProps) {
   const gaps = unavailable.filter(Boolean);
-  const gapNote = gaps.length ? `${gaps.join(', ')} ma'lumoti serverdan kelmadi — bu ro'yxat to'liq emas.` : null;
+  const gapNote = gaps.length ? `${gaps.join(', ')} ma'lumoti kelmadi` : null;
   const hasEvents = events && (events.highOpen > 0 || events.overdue > 0);
   const hasCameras = cameras && cameras.offline > 0;
   // Sarlavhadagi son ro'yxatdagi qatorlar soni bilan bir xil bo'lishi
@@ -107,10 +105,8 @@ export function AttentionPanel({ loading, events, cameras, groups, groupLink, te
         <div className="flex items-center gap-3 px-3 py-4">
           <IconChip icon={gapNote ? AlertTriangle : CheckCircle2} tone={gapNote ? 'warning' : 'success'} />
           <div>
-            <p className="text-[13px] font-semibold text-fg">{gapNote ? "Holatni to'liq tekshirib bo'lmadi" : 'Hammasi joyida'}</p>
-            <p className="text-[12px] text-muted">
-              {gapNote ?? "Muhim hodisa, aloqasiz kamera yoki keskin past davomatli guruh yo'q."}
-            </p>
+            <p className="text-[13px] font-semibold text-fg">{gapNote ? "To'liq tekshirilmadi" : 'Hammasi joyida'}</p>
+            {gapNote && <p className="text-[12px] text-muted">{gapNote}</p>}
           </div>
         </div>
       ) : (
@@ -127,7 +123,6 @@ export function AttentionPanel({ loading, events, cameras, groups, groupLink, te
                         <p className="text-sm font-medium text-fg">
                           {formatNumber(events.highOpen)} ta juda muhim hodisa hal qilinmagan
                         </p>
-                        <p className="text-xs text-muted">Mas'ul xodim ko'rib chiqishi kerak</p>
                       </div>
                     </RowLink>
                   </li>
@@ -151,7 +146,6 @@ export function AttentionPanel({ loading, events, cameras, groups, groupLink, te
                       <IconChip icon={Clock} tone="warning" />
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-fg">{formatNumber(events.overdue)} ta hodisaning muddati o'tgan</p>
-                        <p className="text-xs text-muted">Belgilangan muddatda hal qilinmadi</p>
                       </div>
                     </RowLink>
                   </li>
@@ -167,9 +161,6 @@ export function AttentionPanel({ loading, events, cameras, groups, groupLink, te
                 <IconChip icon={CameraOff} tone="danger" />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-fg">{formatNumber(cameras.offline)} ta kamera aloqada emas</p>
-                  <p className="text-xs text-muted">
-                    {formatNumber(cameras.active)} ta faol kameradan — tarmoq yoki elektr ta'minotini tekshiring
-                  </p>
                 </div>
               </RowLink>
             </section>
@@ -177,7 +168,7 @@ export function AttentionPanel({ loading, events, cameras, groups, groupLink, te
 
           {groups.length > 0 && (
             <section aria-label="Davomati past guruhlar">
-              <GroupTitle>{isToday ? 'Bugun' : 'Shu kuni'} eng kam talaba kelgan guruhlar</GroupTitle>
+              <GroupTitle>Past guruhlar</GroupTitle>
               <ul className="divide-y divide-border">
                 {groups.map((group) => {
                   const tone = toneForRate(group.rate);
@@ -212,7 +203,7 @@ export function AttentionPanel({ loading, events, cameras, groups, groupLink, te
 
           {teacherLessons.length > 0 && (
             <section aria-label="Darsga kechikkan o'qituvchilar">
-              <GroupTitle>Darsga kech kirgan yoki kirmagan o'qituvchilar</GroupTitle>
+              <GroupTitle>O'qituvchilar</GroupTitle>
               <ul className="divide-y divide-border">
                 {teacherLessons.map((lesson) => {
                   const missed = lesson.teacherStatus === 'kelmadi';
@@ -221,10 +212,9 @@ export function AttentionPanel({ loading, events, cameras, groups, groupLink, te
                       <RowLink to={teacherLink ? teacherLink(lesson) : null}>
                         <Avatar name={lesson.teacher || "O'qituvchi"} src={lesson.teacherPhotoUrl} size="sm" status={missed ? 'danger' : 'warning'} className="mx-0.5" />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-fg">{lesson.teacher || "O'qituvchi ko'rsatilmagan"}</p>
+                          <p className="truncate text-sm font-medium text-fg">{lesson.teacher || "Noma'lum"}</p>
                           <p className="truncate text-xs text-muted">
-                            {/* Bo'sh "—" nimani bildirishi tushunarsiz edi. */}
-                            {lesson.startsAt ?? "vaqti noma'lum"} · {lesson.groupName} · {lesson.subject}
+                            {lesson.startsAt ?? '—'} · {lesson.groupName} · {lesson.subject}
                           </p>
                         </div>
                         <Badge tone={missed ? 'danger' : 'warning'} dot>

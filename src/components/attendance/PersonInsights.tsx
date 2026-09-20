@@ -9,64 +9,44 @@ function minutesClock(m: number | null | undefined): string {
   return `${String(h).padStart(2, '0')}:${String(Math.round(m % 60)).padStart(2, '0')}`;
 }
 
-/** Oldingi davrga nisbatan o'zgarish — izoh matni sifatida.
+/** Oldingi davrga nisbatan o'zgarish — qisqa izoh.
  *  Oldingi davrda yozuv bo'lmasa taqqoslash umuman yozilmaydi: "+14"
  *  yo'qdan paydo bo'lgandek ko'rinardi. */
-function deltaText(cur: number | null, prev: number | null | undefined, unit: string): string | null {
-  if (cur === null || prev === null || prev === undefined) return null;
+function deltaText(cur: number | null, prev: number | null | undefined, unit: string): string | undefined {
+  if (cur === null || prev === null || prev === undefined) return undefined;
   const v = Math.round((cur - prev) * 10) / 10;
-  return `Oldingi davrga nisbatan ${v > 0 ? '+' : ''}${v.toLocaleString('ru-RU')}${unit}`;
+  return `Oldingi davrga ${v > 0 ? '+' : ''}${v.toLocaleString('ru-RU')}${unit}`;
 }
 
 /** Xodim uchun davr KPI'lari: oldingi xuddi shunday davrga nisbatan o'zgarish bilan. */
 export function StaffKpis({
   current,
   previous,
-  days,
   lateCutoff = LATE_CUTOFF_MINUTES,
 }: {
   current: PersonKpis;
   previous: PersonKpis | null;
-  days: number;
   /** Kechikish chegarasi (daqiqa) — attendance_policy. */
   lateCutoff?: number;
 }) {
-  const arrivalLate = current.avgArrivalMinutes !== null && current.avgArrivalMinutes > lateCutoff;
   const items: KpiItem[] = [
     {
       label: 'Davomat',
       value: formatPercent(current.rate, 1),
       rate: current.rate,
-      hint: `${current.presentDays} / ${current.presentDays + current.absentDays} yozuv bor kun${
-        deltaText(current.rate, previous?.rate, ' pp') ? ` · ${deltaText(current.rate, previous?.rate, ' pp')}` : ''
-      }`,
+      // Maxraj — yozuvi bor kunlar, davrdagi hamma kun emas.
+      hint: `${current.presentDays} / ${current.presentDays + current.absentDays} yozuv bor kun`,
     },
     {
       label: "O'rtacha kelish",
       value: minutesClock(current.avgArrivalMinutes),
-      // Vaqt — foiz emas: unga davomat svetofori qo'yilmaydi, chegaradan
-      // o'tgani so'z bilan aytiladi.
-      hint: `${arrivalLate ? `${minutesClock(lateCutoff)} chegarasidan kech` : `chegara ${minutesClock(lateCutoff)}`}${
-        deltaText(current.avgArrivalMinutes, previous?.avgArrivalMinutes, ' daq') ? ` · ${deltaText(current.avgArrivalMinutes, previous?.avgArrivalMinutes, ' daq')}` : ''
-      }`,
+      // Vaqt — foiz emas: unga davomat svetofori qo'yilmaydi.
+      hint: `chegara ${minutesClock(lateCutoff)}`,
     },
-    {
-      label: 'Kech kelgan kunlar',
-      value: `${current.lateDays} kun`,
-      hint: current.punctualPct !== null ? `${formatPercent(current.punctualPct)} o'z vaqtida` : undefined,
-    },
-    {
-      label: 'Kelmagan kunlar',
-      value: `${current.absentDays} kun`,
-      hint: deltaText(current.absentDays, previous?.absentDays, '') ?? undefined,
-    },
-    {
-      label: "O'z vaqtida seriya",
-      value: `${current.onTimeStreak} kun`,
-      hint: previous ? `ketma-ket, kechikmasdan · oldingi ${days} kunga nisbatan` : 'ketma-ket, kechikmasdan',
-    },
+    { label: 'Kech kelgan', value: `${current.lateDays} kun` },
+    { label: 'Kelmagan', value: `${current.absentDays} kun`, hint: deltaText(current.absentDays, previous?.absentDays, '') },
   ];
-  return <KpiReadout className="lg:grid-cols-5" items={items} />;
+  return <KpiReadout className="lg:grid-cols-4" items={items} />;
 }
 
 /** Hafta kunlari naqshi: o'rtacha kelish va kechikishlar — qaysi kun "og'ir". */
@@ -78,18 +58,14 @@ export function WeekdayPatternCard({ rows, lateCutoff = LATE_CUTOFF_MINUTES }: {
   const hi = 600;
   const pos = (m: number) => `${Math.min(100, Math.max(0, ((m - lo) / (hi - lo)) * 100))}%`;
   return (
-    <IntelPanel
-      title="Hafta kunlari"
-      right={<MicroLabel>shkala 07:30–10:00</MicroLabel>}
-      code={minutesClock(lateCutoff)}
-    >
+    <IntelPanel title="Hafta kunlari" code={minutesClock(lateCutoff)}>
       {worst && worst.late + worst.absent > 0 && (
         <p className="border-b border-border px-3 py-1.5 text-[12px] text-muted">
-          Eng og&apos;ir kun — <span className="font-medium text-fg">{worst.label}</span>: {worst.late} kech, {worst.absent} kelmagan
+          Eng og&apos;ir: <span className="font-medium text-fg">{worst.label}</span> — {worst.late} kech, {worst.absent} kelmagan
         </p>
       )}
       {withData.length === 0 ? (
-        <p className="px-3 py-6 text-center text-[13px] text-muted">Bu davrda yozuv yo&apos;q</p>
+        <p className="px-3 py-6 text-center text-[13px] text-muted">Yozuv yo&apos;q</p>
       ) : (
         <ul className="divide-y divide-border">
           {rows.map((r) => (
@@ -120,9 +96,6 @@ export function WeekdayPatternCard({ rows, lateCutoff = LATE_CUTOFF_MINUTES }: {
           ))}
         </ul>
       )}
-      <p className="border-t border-border px-3 py-1.5 text-[11px] text-muted">
-        Vertikal chiziq — {minutesClock(lateCutoff)} kechikish chegarasi.
-      </p>
     </IntelPanel>
   );
 }
@@ -134,10 +107,9 @@ export function EnrollCta({ student, group, pending, onOpenGroup, registryLink }
     <div className="flex flex-col gap-3 border border-primary/40 bg-primary-soft px-3 py-2.5 sm:flex-row sm:items-center">
       <ScanFace size={20} aria-hidden="true" className="shrink-0 text-primary" />
       <div className="min-w-0 flex-1">
-        <MicroLabel>{pending ? 'Yuzi tasdiq kutmoqda' : "Yuzi hali topshirilmagan"}</MicroLabel>
+        <MicroLabel>{pending ? 'Yuzi tasdiq kutmoqda' : "Yuzi topshirilmagan"}</MicroLabel>
         <p className="mt-0.5 text-[13px] leading-relaxed text-fg">
-          Kameralar bu {student ? 'talabani' : 'xodimni'} taniy olmaydi — davomat avtomatik yozilmaydi, bo&apos;sh kunlar «kelmagan» degani emas.
-          {student ? ' Talaba telefonida QR orqali 1 daqiqada topshiradi.' : ' Yuzni «Reestr» bo‘limida qo‘shing.'}
+          Kameralar taniy olmaydi — bo&apos;sh kunlar «kelmagan» degani emas.
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
@@ -153,12 +125,12 @@ export function EnrollCta({ student, group, pending, onOpenGroup, registryLink }
               </Button>
             )}
             <ButtonLink to={enrollLink} size="sm" variant="secondary">
-              Ro&apos;yxatdan o&apos;tish sahifasi
+              Ro&apos;yxatdan o&apos;tish
             </ButtonLink>
           </>
         ) : (
           <ButtonLink to={registryLink} size="sm" variant="primary">
-            Reestrda yuz qo&apos;shish
+            Reestrda qo&apos;shish
           </ButtonLink>
         )}
       </div>

@@ -99,10 +99,11 @@ describe('KafedraPage — «Bugun ishga kelgan xodimlar» plitkasi', () => {
   it('names the real denominator of the percentage', async () => {
     getKafedra.mockResolvedValue(detail());
     renderPage();
+    // Izohdagi yagona son foizning MAXRAJI: jami xodim (20) u yerda tursa,
+    // plitka o'z foizidan boshqa asosni nomlagan bo'lardi.
     const hint = await screen.findByText(/Holati aniq/);
-    expect(hint.textContent).toContain('Holati aniq 12 xodimdan');
-    expect(hint.textContent).toContain("8 xodimning yuzi ro'yxatdan o'tmagan");
-    expect(hint.textContent).not.toContain("Bo'linmadagi 20 xodimning");
+    expect(hint.textContent).toBe('Holati aniq 12 xodimdan');
+    expect(hint.textContent).not.toContain('20');
   });
 
   // Katta son "10 / 20" edi, yonidagi progress esa 83,3% — ikki xil maxraj
@@ -123,9 +124,9 @@ describe('KafedraPage — o\'tgan sanada "Bugun" deyilmaydi', () => {
     localStorage.setItem('kafedra.view', JSON.stringify('table'));
     getKafedra.mockResolvedValue(detail({ isToday: false, date: '2026-09-15' }));
     renderPage('/oqituvchilar/kafedra/u1?sana=2026-09-15');
-    await waitFor(() => expect(screen.getByText(/Shu kuni ishga kelgan xodimlar/)).toBeTruthy());
-    expect(screen.getByText(/Shu kuni kech kelgan xodimlar/)).toBeTruthy();
-    expect(screen.queryByText(/Bugun ishga kelgan xodimlar/)).toBeNull();
+    await waitFor(() => expect(screen.getByText('Shu kuni keldi')).toBeTruthy());
+    expect(screen.getByText('Shu kuni kech keldi')).toBeTruthy();
+    expect(screen.queryByText(/^Bugun/)).toBeNull();
     expect(screen.getByRole('columnheader', { name: /Shu kuni/ })).toBeTruthy();
   });
 });
@@ -136,8 +137,8 @@ describe('KafedraPage — dars ustuni dars jadvaliga bog\'liq', () => {
     getKafedra.mockResolvedValue(detail());
     renderPage();
     await screen.findByRole('columnheader', { name: /Bugun/ });
-    expect(screen.queryByRole('columnheader', { name: /Darsga o'z vaqtida kirgani/ })).toBeNull();
-    expect(screen.getByRole('columnheader', { name: /Ishga kelgan kunlari/ })).toBeTruthy();
+    expect(screen.queryByRole('columnheader', { name: /Darsga o'z vaqtida/ })).toBeNull();
+    expect(screen.getByRole('columnheader', { name: /Kelgan kunlari/ })).toBeTruthy();
   });
 
   it('shows the column again as soon as lessons exist', async () => {
@@ -146,7 +147,7 @@ describe('KafedraPage — dars ustuni dars jadvaliga bog\'liq', () => {
       detail({ teachers: [teacher({ periodLessons: 12, periodOnTime: 10, periodLate: 2, onTimeRate: 83.3 })] }, {}, { lessons: 12, onTime: 10, late: 2, onTimeRate: 83.3 }),
     );
     renderPage();
-    await waitFor(() => expect(screen.getByRole('columnheader', { name: /Darsga o'z vaqtida kirgani/ })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('columnheader', { name: /Darsga o'z vaqtida/ })).toBeTruthy());
   });
 });
 

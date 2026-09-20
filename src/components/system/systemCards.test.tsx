@@ -22,7 +22,7 @@ import { CameraNetworkCard } from './CameraNetworkCard';
 import { StreamsCard } from './StreamsCard';
 import { AiRuntimeCard } from './AiRuntimeCard';
 import { ResourceBody, formatServerTime, clockTime } from './parts';
-import { RESOURCE_DANGER_AT, RESOURCE_RAG, RESOURCE_WARN_AT, auditReference, resourceTone, systemReference } from './systemTypes';
+import { RESOURCE_DANGER_AT, RESOURCE_RAG, RESOURCE_WARN_AT, resourceTone } from './systemTypes';
 import { rag } from '../../ui/rag';
 import type { LiveResource } from '../situation/useLiveResource';
 import type { SystemAiStatus, SystemCameraNetwork, SystemStreamStatus } from './systemTypes';
@@ -90,20 +90,6 @@ describe('parts yordamchilari', () => {
     expect(rag(RESOURCE_DANGER_AT + 1, RESOURCE_RAG)).toBe('qizil');
     // O'lchanmagan qiymat hukmsiz qoladi — nol deb ko'rsatilmaydi.
     expect(rag(null, RESOURCE_RAG)).toBe('yoq');
-  });
-});
-
-describe('hujjat raqamlari', () => {
-  it('sahifa holatidan kelib chiqadi, vaqtga bog’liq emas', () => {
-    expect(systemReference('holat', 10)).toBe('TZM-HOLAT-0010');
-    // Ikki marta chaqirilsa ham bir xil — render vaqtiga bog'liq emas.
-    expect(systemReference('holat', 10)).toBe(systemReference('holat', 10));
-    expect(systemReference('jurnal', null)).toBe('TZM-JURNAL-----');
-  });
-
-  it('jurnal raqami filtr va sahifani ko’rsatadi', () => {
-    expect(auditReference('', '', 1)).toBe('JUR-ALL-ALL-001');
-    expect(auditReference('xatolik', 'Tizim', 4)).toBe('JUR-XAT-TIZ-004');
   });
 });
 

@@ -73,7 +73,7 @@ describe('UsersRolesPage — o’chirish tugmalari', () => {
     renderPage();
     const button = screen.getAllByLabelText(/Bosh Admin — o'chirib bo'lmaydi/)[0] as HTMLButtonElement;
     expect(button.disabled).toBe(true);
-    expect(button.getAttribute('aria-label')).toContain('faqat Super Admin');
+    expect(button.getAttribute('aria-label')).toContain('Faqat Super Admin');
   });
 
   it("ruxsat etilgan o'chirish tugmasi ishlaydi", () => {
@@ -88,7 +88,8 @@ describe('UsersRolesPage — huquqlar matritsasi', () => {
     renderPage('?tab=huquqlar');
     const marks = screen.getAllByLabelText(/— Super Admin: ruxsat/);
     expect(marks.length).toBeGreaterThan(0);
+    // Qulf sababi qisqardi, lekin hamon ko'rinadigan va e'lon qilinadigan matn.
     expect(marks[0].getAttribute('aria-label')).toContain("Super Admin huquqlari o'zgarmaydi");
-    expect(marks[0].getAttribute('title')).toContain("tizimga kirish yo'li");
+    expect(marks[0].getAttribute('title')).toContain("Super Admin huquqlari o'zgarmaydi");
   });
 });

@@ -91,6 +91,8 @@ class LessonSessionImportResultOut(CamelModel):
     # yoki ism yozilishini to'g'rilash uchun.
     unmatched_rooms: list[str] = []
     unmatched_teachers: list[str] = []
+    # Haftalik import: jadval necha haftaga yoyilgani (sanali importda 0).
+    weeks: int = 0
 
 
 class LessonAttendanceRowOut(CamelModel):

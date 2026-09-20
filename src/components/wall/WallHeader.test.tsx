@@ -12,30 +12,32 @@ describe('WallHeader — eskirgan maʼlumot', () => {
   it('yangi javob — "Ulangan"', () => {
     const s = connectionState(true, at('2026-09-20T10:00:00Z'), at('2026-09-20T10:00:30Z'));
     expect(s.ok).toBe(true);
-    expect(s.label).toContain('Ulangan');
+    expect(s.label).toBe('Ulangan');
   });
 
   it("uzilganda oxirgi yangilanish vaqti ko'rsatiladi", () => {
     const s = connectionState(false, at('2026-09-20T10:00:00Z'), at('2026-09-20T10:00:30Z'));
     expect(s.ok).toBe(false);
-    expect(s.label).toContain('Ulanish uzildi');
+    expect(s.label).toBe('Uzildi');
+    expect(s.title).toContain('Ulanish uzildi');
   });
 
   it("so'rov osilib qolganda ham (online, lekin eski) ogohlantiradi", () => {
     const s = connectionState(true, at('2026-09-20T03:00:00Z'), at('2026-09-20T13:00:00Z'));
     expect(s.ok).toBe(false);
-    expect(s.label).toContain('Yangilanmayapti');
-    expect(s.label).toContain('10 soat');
+    expect(s.label).toBe('Eskirgan');
+    expect(s.title).toContain('10 soat');
   });
 
   it('bir necha daqiqa kechikish — daqiqada yoziladi', () => {
     const s = connectionState(true, at('2026-09-20T10:00:00Z'), at('2026-09-20T10:05:00Z'));
     expect(s.ok).toBe(false);
-    expect(s.label).toContain('5 daqiqa');
+    expect(s.label).toBe('Eskirgan');
+    expect(s.title).toContain('5 daqiqa');
   });
 
   it('ekranda eskirgan holat matni chiqadi', () => {
     render(<WallHeader online updatedAt={new Date(Date.now() - 45 * 60_000)} />);
-    expect(screen.getByText(/Yangilanmayapti/)).toBeInTheDocument();
+    expect(screen.getByText('Eskirgan')).toBeInTheDocument();
   });
 });

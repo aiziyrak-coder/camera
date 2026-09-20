@@ -729,3 +729,134 @@ table[data-tabel] [data-today] {
     line-height: 4.5mm;
   }
 }
+
+/* ------------------------------------------------------------------
+ * KONSOL — bitta ekranli boshqaruv oynasi (src/console/**).
+ *
+ * Yorug' "kelajak" muhiti: oq qog'oz emas, yorug' shisha. Fon jonli,
+ * lekin sekin — diqqatni tortmaydi; panellar shisha kabi suzadi;
+ * jonli manbalar nafas oladi. Hamma harakat `prefers-reduced-motion`
+ * ga bo'ysunadi.
+ * ------------------------------------------------------------------ */
+:root {
+  --c-accent: 0 122 255;
+  --c-accent-2: 0 208 255;
+  --glass: 255 255 255;
+}
+
+.console-root {
+  position: relative;
+  height: 100dvh;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 12% 0%, rgb(var(--c-accent) / 0.07), transparent 60%),
+    radial-gradient(90% 80% at 100% 10%, rgb(var(--c-accent-2) / 0.06), transparent 55%),
+    radial-gradient(100% 100% at 50% 120%, rgb(var(--c-accent) / 0.05), transparent 60%),
+    linear-gradient(180deg, rgb(226 233 243), rgb(214 223 237));
+}
+
+/* Sekin suzuvchi yorug'lik — muhit tirik ekanini bildiradi. */
+.console-root::before {
+  content: "";
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+  background:
+    radial-gradient(35% 35% at 30% 40%, rgb(var(--c-accent-2) / 0.10), transparent 70%),
+    radial-gradient(30% 30% at 70% 60%, rgb(var(--c-accent) / 0.08), transparent 70%);
+  animation: console-drift 28s ease-in-out infinite alternate;
+}
+
+/* O'lchov to'ri — asbob ekanini eslatadi, lekin deyarli ko'rinmaydi. */
+.console-root::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgb(15 23 42 / 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(15 23 42 / 0.035) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(90% 80% at 50% 45%, #000 45%, transparent 100%);
+}
+
+@keyframes console-drift {
+  from { transform: translate3d(-3%, -2%, 0) scale(1); }
+  to { transform: translate3d(3%, 2%, 0) scale(1.08); }
+}
+
+/* Shisha panel: yorug', chegarasi nozik, ostida yumshoq soya. */
+/* Panel oq shisha: fon ko'kimtir bo'lgani uchun u YORQIN bo'lib
+   ajralib turadi — qirrasi yorug', ostida aniq soya. */
+.glass {
+  background: linear-gradient(180deg, rgb(var(--glass) / 0.94), rgb(var(--glass) / 0.86));
+  backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgb(255 255 255 / 0.95);
+  box-shadow:
+    0 1px 0 0 rgb(255 255 255 / 1) inset,
+    0 0 0 1px rgb(15 23 42 / 0.05),
+    0 14px 36px -16px rgb(15 23 42 / 0.32),
+    0 2px 10px -6px rgb(15 23 42 / 0.14);
+}
+
+.glass-hover {
+  transition: box-shadow 220ms cubic-bezier(0.2, 0.8, 0.2, 1), transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.glass-hover:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 1px 0 0 rgb(255 255 255 / 0.95) inset,
+    0 0 0 1px rgb(var(--c-accent) / 0.30),
+    0 18px 40px -14px rgb(15 23 42 / 0.26);
+}
+
+/* Jonli manba: panel ustidan o'tadigan yorug' chiziq. */
+.scanline::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgb(var(--c-accent-2) / 0.75), transparent);
+  animation: console-scan 3.6s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes console-scan {
+  0% { transform: translateY(0); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(var(--scan-height, 260px)); opacity: 0; }
+}
+
+/* Nafas oluvchi nuqta — jonli ulanish. */
+.live-dot {
+  position: relative;
+}
+
+.live-dot::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 9999px;
+  border: 1px solid currentColor;
+  opacity: 0.5;
+  animation: console-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes console-ping {
+  0% { transform: scale(0.8); opacity: 0.6; }
+  80%, 100% { transform: scale(2.2); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .console-root::before,
+  .scanline::after,
+  .live-dot::after {
+    animation: none;
+  }
+  .glass-hover:hover {
+    transform: none;
+  }
+}

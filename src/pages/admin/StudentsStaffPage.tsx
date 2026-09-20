@@ -3,7 +3,6 @@ import { Link, useSearchParams } from 'react-router-dom';
 import {
   Briefcase,
   CalendarCheck,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -21,8 +20,6 @@ import {
   CodeText,
   ConfirmDialog,
   DataTable,
-  DocumentFooter,
-  DocumentHeader,
   ErrorState,
   IconButton,
   IntelPanel,
@@ -50,11 +47,9 @@ import EditStudentStaffModal from '../../components/admin/EditStudentStaffModal'
 import BiometricsTimeLookupModal from '../../components/admin/BiometricsTimeLookupModal';
 import ExportPeopleModal from '../../components/admin/ExportPeopleModal';
 import SelfEnrollmentReviewModal from '../../components/admin/SelfEnrollmentReviewModal';
-import { buildReference, recordCode } from '../../components/admin/registryCodes';
 import { api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
-import { branding } from '../../lib/branding';
-import { RAG_FILL, RAG_LABEL, RAG_LETTER, RAG_TEXT, RATE_RAG, rag } from '../../ui/rag';
+import { RAG_LABEL, RAG_LETTER, RAG_TEXT, RATE_RAG, rag } from '../../ui/rag';
 import { NO_FACULTY_KEY, NO_FACULTY_LABEL, PERSON_LABELS, STATUS_FILTERS, type PersonType, type StatusFilter } from '../../lib/peopleFilters';
 import { situationPaths } from '../../lib/situationApi';
 import { usePersistedState } from '../../lib/usePersistedState';
@@ -72,15 +67,6 @@ const BIOMETRICS_META: Record<StudentStaffRecord['biometricsStatus'], { label: s
   yoq: { label: 'Tasdiqlanmagan', status: 'alert' },
 };
 
-/** Hujjat qachon ekranga chiqarilgani. */
-function stamp(): string {
-  try {
-    return new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Tashkent' }).format(new Date());
-  } catch {
-    return new Date().toISOString().slice(0, 16).replace('T', ' ');
-  }
-}
-
 const PAGE_SIZES = [10, 25, 50];
 /** Backend: o'zini o'zi ro'yxatdan o'tkazib, tasdiq kutayotganlar. */
 const AWAITING_APPROVAL_FILTER = 'tasdiq_kutmoqda';
@@ -90,56 +76,6 @@ const PERSON_TABS: TabItem<PersonType>[] = [
   { id: 'talaba', label: PERSON_LABELS.talaba, icon: GraduationCap },
 ];
 
-interface CoverageRow {
-  label: string;
-  total: number;
-  confirmed: number;
-  pending: number;
-  missing: number;
-  percent: number | null;
-}
-
-function CoverageTable({ heading, rows }: { heading: string; rows: CoverageRow[] }) {
-  // Yomoni birinchi: rahbar yuqoridan chora kerak bo'lgan bo'linmani ko'radi.
-  const sorted = [...rows].sort((a, b) => (a.percent ?? Infinity) - (b.percent ?? Infinity));
-  return (
-    <div className="min-w-0 overflow-x-auto">
-      <table className="w-full min-w-[26rem] text-left text-[13px]">
-        <thead>
-          <tr className="border-b border-border">
-            <th scope="col" className="intel-micro !text-fg py-1.5 pr-3">{heading}</th>
-            <th scope="col" className="intel-micro !text-fg py-1.5 pr-3 text-right">Jami</th>
-            <th scope="col" className="intel-micro !text-fg py-1.5 pr-3 text-right">O&apos;tgan</th>
-            <th scope="col" className="intel-micro !text-fg py-1.5 pr-3 text-right">O&apos;tmagan</th>
-            <th scope="col" className="intel-micro !text-fg w-28 py-1.5 text-right">Qamrov</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {sorted.map((row) => {
-            const tone = rag(row.percent, RATE_RAG);
-            return (
-              <tr key={row.label} className="h-8">
-                <td className="py-1 pr-3 font-medium text-fg">{row.label}</td>
-                <td className="intel-code py-1 pr-3 text-right text-muted">{formatNumber(row.total)}</td>
-                <td className="intel-code py-1 pr-3 text-right font-semibold text-success">{formatNumber(row.confirmed)}</td>
-                <td className="intel-code py-1 pr-3 text-right font-semibold text-danger">{formatNumber(row.missing + row.pending)}</td>
-                <td className="py-1 text-right">
-                  <span className="inline-flex items-center justify-end gap-1.5" title={`${row.label} qamrovi — ${RAG_LABEL[tone]}`}>
-                    <span className={cn('intel-code text-[13px] font-semibold', RAG_TEXT[tone])}>
-                      {row.percent === null ? '—' : `${row.percent}%`}
-                    </span>
-                    <span className={cn('intel-code px-1 text-[11px] font-bold', RAG_FILL[tone])}>{RAG_LETTER[tone]}</span>
-                  </span>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 /**
  * Qamrov ko'rsatkichi — bosiladigan o'lchov: yorliq, son va (foiz
  * bo'lsa) svetofor hukmi. Ilgari bu StatTile edi; endi hujjat
@@ -148,13 +84,11 @@ function CoverageTable({ heading, rows }: { heading: string; rows: CoverageRow[]
 function CoverageReadout({
   label,
   value,
-  hint,
   percent,
   onClick,
 }: {
   label: string;
   value: string;
-  hint?: string;
   /** Faqat foiz svetofor oladi: xom sanoq yaxshimi-yomonmi — bo'linma hajmisiz aytib bo'lmaydi. */
   percent?: number | null;
   onClick: () => void;
@@ -164,7 +98,6 @@ function CoverageReadout({
     <button
       type="button"
       onClick={onClick}
-      title={hint}
       className={cn('flex min-w-0 flex-col gap-0.5 px-3 py-2 text-left hover:bg-primary-soft', focusRing)}
     >
       <MicroLabel>{label}</MicroLabel>
@@ -176,7 +109,6 @@ function CoverageReadout({
           </span>
         )}
       </span>
-      {hint && <span className="truncate text-[11px] text-muted">{hint}</span>}
     </button>
   );
 }
@@ -248,7 +180,6 @@ export default function StudentsStaffPage() {
   const [search, setSearch] = useState(() => searchParams.get('search') ?? '');
   const [sort, setSort] = useState<Sort>('name');
   const [pageSizeChoice, setPageSizeChoice] = usePersistedState<number>('odamlar.sahifaHajmi', 10);
-  const [coverageOpen, setCoverageOpen] = usePersistedState<boolean>('odamlar.qamrovOchiq', false);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [overviewError, setOverviewError] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -367,15 +298,6 @@ export default function StudentsStaffPage() {
   }
 
   const columns: DataTableColumn<StudentStaffRecord>[] = [
-    {
-      // Shaxsiy kod — reestrdagi qatorni og'zaki ham, hujjatda ham
-      // ismni takrorlamasdan ko'rsatish uchun.
-      key: 'code',
-      header: 'Kod',
-      width: '6.5rem',
-      mono: true,
-      cell: (person) => <CodeText className="text-[12px] text-subtle">{recordCode('SH', person.id)}</CodeText>,
-    },
     {
       key: 'name',
       header: 'F.I.Sh.',
@@ -544,28 +466,17 @@ export default function StudentsStaffPage() {
   const resetFilters = () => resetFilterFields(filterFields);
   const toolbar = <FilterBar fields={filterFields} />;
 
-  // Reestr varag'ining raqami — bo'lim va filtrlardan. Vaqt ishtirok
-  // etmaydi: bir xil kesim bir xil raqam ostida chop etiladi.
-  const reference = useMemo(
-    () => buildReference('REESTR', [tab, facultyFilter || 'BARCHA'], [courseFilter ?? '', awaitingOnly ? 'tasdiq_kutmoqda' : statusFilter, search.trim(), sort]),
-    [tab, facultyFilter, courseFilter, statusFilter, awaitingOnly, search, sort],
-  );
-  const generatedAt = useMemo(stamp, [reference, current]);
-  const coverageRag = rag(current?.percent ?? null, RATE_RAG);
 
   return (
     <Page
       title="Shaxslar reestri"
-      subtitle="Talabalar va xodimlar: shaxsiy ma'lumotlar va yuzni tasdiqlash holati"
       tabs={tabs}
       tabParam="tur"
       defaultTab="xodim"
       toolbar={toolbar}
       actions={
         <>
-          {/* "Aniqlash" nimani aniqlashini aytmasdi — endi yorliqning o'zi
-              aytadi (tooltipni hamma ham ochmaydi). */}
-          <Button icon={Clock} onClick={() => setLookup({ open: true, person: null })} disabled={!token} title="Odam yuzini aniq qachon tasdiqlaganini topish">
+          <Button icon={Clock} onClick={() => setLookup({ open: true, person: null })} disabled={!token}>
             Tasdiq vaqti
           </Button>
           <Button icon={Download} onClick={() => setExportOpen(true)} disabled={!token}>
@@ -577,31 +488,8 @@ export default function StudentsStaffPage() {
         </>
       }
     >
-      {/* 1. Hujjat blanki: qaysi reestr, qaysi kesim, qanday holatda. */}
-      <DocumentHeader
-        org={branding.orgFullName}
-        title={`${PERSON_LABELS[tab]} reestri`}
-        reference={reference}
-        generatedAt={generatedAt}
-        readouts={[
-          { label: 'Qamrov', value: facultyFilter || 'Barcha fakultetlar', title: facultyFilter || undefined },
-          { label: "Ro'yxatda", value: current ? `${formatNumber(current.total)} kishi` : '—' },
-          { label: 'Ekranda', value: `${formatNumber(total)} yozuv`, title: 'Joriy filtrga mos yozuvlar soni' },
-          {
-            label: 'Yuz qamrovi',
-            title: `Yuzi tasdiqlanganlar ulushi — ${RAG_LABEL[coverageRag]}`,
-            value: (
-              <span className={cn('inline-flex items-baseline gap-1.5', RAG_TEXT[coverageRag])}>
-                {current === null || current.percent === null ? '—' : `${current.percent}%`}
-                <span className="text-[10px] font-bold">{RAG_LETTER[coverageRag]}</span>
-              </span>
-            ),
-          },
-        ]}
-      />
-
       {overviewError && !current && (
-        <ErrorState title="Qamrov statistikasini olib bo'lmadi" message="Ro'yxat baribir ishlaydi." onRetry={loadOverview} />
+        <ErrorState title="Qamrov olinmadi" onRetry={loadOverview} />
       )}
 
       {!current && !overviewError && <SkeletonTiles count={4} className="xl:grid-cols-4" />}
@@ -610,7 +498,7 @@ export default function StudentsStaffPage() {
           to'g'riday ko'rinib qolardi. */}
       {overviewError && current && (
         <div role="status" className="flex flex-wrap items-center justify-between gap-2 border border-warning/50 bg-warning-soft px-3 py-2 text-[13px] text-fg">
-          <span>Quyidagi raqamlar eskirgan bo&apos;lishi mumkin — qamrov statistikasini yangilab bo&apos;lmadi.</span>
+          <span>Raqamlar eskirgan.</span>
           <Button size="sm" onClick={loadOverview}>
             Qayta urinish
           </Button>
@@ -618,58 +506,28 @@ export default function StudentsStaffPage() {
       )}
 
       {current && (
-        <IntelPanel title="Yuzni tasdiqlash qamrovi" code={reference} right={<MicroLabel>Bosilsa ro&apos;yxat filtrlanadi</MicroLabel>}>
-          <div className="grid grid-cols-2 gap-px bg-border xl:grid-cols-4">
+        <IntelPanel title="Yuz qamrovi" brackets={false}>
+          <div className="grid grid-cols-3 gap-px bg-border">
             <span className="bg-surface">
-              <CoverageReadout label={`Jami ${PERSON_LABELS[tab].toLowerCase()}`} value={formatNumber(current.total)} onClick={() => pickStatus('')} />
+              <CoverageReadout label="Jami" value={formatNumber(current.total)} onClick={() => pickStatus('')} />
             </span>
             <span className="bg-surface">
               <CoverageReadout
-                label="Yuzi tasdiqlangan"
+                label="Tasdiqlangan"
                 value={formatNumber(current.confirmed)}
                 percent={current.percent}
-                hint={current.percent === null ? undefined : `${current.percent}% qamrov`}
                 onClick={() => pickStatus('tasdiqlangan')}
               />
             </span>
-            {/* «Tasdiqlanmagan» filtri kutilayotganlarni HAM qamrab oladi
-                (missing + pending), shuning uchun ikkala o'lchov ham o'sha
-                filtrga olib boradi va izohda buni aytadi. */}
+            {/* «Tasdiqlanmagan» filtri kutilayotganlarni ham qamrab oladi. */}
             <span className="bg-surface">
-              <CoverageReadout label="Kutilmoqda" value={formatNumber(current.pending)} hint="tasdiq jarayonida" onClick={() => pickStatus('tasdiqlanmagan')} />
-            </span>
-            <span className="bg-surface">
-              <CoverageReadout label="Yuzi yo'q" value={formatNumber(current.missing)} hint="kamera taniy olmaydi" onClick={() => pickStatus('tasdiqlanmagan')} />
+              <CoverageReadout
+                label="Tasdiqlanmagan"
+                value={formatNumber(current.missing + current.pending)}
+                onClick={() => pickStatus('tasdiqlanmagan')}
+              />
             </span>
           </div>
-        </IntelPanel>
-      )}
-
-      {current && current.total > 0 && (
-        <IntelPanel
-          title="Qamrov tafsiloti"
-          code={`${formatNumber(current.byFaculty.length)} ta bo'linma`}
-          right={<MicroLabel>Yomoni birinchi</MicroLabel>}
-        >
-          <button
-            type="button"
-            onClick={() => setCoverageOpen(!coverageOpen)}
-            aria-expanded={coverageOpen}
-            className={cn('flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-surface-2', focusRing)}
-          >
-            <span className="min-w-0 text-[13px] text-muted">
-              Fakultetlar{isStudents ? ' va kurslar' : ''} kesimida yuzi tasdiqlanganlar
-            </span>
-            <ChevronDown size={16} aria-hidden="true" className={cn('shrink-0 text-muted transition-transform', coverageOpen && 'rotate-180')} />
-          </button>
-          {coverageOpen && (
-            <div className={cn('grid gap-5 border-t border-border px-3 py-2.5', isStudents && current.byCourse.length > 0 && 'xl:grid-cols-[3fr_2fr]')}>
-              <CoverageTable heading="Fakultet" rows={current.byFaculty.map((row) => ({ ...row, label: row.faculty }))} />
-              {isStudents && current.byCourse.length > 0 && (
-                <CoverageTable heading="Kurs" rows={current.byCourse.map((row) => ({ ...row, label: row.course }))} />
-              )}
-            </div>
-          )}
         </IntelPanel>
       )}
 
@@ -678,7 +536,7 @@ export default function StudentsStaffPage() {
           <span className="flex min-w-0 items-start gap-2.5 text-[13px] text-fg">
             <ShieldQuestion size={16} className="mt-0.5 shrink-0 text-warning" aria-hidden="true" />
             {awaitingCount > 0
-              ? `${formatNumber(awaitingCount)} kishi o'zini o'zi ro'yxatdan o'tkazdi — yuzini tasdiqlashingizni kutmoqda. Tasdiqlanmaguncha kameralar ularni tanimaydi.`
+              ? `${formatNumber(awaitingCount)} kishi tasdiq kutmoqda.`
               : 'Tasdiq kutayotganlar qolmadi.'}
           </span>
           <Button
@@ -689,17 +547,12 @@ export default function StudentsStaffPage() {
               setPage(1);
             }}
           >
-            {awaitingOnly ? "Butun ro'yxatga qaytish" : "Ko'rib chiqish"}
+            {awaitingOnly ? "Butun ro'yxat" : "Ko'rib chiqish"}
           </Button>
         </div>
       )}
 
-      <IntelPanel
-        title={`${PERSON_LABELS[tab]} ro'yxati`}
-        code={reference}
-        right={<MicroLabel>{formatNumber(total)} ta yozuv</MicroLabel>}
-        brackets={false}
-      >
+      <IntelPanel title={PERSON_LABELS[tab]} right={<MicroLabel>{formatNumber(total)} ta</MicroLabel>}>
       <DataTable
         ariaLabel={PERSON_LABELS[tab]}
         columns={columns}
@@ -717,10 +570,7 @@ export default function StudentsStaffPage() {
         }}
         maxHeight="none"
         className={cn('transition-opacity', refreshing && 'opacity-70')}
-        emptyTitle={`Filtrlarga mos ${isStudents ? 'talaba' : 'xodim'} topilmadi`}
-        emptyDescription={
-          search.trim() ? "Ismni boshqacha yozib ko'ring (masalan, faqat familiya) yoki JSHSHIR bo'yicha qidiring." : undefined
-        }
+        emptyTitle={`${isStudents ? 'Talaba' : 'Xodim'} topilmadi`}
         emptyAction={
           activeFilters > 0 ? (
             <Button onClick={resetFilters}>Filtrlarni tozalash</Button>
@@ -747,10 +597,6 @@ export default function StudentsStaffPage() {
         }
       />
       </IntelPanel>
-
-      <DocumentFooter
-        note={`Xizmat uchun. Varaq ${reference} raqami bilan tizimda tuzilgan. Shaxsiy kod (SH-…) reestrdagi yozuvni ismni takrorlamasdan ko'rsatadi.`}
-      />
 
       <ExportPeopleModal
         open={exportOpen}

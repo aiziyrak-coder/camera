@@ -23,8 +23,6 @@ import {
   CodeText,
   ConfirmDialog,
   DataTable,
-  DocumentFooter,
-  DocumentHeader,
   EmptyState,
   ErrorState,
   IntelPanel,
@@ -32,7 +30,6 @@ import {
   Page,
   RANGE_PRESET_LABELS,
   FilterBar,
-  Readout,
   filterActiveCount,
   Select,
   Skeleton,
@@ -50,7 +47,6 @@ import {
   type IntelStatus,
   type TabItem,
 } from '../../ui';
-import { eventCode, eventsReference } from '../../components/events/eventCodes';
 import { eventQueryParams, type Quick } from '../../components/events/eventQuery';
 import EventDrawer from '../../components/events/EventDrawer';
 import EventsPager from '../../components/events/EventsPager';
@@ -61,15 +57,13 @@ import { ApiError, api, buildQuery, isAbortError, type Page as ApiPage } from '.
 import { exportRowsAsCsv } from '../../lib/csvExport';
 import { EVENT_CSV_HEADERS, eventCsvRow, eventsCsvFilename } from '../../components/events/eventCsv';
 import { useAuth } from '../../lib/auth';
-import { branding } from '../../lib/branding';
 import { usePermissions } from '../../lib/permissions';
 import { SEVERITY_TONE, STATUS_LABEL } from '../../lib/eventLabels';
 import { isEventUpdate, isOpenStatus } from '../../lib/eventWorkflow';
 import type { FixedPreset } from '../../lib/reportPeriods';
 import { useLiveEvents } from '../../lib/realtime';
 import { invalidateServerPageCache, useServerPage } from '../../lib/useServerPage';
-import { RATE_RAG, RAG_LABEL, RAG_LETTER, RAG_TEXT, rag } from '../../ui/rag';
-import { formatCount, formatMinutes, relativeTime, todayInTashkent } from '../../lib/uzDate';
+import { formatCount, relativeTime, todayInTashkent } from '../../lib/uzDate';
 import type { AIEvent, EventStatus, EventSummary } from '../../types';
 
 type View = 'navbat' | 'jurnal' | 'sinov';
@@ -106,23 +100,8 @@ const SEVERITY_LABEL: Record<AIEvent['severity'], string> = {
   past: 'Past',
 };
 
-const VIEW_TITLE: Record<View, string> = {
-  navbat: 'Hodisalar navbati',
-  jurnal: 'Hodisalar jurnali',
-  sinov: 'Sinov namunalari',
-};
-
-/** Hujjat qachon ekranga chiqarilgani — chop etilgan nusxada ham turadi. */
-function stamp(): string {
-  try {
-    return new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Tashkent' }).format(new Date());
-  } catch {
-    return new Date().toISOString().slice(0, 16).replace('T', ' ');
-  }
-}
-
 function errorText(err: unknown): string {
-  return err instanceof ApiError ? err.message : "Tarmoq xatosi — server bilan bog'lanib bo'lmadi";
+  return err instanceof ApiError ? err.message : 'Tarmoq xatosi';
 }
 
 function CardsSkeleton() {
@@ -198,7 +177,6 @@ export default function EventsPage() {
   const [params, setParams] = useSearchParams();
 
   const [summary, setSummary] = useState<EventSummary | null>(null);
-  const [summaryError, setSummaryError] = useState(false);
 
   const tabs = useMemo<TabItem<View>[]>(
     () => [
@@ -211,8 +189,8 @@ export default function EventsPage() {
   const [view] = useUrlTab(tabs, { param: 'korinish', defaultTab: 'navbat' });
   const queue = view === 'navbat';
   const trialView = view === 'sinov';
-  // Navbat va sinov namunalari kartalar ko'rinishida: baholangan karta ro'yxatdan chiqadi.
-  const cardView = queue || trialView;
+  // Faqat sinov namunalari kartalarda: baholangan karta ro'yxatdan chiqadi.
+  const cardView = trialView;
   const severity = (params.get('muhimlik') ?? '') as '' | AIEvent['severity'];
   const statusFilter = (params.get('holat') ?? '') as '' | EventStatus;
   const tezParam = params.get('tez');
@@ -315,13 +293,9 @@ export default function EventsPage() {
     if (!token) return;
     api
       .get<EventSummary>('/api/events/summary', token)
-      .then((next) => {
-        setSummary(next);
-        setSummaryError(false);
-      })
+      .then(setSummary)
       .catch(() => {
-        /* tepa qator ikkinchi darajali — ro'yxat baribir ishlaydi */
-        setSummaryError(true);
+        /* tab sanoqlari ikkinchi darajali — ro'yxat baribir ishlaydi */
       });
   }, [token]);
   useEffect(loadSummary, [loadSummary]);
@@ -778,15 +752,6 @@ export default function EventsPage() {
       ),
     },
     {
-      // Hodisaning xizmat kodi: jurnalda, eksportda va og'zaki
-      // ma'ruzada bitta yozuvni ko'rsatishning eng qisqa yo'li.
-      key: 'kod',
-      header: 'Kod',
-      width: '6.5rem',
-      mono: true,
-      cell: (event) => <CodeText className="text-[12px] text-subtle">{eventCode(event.id)}</CodeText>,
-    },
-    {
       key: 'kadr',
       header: 'Kadr',
       width: '4.25rem',
@@ -907,7 +872,7 @@ export default function EventsPage() {
   // --------------------------------------------------------------- tanasi
   function renderCards(title: string) {
     return (
-      <IntelPanel title={title} code={reference} right={<MicroLabel>{formatCount(rows.length)} ta karta</MicroLabel>} bodyClassName="p-2.5">
+      <IntelPanel title={title} right={<MicroLabel>{formatCount(rows.length)} ta</MicroLabel>} bodyClassName="p-2.5">
       <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
         {rows.map((event) => (
           <ReviewCard
@@ -929,8 +894,7 @@ export default function EventsPage() {
       return (
         <EmptyState
           icon={FlaskConical}
-          title={summary && summary.trialUnreviewed === 0 ? "Baholanmagan sinov signali yo'q" : 'Baholash uchun modulni tanlang'}
-          description="Sinov rejimidagi modul signal berganda, uning namunalari shu yerda paydo bo'ladi."
+          title={summary && summary.trialUnreviewed === 0 ? "Sinov signali yo'q" : 'Modulni tanlang'}
         />
       );
     }
@@ -939,8 +903,7 @@ export default function EventsPage() {
       return (
         <EmptyState
           icon={CheckCheck}
-          title={sample.length > 0 ? 'Bu namuna baholandi' : 'Bu modulda baholanmagan signal qolmadi'}
-          description="Yangi namuna olsangiz, tasodifiy tanlangan boshqa signallar ko'rsatiladi."
+          title={sample.length > 0 ? 'Namuna baholandi' : "Signal qolmadi"}
           action={
             <Button icon={Shuffle} onClick={() => setSampleNonce((n) => n + 1)}>
               Yangi namuna
@@ -952,28 +915,8 @@ export default function EventsPage() {
     return renderCards('Sinov namunalari');
   }
 
-  function renderQueueBody() {
-    if (error && rows.length === 0) return <ErrorState variant="block" message={error} onRetry={refreshAll} />;
-    if (loading && rows.length === 0) return <CardsSkeleton />;
-    if (rows.length === 0) {
-      return (
-        <EmptyState
-          icon={CheckCheck}
-          title={activeFilters ? "Filtrlarga mos ko'rib chiqilmagan signal yo'q" : "Navbat bo'sh — barcha signallar ko'rib chiqilgan"}
-          description="Yangi signal kelsa, u shu yerda avtomatik paydo bo'ladi."
-          action={activeFilters > 0 ? <Button onClick={resetFilters}>Filtrlarni tozalash</Button> : undefined}
-        />
-      );
-    }
-    return (
-      <>
-        {error && <ErrorState message={error} onRetry={refreshAll} />}
-        {renderCards("Ko'rib chiqish navbati")}
-      </>
-    );
-  }
-
-  function renderJournal() {
+  /** Navbat ham, jurnal ham — bitta zich jadval. */
+  function renderTable() {
     return (
       <>
         {/* Klaviatura bilan belgilaganda tanlovlar soni e'lon qilinsin. */}
@@ -998,18 +941,13 @@ export default function EventsPage() {
               Hal qilindi
             </Button>
             <Button size="sm" variant="ghost" className="ms-auto" onClick={() => setSelected(new Set())}>
-              Tanlovni bekor qilish
+              Bekor qilish
             </Button>
           </div>
         )}
-        <IntelPanel
-          title="Hodisalar jurnali"
-          code={reference}
-          right={<MicroLabel>{formatCount(total)} ta yozuv</MicroLabel>}
-          brackets={false}
-        >
+        <IntelPanel title={queue ? 'Navbat' : 'Jurnal'} right={<MicroLabel>{formatCount(total)} ta</MicroLabel>}>
         <DataTable
-          ariaLabel="Hodisalar jurnali"
+          ariaLabel={queue ? 'Hodisalar navbati' : 'Hodisalar jurnali'}
           columns={columns}
           rows={rows}
           rowKey={(event) => event.id}
@@ -1020,7 +958,7 @@ export default function EventsPage() {
           loadingRows={8}
           error={error && rows.length === 0 ? error : null}
           onRetry={refreshAll}
-          emptyTitle="Filtrlarga mos hodisa topilmadi"
+          emptyTitle={queue ? "Navbat bo'sh" : 'Hodisa topilmadi'}
           emptyAction={activeFilters > 0 ? <Button onClick={resetFilters}>Filtrlarni tozalash</Button> : undefined}
           mobileTitleKey="modul"
           maxHeight="none"
@@ -1035,28 +973,9 @@ export default function EventsPage() {
     );
   }
 
-  const staleSerious = summary?.staleSeriousUnreviewed ?? 0;
-  const waiting = summary ? summary.unreviewed + (summary.inProgress ?? 0) : null;
-
-  // Varaq raqami — faqat ko'rinish va filtrlardan. Bir xil so'rov bir xil
-  // raqam ostida chop etiladi, ikki nusxani solishtirib bo'ladi.
-  const reference = useMemo(
-    () => eventsReference({ view, severity, status: statusFilter, quick, moduleCode, building, from, to, search }),
-    [view, severity, statusFilter, quick, moduleCode, building, from, to, search],
-  );
-  const generatedAt = useMemo(stamp, [reference, summary, rows]);
-  const periodLabel = from || to ? `${from || '…'} — ${to || '…'}` : 'Barcha vaqt';
-  // Aniqlik — foiz, ya'ni svetofor qo'llanadigan yagona ko'rsatkich.
-  // Qolgan sonlar (bugungi signallar, kutayotganlar) xom sanoq: ular
-  // yaxshimi yoki yomonmi — muassasa hajmini bilmasdan aytib bo'lmaydi.
-  const precision = summary?.recentPrecision ?? null;
-  const precisionRag = rag(precision, RATE_RAG);
-  const overdue = summary?.overdue ?? 0;
-
   return (
     <Page
       title="Hodisalar"
-      subtitle="AI signallarini ko'rib chiqish: tasdiqlash yoki yolg'on signal deb rad etish, mas'ul tayinlash va yopish"
       tabs={tabs}
       tabParam="korinish"
       defaultTab="navbat"
@@ -1066,7 +985,7 @@ export default function EventsPage() {
             <Button icon={Download} onClick={exportCsv} loading={exporting} disabled={exporting}>
               {exportProgress
                 ? `Yuklanmoqda… ${formatCount(exportProgress.loaded)}${exportProgress.total ? ` / ${formatCount(exportProgress.total)}` : ''}`
-                : 'Excel uchun yuklash (CSV)'}
+                : 'CSV'}
             </Button>
           )}
           <Button icon={RefreshCw} onClick={trialView ? () => setSampleNonce((n) => n + 1) : refreshAll} loading={!trialView && loading && rows.length > 0}>
@@ -1076,85 +995,10 @@ export default function EventsPage() {
       }
       toolbar={toolbar}
     >
-      {/* 1. Hujjat blanki: kim, nima, qaysi davr, qaysi raqam ostida. */}
-      <DocumentHeader
-        org={branding.orgFullName}
-        title={VIEW_TITLE[view]}
-        reference={reference}
-        generatedAt={generatedAt}
-        readouts={[
-          { label: 'Davr', value: periodLabel },
-          { label: 'Muhimlik', value: severity ? SEVERITY_LABEL[severity] : 'Barchasi' },
-          {
-            label: 'Ochiq / jami',
-            value: summary ? `${formatCount(waiting)} / ${formatCount(summary.total)}` : '—',
-            title: "Qaror kutayotgan signallar (yangi + jarayonda) va jurnaldagi jami yozuv",
-          },
-          {
-            label: "Muddati o'tgan",
-            value: (
-              <span className={cn(overdue > 0 && 'text-danger')}>
-                {summary ? formatCount(overdue) : '—'}
-              </span>
-            ),
-            title: 'Hal qilish muddati kechikkan ochiq hodisalar',
-          },
-        ]}
-      />
-
-      {trialView ? (
-        <div className="flex gap-3 border border-warning/50 bg-warning-soft px-3 py-2.5">
-          <FlaskConical size={18} aria-hidden="true" className="mt-0.5 shrink-0 text-warning" />
-          <div className="text-[13px] text-fg">
-            <p className="intel-micro !text-fg">Sinov rejimidagi modullar signallari</p>
-            <p className="mt-1 text-[13px] leading-relaxed text-muted">
-              Bu modullar hali kalibrlanmagan, shuning uchun ularning signallari operator navbatiga, ogohlantirishlarga va hisobotlarga
-              chiqmaydi. Quyida tasodifiy tanlangan namunalar — kadrga qarab haqqoniy baholang. Modul ishchi rejimga o&apos;tishi uchun
-              kamida 30 ta baholangan signal va 80% aniqlik kerak (AI modullari sahifasida).
-            </p>
-          </div>
-        </div>
-      ) : (
-        <IntelPanel
-          title="Navbat holati"
-          code={reference}
-          right={summaryError ? <MicroLabel className="!text-danger">Ko&apos;rsatkichlar yangilanmadi</MicroLabel> : undefined}
-        >
-          <div className="grid grid-cols-2 gap-x-6 gap-y-3 px-3 py-2.5 sm:grid-cols-3 xl:grid-cols-5">
-            <Readout
-              label="Qaror kutmoqda"
-              value={formatCount(waiting)}
-              title={summary ? `yangi: ${summary.unreviewed} · jarayonda: ${summary.inProgress}` : undefined}
-            />
-            <Readout label="Yuqori muhimlikda" value={summary ? formatCount(summary.unreviewedHigh) : '—'} title="Ko'rib chiqilmagan yuqori muhimlikdagi signallar" />
-            <Readout
-              label="Bugun"
-              value={summary ? formatCount(summary.today) : '—'}
-              title={summary ? `shundan jiddiy: ${summary.todaySerious}` : undefined}
-            />
-            <Readout
-              label="Aniqlik (30 kun)"
-              title={`tasdiqlangan / ko'rib chiqilgan · ${RAG_LABEL[precisionRag]}`}
-              value={
-                <span className={cn('inline-flex items-baseline gap-1.5', RAG_TEXT[precisionRag])}>
-                  {precision === null ? '—' : `${precision}%`}
-                  <span className="text-[10px] font-bold">{RAG_LETTER[precisionRag]}</span>
-                </span>
-              }
-            />
-            <Readout
-              label="O'rtacha qaror vaqti"
-              value={formatMinutes(summary?.avgReviewMinutes)}
-              title={staleSerious > 0 ? `${staleSerious} ta jiddiy signal 24 soatdan beri kutmoqda` : 'signal kelgandan qarorgacha (30 kun)'}
-            />
-          </div>
-          {(staleSerious > 0 || overdue > 0) && (
-            <p className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border px-3 py-1.5">
-              {overdue > 0 && <StatusLamp status="alert" label={`Muddati o'tgan: ${formatCount(overdue)}`} pulse />}
-              {staleSerious > 0 && <StatusLamp status="warn" label={`24 soatdan beri kutmoqda: ${formatCount(staleSerious)}`} />}
-            </p>
-          )}
-        </IntelPanel>
+      {trialView && (
+        <p className="border border-warning/50 bg-warning-soft px-3 py-1.5 text-[13px] text-fg">
+          Sinov moduli: signallari navbatga chiqmaydi.
+        </p>
       )}
 
       {/* Bitta xabar, bitta amal: ilgari ErrorState va uning tuzatish
@@ -1164,7 +1008,7 @@ export default function EventsPage() {
         <div className="flex flex-col gap-2">
           <ErrorState
             title="Sana oralig'i teskari"
-            message={`Boshlanish sanasi (${from}) tugash sanasidan (${to}) keyin turibdi — shuning uchun so'rov yuborilmadi.`}
+            message={`${from} — ${to}: boshlanish sanasi keyin turibdi.`}
           />
           <Button className="self-start" onClick={() => setParam({ from: to, to: from })}>
             Sanalarni almashtirish
@@ -1187,18 +1031,7 @@ export default function EventsPage() {
         </Button>
       )}
 
-      {trialView ? renderTrialBody() : queue ? renderQueueBody() : renderJournal()}
-
-      {/* Jurnaldagidek: bitta sahifaga sig'sa sahifalagich ortiqcha. */}
-      {!trialView && queue && rows.length > 0 && totalPages > 1 && (
-        <EventsPager page={page} totalPages={totalPages} total={total} pageSize={pageSize} onChange={setPage} />
-      )}
-
-      {!trialView && (
-        <DocumentFooter
-          note={`Xizmat uchun. Varaq ${reference} raqami bilan tizimda tuzilgan; sonlar ${periodLabel} kesimi uchun. Hodisa kodi (HD-…) bilan har bir yozuv jurnaldan topiladi.`}
-        />
-      )}
+      {trialView ? renderTrialBody() : renderTable()}
 
       <EventDrawer
         event={drawerEvent}
@@ -1223,9 +1056,7 @@ export default function EventsPage() {
       <ConfirmDialog
         open={!!deleting}
         title="Hodisani o'chirish"
-        message={
-          deleting ? `"${deleting.moduleName}" hodisasini o'chirishni tasdiqlaysizmi? Kadr ham o'chiriladi va buni ortga qaytarib bo'lmaydi.` : ''
-        }
+        message={deleting ? `"${deleting.moduleName}" o'chiriladi. Kadr ham o'chadi.` : ''}
         confirmLabel="O'chirish"
         onCancel={() => setDeleting(null)}
         onConfirm={confirmDelete}

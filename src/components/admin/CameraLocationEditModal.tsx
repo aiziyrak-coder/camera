@@ -160,7 +160,7 @@ export default function CameraLocationEditModal({
       onSave(saved);
       onClose();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi");
+      setError(err instanceof ApiError ? err.message : 'Tarmoq xatosi');
     } finally {
       setSaving(false);
     }
@@ -244,7 +244,7 @@ export default function CameraLocationEditModal({
         {roomKnown && (roomType || camera?.effectiveRoomType) === 'kirish' && (
           <Field
             label="Kamera kimning yuzini ko'radi"
-            hint="Aniq belgilansa, kelish va ketish adashtirilmaydi: kirayotganlarni ko'radigan kamera kech kelganni istalgan soatda aniqlaydi, chiqayotganlarni ko'radigani esa hech kimni «kech keldi» deb yozmaydi."
+            hint="Kelish va ketishni ajratadi"
           >
             <Select
               value={faceDirection}

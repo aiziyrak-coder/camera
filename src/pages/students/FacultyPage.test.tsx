@@ -72,10 +72,10 @@ describe('Fakultet sahifasi', () => {
     await waitFor(() => expect(screen.getByRole('table', { name: 'Guruhlar' })).toBeInTheDocument());
     expect(tableGroupNames()).toEqual(['DI-2301', 'DI-2302', 'DI-2303']);
 
-    fireEvent.click(sortHeader(/Kelganlar ulushi/));
+    fireEvent.click(sortHeader(/^Keldi/));
     expect(tableGroupNames()).toEqual(['DI-2301', 'DI-2303', 'DI-2302']);
 
-    fireEvent.click(sortHeader(/Kelganlar ulushi/));
+    fireEvent.click(sortHeader(/^Keldi/));
     expect(tableGroupNames()).toEqual(['DI-2302', 'DI-2303', 'DI-2301']);
   });
 
@@ -88,7 +88,7 @@ describe('Fakultet sahifasi', () => {
       courses: [],
     };
     renderPage();
-    await waitFor(() => expect(screen.getByText("Bu fakultetda guruh yo'q")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Guruh yo'q")).toBeInTheDocument());
     expect(screen.queryByTestId('kampaniya')).not.toBeInTheDocument();
   });
 
@@ -122,15 +122,17 @@ describe('Fakultet sahifasi', () => {
 
     fireEvent.change(screen.getByPlaceholderText('Guruh nomi…'), { target: { value: 'DI-2302' } });
     await waitFor(() => expect(screen.getByText(/Topilgan guruhlar bo'yicha/)).toBeInTheDocument());
-    // Bitta guruh: 5 kelgan / (5 + 3 + 2) kutilgan.
-    expect(screen.getByText(/Topilgan guruhlar bo'yicha/).textContent).toContain('5 / 10 keldi');
+    // Bitta guruh: 5 kelgan / (5 + 3 + 2) kutilgan. Qamrov nomi endi
+    // panel sarlavhasi, maxraj esa uning ostidagi qator — ikkalasi ham
+    // ko'rinishi kerak.
+    expect(screen.getAllByText('5 / 10 keldi').length).toBeGreaterThan(0);
   });
 
-  it("o'tgan sanada sarlavhada «bugun» deyilmaydi", async () => {
+  it("o'tgan sanada «Hali kelmagan» o'rniga «Ma'lumot yo'q» ko'rsatiladi", async () => {
+    // Sahifa izohi qisqartirildi, lekin ko'rilayotgan kun AJRATILIB turishi
+    // kerak: o'tgan kunda «hali kelmagan» degan holat bo'lmaydi.
     renderPage('/talabalar/fakultet/f1?sana=2020-05-04');
     await waitFor(() => expect(screen.getByText('Davolash ishi')).toBeInTheDocument());
-    const subtitle = screen.getByText(/nechta talaba kelgani/);
-    expect(subtitle.textContent).toContain('shu kuni');
-    expect(subtitle.textContent).not.toContain('bugun');
+    expect(screen.queryByText('Hali kelmagan')).not.toBeInTheDocument();
   });
 });

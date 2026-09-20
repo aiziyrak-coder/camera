@@ -133,7 +133,7 @@ export default function EventActivity({ event }: { event: AIEvent }) {
           }}
           rows={2}
           aria-label="Izoh yozish"
-          placeholder="Izoh yozing… (Ctrl+Enter — yuborish)"
+          placeholder="Izoh… (Ctrl+Enter)"
           className="min-w-0 flex-1 resize-y"
         />
         <IconButton icon={Send} label="Izohni yuborish" variant="primary" onClick={send} disabled={!draft.trim()} loading={sending} />

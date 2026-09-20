@@ -58,10 +58,11 @@ describe("UnitsTab — «Xodimlar keldi» plitkasi", () => {
   // ko'rsatardi.
   it('uses the same denominator as the unit cards and names it', async () => {
     renderTab([unit({ staffTotal: 20, enrolled: 12, present: 10, late: 2, absent: 2, noData: 8, rate: 83.3 })]);
+    // Izohdagi yagona son foizning MAXRAJI bo'lishi kerak: jami xodim (20)
+    // u yerda turса, plitka o'z foizidan boshqa asosni nomlagan bo'lardi.
     const hint = await screen.findByText(/Holati aniq/);
-    expect(hint.textContent).toContain('Holati aniq 12 xodimdan');
-    expect(hint.textContent).toContain("yuzi ro'yxatdan o'tmagan");
-    expect(hint.textContent).not.toContain('20 xodimning');
+    expect(hint.textContent).toBe('Holati aniq 12 xodimdan');
+    expect(hint.textContent).not.toContain('20');
   });
 
   it('counts people who have not arrived yet, not the ones with no face enrolled', async () => {

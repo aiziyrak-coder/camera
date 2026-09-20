@@ -10,7 +10,7 @@ POST here is a manual/admin entry point until that pipeline exists.
 from datetime import date as date_type, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,13 +21,26 @@ from app.models import Camera, LessonAttendance, LessonSession, StudentStaff
 from app.pagination import Page, PageParams, build_page, paginate
 from app.schemas.lesson_session import (
     LessonAttendanceOut,
+    LessonSessionImportErrorOut,
     LessonAttendanceRowOut,
     LessonSessionCreateIn,
     LessonSessionImportResultOut,
     LessonSessionOut,
     LessonSessionScheduleIn,
 )
-from app.services.lesson_import import import_lesson_sessions as import_lessons_file, parse_scheduled_start_time
+from app.config import settings
+from app.models import Faculty, StudentGroup
+from app.services.lesson_import import (
+    _column_map,
+    _read_rows,
+    import_lesson_sessions as import_lessons_file,
+    parse_scheduled_start_time,
+)
+from app.services.lesson_weekly import (
+    WEEKDAY_COLUMN_ALIASES,
+    build_weekly_template,
+    expand_weekly,
+)
 
 router = APIRouter(prefix="/api/lesson-sessions", tags=["lesson-sessions"])
 
@@ -196,6 +209,120 @@ async def import_lesson_sessions(
         await db.commit()
     return result
 
+
+
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+
+
+async def _template_lists(db: AsyncSession) -> tuple[list[str], list[tuple[str, str]]]:
+    """Namunaga qo'yiladigan ro'yxatlar: guruhlar va KAMERASI BOR xonalar."""
+    groups = list((await db.execute(select(StudentGroup.name).order_by(StudentGroup.name))).scalars().all())
+    rows = (
+        await db.execute(
+            select(Camera.room_code, Camera.name)
+            .where(Camera.room_code.isnot(None))
+            .where(Camera.room_code != "")
+            .order_by(Camera.room_code, Camera.name)
+        )
+    ).all()
+    seen: set[str] = set()
+    rooms: list[tuple[str, str]] = []
+    for code, camera_name in rows:
+        if code in seen:
+            continue
+        seen.add(code)
+        rooms.append((code, camera_name))
+    return groups, rooms
+
+
+@router.get("/namuna.xlsx")
+async def weekly_template(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: ReadDep,
+) -> Response:
+    """Kafedraga yuboriladigan haftalik jadval namunasi (.xlsx)."""
+    groups, rooms = await _template_lists(db)
+    content = build_weekly_template(groups, rooms, lesson_minutes=settings.lesson_duration_minutes)
+    return Response(
+        content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename*=UTF-8''dars-jadvali-namuna.xlsx"},
+    )
+
+
+@router.post("/import-haftalik", response_model=LessonSessionImportResultOut)
+async def import_weekly_schedule(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: EditDep,
+    file: Annotated[UploadFile, File(description="Haftalik jadval: guruh, hafta kuni, boshlanish, xona, fan")],
+    dan: Annotated[str, Query(description="Semestr boshlanishi, YYYY-MM-DD")],
+    gacha: Annotated[str, Query(description="Semestr tugashi, YYYY-MM-DD")],
+    apply: Annotated[bool, Query()] = False,
+) -> LessonSessionImportResultOut:
+    """Haftalik jadvalni oraliqqa yoyib import qiladi.
+
+    `apply=false` (standart) — faqat ko'rish: nechta dars chiqadi, qaysi
+    xona yoki o'qituvchi topilmadi. Hech narsa yozilmaydi."""
+    try:
+        start = date_type.fromisoformat(dan)
+        end = date_type.fromisoformat(gacha)
+    except ValueError:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Sana YYYY-MM-DD ko'rinishida bo'lishi kerak")
+    if start > end:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Boshlanish sanasi tugash sanasidan keyin")
+    if (end - start).days > 400:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Oraliq bir yildan oshmasligi kerak")
+
+    raw = await file.read()
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Fayl hajmi 5 MB dan oshmasligi kerak")
+
+    try:
+        header, rows = _read_rows(raw, file.filename or "")
+    except Exception:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Faylni o'qib bo'lmadi")
+    if not header:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Fayl bo'sh")
+
+    columns = _column_map(header)
+    weekday_column = next((name for name in WEEKDAY_COLUMN_ALIASES if name in header), None)
+    if weekday_column is None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "\"Hafta kuni\" ustuni topilmadi — namunadagi ustun nomlarini o'zgartirmang",
+        )
+    if "group" not in columns:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "\"Guruh\" ustuni topilmadi")
+
+    expanded = expand_weekly(header, rows, start, end, weekday_column=weekday_column)
+    if not expanded.rows:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Bitta ham dars chiqmadi — hafta kunlari yoki sana oralig'ini tekshiring",
+        )
+
+    result = await import_lessons_file(db, b"", apply=apply, prepared=(expanded.header, expanded.rows))
+    result.weeks = expanded.weeks
+    if expanded.bad_weekday:
+        shown = ", ".join(str(num) for num in expanded.bad_weekday[:10])
+        result.errors.append(
+            LessonSessionImportErrorOut(row=expanded.bad_weekday[0], message=f"Hafta kuni tushunilmadi (qatorlar: {shown})")
+        )
+    if expanded.truncated:
+        result.errors.append(
+            LessonSessionImportErrorOut(row=0, message="Juda ko'p dars chiqdi — oraliqni qisqartiring")
+        )
+    if apply and result.imported:
+        await log_action(
+            db,
+            request,
+            current_user.id,
+            f"Haftalik dars jadvali import: {result.imported} dars ({dan} — {gacha})",
+            "Ta'lim",
+        )
+        await db.commit()
+    return result
 
 @router.get("/{session_id}/attendance", response_model=LessonAttendanceOut)
 async def lesson_attendance(

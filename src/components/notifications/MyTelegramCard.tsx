@@ -29,7 +29,7 @@ export default function MyTelegramCard() {
     if (!checkRequested) return;
     setCheckRequested(false);
     setCheckMessage(
-      data?.telegramLinked ? null : "Hali bog'lanmagan — havolani oching va Telegram'da «Start» ni bosing, so'ng qayta tekshiring.",
+      data?.telegramLinked ? null : "Bog'lanmagan — havolani oching va «Start» ni bosing.",
     );
   }, [data, checkRequested]);
 
@@ -46,7 +46,7 @@ export default function MyTelegramCard() {
     try {
       setLink(await notificationsApi.linkMyTelegram(token));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi");
+      setError(err instanceof ApiError ? err.message : 'Tarmoq xatosi');
     } finally {
       setBusy(false);
     }
@@ -60,7 +60,7 @@ export default function MyTelegramCard() {
       setLink(null);
       reload();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi");
+      setError(err instanceof ApiError ? err.message : 'Tarmoq xatosi');
     } finally {
       setBusy(false);
     }
@@ -90,7 +90,7 @@ export default function MyTelegramCard() {
               <MicroLabel>Zaxira kanal</MicroLabel>
             </dt>
             <dd className="min-w-0 flex-1 text-[13px] text-fg">
-              {data.phone ? <CodeText>{formatUzPhone(data.phone)}</CodeText> : <span className="text-muted">Telefon raqami kiritilmagan</span>}
+              {data.phone ? <CodeText>{formatUzPhone(data.phone)}</CodeText> : <span className="text-muted">Raqam yo&apos;q</span>}
             </dd>
           </div>
         </dl>
@@ -104,7 +104,7 @@ export default function MyTelegramCard() {
               Uzish
             </Button>
           ) : !data.telegramBotConfigured ? (
-            <Notice tone="neutral">Telegram bot hali sozlanmagan — administratorga murojaat qiling.</Notice>
+            <Notice tone="neutral">Telegram bot sozlanmagan.</Notice>
           ) : link ? (
             <>
               <TelegramLinkBox link={link} />
@@ -123,13 +123,13 @@ export default function MyTelegramCard() {
       </div>
     );
   } else {
-    body = <ErrorState variant="block" message={loadError ?? "Ma'lumotni yuklab bo'lmadi."} onRetry={reload} />;
+    body = <ErrorState variant="block" message={loadError ?? "Yuklab bo'lmadi"} onRetry={reload} />;
   }
 
   return (
     <IntelPanel
       title="Mening Telegramim"
-      code="KNL-02"
+      brackets={false}
       right={
         data && !loading ? (
           <Button size="sm" variant="ghost" icon={RefreshCw} onClick={reload}>

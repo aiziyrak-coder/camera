@@ -139,7 +139,7 @@ export default function AddStudentStaffModal({
       groupOrPosition: required(form.groupOrPosition, 'Guruh yoki lavozim kiritilishi shart'),
       parentPhone:
         form.type === 'talaba' && form.parentPhone.trim() && !normalizeUzPhone(form.parentPhone)
-          ? "Telefon raqami noto'g'ri (+998 90 123 45 67)"
+          ? "Raqam noto'g'ri (+998 90 123 45 67)"
           : undefined,
     };
     setErrors(next);
@@ -225,7 +225,7 @@ export default function AddStudentStaffModal({
       onAdd(finalRecord);
       handleClose();
     } catch (err) {
-      setSaveError(err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi");
+      setSaveError(err instanceof ApiError ? err.message : 'Tarmoq xatosi');
     } finally {
       setSaving(false);
     }
@@ -279,7 +279,7 @@ export default function AddStudentStaffModal({
         <Button
           variant="primary"
           disabled={!matchResult?.passed}
-          title={matchResult?.passed ? undefined : "Yuz pasport rasmiga mos kelmaguncha saqlab bo'lmaydi"}
+          title={matchResult?.passed ? undefined : "Yuz pasportga mos kelmadi"}
           loading={saving}
           onClick={handleSave}
         >
@@ -294,7 +294,7 @@ export default function AddStudentStaffModal({
       open={open}
       onClose={requestClose}
       title="Yangi shaxs qo'shish"
-      description="Ma'lumotlar, pasport nusxasi va jonli yuz surati — kameralar odamni shu yuz orqali taniydi."
+      description="Ma'lumot, pasport va yuz surati."
       size="md"
       dismissible={false}
       footer={footer}
@@ -333,7 +333,7 @@ export default function AddStudentStaffModal({
             label={form.type === 'xodim' ? 'Lavozim / kafedra' : form.type === 'talaba' ? 'Guruh va kurs' : 'Guruh / Lavozim'}
             required
             error={errors.groupOrPosition}
-            hint={form.type === 'talaba' ? 'Masalan: «2-kurs, DI-2301» — kurs va guruh davomat sahifalarida shundan olinadi.' : undefined}
+            hint={form.type === 'talaba' ? 'Masalan: «2-kurs, DI-2301»' : undefined}
           >
             <Input
               placeholder={form.type === 'xodim' ? "O'qituvchi, Anatomiya" : '2-kurs, DI-2301'}
@@ -384,9 +384,9 @@ export default function AddStudentStaffModal({
         <p className="mb-3 rounded-control bg-primary-soft px-3 py-2 text-xs text-fg">
           Yangi yozuv yaratilmaydi — yuz mavjud yozuvga biriktiriladi: <span className="font-semibold">{existing.fullName}</span> (
           {existing.groupOrPosition})
-          {existing.biometricsStatus === 'tasdiqlangan' && ' · oldingi yuz rasmi yangisiga almashtiriladi'}
+          {existing.biometricsStatus === 'tasdiqlangan' && ' · yuz rasmi almashtiriladi'}
           {(form.parentPhone || form.cardNumber || form.parentNotifyEnabled) &&
-            ". Ota-ona va karta ma'lumotlarini mavjud yozuvning tahrirlash oynasida kiriting"}
+            ". Ota-ona va karta ma'lumotlari tahrirlash oynasida"}
         </p>
       )}
 
@@ -431,7 +431,7 @@ export default function AddStudentStaffModal({
       <ConfirmDialog
         open={confirmDiscard}
         title="Qo'shishni to'xtatasizmi?"
-        message="Kiritilgan ma'lumotlar, yuklangan pasport nusxasi va olingan yuz surati saqlanmaydi."
+        message="Ma'lumot, pasport nusxasi va yuz surati saqlanmaydi."
         confirmLabel="Ha, to'xtatilsin"
         cancelLabel="Davom ettirish"
         onCancel={() => setConfirmDiscard(false)}

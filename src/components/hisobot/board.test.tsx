@@ -4,7 +4,7 @@ import { StatusBoard, boardRag, type BoardItem } from './board';
 import { RATE_RAG } from '../../ui/rag';
 
 const item = (over: Partial<BoardItem> = {}): BoardItem => ({
-  id: 'u1', code: 'KAF-01', name: 'Ichki kasalliklar', value: 92, unit: '%',
+  id: 'u1', name: 'Ichki kasalliklar', value: 92, unit: '%',
   detail: '142/160 keldi', headcount: 160, ...over,
 });
 
@@ -26,9 +26,8 @@ describe('boardRag', () => {
 });
 
 describe('StatusBoard', () => {
-  it('kod, nom, qiymat va harfni chizadi', () => {
+  it('nom, qiymat va harfni chizadi', () => {
     render(<StatusBoard items={[item()]} />);
-    expect(screen.getByText('KAF-01')).toBeInTheDocument();
     expect(screen.getByText('Ichki kasalliklar')).toBeInTheDocument();
     expect(screen.getByText('92%')).toBeInTheDocument();
     // Rang yolg'iz qolmaydi: harf ham bo'lishi shart.

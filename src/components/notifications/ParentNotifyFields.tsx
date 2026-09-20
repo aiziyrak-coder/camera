@@ -52,7 +52,7 @@ export default function ParentNotifyFields({
     try {
       setLink(await notificationsApi.parentTelegramLink(personId, token));
     } catch (err) {
-      setLinkError(err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi");
+      setLinkError(err instanceof ApiError ? err.message : 'Tarmoq xatosi');
     } finally {
       setBusy(false);
     }
@@ -67,7 +67,7 @@ export default function ParentNotifyFields({
       setLink(null);
       onTelegramUnlinked?.();
     } catch (err) {
-      setLinkError(err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi");
+      setLinkError(err instanceof ApiError ? err.message : 'Tarmoq xatosi');
     } finally {
       setBusy(false);
     }
@@ -129,7 +129,7 @@ export default function ParentNotifyFields({
                   </Button>
                 </div>
               ) : link ? (
-                <TelegramLinkBox link={link} hint="Havolani ota-onaga yuboring: u havolani ochib Telegram'da «Start» ni bossa, bog'lanadi." />
+                <TelegramLinkBox link={link} hint="Havolani ota-onaga yuboring" />
               ) : (
                 <Button size="sm" icon={Link2} onClick={createLink} loading={busy} disabled={disabled}>
                   Ota-ona Telegramini bog&apos;lash
@@ -144,11 +144,11 @@ export default function ParentNotifyFields({
           )}
         </>
       )}
-      <Field label="Kirish kartasi raqami (ixtiyoriy)" error={errors?.cardNumber}>
+      <Field label="Karta raqami" hint="Ixtiyoriy" error={errors?.cardNumber}>
         <Input
           autoComplete="off"
           maxLength={64}
-          placeholder="Turniket o'qiydigan raqam"
+          placeholder="Turniket raqami"
           value={value.cardNumber}
           disabled={disabled}
           onChange={(e) => set('cardNumber', e.target.value)}

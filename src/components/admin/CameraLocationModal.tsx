@@ -66,7 +66,7 @@ export default function CameraLocationModal({
       onSaved(res.updated, res.notFound.length);
       onClose();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi");
+      setError(err instanceof ApiError ? err.message : 'Tarmoq xatosi');
     } finally {
       setSaving(false);
     }
@@ -128,7 +128,7 @@ export default function CameraLocationModal({
             if (e.target.checked) setFloor('');
           }}
           label="Qavat belgisini olib tashlash"
-          description="Tanlangan kameralar «Qavat belgilanmagan» guruhiga o'tadi."
+          description="«Qavat belgilanmagan» guruhiga o'tadi."
         />
 
         {error && <Notice tone="danger">{error}</Notice>}

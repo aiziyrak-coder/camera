@@ -43,10 +43,11 @@ export default function KpiStrip({
               </CodeText>
               {tile.unit && <MicroLabel>{tile.unit}</MicroLabel>}
             </span>
+            {/* Hukm — bitta so'z. Izoh jumlalari olib tashlandi: yuqoridagi
+                ma'lumot satri odamlar sonini allaqachon aytadi. */}
             {tone !== 'yoq' && (
               <span className={cn('intel-code text-[11px]', RAG_TEXT[tone])}>{RAG_LABEL[tone]}</span>
             )}
-            {tile.hint && <span className="text-[11px] leading-snug text-muted">{tile.hint}</span>}
           </li>
         );
       })}

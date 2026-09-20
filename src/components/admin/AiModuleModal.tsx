@@ -76,7 +76,7 @@ export default function AiModuleModal({
       onSave(saved);
       onClose();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi");
+      setError(err instanceof ApiError ? err.message : 'Tarmoq xatosi');
     } finally {
       setSaving(false);
     }
@@ -115,7 +115,7 @@ export default function AiModuleModal({
                 <span className="rounded-full bg-primary-soft px-2 py-0.5 font-mono text-xs text-primary">{form.threshold}%</span>
               </span>
             }
-            hint="Model ishonchi shu qiymatdan past bo'lgan signallar e'tiborga olinmaydi."
+            hint="Bundan past signallar e'tiborsiz qoladi"
           >
             <input
               type="range"

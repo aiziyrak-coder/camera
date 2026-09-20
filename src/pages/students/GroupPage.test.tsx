@@ -101,7 +101,7 @@ describe('Guruh sahifasi — qidiruv va tozalash', () => {
     // keyingisi eski parametrlardan boshlab oldingisining o'chirganini
     // qaytarib qo'yardi — holat filtri joyida qolib ketardi.
     renderPage('/talabalar/guruh/DI-2301?holat=keldi&qidiruv=zzz');
-    await waitFor(() => expect(screen.getByText('Mos talaba topilmadi')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Talaba topilmadi')).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole('button', { name: 'Filtrni tozalash' }));
     await waitFor(() => expect(screen.getByText('Aliyev Anvar')).toBeInTheDocument());
@@ -116,14 +116,17 @@ describe('Guruh sahifasi — qidiruv va tozalash', () => {
     expect(screen.getByPlaceholderText('Talaba ismi…')).toHaveValue('Botirova');
   });
 
-  it("kelmagan talaba kartasida izohsiz «—» emas, holatning o'zi yoziladi", async () => {
+  it("kelmagan talabaning qatorida holat so'z bilan yoziladi", async () => {
+    // Qator izohi («hali kelmadi», «kirdi») olib tashlandi — u holat
+    // belgisini takrorlardi. Holat harfi yonidagi SO'Z esa qoladi: rang
+    // yolg'iz ma'no tashimasin.
     detail = {
       ...baseDetail,
       students: [student('e', 'Eshonov Eshon', 'kutilmoqda'), student('f', 'Fayzullayev Fayz', 'kelmadi')],
     };
     renderPage();
     await waitFor(() => expect(screen.getByText('Eshonov Eshon')).toBeInTheDocument());
-    expect(screen.getByText('hali kelmadi')).toBeInTheDocument();
-    expect(screen.getByText('kelmadi')).toBeInTheDocument();
+    expect(screen.getAllByText('Hali kelmagan').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Kelmadi').length).toBeGreaterThan(0);
   });
 });

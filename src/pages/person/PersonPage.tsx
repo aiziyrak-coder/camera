@@ -8,8 +8,6 @@ import {
   CodeText,
   DataTable,
   DateRangePicker,
-  DocumentFooter,
-  DocumentHeader,
   EmptyState,
   ErrorState,
   IconButton,
@@ -46,8 +44,6 @@ import {
   lateAfterMinutes,
   LESSON_ATTENDANCE_META,
   arrivalSeries,
-  biometricsMeta,
-  daysBetween,
   lessonTime,
   monthsInRange,
   personKpis,
@@ -68,9 +64,7 @@ import { ArrivalTimeChart } from '../../components/students/TrendCharts';
 import { errorText, useAsyncData } from '../../components/students/useAsyncData';
 import { GroupEnrollDrawer, type EnrollDrawerTarget } from '../../components/students/GroupEnrollDrawer';
 import { EnrollCta, StaffKpis, WeekdayPatternCard } from '../../components/attendance/PersonInsights';
-import { KpiReadout, StaleNote, StatusMark, stamp } from '../../components/attendance/readout';
-import { idToken, periodReference } from '../../components/attendance/references';
-import { branding } from '../../lib/branding';
+import { KpiReadout, StaleNote, StatusMark } from '../../components/attendance/readout';
 
 type TabId = 'davomat' | 'darslar' | 'harakatlar';
 const PRESETS = ['week', 'month', 'last30', 'lastMonth'] as const;
@@ -361,12 +355,6 @@ export default function PersonPage() {
         ]
     : [{ label: 'Shaxs' }];
 
-  // Hujjat raqami — SOF holatdan: shaxs va davr. Bir xil havola bir xil
-  // raqamni beradi, chop etilgan qog'oz ekran bilan mos keladi.
-  const serviceCode = `SHX-${idToken(personId)}`;
-  const reference = periodReference(serviceCode, range.from, range.to);
-  const generatedAt = useMemo(stamp, [personId, range.from, range.to, data]);
-  const enrollment = biometricsMeta(person?.biometricsStatus);
 
   function afterEdit(date: string, update: (days: AttendanceDay[]) => AttendanceDay[]) {
     months.apply(date, update);
@@ -377,13 +365,7 @@ export default function PersonPage() {
   return (
     <Page
       title={person?.fullName ?? 'Shaxs profili'}
-      subtitle={
-        person
-          ? `${isStudent ? 'Talaba' : person.unit || 'Xodim'} · Bu odam qaysi kunlari kelgani, soat nechada kelgani va qaysi kameralarda ko'ringani${
-              policy.data ? `. Soat ${lateLabel} dan keyin kelgan kun "kech keldi" hisoblanadi` : ''
-            }`
-          : 'Bir odamning davomati, darslari va kameralarda ko\'ringan joylari'
-      }
+      subtitle={person ? (isStudent ? person.group || 'Talaba' : person.unit || 'Xodim') : undefined}
       breadcrumbs={crumbs}
       actions={<IconButton icon={RefreshCw} label="Yangilash" variant="secondary" onClick={() => { profile.reload(); summary.reload(); previous.reload(); months.invalidate(); }} loading={profile.refreshing} />}
     >
@@ -397,33 +379,16 @@ export default function PersonPage() {
           <ErrorState variant="block" title={/topilmadi/i.test(profile.error) ? 'Shaxs topilmadi' : undefined} message={profile.error} onRetry={profile.reload} />
           <div className="flex justify-center pb-8">
             <ButtonLink to={withDate(situationPaths.faculties)} icon={ArrowLeft} variant="ghost">
-              Talabalarga qaytish
+              Orqaga
             </ButtonLink>
           </div>
         </div>
       ) : data && person ? (
         <div className="flex min-w-0 flex-col gap-3">
-          {/* 1. Hujjat blanki — kim, qaysi davr, qanday hukm. */}
-          <DocumentHeader
-            org={branding.orgFullName}
-            title={`${person.fullName} — davomat dalolatnomasi`}
-            reference={reference}
-            generatedAt={generatedAt}
-            readouts={[
-              { label: isStudent ? 'Guruh' : "Bo'linma", value: (isStudent ? person.group : person.department) ?? 'Biriktirilmagan' },
-              { label: 'Davr', value: formatUzRange(data.dateFrom, data.dateTo) },
-              // Foizning MAXRAJI blankka chiqadi: "75%" ni ko'rgan odam
-              // uning nechta kundan chiqqanini izlab yurmasin.
-              { label: 'Yozuv bor kunlar', value: `${formatNumber(data.totals.present + data.totals.absent)} kun` },
-              { label: 'Umumiy holat', value: formatPercent(data.totals.rate, 1) },
-            ]}
-          />
-
-          {/* 2. Shaxsiyat bloki — surat, kim ekani, xizmat kodi. */}
+          {/* Shaxsiyat bloki — surat, uchta fakt, bugungi holat. */}
           <IntelPanel
             title="Shaxs"
-            code={serviceCode}
-            right={<StatusLamp status={person.active ? 'ok' : 'alert'} label={person.active ? 'Faol' : 'Faol emas'} />}
+            right={person.active ? undefined : <StatusLamp status="alert" label="Faol emas" />}
           >
             <div className="flex flex-col gap-4 p-3 md:flex-row md:items-start">
               <PersonPhoto
@@ -434,23 +399,9 @@ export default function PersonPage() {
                 textClassName="text-4xl"
               />
               <div className="min-w-0 flex-1">
-                {/* Ism sahifa sarlavhasida va hujjat blankida turibdi —
-                    bu yerda uni uchinchi marta takrorlash shovqin bo'lardi.
-                    Bu blok "kim ekani" ni aytadi: turi, xizmat kodi, yuz
-                    ro'yxati holati. */}
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <MicroLabel>{isStudent ? 'Talaba' : 'Xodim'}</MicroLabel>
-                  <CodeText className="text-[11px] text-subtle">{serviceCode}</CodeText>
-                  <span
-                    className={cn(
-                      'intel-micro',
-                      enrollment.tone === 'success' ? '!text-success' : enrollment.tone === 'warning' ? '!text-warning' : '!text-muted',
-                    )}
-                  >
-                    {enrollment.label}
-                  </span>
-                </div>
-                <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2.5 lg:grid-cols-4">
+                {/* Ism sahifa sarlavhasida turibdi — bu yerda faqat uchta
+                    fakt: qayerda, qaysi kursda/lavozimda va bugun qanday. */}
+                <dl className="grid grid-cols-2 gap-x-6 gap-y-2.5 lg:grid-cols-3">
                   {isStudent ? (
                     <>
                       <Fact label="Fakultet">
@@ -467,7 +418,6 @@ export default function PersonPage() {
                           'Biriktirilmagan'
                         )}
                       </Fact>
-                      <Fact label="Kurs">{person.course ? `${person.course}-kurs` : "Ko'rsatilmagan"}</Fact>
                     </>
                   ) : (
                     <>
@@ -480,8 +430,7 @@ export default function PersonPage() {
                           'Biriktirilmagan'
                         )}
                       </Fact>
-                      <Fact label="Lavozim / bo'lim">{person.unit || "Ko'rsatilmagan"}</Fact>
-                      <Fact label="Fakultet">{person.faculty ?? "Ko'rsatilmagan"}</Fact>
+                      <Fact label="Lavozim">{person.unit || "Ko'rsatilmagan"}</Fact>
                     </>
                   )}
                   <Fact label="Bugun">
@@ -518,15 +467,15 @@ export default function PersonPage() {
           {tab === 'davomat' && (
             <>
               {/* 3. Ko'rsatkichlar lentasi. */}
-              <IntelPanel title="Davr ko'rsatkichlari" code={reference}>
+              <IntelPanel title="Davr ko'rsatkichlari">
                 {isStaff && kpis ? (
-                  <StaffKpis current={kpis} previous={prevKpis} days={daysBetween(range.from, range.to) + 1} lateCutoff={lateCutoff} />
+                  <StaffKpis current={kpis} previous={prevKpis} lateCutoff={lateCutoff} />
                 ) : (
                   // Foiz = kelgan / (kelgan + kelmagan); izoh ham AYNAN shu ikki
                   // sondan yoziladi. Ilgari u butun davrdagi kunlar sonini (dam
                   // olish kunlari bilan) "ish kuni" deb ko'rsatardi.
                   <KpiReadout
-                    className="lg:grid-cols-5"
+                    className="lg:grid-cols-4"
                     items={[
                       {
                         label: 'Kelgan kunlari ulushi',
@@ -537,19 +486,10 @@ export default function PersonPage() {
                       {
                         label: "O'z vaqtida kelgan",
                         value: `${data.totals.present - data.totals.late} kun`,
-                        hint: cutoffKnown ? `Soat ${lateLabel} gacha` : 'Ish boshlanish vaqtidan oldin kelgan kunlar',
+                        hint: cutoffKnown ? `Soat ${lateLabel} gacha` : undefined,
                       },
-                      {
-                        label: 'Kech kelgan',
-                        value: `${data.totals.late} kun`,
-                        hint: cutoffKnown ? `Soat ${lateLabel} dan keyin` : 'Ish boshlanish vaqtidan keyin kelgan kunlar',
-                      },
-                      { label: 'Kelmagan', value: `${data.totals.absent} kun`, hint: "Hech bir kamerada ko'rinmagan" },
-                      {
-                        label: 'Odatda kelish vaqti',
-                        value: data.totals.avgArrival ?? '—',
-                        hint: data.totals.noData ? `${data.totals.noData} kunda yozuv yo'q` : "Kelgan kunlaridagi o'rtacha vaqt",
-                      },
+                      { label: 'Kech kelgan', value: `${data.totals.late} kun` },
+                      { label: 'Kelmagan', value: `${data.totals.absent} kun` },
                     ]}
                   />
                 )}
@@ -557,11 +497,7 @@ export default function PersonPage() {
 
               {/* 4. Kalendar — aniq to'r, kaliti bilan. */}
               <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_22rem]">
-                <IntelPanel
-                  title="Kunlar kalendari"
-                  code={formatUzRange(data.dateFrom, data.dateTo)}
-                  right={<MicroLabel>Kunni bosing — o&apos;sha kunning tafsiloti</MicroLabel>}
-                >
+                <IntelPanel title="Kunlar kalendari" code={formatUzRange(data.dateFrom, data.dateTo)}>
                   <div className={cn('grid gap-3 p-3', calendarMonths.length > 1 && '2xl:grid-cols-2')}>
                     {calendarMonths.map((m) => (
                       <div key={m} className="border border-border">
@@ -600,11 +536,7 @@ export default function PersonPage() {
                     <Skeleton className="h-72" />
                   )}
                   {isStaff && <WeekdayPatternCard rows={weekdays} lateCutoff={lateCutoff} />}
-                  <IntelPanel
-                    title="Har kuni soat nechada kelgan"
-                    right={<MicroLabel>{cutoffKnown ? `chegara ${lateLabel}` : 'kechikish chegarasi'}</MicroLabel>}
-                    bodyClassName="p-3"
-                  >
+                  <IntelPanel title="Kelish vaqti" right={cutoffKnown ? <MicroLabel>chegara {lateLabel}</MicroLabel> : undefined} bodyClassName="p-3">
                     {data.calendar.some((d) => d.checkIn) ? (
                       <ArrivalTimeChart
                         points={arrivalSeries(data.calendar)}
@@ -613,16 +545,8 @@ export default function PersonPage() {
                         height={isStaff ? 240 : undefined}
                       />
                     ) : (
-                      <EmptyState
-                        compact
-                        bordered={false}
-                        title="Kelish vaqti qayd etilmagan"
-                        description="Bu davrda kameralar bu odamni birorta kun ham tanimagan."
-                      />
+                      <EmptyState compact bordered={false} title="Kelish vaqti qayd etilmagan" />
                     )}
-                    <p className="mt-2 text-[11px] leading-snug text-muted">
-                      Har bir nuqta — bir kun. To&apos;q sariq nuqta — {cutoffKnown ? `soat ${lateLabel} dan keyin kelgan, ya'ni ` : ''}kech kelgan kun.
-                    </p>
                   </IntelPanel>
                 </div>
               </div>
@@ -639,26 +563,16 @@ export default function PersonPage() {
             (data.recentVisits.length === 0 ? (
               <EmptyState
                 icon={Footprints}
-                title="Hech bir kamerada ko'rinmagan"
-                description={
-                  person?.biometricsStatus === 'tasdiqlangan'
-                    ? 'Tanlangan davrda bu odam birorta kamerada tanilmagan.'
-                    : "Bu odam yuzini ro'yxatdan o'tkazmagan — shuning uchun kameralar uni tanay olmaydi va bu ro'yxat bo'sh turadi."
-                }
+                title="Kamerada ko'rinmagan"
+                description={person?.biometricsStatus === 'tasdiqlangan' ? undefined : "Yuzi ro'yxatdan o'tmagan."}
               />
             ) : (
+              // Kod "so'nggi 20" deydi: bu davrdagi tashrif soni emas, server
+              // chegarasi — boshqacha yozilsa yolg'on son bo'lardi.
               <IntelPanel
                 title="Qayerda ko'ringan"
                 code={visitsCapped ? `so'nggi ${RECENT_VISITS_LIMIT}` : `${data.recentVisits.length} ta`}
-                right={<MicroLabel>Yangisi birinchi</MicroLabel>}
               >
-                {/* Ro'yxat CHEKLANGAN bo'lsa buni ochiq aytamiz: "20" —
-                    davrdagi tashriflar soni emas, faqat server chegarasi. */}
-                <p className="border-b border-border bg-surface-2 px-3 py-1.5 text-[11px] leading-snug text-muted">
-                  {visitsCapped
-                    ? `Bu ro'yxatda eng so'nggi ${RECENT_VISITS_LIMIT} ta yozuvgina ko'rsatiladi — davrda undan ko'p bo'lishi mumkin. To'liq kun uchun kalendardan kunni oching.`
-                    : `Tanlangan davrda ${data.recentVisits.length} ta yozuv.`}
-                </p>
                 <div className="flex flex-col">
                   {visitsByDate(data.recentVisits).map((day) => (
                     <section key={day.date}>
@@ -666,10 +580,10 @@ export default function PersonPage() {
                         <CodeText className="text-[12px] font-semibold text-fg">{day.date}</CodeText>
                         <h3 className="intel-micro !text-fg">{formatUzDate(day.date, { weekday: true })}</h3>
                         <span className="intel-code text-[11px] text-muted">
-                          {day.visits.length} marta ko&apos;ringan · binoda {formatMinutes(day.minutes)}
+                          {day.visits.length} marta · {formatMinutes(day.minutes)}
                         </span>
                         <Button size="sm" variant="ghost" icon={CalendarDays} className="ms-auto" onClick={() => setSelectedDate(day.date)}>
-                          Kunni ochish
+                          Ochish
                         </Button>
                       </header>
                       <ol className="divide-y divide-border">
@@ -694,9 +608,6 @@ export default function PersonPage() {
               </IntelPanel>
             ))}
 
-          <DocumentFooter
-            note={`Xizmat uchun. Hujjat ${reference} raqami bilan tizimda tuzilgan; sonlar ${formatUzRange(data.dateFrom, data.dateTo)} davri uchun. Foiz yozuvi bor kunlardan hisoblanadi — dam olish va yozuvsiz kunlar "kelmagan" hisoblanmaydi.`}
-          />
         </div>
       ) : null}
 
@@ -749,7 +660,7 @@ function LessonsTab({
     isStudent
       ? {
           key: 'own',
-          header: 'Darsga kirganmi',
+          header: 'Kirganmi',
           cell: (l) => {
             const meta = l.attendanceStatus ? LESSON_ATTENDANCE_META[l.attendanceStatus] : null;
             return meta ? (
@@ -763,10 +674,10 @@ function LessonsTab({
           },
           sortValue: (l) => l.attendanceStatus,
         }
-      : { key: 'punct', header: 'Darsga kirgani', cell: (l) => <TeacherPunctuality lesson={l} />, sortValue: (l) => l.teacherStatus },
+      : { key: 'punct', header: 'Kirgani', cell: (l) => <TeacherPunctuality lesson={l} />, sortValue: (l) => l.teacherStatus },
     {
       key: 'att',
-      header: 'Darsdagi talabalar',
+      header: 'Talabalar',
       align: 'right',
       cell: (l) => (
         <span className="tabular-nums">
@@ -789,12 +700,8 @@ function LessonsTab({
         return l.teacherStatus === 'kelmadi' ? 'danger' : l.teacherStatus === 'kechikdi' ? 'warning' : l.teacherStatus === 'oz_vaqtida' ? 'success' : null;
       }}
       dense
-      emptyTitle="Bu davrda dars yo'q"
-      emptyDescription={
-        isStudent
-          ? "Guruhining dars jadvalida bu davrga yozuv topilmadi — dars jadvali hali yuklanmagan bo'lishi mumkin."
-          : "Bu o'qituvchiga biriktirilgan dars topilmadi — dars jadvali hali yuklanmagan bo'lishi mumkin."
-      }
+      emptyTitle="Dars yo'q"
+      emptyDescription="Dars jadvali hali yuklanmagan."
     />
   );
 }

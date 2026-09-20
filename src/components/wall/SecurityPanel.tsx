@@ -42,31 +42,28 @@ export function SecurityPanel({
   // 12 ta ochiq hodisani ekranda "5" qilib ko'rsatardi.
   const openCount = Math.max(highOpen ?? 0, events.length);
   return (
-    <WallPanel area="E" title="Xavfsizlik" icon={<ShieldAlert />} code="E-05">
+    <WallPanel area="E" title="Xavfsizlik" icon={<ShieldAlert />}>
       <div className="mb-[0.9em] flex shrink-0 items-center gap-[1em]">
         <WallRing value={camPct} size={5} label={`${camerasOnline}`} sublabel={`/ ${camerasTotal}`} />
         <div className="min-w-0">
-          <MicroLabel className="!text-[0.65em] !text-fg">Kameralar tarmoqda</MicroLabel>
-          <div className="mt-[0.3em] text-[0.78em] text-muted">
-            {camerasTotal === 0
-              ? "Faol kamera yo'q"
-              : camerasOffline > 0
-                ? `${camerasTotal} ta faol kameradan ${camerasOffline} tasi javob bermayapti`
-                : `${camerasTotal} ta faol kameraning hammasi ishlayapti`}
+          <MicroLabel className="!text-[0.65em] !text-fg">Kameralar</MicroLabel>
+          <div className={cn('mt-[0.3em] text-[0.78em]', camerasOffline > 0 ? 'text-danger' : 'text-muted')}>
+            {camerasTotal === 0 ? "Kamera yo'q" : camerasOffline > 0 ? `${camerasOffline} aloqasiz` : 'Hammasi ishlayapti'}
           </div>
         </div>
         <div className="ml-auto text-right">
           <div className={cn('intel-code text-[2.8em] font-semibold leading-[0.85]', openCount ? 'text-danger' : 'text-success')}>
             {openCount}
           </div>
-          {/* "ochiq, yuqori" nimaning soni ekani tushunarsiz edi. */}
-          <MicroLabel className="intel-micro-wrap mt-[0.45em] block !text-[0.6em]">ochiq yuqori xavfli hodisa</MicroLabel>
+          <MicroLabel className="intel-micro-wrap mt-[0.45em] block !text-[0.6em]" title="Ochiq yuqori xavfli hodisalar">
+            ochiq hodisa
+          </MicroLabel>
         </div>
       </div>
       {events.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center border border-success/40 bg-success-soft text-center text-success">
           <ShieldCheck className="mb-[0.4em] h-[2.2em] w-[2.2em]" />
-          <div className="text-[0.95em] font-medium">Yuqori xavfli ochiq hodisa yo'q</div>
+          <div className="text-[0.95em] font-medium">Hodisa yo'q</div>
         </div>
       ) : (
         <ul className="flex min-h-0 flex-1 flex-col gap-[0.5em] overflow-hidden">
@@ -96,8 +93,8 @@ export function SecurityPanel({
             );
           })}
           {openCount > events.length && (
-            <li className="shrink-0 text-center text-[0.75em] text-muted">
-              yana {openCount - events.length} ta ochiq hodisa — ro'yxatda so'nggi {events.length} tasi
+            <li className="intel-code shrink-0 text-center text-[0.75em] text-muted" title="Ro'yxatga sig'magan ochiq hodisalar">
+              +{openCount - events.length}
             </li>
           )}
         </ul>

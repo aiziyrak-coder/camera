@@ -57,11 +57,6 @@ export default function MinimalLayout({ variant = 'center' }: { variant?: 'cente
               <p className="mt-0.5 text-[13px] font-semibold leading-snug tracking-tight text-fg">{branding.orgFullName}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 border-b border-border bg-surface-2 px-4 py-1.5">
-            <MicroLabel>Kirish nazorati</MicroLabel>
-            <span className="h-px flex-1 bg-border" aria-hidden="true" />
-            <span className="intel-code text-[10px] text-subtle">FORMA&nbsp;01</span>
-          </div>
           <div className="px-4 py-4">
             <Suspense fallback={<PageSkeleton />}>
               <Outlet />

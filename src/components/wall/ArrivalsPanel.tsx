@@ -19,7 +19,6 @@ export function ArrivalsPanel({
       area="B"
       title="Jonli kelish"
       icon={<DoorOpen />}
-      code="B-02"
       aside={
         live ? (
           <span className="flex items-center gap-[0.4em]">
@@ -40,8 +39,7 @@ export function ArrivalsPanel({
       {arrivals.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center text-center text-muted">
           <DoorOpen className="mb-[0.5em] h-[2.5em] w-[2.5em] opacity-50" />
-          <div className="text-[1.1em] font-semibold text-fg">Bugun hali hech kim kelmadi</div>
-          <div className="text-[0.78em]">Kamera odamni kunda birinchi marta taniganda shu yerda paydo bo'ladi</div>
+          <div className="text-[1.1em] font-semibold text-fg">Hali hech kim kelmadi</div>
         </div>
       ) : (
         <ul className="flex min-h-0 flex-1 flex-col gap-[0.55em] overflow-hidden" aria-live="polite">

@@ -43,7 +43,7 @@ vi.mock('../../lib/attendancePolicyApi', async (importOriginal) => {
   };
 });
 
-import WorkHoursPage, { workHoursReference } from './WorkHoursPage';
+import WorkHoursPage from './WorkHoursPage';
 
 async function renderPage() {
   render(
@@ -117,7 +117,7 @@ describe('WorkHoursPage', () => {
     await renderPage();
     fireEvent.change(screen.getByLabelText(/Ish tugashi/), { target: { value: '18:00' } });
     fireEvent.click(screen.getByRole('button', { name: /Saqlash/ }));
-    const notice = await screen.findByText(/oxirgi 60 kundagi yozuvlarning holati/);
+    const notice = await screen.findByText(/60 kundagi yozuvlarning holati/);
     expect(notice).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /Bekor qilish/ }));
@@ -140,15 +140,5 @@ describe('WorkHoursPage', () => {
     await renderPage();
     expect(screen.getByRole('button', { name: 'Payshanba' })).toBeTruthy();
     expect(screen.getByRole('group', { name: 'Ish kunlari' })).toBeTruthy();
-  });
-});
-
-describe('workHoursReference', () => {
-  it('qoidaning o’zidan kelib chiqadi va o’zgarmaydi', () => {
-    const policy = { staffStart: '09:00', graceMinutes: 15, workDays: [1, 2, 3, 4, 5] };
-    expect(workHoursReference(policy)).toBe('IV-0900-G15-5K');
-    // Takror chaqiruv bir xil natija beradi — vaqtga bog'liq emas.
-    expect(workHoursReference(policy)).toBe(workHoursReference(policy));
-    expect(workHoursReference({ staffStart: '', graceMinutes: 0, workDays: [] })).toBe('IV------G00-0K');
   });
 });

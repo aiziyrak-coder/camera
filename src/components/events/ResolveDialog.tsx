@@ -50,8 +50,8 @@ export default function ResolveDialog({
       open={open}
       onClose={pending ? () => undefined : onCancel}
       dismissible={!pending}
-      title="Hodisani yopish — hal qilindi"
-      description={`${count > 1 ? `${count} ta hodisa` : 'Hodisa'} haqiqiy deb hisoblanadi va yopiladi. Qanday chora ko'rilganini yozing — bu hodisa tarixida saqlanadi.`}
+      title="Hal qilindi"
+      description={count > 1 ? `${count} ta hodisa yopiladi.` : undefined}
       initialFocusRef={noteRef}
       footer={
         <>
@@ -76,7 +76,7 @@ export default function ResolveDialog({
             }
           }}
           rows={4}
-          placeholder="Masalan: navbatchi yuborildi, tartib tiklandi"
+          placeholder="Masalan: navbatchi yuborildi"
         />
       </Field>
     </Modal>

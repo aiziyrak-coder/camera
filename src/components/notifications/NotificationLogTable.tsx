@@ -9,12 +9,14 @@ import {
   IntelPanel,
   KeyValue,
   MicroLabel,
+  RAG_TEXT,
+  RATE_RAG,
   Section,
   StatusLamp,
+  rag,
   type DataTableColumn,
   type IntelStatus,
 } from '../../ui';
-import { RAG_LABEL, RAG_TEXT, RATE_RAG, rag } from '../../ui/rag';
 import { RagChip } from '../hisobot/board';
 import { Notice, pagerFooter } from '../settings/kit';
 import { useServerPage } from '../../lib/useServerPage';
@@ -87,7 +89,7 @@ export function NotificationLogToolbar({
         </Button>
       }
       fields={[
-        { kind: 'search', value: filters.search, onChange: (v: string) => set('search', v), placeholder: 'Qabul qiluvchi, matn yoki xato', ariaLabel: 'Jurnaldan qidirish' },
+        { kind: 'search', value: filters.search, onChange: (v: string) => set('search', v), placeholder: 'Qabul qiluvchi yoki matn', ariaLabel: 'Jurnaldan qidirish' },
         { kind: 'select', value: filters.status, onChange: (v: string) => set('status', v), options: STATUS_OPTIONS, placeholder: 'Barcha holatlar', ariaLabel: 'Holat' },
         { kind: 'select', value: filters.channel, onChange: (v: string) => set('channel', v), options: CHANNEL_OPTIONS, placeholder: 'Barcha kanallar', ariaLabel: 'Kanal' },
         { kind: 'select', value: filters.kind, onChange: (v: string) => set('kind', v), options: KIND_FILTER_OPTIONS, placeholder: 'Barcha turlar', ariaLabel: 'Turi' },
@@ -141,12 +143,9 @@ const COLUMNS: DataTableColumn<NotificationLogEntry>[] = [
 export default function NotificationLogTable({
   refreshKey,
   filters = EMPTY_LOG_FILTERS,
-  reference,
 }: {
   refreshKey: number;
   filters?: LogFilters;
-  /** Sahifaning hujjat raqami — panel sarlavhasining o'ng chetida. */
-  reference?: string;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const { items, page, setPage, totalPages, total, pageSize, loading, error, reload } = useServerPage<NotificationLogEntry>(
@@ -177,16 +176,14 @@ export default function NotificationLogTable({
 
   return (
     <IntelPanel
-      title="Yetkazish jurnali"
-      code={reference}
+      title="Jurnal"
       right={
         <span className="flex items-center gap-2">
-          <MicroLabel>Shu sahifada yetkazilgan</MicroLabel>
+          <MicroLabel>Yetkazildi</MicroLabel>
           <CodeText className={`text-[13px] font-semibold ${RAG_TEXT[deliveredTone]}`}>
             {deliveredRate === null ? '—' : `${Math.round(deliveredRate)}%`}
           </CodeText>
           <RagChip tone={deliveredTone} />
-          <MicroLabel>{RAG_LABEL[deliveredTone]}</MicroLabel>
         </span>
       }
     >
@@ -200,8 +197,7 @@ export default function NotificationLogTable({
         loading={loading && items.length === 0}
         error={error}
         onRetry={reload}
-        emptyTitle={filtered ? 'Filtrlarga mos yozuv topilmadi' : 'Hali hech qanday xabar yuborilmagan'}
-        emptyDescription={filtered ? "Filtrlarni o'zgartiring yoki tozalang." : 'Qoida ishlaganda yoki sinov xabari yuborilganda yozuvlar shu yerda ko\'rinadi.'}
+        emptyTitle={filtered ? 'Yozuv topilmadi' : 'Xabar yuborilmagan'}
         mobileTitleKey="recipient"
         ariaLabel="Yetkazish jurnali"
         maxHeight="none"

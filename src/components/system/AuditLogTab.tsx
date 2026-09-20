@@ -8,8 +8,6 @@ import {
   Button,
   CodeText,
   DataTable,
-  DocumentFooter,
-  DocumentHeader,
   FilterBar,
   IntelPanel,
   MicroLabel,
@@ -24,10 +22,9 @@ import {
   type IntelStatus,
   type Tone,
 } from '../../ui';
-import { branding } from '../../lib/branding';
 import { Pager } from './Pager';
 import { formatServerTime } from './parts';
-import { auditReference, type AuditStatus } from './systemTypes';
+import type { AuditStatus } from './systemTypes';
 
 const STATUS: Record<AuditStatus, { label: string; tone: Tone }> = {
   muvaffaqiyatli: { label: 'Muvaffaqiyatli', tone: 'success' },
@@ -189,23 +186,7 @@ export function AuditLogTab({ canExport }: { canExport: boolean }) {
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      <DocumentHeader
-        org={branding.orgFullName}
-        title="Amallar jurnali"
-        reference={auditReference(status, module, page)}
-        readouts={[
-          { label: 'Qamrov', value: module || 'Barcha modullar' },
-          { label: 'Holat filtri', value: status ? STATUS[status].label : 'Barchasi' },
-          { label: "Ro'yxatda", value: `${formatNumber(total)} yozuv` },
-          { label: 'Sahifa', value: `${formatNumber(page)} / ${formatNumber(Math.max(1, totalPages))}` },
-        ]}
-      />
-
-      <IntelPanel
-        title="Holatlar bo'yicha"
-        code="JUR-SUM"
-        bodyClassName="grid grid-cols-1 gap-px bg-border sm:grid-cols-3"
-      >
+      <IntelPanel title="Holatlar" brackets={false} bodyClassName="grid grid-cols-1 gap-px bg-border sm:grid-cols-3">
         {TILES.map((tile) => {
           const on = status === tile.id;
           const pending = !counts && !countsDone;
@@ -215,7 +196,6 @@ export function AuditLogTab({ canExport }: { canExport: boolean }) {
               type="button"
               aria-pressed={on}
               onClick={() => toggleStatus(tile.id)}
-              title={on ? 'Bekor qilish uchun bosing' : 'Faqat shu holatni ko’rish uchun bosing'}
               className={cn(
                 'min-w-0 border-s-2 bg-surface px-2.5 py-2 text-start hover:bg-surface-2',
                 on ? TILE_MARK[tile.id] : 'border-s-transparent',
@@ -233,10 +213,6 @@ export function AuditLogTab({ canExport }: { canExport: boolean }) {
                 </CodeText>
                 <MicroLabel className="!text-subtle">yozuv</MicroLabel>
               </span>
-              {/* Bosiladigan ekani rang bilan emas, MATN bilan aytiladi. */}
-              <span className="mt-0.5 block text-[11px] leading-tight text-muted">
-                {on ? 'Bekor qilish uchun bosing' : 'Faqat shu holatni ko’rish uchun bosing'}
-              </span>
             </button>
           );
         })}
@@ -250,7 +226,7 @@ export function AuditLogTab({ canExport }: { canExport: boolean }) {
             icon={Download}
             loading={exporting}
             disabled={!canExport}
-            title={canExport ? undefined : "Eksport huquqi yo'q — Foydalanuvchilar bo'limida yoqish mumkin"}
+            title={canExport ? undefined : "Eksport huquqi yo'q"}
             onClick={handleExport}
           >
             CSV
@@ -258,7 +234,7 @@ export function AuditLogTab({ canExport }: { canExport: boolean }) {
         }
       />
 
-      <IntelPanel title="Jurnal yozuvlari" code={auditReference(status, module, page)} bodyClassName="min-w-0">
+      <IntelPanel title="Jurnal" right={<MicroLabel>{formatNumber(total)} ta</MicroLabel>} bodyClassName="min-w-0">
       <DataTable
         ariaLabel="Tizim jurnali"
         columns={COLUMNS}
@@ -271,12 +247,10 @@ export function AuditLogTab({ canExport }: { canExport: boolean }) {
         manualSort
         dense
         emptyTitle="Yozuv topilmadi"
-        emptyDescription={activeCount > 0 ? "Filtrlarni o'zgartirib ko'ring." : "Tizimda hali qayd etilgan amal yo'q."}
         footer={<Pager page={page} totalPages={totalPages} total={total} pageSize={PAGE_SIZE} onChange={setPage} />}
       />
       </IntelPanel>
 
-      <DocumentFooter note={<>Jurnal o'zgartirilmaydi: har yozuv tizim tomonidan avtomatik qayd etiladi. Eksport chegarasi — <CodeText>{formatNumber(MAX_EXPORT_ROWS)}</CodeText> yozuv.</>} />
     </div>
   );
 }

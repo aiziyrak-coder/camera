@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, ExternalLink, FlaskConical, ImageOff, Info, Lightbulb, Trash2, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, ExternalLink, FlaskConical, ImageOff, Lightbulb, Trash2, X } from 'lucide-react';
 import { Badge, Button, Drawer, IconButton, KeyValue, StatusBadge, topDialogPanel, type KeyValueItem } from '../../ui';
 import EventActivity from './EventActivity';
 import { cameraLabel } from './ReviewCard';
 import EventWorkflowPanel from './EventWorkflowPanel';
 import { detailMetrics } from '../../lib/eventDetails';
-import { isOpenStatus } from '../../lib/eventWorkflow';
 import { relativeTime } from '../../lib/uzDate';
 import type { AIEvent } from '../../types';
 
@@ -126,7 +125,6 @@ export default function EventDrawer({
                 href={event.snapshotUrl}
                 target="_blank"
                 rel="noreferrer"
-                title="Kadrni to'liq o'lchamda ochish"
                 className="group block h-full w-full focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-primary/60"
               >
                 <img
@@ -143,8 +141,6 @@ export default function EventDrawer({
             ) : (
               <div className="flex flex-col items-center gap-1.5 text-white/40">
                 <ImageOff size={28} aria-hidden="true" />
-                {/* Ikki xil sabab — ikki xil xabar: "yo'q" bilan
-                    "ochilmadi" operator uchun bir xil narsa emas. */}
                 <span className="text-xs">{snapshotFailed ? "Kadrni yuklab bo'lmadi" : 'Kadr saqlanmagan'}</span>
                 {snapshotFailed && (
                   <a
@@ -153,7 +149,7 @@ export default function EventDrawer({
                     rel="noreferrer"
                     className="text-xs text-white/70 underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/60"
                   >
-                    Havolani alohida ochish
+                    Havolani ochish
                   </a>
                 )}
               </div>
@@ -166,7 +162,7 @@ export default function EventDrawer({
             <Badge tone="primary">{`Ishonch: ${event.confidence}%`}</Badge>
             {event.isTrial && (
               <Badge tone="warning" icon={FlaskConical}>
-                Sinov signali
+                Sinov
               </Badge>
             )}
           </div>
@@ -193,26 +189,9 @@ export default function EventDrawer({
             </section>
           )}
 
-          {event.isTrial && (
-            <p className="flex gap-2 rounded-control bg-warning-soft px-3 py-2.5 text-xs leading-relaxed text-fg">
-              <FlaskConical size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-warning" />
-              <span>
-                Bu modul hali sinov rejimida — signal operator navbatiga chiqmagan. Bahoyingiz modul aniqligini o&apos;lchash uchun
-                ishlatiladi: kadrga qarab haqqoniy baholang.
-              </span>
-            </p>
-          )}
-
           <KeyValue items={facts} />
 
-          {isOpenStatus(event.status) && !event.isTrial && (
-            <p className="flex gap-2 rounded-control bg-info-soft px-3 py-2.5 text-xs leading-relaxed text-fg">
-              <Info size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-info" />
-              AI signal — bu dalil emas, ko&apos;rsatkich. Yakuniy qarorni kadrni ko&apos;rib chiqqan inson qabul qiladi.
-            </p>
-          )}
           {onChanged && !event.isTrial && <EventActivity key={event.id} event={event} />}
-          <p className="hidden text-xs text-subtle sm:block">Klaviatura: T — tasdiqlash · R — rad etish · ← → — oldingi / keyingi</p>
         </div>
       )}
     </Drawer>

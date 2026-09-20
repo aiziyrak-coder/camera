@@ -56,7 +56,7 @@ export default function AddDepartmentModal({
       setErrors({});
       onClose();
     } catch (err) {
-      setErrors({ form: err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi" });
+      setErrors({ form: err instanceof ApiError ? err.message : 'Tarmoq xatosi' });
     } finally {
       setSubmitting(false);
     }
@@ -87,7 +87,7 @@ export default function AddDepartmentModal({
         </Field>
         <Field
           label="Qaysi binoda"
-          hint="Monitoring sahifasidagi filtr avval bino, keyin kafedra bo'yicha ishlaydi — binosi ko'rsatilmagan kafedra bino tanlangach ro'yxatda ko'rinmaydi."
+          hint="Binosiz kafedra bino filtrida ko'rinmaydi"
         >
           <Select
             value={buildingId}

@@ -1,17 +1,15 @@
 import {
   BellRing,
   BookUser,
-  BrainCircuit,
+  CalendarRange,
   Clock,
   Cctv,
   ChartColumn,
   Contact,
   GraduationCap,
   LayoutDashboard,
-  Lock,
   MonitorPlay,
   Network,
-  PlugZap,
   ServerCog,
   ShieldCheck,
   Siren,
@@ -54,6 +52,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: '/talabalar', code: 'TLB', label: 'Talabalar', icon: GraduationCap, permission: 'manageAttendance' },
       { to: '/oqituvchilar', code: 'XOD', label: 'Xodimlar', icon: BookUser, permission: 'manageAttendance' },
+      { to: '/dars-jadvali', code: 'DRS', label: 'Dars jadvali', icon: CalendarRange, permission: 'manageAttendance' },
     ],
   },
   {
@@ -77,11 +76,8 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: '/sozlamalar/kameralar', code: 'SKM', label: 'Kameralar', icon: Cctv, permission: 'editCameraLocation' },
       { to: '/sozlamalar/ish-vaqti', code: 'SIV', label: 'Ish vaqti', icon: Clock, permission: 'manageAttendance' },
-      { to: '/sozlamalar/ai', code: 'SAI', label: 'AI modullar', icon: BrainCircuit, permission: 'configureAi' },
       { to: '/sozlamalar/bildirishnomalar', code: 'SBL', label: 'Bildirishnomalar', icon: BellRing, permission: 'manageNotifications' },
-      { to: '/sozlamalar/integratsiyalar', code: 'SIN', label: 'Integratsiyalar', icon: PlugZap, permission: 'manageIntegrations' },
       { to: '/sozlamalar/foydalanuvchilar', code: 'SFD', label: 'Foydalanuvchilar', icon: ShieldCheck, permission: 'manageRoles' },
-      { to: '/sozlamalar/maxfiylik', code: 'SMX', label: 'Maxfiylik', icon: Lock, permission: 'managePrivacy' },
       { to: '/sozlamalar/tizim', code: 'STZ', label: 'Tizim holati', icon: ServerCog, permission: 'systemSettings' },
     ],
   },

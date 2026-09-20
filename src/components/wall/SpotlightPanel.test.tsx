@@ -8,12 +8,12 @@ import { SpotlightPanel } from './SpotlightPanel';
 describe('SpotlightPanel — bo\'sh holat', () => {
   it("navbat bo'sh bo'lsa — ko'rsatiladigan narsa yo'qligi aytiladi", () => {
     render(<SpotlightPanel detail={null} index={0} total={0} rotateS={15} cycleKey={0} />);
-    expect(screen.getByText(/ko'rsatiladigan bo'linma yoki guruh yo'q/)).toBeInTheDocument();
+    expect(screen.getByText("Bo'linma yo'q")).toBeInTheDocument();
   });
 
   it("navbat bor, lekin tafsilot kelmagan — 'yuklanmoqda' deyiladi", () => {
     render(<SpotlightPanel detail={null} index={0} total={4} rotateS={15} cycleKey={0} />);
-    expect(screen.getByText(/yuklanmoqda/)).toBeInTheDocument();
-    expect(screen.queryByText(/ko'rsatiladigan bo'linma yoki guruh yo'q/)).toBeNull();
+    expect(screen.getByText(/yuklanmoqda/i)).toBeInTheDocument();
+    expect(screen.queryByText("Bo'linma yo'q")).toBeNull();
   });
 });

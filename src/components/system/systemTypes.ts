@@ -164,34 +164,3 @@ export const RESOURCE_RAG: RagThresholds = { ok: RESOURCE_WARN_AT, warn: RESOURC
 
 /** Qamrov (oqim/kamera) ulushi uchun: 100% talab, 90% dan past — chora. */
 export const COVERAGE_RAG: RagThresholds = { ok: 100, warn: 90 };
-
-/**
- * Hujjat raqami — sahifa holatidan KELIB CHIQADI, vaqtga bog'liq emas.
- * Shu sabab bir xil holatda har renderda bir xil qiymat beradi va
- * qog'ozdagi nusxa ekrandagi bilan mos tushadi.
- *
- *   systemReference('holat', 10) === 'TZM-HOLAT-0010'
- *   systemReference('jurnal', null) === 'TZM-JURNAL-----'
- */
-export function systemReference(tab: string, population: number | null | undefined): string {
-  const key = tab.toUpperCase();
-  const count =
-    population === null || population === undefined || !Number.isFinite(population)
-      ? '----'
-      : String(Math.max(0, Math.trunc(population))).padStart(4, '0');
-  return `TZM-${key}-${count}`;
-}
-
-/**
- * Jurnal hujjat raqami — filtr va sahifadan kelib chiqadi, vaqtga
- * bog'liq emas:
- *
- *   auditReference('', '', 1) === 'JUR-ALL-ALL-001'
- *   auditReference('xatolik', 'Tizim', 4) === 'JUR-XAT-TIZ-004'
- */
-export function auditReference(status: string, module: string, page: number): string {
-  const key = (value: string, fallback: string) =>
-    (value ? value.replace(/[^\p{L}\p{N}]/gu, '') : fallback).slice(0, 3).toUpperCase();
-  const num = Number.isFinite(page) ? String(Math.max(1, Math.trunc(page))).padStart(3, '0') : '001';
-  return `JUR-${key(status, 'all')}-${key(module, 'all')}-${num}`;
-}

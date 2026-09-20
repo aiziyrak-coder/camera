@@ -110,7 +110,7 @@ export function StatusLine({ tone, children }: { tone: Tone; children: ReactNode
   );
 }
 
-/** Tavsiya (backend matni) — kichik, ikkinchi darajali. */
+/** Tavsiya — faqat backend haqiqatan muammo topganda keladi. */
 export function Recommendation({ children }: { children: ReactNode }) {
   if (!children) return null;
   return (
@@ -150,7 +150,7 @@ export function ResourceBody<T>({ resource, children, lines = 4 }: { resource: L
           <p role="status" className="flex items-start gap-2 border-b border-warning/40 bg-warning-soft px-2.5 py-2 text-xs leading-relaxed text-fg">
             <AlertTriangle size={14} className="mt-0.5 shrink-0 text-warning" aria-hidden="true" />
             <span className="min-w-0">
-              Yangilanmadi — {at ? `${at} dagi` : 'eski'} ma'lumot ko'rsatilmoqda. {resource.error}
+              Yangilanmadi — {at ?? 'eski'} ma'lumot. {resource.error}
             </span>
           </p>
         )}
