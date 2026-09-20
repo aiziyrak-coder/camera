@@ -26,6 +26,47 @@ const LEGACY_MAP: Record<string, string> = {
   '/admin/reset-password': '/parolni-tiklash',
 };
 
+/** Eski "Bino va qavat bo'yicha" ekrani (/videodevor?tab=binolar) endi
+ *  videodevorning yon panelidagi daraxt. Eski havolalar tushib qolmasin:
+ *  - `?q=` — yon paneldagi qidiruvga tushadi;
+ *  - `?kamera=<id>` — o'sha kamera devorga qo'yiladi;
+ *  - `?bino=`/`?qavat=` — bino identifikatori (UUID) edi, nomi esa faqat
+ *    kampus so'rovidan bilinardi: ular tashlab yuboriladi, operator yon
+ *    paneldan binoni bir bosishda topadi;
+ *  - `?tab=` — endi tab yo'q. */
+const CAMPUS_PARAMS = ['bino', 'qavat', 'kamera', 'q', 'tab'] as const;
+
+export interface VideoWallEntry {
+  /** Yon panelning boshlang'ich qidiruvi. */
+  search: string;
+  /** Devorga qo'yiladigan kamera (eski `?kamera=`). */
+  cameraId: string | null;
+  /** Eski parametrlardan tozalangan query (`?` belgisisiz). */
+  nextSearch: string;
+  /** URL'ni almashtirish kerakmi. */
+  changed: boolean;
+}
+
+/** /videodevor manziliga eski parametrlar bilan kelingan bo'lsa — nimani
+ *  saqlab qolish va URL'ni nimaga almashtirish kerakligini aytadi. */
+export function videoWallEntry(search: string): VideoWallEntry {
+  const params = new URLSearchParams(search);
+  const next = new URLSearchParams(search);
+  let changed = false;
+  for (const key of CAMPUS_PARAMS) {
+    if (next.has(key)) {
+      next.delete(key);
+      changed = true;
+    }
+  }
+  return {
+    search: (params.get('q') ?? '').trim(),
+    cameraId: params.get('kamera') || null,
+    nextSearch: next.toString(),
+    changed,
+  };
+}
+
 /** Eski manzil uchun yangi to'liq manzil (noma'lum /admin/... → "/"). */
 export function legacyRedirect(pathname: string, search = '', hash = ''): string {
   const clean = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;

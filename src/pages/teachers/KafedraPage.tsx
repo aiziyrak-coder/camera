@@ -39,7 +39,7 @@ import { TeacherDayDrawer } from '../../components/teachers/TeacherDayDrawer';
 import { useLoader } from '../../components/teachers/useLoader';
 import { UnitAnalyticsSection } from '../../components/teachers/UnitAnalyticsSection';
 import { getKafedra, getLessons, situationPaths, UNIT_KIND_LABELS, type KafedraDetail, type KafedraTeacher, type Lesson } from '../../lib/situationApi';
-import { matchesName, sortTeachers, type TeacherSort } from '../../lib/teachersApi';
+import { LESSON_TEACHER_SORTS, matchesName, resolveTeacherSort, sortTeachers, type TeacherSort } from '../../lib/teachersApi';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { useViewDate } from '../../lib/viewDate';
 import type { FixedPreset } from '../../lib/reportPeriods';
@@ -51,11 +51,8 @@ const PERIOD_PRESETS: readonly FixedPreset[] = ['last7', 'last30', 'month'];
 const SORT_OPTIONS: { value: TeacherSort; label: string }[] = [
   { value: 'lateness', label: 'Avval ko‘p kechikkanlar' },
   { value: 'onTime', label: "Avval darsga kam kirganlar" },
-  { value: 'activity', label: 'Avval darsda harakatchanlari' },
   { value: 'name', label: 'Ism bo‘yicha' },
 ];
-/** Dars jadvalisiz hisoblab bo'lmaydigan tartiblar. */
-const LESSON_SORTS: TeacherSort[] = ['onTime', 'activity'];
 const REFRESH_MS = 60_000;
 
 export default function KafedraPage() {
@@ -96,8 +93,9 @@ export default function KafedraPage() {
   // Dars jadvali yo'q bo'lsa dars asosidagi tartiblar ro'yxatdan chiqadi
   // (saqlangan tanlov ham "kechikish"ga qaytadi — Select bo'sh qolmasin).
   const periodLessons = data?.period.lessons ?? 0;
-  const sortOptions = periodLessons > 0 ? SORT_OPTIONS : SORT_OPTIONS.filter((o) => !LESSON_SORTS.includes(o.value));
-  const effectiveSort: TeacherSort = periodLessons > 0 || !LESSON_SORTS.includes(sort) ? sort : 'lateness';
+  const hasPeriodLessonsForSort = periodLessons > 0;
+  const sortOptions = hasPeriodLessonsForSort ? SORT_OPTIONS : SORT_OPTIONS.filter((o) => !LESSON_TEACHER_SORTS.includes(o.value));
+  const effectiveSort = resolveTeacherSort(sort, hasPeriodLessonsForSort);
 
   const tabs: TabItem<TabId>[] = [
     { id: 'oqituvchilar', label: "O'qituvchilar", icon: Users, count: data?.teachers.length ?? null },
@@ -322,21 +320,6 @@ function TeachersSection({ data, date, view, sort, search }: { data: KafedraDeta
         </span>
       ),
     },
-    {
-      key: 'activity',
-      header: 'Darsdagi harakatchanligi',
-      align: 'right',
-      cell: (t) =>
-        t.avgActivityScore === null ? (
-          <span className="text-subtle" title="Bu o'qituvchi uchun dars videosi tahlil qilinmagan">
-            —
-          </span>
-        ) : (
-          <span title="Dars davomida o'qituvchi doska oldida qanchalik harakatlangani — kamera tasviridan o'lchanadi. Dars sifatining bahosi emas.">
-            {Math.round(t.avgActivityScore)}%
-          </span>
-        ),
-    },
   ];
 
   return (
@@ -412,9 +395,6 @@ function TeachersSection({ data, date, view, sort, search }: { data: KafedraDeta
                 { label: 'Kelgan kunlar', value: selected.periodPresentDays },
                 { label: 'Kech kelgan kunlar', value: selected.periodLateDays },
                 { label: 'Kelmagan kunlar', value: selected.periodAbsentDays },
-                ...(hasPeriodLessons
-                  ? [{ label: 'Darsdagi harakatchanligi', value: selected.avgActivityScore === null ? '—' : `${Math.round(selected.avgActivityScore)}%` }]
-                  : []),
               ]}
             />
           </div>

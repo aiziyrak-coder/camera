@@ -501,3 +501,62 @@ export function floorOptions(cameras: readonly FilterableCamera[], building: str
   }
   return [...floors].sort((a, b) => (a === null ? 1 : b === null ? -1 : a - b));
 }
+
+// ---------------------------------------------------------------------------
+// Yon paneldagi daraxt: bino → qavat → kamera
+// ---------------------------------------------------------------------------
+
+/** Daraxtning bitta tuguni (bino yoki qavat) va undagi kamera sanoqlari. */
+export interface CameraGroup {
+  /** Filtrga yoziladigan qiymat: bino nomi yoki qavat kaliti ('none' / '3'). */
+  key: string;
+  label: string;
+  total: number;
+  /** Shulardan nechtasi tasvir bermoqda. */
+  online: number;
+}
+
+/** Bino nomi bo'sh bo'lsa ham ro'yxatda o'z qatori bo'lsin. */
+export const NO_BUILDING_LABEL = 'Bino belgilanmagan';
+
+export function floorLabel(floor: number | null): string {
+  return floor === null ? 'Qavat belgilanmagan' : `${floor}-qavat`;
+}
+
+/** Qavat kaliti `WallCameraFilters.floor` ko'rinishida. */
+export function floorFilterKey(floor: number | null): string {
+  return floor === null ? 'none' : String(floor);
+}
+
+function countGroup<T extends FilterableCamera>(cameras: readonly T[]): { total: number; online: number } {
+  let online = 0;
+  for (const camera of cameras) if (isCameraOnline(camera)) online += 1;
+  return { total: cameras.length, online };
+}
+
+/** Binolar ro'yxati — qidiruv va holat filtri hisobga olingan holda.
+ *  Bino/qavat filtri e'tiborga olinmaydi: daraxtning yuqori darajasi. */
+export function buildingGroups<T extends FilterableCamera>(cameras: readonly T[], filters: WallCameraFilters): CameraGroup[] {
+  const scoped = filterCameras(cameras, { ...filters, building: '', floor: '' });
+  const map = new Map<string, T[]>();
+  for (const camera of scoped) {
+    const key = camera.building || '';
+    const list = map.get(key);
+    if (list) list.push(camera);
+    else map.set(key, [camera]);
+  }
+  return [...map.entries()]
+    .map(([key, list]) => ({ key, label: key || NO_BUILDING_LABEL, ...countGroup(list) }))
+    // Nomi yo'q bino — oxirida.
+    .sort((a, b) => (a.key === '' ? 1 : b.key === '' ? -1 : a.label.localeCompare(b.label)));
+}
+
+/** Tanlangan binodagi qavatlar — qidiruv va holat filtri hisobga olingan holda. */
+export function floorGroups<T extends FilterableCamera>(cameras: readonly T[], filters: WallCameraFilters): CameraGroup[] {
+  const scoped = filterCameras(cameras, { ...filters, floor: '' });
+  return floorOptions(scoped, '').map((floor) => ({
+    key: floorFilterKey(floor),
+    label: floorLabel(floor),
+    ...countGroup(scoped.filter((camera) => (camera.floor ?? null) === floor)),
+  }));
+}

@@ -13,7 +13,7 @@ import {
   PanelLeftOpen,
   Trash2,
 } from 'lucide-react';
-import { Button, ErrorState, IconButton, Page, Toolbar, cn, useShell, useToast, type TabItem } from '../../ui';
+import { Button, ErrorState, IconButton, Page, Toolbar, cn, useShell, useToast } from '../../ui';
 import CameraSidebar from './CameraSidebar';
 import LayoutPicker from './LayoutPicker';
 import TourMenu, { DEFAULT_TOUR, sanitizeTour, type TourSettings } from './TourMenu';
@@ -106,15 +106,16 @@ function sameTiles(a: WallTiles, b: WallTiles): boolean {
   return a.length === b.length && a.every((id, index) => id === b[index]);
 }
 
-export default function VideoWall<T extends string>({
+export default function VideoWall({
   standalone = false,
-  tabs,
-  defaultTab,
+  initialSearch = '',
+  initialCameraId = null,
 }: {
   standalone?: boolean;
-  /** Qobiq ichida: sahifa tablari (Videodevor | Bino bo'yicha). */
-  tabs?: readonly TabItem<T>[];
-  defaultTab?: T;
+  /** Yon panelning boshlang'ich qidiruvi (eski `?q=` havolasi). */
+  initialSearch?: string;
+  /** Ochilishda devorga qo'yiladigan kamera (eski `?kamera=` havolasi). */
+  initialCameraId?: string | null;
 }) {
   const toast = useToast();
   const { presentation } = useShell();
@@ -137,7 +138,7 @@ export default function VideoWall<T extends string>({
   const [activeViewId, setActiveViewId] = useState<string | null>(viewParam);
   const [source, setSource] = useState<Source>('manual');
   const [page, setPage] = useState(0);
-  const [filters, setFilters] = useState<WallCameraFilters>(EMPTY_WALL_FILTERS);
+  const [filters, setFilters] = useState<WallCameraFilters>(() => ({ ...EMPTY_WALL_FILTERS, search: initialSearch }));
   const [maximized, setMaximized] = useState<number | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [sidebarOpen, setSidebarOpen] = usePersistedState<boolean>(
@@ -309,6 +310,15 @@ export default function VideoWall<T extends string>({
     }
     editTiles(() => placed.tiles);
   }
+
+  // Eski "Bino va qavat bo'yicha" havolasi (?kamera=<id>) — o'sha kamera
+  // ro'yxat yuklangach bo'sh katakka qo'yiladi (bir marta).
+  const placedInitial = useRef(false);
+  useEffect(() => {
+    if (placedInitial.current || !initialCameraId || !byId.has(initialCameraId)) return;
+    placedInitial.current = true;
+    editTiles((base) => addToFirstEmpty(base, initialCameraId)?.tiles ?? null);
+  }, [initialCameraId, byId, editTiles]);
 
   // ---------------------------------------------------------------- tour
   const tourViewIds = useMemo(() => tourSequence(views, tour.viewIds), [views, tour.viewIds]);
@@ -728,9 +738,7 @@ export default function VideoWall<T extends string>({
   return (
     <Page
       title="Jonli kameralar"
-      subtitle="Bir necha kameraning tasvirini bitta ekranda ko'rish. Kerakli kameralarni katakchalarga torting, tanlovni saqlab qo'ying yoki ikkinchi monitorda alohida oynada oching."
-      tabs={tabs}
-      defaultTab={defaultTab}
+      subtitle="Bir necha kameraning tasvirini bitta ekranda ko'rish. Yon paneldan bino va qavat bo'yicha kerakli kamerani toping, katakchalarga torting, tanlovni saqlab qo'ying yoki ikkinchi monitorda alohida oynada oching."
       actions={
         <>
           {layoutPicker}

@@ -75,8 +75,15 @@ class CameraRecognitionStats:
     zoom_attempts: int = 0
     zoom_faces: int = 0
     zoom_matches: int = 0
+    # Devordagi rasm sifatida o'tkazib yuborilgan yuzlar va hozir shu
+    # kamerada nechta statik ramka eslanayotgani (app/services/static_faces.py).
+    # static_px_median ni face_px_median bilan solishtirish mumkin: stenddagi
+    # surat ko'pincha tirik yuzdan kattaroq ko'rinadi.
+    static_faces: int = 0
+    static_boxes: int = 0
     _face_heights: deque[int] = field(default_factory=lambda: deque(maxlen=500))
     _zoom_heights: deque[int] = field(default_factory=lambda: deque(maxlen=500))
+    _static_heights: tuple[int, ...] = ()
 
     @property
     def face_px_median(self) -> int | None:
@@ -85,6 +92,10 @@ class CameraRecognitionStats:
     @property
     def zoom_px_median(self) -> int | None:
         return int(median(self._zoom_heights)) if self._zoom_heights else None
+
+    @property
+    def static_px_median(self) -> int | None:
+        return int(median(self._static_heights)) if self._static_heights else None
 
 
 _stats: dict[str, CameraRecognitionStats] = {}
@@ -219,6 +230,20 @@ def record_zoom_faces(camera_id: str | None, heights: list[int]) -> None:
     stats._zoom_heights.extend(heights)
 
 
+def record_static(camera_id: str | None, *, skipped: int, heights: list[int]) -> None:
+    """Shu kadrda nechta yuz "devordagi rasm" deb o'tkazib yuborildi va
+    kamerada hozir qanday statik ramkalar bor. Hech narsa jimgina
+    yo'qolmasligi uchun alohida sanaladi — kamerada yuz "kamaygandek"
+    ko'rinsa, sababi shu raqamda turadi."""
+    if camera_id is None:
+        return
+    stats = _camera_stats(camera_id)
+    if skipped > 0:
+        stats.static_faces += skipped
+    stats.static_boxes = len(heights)
+    stats._static_heights = tuple(heights)
+
+
 def record_zoom_matches(camera_id: str | None, count: int) -> None:
     if camera_id is None or count <= 0:
         return
@@ -283,6 +308,9 @@ class RecognitionView:
     zoom_faces: int = 0
     zoom_matches: int = 0
     zoom_px_median: int | None = None
+    static_faces: int = 0
+    static_boxes: int = 0
+    static_px_median: int | None = None
     last_frame_at: datetime | None = None
     last_face_at: datetime | None = None
     last_match_at: datetime | None = None
@@ -325,6 +353,9 @@ def export_snapshot() -> dict[str, dict]:
             "zoom_faces": s.zoom_faces,
             "zoom_matches": s.zoom_matches,
             "zoom_px_median": s.zoom_px_median,
+            "static_faces": s.static_faces,
+            "static_boxes": s.static_boxes,
+            "static_px_median": s.static_px_median,
         }
         for camera_id, s in _stats.items()
         if s.day == today
@@ -364,6 +395,9 @@ def view_from_dict(row: dict) -> RecognitionView | None:
         zoom_faces=int(row.get("zoom_faces", 0)),
         zoom_matches=int(row.get("zoom_matches", 0)),
         zoom_px_median=row.get("zoom_px_median"),
+        static_faces=int(row.get("static_faces", 0)),
+        static_boxes=int(row.get("static_boxes", 0)),
+        static_px_median=row.get("static_px_median"),
     )
 
 

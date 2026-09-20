@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Loader2, VideoOff } from 'lucide-react';
-import { api } from '../../../lib/apiClient';
+import { api } from '../../lib/apiClient';
 
 /** Qavat grididagi bitta kamera kadri (jonli video EMAS).
  *

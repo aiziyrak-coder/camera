@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   EMPTY_WALL_FILTERS,
   WALL_LAYOUTS,
+  buildingGroups,
   filterCameras,
+  floorGroups,
   floorOptions,
   addToFirstEmpty,
   clampPage,
@@ -284,5 +286,34 @@ describe('kamera filtri', () => {
   it('qavatlar ro\'yxati', () => {
     expect(floorOptions(cams, '')).toEqual([1, 2, null]);
     expect(floorOptions(cams, 'B')).toEqual([2, null]);
+  });
+
+  it('yon panel daraxti: binolar va ularning sanoqlari', () => {
+    expect(buildingGroups(cams, EMPTY_WALL_FILTERS)).toEqual([
+      { key: 'A', label: 'A', total: 2, online: 1 },
+      { key: 'B', label: 'B', total: 2, online: 1 },
+    ]);
+    // Qidiruv va holat filtri sanoqlarga ta'sir qiladi, bino tanlovi — yo'q.
+    expect(buildingGroups(cams, { ...EMPTY_WALL_FILTERS, status: 'live', building: 'A' })).toEqual([
+      { key: 'A', label: 'A', total: 1, online: 1 },
+      { key: 'B', label: 'B', total: 1, online: 1 },
+    ]);
+    expect(buildingGroups(cams, { ...EMPTY_WALL_FILTERS, search: 'hovli' })).toEqual([
+      { key: 'B', label: 'B', total: 1, online: 1 },
+    ]);
+  });
+
+  it("nomsiz bino oxirida, o'z yorlig'i bilan turadi", () => {
+    const withNone = [...cams, { id: '5', name: 'Ombor', zone: '', building: '', status: 'live', floor: 1 }];
+    expect(buildingGroups(withNone, EMPTY_WALL_FILTERS).map((g) => g.label)).toEqual(['A', 'B', 'Bino belgilanmagan']);
+  });
+
+  it('yon panel daraxti: tanlangan binodagi qavatlar', () => {
+    expect(floorGroups(cams, { ...EMPTY_WALL_FILTERS, building: 'B' })).toEqual([
+      { key: '2', label: '2-qavat', total: 1, online: 0 },
+      { key: 'none', label: 'Qavat belgilanmagan', total: 1, online: 1 },
+    ]);
+    // Qavat tanlangan bo'lsa ham ro'yxat qisqarmaydi — yonma-yon o'tish uchun.
+    expect(floorGroups(cams, { ...EMPTY_WALL_FILTERS, building: 'B', floor: '2' }).map((g) => g.key)).toEqual(['2', 'none']);
   });
 });

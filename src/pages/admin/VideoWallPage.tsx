@@ -1,24 +1,25 @@
-import { Building2, LayoutGrid } from 'lucide-react';
-import { useUrlTab, type TabItem } from '../../ui';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import VideoWall from '../../components/videowall/VideoWall';
-import CampusBrowser from '../../components/monitor/CampusBrowser';
+import { videoWallEntry } from '../../layouts/legacyRoutes';
 
-type Tab = 'devor' | 'binolar';
-
-const TABS: readonly TabItem<Tab>[] = [
-  { id: 'devor', label: 'Bir ekranda ko\'p kamera', icon: LayoutGrid },
-  { id: 'binolar', label: "Bino va qavat bo'yicha", icon: Building2 },
-];
-
-/** /videodevor — ikki ko'rinish:
- *  - "Videodevor": ko'p kamerali setka (ko'rinishlar, tur, alohida oyna);
- *  - "Bino bo'yicha": kampus → bino → qavat → kamera (jonli ko'rinish, PTZ,
- *    signallar, hodisalar jurnali, hisobot).
+/** /videodevor — jonli kameralarning yagona ekrani: setka (ko'rinishlar,
+ *  tur, alohida oyna) va yon paneldagi bino → qavat → kamera daraxti.
+ *  Ilgari bu ikki alohida tab edi ("Bir ekranda ko'p kamera" va "Bino va
+ *  qavat bo'yicha") — ikkalasi ham oxir-oqibat jonli kamera ochardi.
  *  /videodevor/ekran — `standalone`: menyusiz, ikkinchi monitor uchun. */
 export default function VideoWallPage({ standalone = false }: { standalone?: boolean }) {
-  const [tab] = useUrlTab(TABS);
+  const [params, setParams] = useSearchParams();
+  // Eski parametrlar faqat ochilishda o'qiladi: keyin ular URL'dan
+  // o'chiriladi va qayta ishlamaydi.
+  const [entry] = useState(() => videoWallEntry(params.toString()));
+
+  useEffect(() => {
+    if (standalone || !entry.changed) return;
+    setParams(new URLSearchParams(entry.nextSearch), { replace: true });
+    // Bir marta: `entry` boshlang'ich holatdan olingan va o'zgarmaydi.
+  }, [standalone, entry, setParams]);
+
   if (standalone) return <VideoWall standalone />;
-  // Har tab o'z `Page`ini chizadi (sarlavha o'ngidagi harakatlar tabga bog'liq);
-  // tanlanmagan tab umuman o'rnatilmaydi — pleyerlar va so'rovlar to'xtaydi.
-  return tab === 'binolar' ? <CampusBrowser tabs={TABS} defaultTab="devor" /> : <VideoWall tabs={TABS} defaultTab="devor" />;
+  return <VideoWall initialSearch={entry.search} initialCameraId={entry.cameraId} />;
 }

@@ -72,7 +72,7 @@ def _fresh_inference_cache():
 
     from app.jobs.lesson_quality_ai import reset_sampling_for_tests
 
-    from app.services import face_gallery, face_zoom, stream_promotion
+    from app.services import face_gallery, face_zoom, static_faces, stream_promotion
     from app.services.face_tracks import track_store
 
     inference_cache.clear()
@@ -81,6 +81,7 @@ def _fresh_inference_cache():
     face_gallery.reset_for_tests()
     stream_promotion.reset_for_tests()
     face_zoom.zoom_limiter.reset()
+    static_faces.reset_for_tests()
     yield
     inference_cache.clear()
     reset_sampling_for_tests()
@@ -88,6 +89,7 @@ def _fresh_inference_cache():
     face_gallery.reset_for_tests()
     stream_promotion.reset_for_tests()
     face_zoom.zoom_limiter.reset()
+    static_faces.reset_for_tests()
 
 
 @pytest_asyncio.fixture(autouse=True)

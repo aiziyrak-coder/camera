@@ -162,6 +162,39 @@ class Settings(BaseSettings):
     # keyin o'quvchi (ffmpeg) DARHOL yopiladi, ya'ni 4K ulanish faqat shu
     # necha soniya yashaydi.
     face_zoom_wait_seconds: float = 8.0
+    # ── Devordagi rasm ("statik yuz") ni o'tkazib yuborish ──────────────
+    # (app/services/static_faces.py). 2026-09-20, yakshanba, bino bo'sh:
+    # 1555 ta "yuz", 290 ta 4K zoom urinishi, 0 ta moslik — kesimlarda
+    # ma'lumot stendidagi xodimlar surati va anatomiya plakati. Bunday yuz
+    # har tekshiruvda qaytadan topiladi va har safar eng qimmat yo'lga
+    # (zoom pass) tushadi.
+    static_face_skip_enabled: bool = True
+    # Eslab qolingan ramka bilan shundan yuqori ustma-ust tushish "aynan
+    # o'sha joy" hisoblanadi. 0.9 — juda qat'iy (kuzatuv uchun 0.4 yetadi):
+    # tirik odam bir necha kadr davomida piksel aniqligida turmaydi, rasm esa
+    # umuman qimirlamaydi.
+    static_face_iou: float = 0.9
+    # Statik deb belgilash uchun: shuncha ALOHIDA ko'rinish VA shuncha
+    # vaqt oralig'i — ikkalasi ham. 90 daqiqa ataylab tanlandi: eng uzun
+    # dars bloki (juft dars) 80 daqiqa, ya'ni butun dars davomida stulda
+    # qimirlamay o'tirgan odam ham chegaraga yetmaydi; plakat esa bir necha
+    # soatda ham, ertasiga ham o'sha joyda turaveradi.
+    static_face_min_hits: int = 40
+    static_face_min_span_seconds: int = 5400
+    # Ikki sanoq orasidagi eng kichik oraliq: sekundiga bir kadr o'qiydigan
+    # kirish kuzatuvchisi sanoqni daqiqalarda to'ldirib yubormasin.
+    static_face_min_gap_seconds: int = 20
+    # Shuncha vaqt ko'rinmagan ramka unutiladi (stend olib tashlandi,
+    # kamera burildi) — keyin u odatdagidek qayta tekshiriladi.
+    static_face_expire_seconds: int = 10800
+    # O'sha joyda bir marta HAQIQIY odam tanilgan bo'lsa, ramka shuncha vaqt
+    # statik bo'la olmaydi. Eng xavfli xato — tirik odamni rasm deb
+    # belgilash, shuning uchun bu chegara ataylab uzun (ish kuni).
+    static_face_person_memory_seconds: int = 21600
+    # Xotira chegarasi: bitta kamerada shuncha ramka (nomzod + statik) va
+    # jami shuncha kamera eslanadi.
+    static_face_max_boxes_per_camera: int = 32
+    static_face_max_cameras: int = 400
     # Detektor kadrni o'z nisbatida tahlil qiladi (app/services/face_recognition.py
     # detection_input_size). 2026-09-19 o'lchovi: 107 kameraning 99 tasi AI
     # uchun 640x360 substreamdan o'qiladi — ular uchun 640x384 kirish eski

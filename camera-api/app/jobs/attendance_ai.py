@@ -53,7 +53,7 @@ from app.services.face_matching import CandidateMatrix, find_best_match as _vect
 from app.services.attendance_policy import current_policy, load_policy
 from app.services import face_gallery
 from app.services.face_matching import GradedMatch
-from app.services.face_recognition import detect_faces, face_quality_ok, recognizable_faces
+from app.services.face_recognition import TRACK_IOU, _iou, detect_faces, face_quality_ok, recognizable_faces
 from app.services.face_tracks import track_store
 from app.services.inference_gate import PRIORITY_ATTENDANCE, PRIORITY_BACKGROUND
 from app.services.frame_grabber import (
@@ -66,6 +66,7 @@ from app.services.frame_grabber import (
     stream_label,
 )
 from app.services import face_zoom
+from app.services import static_faces
 from app.services.image_size import jpeg_dimensions
 from app.services import recognition_stats
 from app.services.camera_roles import face_roi_box
@@ -487,10 +488,29 @@ async def process_camera_frame(
 
     `allow_zoom=False` — bu kadrning o'zi asosiy oqimdan yaqinlashtirib
     olingan (app/services/face_zoom.py), ya'ni yana zoom qilinmaydi."""
-    if faces is None:
-        faces = await detect_faces(frame_bytes, priority=inference_priority, roi=roi, skip_boxes=skip_boxes)
-    camera_key_tracked = sum(1 for face in faces if getattr(face, "tracked", False))
     camera_key = str(camera.id) if camera is not None else None
+    # Devordagi rasmlar (app/services/static_faces.py). Faqat ODATDAGI
+    # tekshiruvda: zoom kadri 4K, ya'ni uning koordinatalari boshqa
+    # o'lchamda — eslangan ramkalar unga to'g'ri kelmaydi (allow_zoom=False
+    # aynan shu chaqiruvni bildiradi).
+    static_pass = allow_zoom and camera_key is not None
+    static_boxes = static_faces.static_face_store.static_boxes(camera_key) if static_pass else ()
+    if faces is None:
+        faces = await detect_faces(
+            frame_bytes,
+            priority=inference_priority,
+            roi=roi,
+            # Statik ramkadagi yuz shu yerda embedding olmaydi — eng arzon joyi shu.
+            skip_boxes=tuple(skip_boxes) + static_boxes,
+        )
+    if static_pass:
+        faces, skipped_static = static_faces.static_face_store.split(camera_key, faces)
+        recognition_stats.record_static(
+            camera_key,
+            skipped=len(skipped_static),
+            heights=static_faces.static_face_store.static_heights(camera_key),
+        )
+    camera_key_tracked = sum(1 for face in faces if getattr(face, "tracked", False))
     recognition_stats.record_tracked(camera_key, camera_key_tracked)
     if identified_boxes is not None:
         # Tanilgan odam keyingi kadrda ham tanilgan bo'lib qoladi (kuzatuv).
@@ -595,6 +615,9 @@ async def process_camera_frame(
             )
         )
 
+    if static_pass:
+        _note_static_faces(camera, camera_key, faces, matched_boxes)
+
     if allow_zoom:
         records.extend(
             await _zoom_recheck(
@@ -611,6 +634,35 @@ async def process_camera_frame(
             )
         )
     return records
+
+
+def _note_static_faces(camera: Camera | None, camera_key: str | None, faces: list, matched_boxes: list) -> None:
+    """Kadr natijasini statik ramkalar xotirasiga beradi.
+
+    Tartib muhim: avval TANILGAN yuzlar (o'sha joy endi "tirik" deb
+    belgilanadi va u yerdagi nomzod o'chiriladi), keyin qolganlari
+    kuzatuvga olinadi. Kuzatilmaydiganlar: tanilgan yuzlar va oldingi
+    kadrdan kuzatib kelinayotganlar (ular allaqachon odam)."""
+    static_faces.static_face_store.note_matched(camera_key, matched_boxes)
+    watched = [
+        face
+        for face in faces
+        if not getattr(face, "tracked", False)
+        and not any(_iou(face.bbox, box) >= TRACK_IOU for box in matched_boxes)
+    ]
+    for box in static_faces.static_face_store.observe(camera_key, watched):
+        # Kadr bo'yicha emas, faqat YANGI ramka paydo bo'lganda: admin
+        # jurnalda "bu kamera asosan plakatga qaraydi" ni ko'rsin.
+        logger.info(
+            "static face box learned (wall picture, skipped from now on)",
+            extra={
+                "camera_id": camera_key,
+                "camera_name": getattr(camera, "name", None),
+                "face_px": box.height_px,
+                "hits": box.hits,
+                "span_minutes": round(box.span_seconds / 60.0, 1),
+            },
+        )
 
 
 async def _zoom_recheck(

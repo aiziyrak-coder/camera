@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { findActive, homeForRole, isPathAllowedForRole, matchesPath, usesViewDate, visibleSections } from './navConfig';
-import { legacyRedirect } from '../legacyRoutes';
+import { legacyRedirect, videoWallEntry } from '../legacyRoutes';
 
 describe('navConfig', () => {
   it('matches nested paths but not prefixes of other words', () => {
@@ -55,5 +55,18 @@ describe('legacyRedirect', () => {
     expect(legacyRedirect('/admin/system-log', '?tab=x&q=1')).toBe('/sozlamalar/tizim?tab=jurnal&q=1');
     expect(legacyRedirect('/admin/video-wall', '', '#a')).toBe('/videodevor#a');
     expect(legacyRedirect('/admin/nomalum')).toBe('/');
+  });
+});
+
+describe('videoWallEntry', () => {
+  it("eski «Bino va qavat bo'yicha» parametrlarini tozalaydi", () => {
+    const entry = videoWallEntry('?tab=binolar&bino=b-1&qavat=2&kamera=cam-7&q=kirish');
+    expect(entry).toEqual({ search: 'kirish', cameraId: 'cam-7', nextSearch: '', changed: true });
+  });
+
+  it('boshqa parametrlarga tegmaydi', () => {
+    expect(videoWallEntry('?view=v1')).toEqual({ search: '', cameraId: null, nextSearch: 'view=v1', changed: false });
+    expect(videoWallEntry('')).toEqual({ search: '', cameraId: null, nextSearch: '', changed: false });
+    expect(videoWallEntry('?view=v1&q=zal').nextSearch).toBe('view=v1');
   });
 });

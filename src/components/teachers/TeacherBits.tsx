@@ -22,16 +22,13 @@ export function TodayLessons({ t, className }: { t: KafedraTeacher; className?: 
 
 /** PersonCard pastidagi qism: bugungi darslar + davrdagi o'z vaqtida halqasi.
  *  Dars jadvali yo'q bo'lsa (na bugun, na davrda) bu qism umuman
- *  chizilmaydi — "Darsi yo'q · Faollik: —" har kartada takrorlanardi. */
+ *  chizilmaydi — "Darsi yo'q" har kartada takrorlanardi. */
 export function TeacherCardMeta({ t }: { t: KafedraTeacher }) {
   if (t.lessonsScheduled === 0 && t.periodLessons === 0) return null;
   return (
     <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-border pt-2">
       <div className="min-w-0">
         <TodayLessons t={t} />
-        <p className="mt-1 text-[11px] text-muted">
-          Faollik: <span className="font-medium tabular-nums text-fg">{t.avgActivityScore === null ? '—' : `${Math.round(t.avgActivityScore)}%`}</span>
-        </p>
       </div>
       <ProgressRing value={t.onTimeRate} size={38} thickness={4} ariaLabel="Davrda darsga o'z vaqtida" />
     </div>

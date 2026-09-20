@@ -30,9 +30,9 @@ vi.mock('../LiveVideoPlayer', () => ({
   default: ({ streamUrl }: { streamUrl?: string }) => <div data-testid="player" data-url={streamUrl} />,
 }));
 
-function renderWall() {
+function renderWall(entry = '/videodevor') {
   return render(
-    <MemoryRouter initialEntries={['/admin/video-wall']}>
+    <MemoryRouter initialEntries={[entry]}>
       <VideoWallPage />
     </MemoryRouter>,
   );
@@ -43,6 +43,12 @@ const players = () => screen.queryAllByTestId('player');
 
 async function loaded() {
   await waitFor(() => expect(screen.getByText(/30 ta ·/)).toBeInTheDocument());
+}
+
+/** Yon panel bino daraxtidan ochiladi — tekis ro'yxatga o'tish. */
+async function loadedFlat() {
+  await loaded();
+  fireEvent.click(screen.getByRole('button', { name: /^Barcha kameralar/ }));
 }
 
 beforeEach(() => {
@@ -56,7 +62,7 @@ afterEach(() => {
 describe('Videodevor', () => {
   it("yon paneldan bosilgan kamera birinchi bo'sh katakka tushadi va jonli o'ynaydi", async () => {
     renderWall();
-    await loaded();
+    await loadedFlat();
     expect(cells()).toHaveLength(4);
     expect(players()).toHaveLength(0);
 
@@ -96,7 +102,7 @@ describe('Videodevor', () => {
 
   it('ikki marta bosish — faqat bitta katak (kattalashtirish), Esc — qaytish', async () => {
     renderWall();
-    await loaded();
+    await loadedFlat();
     fireEvent.click(screen.getByTitle(/Kamera 1 —/));
     fireEvent.click(screen.getByTitle(/Kamera 3 —/));
     expect(players()).toHaveLength(2);
@@ -122,9 +128,41 @@ describe('Videodevor', () => {
     expect(JSON.parse(localStorage.getItem('videowall-current') ?? '{}').tiles).toEqual([null, null, null, 'cam-5']);
   });
 
-  it("ko'rinishni saqlaydi va localStorage'ga yozadi", async () => {
+  it('yon panel bino → qavat → kamera bo‘yicha yuradi', async () => {
     renderWall();
     await loaded();
+    // Yuqori daraja — binolar.
+    expect(screen.getByText('2 ta bino · binoni tanlang')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /1-Bino/ }));
+
+    // Bino ichida — qavatlar.
+    expect(screen.getByText('3 ta qavat · qavatni tanlang')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /2-qavat/ }));
+
+    // Qavat ichida — faqat o'sha qavat kameralari.
+    fireEvent.click(screen.getByTitle(/Kamera 2 —/));
+    expect(screen.getByTitle(/Kamera 5 —/)).toBeInTheDocument();
+    expect(screen.queryByTitle(/Kamera 3 —/)).not.toBeInTheDocument();
+
+    // Nom bo'yicha qidiruv daraxt darajasidan qat'i nazar ishlaydi.
+    fireEvent.click(screen.getByRole('button', { name: 'Barcha binolar' }));
+    fireEvent.change(screen.getByLabelText('Kameralarni qidirish'), { target: { value: 'Kamera 30' } });
+    expect(screen.getByTitle(/Kamera 30 —/)).toBeInTheDocument();
+    expect(screen.queryByTitle(/Kamera 3 —/)).not.toBeInTheDocument();
+  });
+
+  it("eski «Bino bo'yicha» havolasi (?kamera=&q=) devorga tushadi", async () => {
+    renderWall('/videodevor?tab=binolar&bino=b1&qavat=2&kamera=cam-7&q=Kamera%207');
+    await loaded();
+    // Kamera devorga qo'yildi va yon panel qidiruvi saqlandi.
+    await waitFor(() => expect(players()).toHaveLength(1));
+    expect(players()[0]).toHaveAttribute('data-url', cameras[6].streamUrl);
+    expect(screen.getByLabelText('Kameralarni qidirish')).toHaveValue('Kamera 7');
+  });
+
+  it("ko'rinishni saqlaydi va localStorage'ga yozadi", async () => {
+    renderWall();
+    await loadedFlat();
     fireEvent.click(screen.getByTitle(/Kamera 4 —/));
     fireEvent.click(screen.getByTitle("Saqlangan ko'rinishlar"));
     fireEvent.change(screen.getByLabelText(/yangi ko'rinish sifatida saqlash/i), { target: { value: 'Kirishlar' } });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Cpu, DoorOpen, Eye, FileUp, Layers, MapPin, MapPinned, Plus, Settings2, Video, VideoOff, Wrench, type LucideIcon } from 'lucide-react';
+import { Cpu, DoorOpen, Eye, FileUp, Layers, MapPin, MapPinned, Plus, ScanFace, Settings2, Video, VideoOff, Wrench, type LucideIcon } from 'lucide-react';
 import AddCameraModal from '../../components/admin/AddCameraModal';
 import CameraImportModal from '../../components/admin/CameraImportModal';
 import CameraConfigDetailModal from '../../components/admin/CameraConfigDetailModal';
@@ -8,6 +8,7 @@ import CameraZoneModal from '../../components/admin/CameraZoneModal';
 import CameraLocationModal from '../../components/admin/CameraLocationModal';
 import CameraLocationEditModal from '../../components/admin/CameraLocationEditModal';
 import CameraRolesImportModal from '../../components/admin/CameraRolesImportModal';
+import { AttendanceCamerasPanel } from '../../components/admin/AttendanceCamerasPanel';
 import { Checkbox, pagerFooter } from '../../components/settings/kit';
 import {
   Badge,
@@ -25,7 +26,9 @@ import {
   focusRing,
   formatNumber,
   useToast,
+  useUrlTab,
   type DataTableColumn,
+  type TabItem,
   type FilterFieldEntry,
   type Tone,
 } from '../../ui';
@@ -104,7 +107,17 @@ function CellLink({ children, title, tone, onClick }: { children: ReactNode; tit
   );
 }
 
+type CameraTabId = 'royxat' | 'tanish';
+
+const CAMERA_TABS: TabItem<CameraTabId>[] = [
+  { id: 'royxat', label: "Kameralar ro'yxati", icon: Video },
+  // Ilgari «Xodimlar va o'qituvchilar» bo'limida turgan tashxis paneli:
+  // u xodimlar haqida emas, kameralar haqida.
+  { id: 'tanish', label: 'Kameralar odamlarni tanidimi', icon: ScanFace },
+];
+
 export default function CamerasZonesPage() {
+  const [tab] = useUrlTab(CAMERA_TABS, { defaultTab: 'royxat' });
   const { token, role } = useAuth();
   const { can } = usePermissions();
   /** Kamera mas'uli faqat joylashuvni to'g'rilaydi: kamera qo'shish,
@@ -485,7 +498,10 @@ export default function CamerasZonesPage() {
       title="Kameralar"
       subtitle="Har bir kamera qaysi binoning qaysi qavatida va qanday xonada turgani. Joylashuv to'g'ri ko'rsatilsa, davomat va hodisalar to'g'ri hisoblanadi."
       breadcrumbs={[{ label: 'Sozlamalar' }, { label: 'Kameralar' }]}
+      tabs={CAMERA_TABS}
+      defaultTab="royxat"
       actions={
+        tab === 'tanish' ? undefined : (
         <>
           <Button icon={DoorOpen} onClick={() => setRolesOpen(true)} title="Xona turlarini jadval fayli orqali bir vaqtda ko'plab kameraga belgilash">
             Xona turlarini fayldan yuklash
@@ -501,9 +517,14 @@ export default function CamerasZonesPage() {
             </>
           )}
         </>
+        )
       }
-      toolbar={<FilterBar fields={filterFields} onReset={resetFilters} />}
+      toolbar={tab === 'tanish' ? undefined : <FilterBar fields={filterFields} onReset={resetFilters} />}
     >
+      {tab === 'tanish' ? (
+        <AttendanceCamerasPanel />
+      ) : (
+        <>
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatTile icon={Video} tone="success" label="Ishlatilayotgan kameralar" value={formatNumber(summary?.faol ?? 0)} hint="Tizim ulardan tasvir oladi" loading={!summary} />
         <StatTile icon={VideoOff} tone="neutral" label="O'chirib qo'yilgan" value={formatNumber(summary?.nofaol ?? 0)} hint="Tizim ularga umuman ulanmaydi" loading={!summary} />
@@ -570,6 +591,8 @@ export default function CamerasZonesPage() {
         }
         footer={pagerFooter({ page, totalPages, total, pageSize, onChange: setPage })}
       />
+        </>
+      )}
 
       <AddCameraModal
         open={addOpen}

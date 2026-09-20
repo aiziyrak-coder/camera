@@ -167,7 +167,21 @@ export function latenessScore(t: KafedraTeacher): number {
   return today * 100 + periodBad;
 }
 
-export type TeacherSort = 'lateness' | 'name' | 'onTime' | 'activity';
+export type TeacherSort = 'lateness' | 'name' | 'onTime';
+
+/** Ro'yxatdagi barcha tartiblar (Select shu tartibda chizadi). */
+export const TEACHER_SORTS: readonly TeacherSort[] = ['lateness', 'onTime', 'name'];
+/** Dars jadvalisiz hisoblab bo'lmaydigan tartiblar. */
+export const LESSON_TEACHER_SORTS: readonly TeacherSort[] = ['onTime'];
+
+/** Saqlangan yoki havoladan kelgan tartibni haqiqiy ro'yxatga keltiradi:
+ *  olib tashlangan tartib (masalan eski "faollik") ham, dars jadvali yo'qda
+ *  hisoblab bo'lmaydigani ham "kechikish"ga tushadi — Select bo'sh qolmasin. */
+export function resolveTeacherSort(value: string | null | undefined, hasLessons: boolean): TeacherSort {
+  const sort = TEACHER_SORTS.find((s) => s === value);
+  if (!sort) return 'lateness';
+  return !hasLessons && LESSON_TEACHER_SORTS.includes(sort) ? 'lateness' : sort;
+}
 
 export function sortTeachers(rows: readonly KafedraTeacher[], sort: TeacherSort): KafedraTeacher[] {
   const byName = (a: KafedraTeacher, b: KafedraTeacher) => a.fullName.localeCompare(b.fullName, 'uz');
@@ -178,9 +192,8 @@ export function sortTeachers(rows: readonly KafedraTeacher[], sort: TeacherSort)
       return copy.sort(byName);
     case 'onTime':
       return copy.sort((a, b) => nullLast(a.onTimeRate, 1) - nullLast(b.onTimeRate, 1) || byName(a, b));
-    case 'activity':
-      return copy.sort((a, b) => nullLast(a.avgActivityScore, -1) - nullLast(b.avgActivityScore, -1) || byName(a, b));
     default:
+      // Noma'lum (masalan saqlangan eski) tartib ham shu yerga tushadi.
       return copy.sort((a, b) => latenessScore(b) - latenessScore(a) || byName(a, b));
   }
 }

@@ -5,6 +5,7 @@ import {
   hhmm,
   isLessonTracked,
   matchesName,
+  resolveTeacherSort,
   sortTeachers,
   summarizeKafedras,
   summarizePunctuality,
@@ -126,8 +127,7 @@ describe('sortTeachers', () => {
     expect(sortTeachers(rows, 'onTime').map((t) => t.fullName)).toEqual(['Anvar', 'Bobur', 'Dilnoza']);
   });
 
-  it('sorts activity descending with unknown last, and by name', () => {
-    expect(sortTeachers(rows, 'activity').map((t) => t.fullName)).toEqual(['Anvar', 'Bobur', 'Dilnoza']);
+  it('sorts by name', () => {
     expect(sortTeachers(rows, 'name').map((t) => t.fullName)).toEqual(['Anvar', 'Bobur', 'Dilnoza']);
   });
 
@@ -135,6 +135,24 @@ describe('sortTeachers', () => {
     const copy = [...rows];
     sortTeachers(rows, 'lateness');
     expect(rows).toEqual(copy);
+  });
+});
+
+describe('resolveTeacherSort', () => {
+  it('keeps a known sort', () => {
+    expect(resolveTeacherSort('name', true)).toBe('name');
+    expect(resolveTeacherSort('onTime', true)).toBe('onTime');
+  });
+
+  it('falls back when the stored sort no longer exists (olib tashlangan "faollik")', () => {
+    expect(resolveTeacherSort('activity', true)).toBe('lateness');
+    expect(resolveTeacherSort('', true)).toBe('lateness');
+    expect(resolveTeacherSort(null, true)).toBe('lateness');
+  });
+
+  it('falls back when there are no lessons to compute the sort from', () => {
+    expect(resolveTeacherSort('onTime', false)).toBe('lateness');
+    expect(resolveTeacherSort('name', false)).toBe('name');
   });
 });
 

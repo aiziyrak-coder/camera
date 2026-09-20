@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from 
 import { Loader2, Maximize2, Minimize2, Plus, VideoOff, X } from 'lucide-react';
 import { StatusDot, cn } from '../../ui';
 import LiveVideoPlayer from '../LiveVideoPlayer';
-import CameraThumbnail from '../monitor/campus/CameraThumbnail';
+import CameraThumbnail from './CameraThumbnail';
 import PtzControls from '../ptz/PtzControls';
 import { usePtzAvailability } from '../ptz/usePtzAvailability';
 import type { TilePlayback } from '../../lib/videoWall';
