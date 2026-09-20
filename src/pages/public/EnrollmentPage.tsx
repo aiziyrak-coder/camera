@@ -38,6 +38,16 @@ const METHOD_OPTIONS = [
 /** Bosqichlar ko'rsatkichi: odam telefonda qayerda turganini va nechta qadam qolganini ko'radi. */
 const PROGRESS = ['Aniqlash', 'Tasdiqlash', 'Rozilik', 'Yuz'] as const;
 
+/** JSHSHIR uzunligi — bitta joyda, chunki u uchta joyda ishlatiladi
+ *  (yorliq, hisoblagich, tekshiruv) va ular bir-biriga zid bo'lib
+ *  qolgan edi. */
+const PINFL_LENGTH = 14;
+
+/** Kodda YO'Q, lekin odam adashib yozishi mumkin bo'lgan belgilar.
+ *  normalizeEnrollCode ularni jimgina tashlab yuboradi — odam esa
+ *  nima uchun terayotgan harfi ekranga chiqmayotganini tushunmaydi. */
+const CONFUSABLE_CODE_CHARS = /[OI01]/i;
+
 function progressIndex(step: Step): number {
   switch (step) {
     case 'identify':
@@ -52,6 +62,23 @@ function progressIndex(step: Step): number {
     case 'success':
       return PROGRESS.length;
   }
+}
+
+/**
+ * Serverdan kelgan xatoni ochiq sahifada ko'rsatishga yaroqli holga
+ * keltiradi.
+ *
+ * 422 — pydantic tekshiruvi: xabari doim ingliz tilida ("field
+ * required", "value is not a valid integer") va butunlay o'zbekcha
+ * sahifada odamni sarosimaga solardi. 5xx — "Internal Server Error".
+ * Ikkala holda ham o'zimizning tushunarli matnimiz ko'rsatiladi;
+ * qolgan xatolar (400/404/409) serverda ataylab o'zbekcha yozilgan va
+ * aynan shundayligicha foydali.
+ */
+function userMessage(err: unknown, fallback: string): string {
+  if (!(err instanceof ApiError)) return fallback;
+  if (err.status === 422 || err.status >= 500) return fallback;
+  return err.message;
 }
 
 function StepProgress({ current }: { current: number }) {
@@ -70,6 +97,15 @@ function StepProgress({ current }: { current: number }) {
           </li>
         );
       })}
+      {/* Bosqich almashgani ekranni ko'rmaydigan foydalanuvchiga
+          aytilsin: chiziqchalarning rangi o'zgargani unga hech narsa
+          bildirmaydi, sahifa esa jimgina butunlay boshqa formaga
+          almashadi. */}
+      <li className="sr-only" aria-live="polite">
+        {current < PROGRESS.length
+          ? `${current + 1}-bosqich: ${PROGRESS[current]}`
+          : 'Barcha bosqichlar bajarildi'}
+      </li>
     </ol>
   );
 }
@@ -84,6 +120,8 @@ export default function EnrollmentPage() {
   const [step, setStep] = useState<Step>('identify');
   const [method, setMethod] = useState<Method>('pinfl');
   const [code, setCode] = useState(codeHint);
+  /** Odam kodga O/I/0/1 terdimi — tushuntirish ko'rsatish uchun. */
+  const [codeConfusable, setCodeConfusable] = useState(false);
   // Topilmadi: yozuvi yo'q odam shu tugma orqali o'zini qo'shadi.
   // Avval bu avtomatik bo'lardi, lekin endi "topilmadi" javobi
   // "kod noto'g'ri" bilan bir xil — ya'ni sababini faqat odamning
@@ -134,7 +172,7 @@ export default function EnrollmentPage() {
         setError(err.message);
         setNotFound(true);
       } else {
-        setError(err instanceof ApiError ? err.message : "So'rovni bajarib bo'lmadi");
+        setError(userMessage(err, "So'rovni bajarib bo'lmadi. Internet aloqasini tekshirib, qayta urinib ko'ring."));
       }
     } finally {
       setLoading(false);
@@ -149,7 +187,7 @@ export default function EnrollmentPage() {
       setFound(created);
       setStep('confirm');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Ro'yxatdan o'tkazib bo'lmadi");
+      setError(userMessage(err, "Ro'yxatdan o'tkazib bo'lmadi. Ma'lumotlarni tekshirib, qayta urinib ko'ring."));
     } finally {
       setLoading(false);
     }
@@ -169,21 +207,35 @@ export default function EnrollmentPage() {
       // boshlanadi. Server qaysi kadr o'tmaganini aytadi — bu xabar
       // komponentga uzatiladi, chunki "tekshiruvdan o'tmadingiz" degan
       // umumiy xabar odamni nima qilishni bilmay qoldirardi.
-      const message = err instanceof ApiError ? err.message : "Yuzni saqlab bo'lmadi";
-      setCaptureError(message);
+      setCaptureError(userMessage(err, "Yuzni saqlab bo'lmadi. Qayta urinib ko'ring."));
     } finally {
       setLoading(false);
     }
   }
 
+  /** Birinchi bosqichga to'liq qaytish.
+   *
+   *  Rozilik va kamera qadamining holati ham tozalanadi: bu sahifa
+   *  ommaviy va bitta telefondan navbatma-navbat bir necha kishi
+   *  foydalanadi. Ilgari `consent` va `captureError` tozalanmasdi —
+   *  ya'ni oldingi odam qo'ygan rozilik belgisi keyingisining
+   *  so'roviga qo'shilib ketardi, ekranda esa unga aloqasi yo'q eski
+   *  xato osilib turardi. */
   function restartIdentify() {
     setStep('identify');
     setFound(null);
     setError(null);
     setNotFound(false);
+    setConsent(false);
+    setCaptureError(null);
+    setAwaitingApproval(false);
   }
 
-  const pinflShort = method === 'pinfl' && pinfl.length > 0 && pinfl.length < 13;
+  // JSHSHIR qat'iy 14 raqam. Ilgari bu yerda ham, maydonning
+  // minLength'ida ham 13 turardi — natijada 13 raqamli (ya'ni bitta
+  // raqami tushib qolgan) qiymat brauzer tekshiruvidan o'tib ketib,
+  // serverdan "topilmadi" javobini olardi va odam sababini bilmasdi.
+  const pinflShort = method === 'pinfl' && pinfl.length > 0 && pinfl.length < PINFL_LENGTH;
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-5 pb-10">
@@ -233,15 +285,22 @@ export default function EnrollmentPage() {
             />
 
             {method === 'pinfl' ? (
-              <Field label="JSHSHIR (14 raqam)" hint={`Kiritilgan: ${pinfl.length}/14 raqam`} required>
+              <Field
+                label={`JSHSHIR (${PINFL_LENGTH} raqam)`}
+                hint={`Kiritilgan: ${pinfl.length}/${PINFL_LENGTH} raqam`}
+                required
+              >
                 <Input
                   value={pinfl}
-                  onChange={(e) => setPinfl(e.target.value.replace(/\D/g, '').slice(0, 14))}
+                  onChange={(e) => setPinfl(e.target.value.replace(/\D/g, '').slice(0, PINFL_LENGTH))}
                   placeholder="30302654150047"
                   inputMode="numeric"
                   autoComplete="off"
                   required
-                  minLength={13}
+                  // Birinchi maydon — kursor darhol shu yerda bo'lsin.
+                  autoFocus
+                  minLength={PINFL_LENGTH}
+                  maxLength={PINFL_LENGTH}
                   size="lg"
                   invalid={pinflShort}
                   className="[&_input]:text-base [&_input]:font-mono [&_input]:tracking-wide [&_input::placeholder]:font-sans [&_input::placeholder]:tracking-normal"
@@ -280,15 +339,37 @@ export default function EnrollmentPage() {
 
             <Field
               label={`Guruh kodi (${ENROLL_CODE_LENGTH} belgi)`}
-              hint="Kod guruh sardorida yoki dekanatda bo'ladi — chop etilgan kartada ham yozilgan."
+              hint={
+                codeConfusable
+                  ? // Terilgan belgi ekranga chiqmagani — dastur sinmagani
+                    // emas, kod alifbosida O, I, 0, 1 yo'qligi uchun.
+                    // Buni aytmasak odam qayta-qayta tergani bilan
+                    // maydonda 5 ta belgi qolaverardi.
+                    "Kodda «O» va «I» harflari, «0» va «1» raqamlari ishlatilmaydi — shuning uchun ular qabul qilinmadi. Kartadagi belgi «0» ga o'xshasa, u aslida «Q» yoki «D» bo'lishi mumkin."
+                  : `Kiritilgan: ${code.length}/${ENROLL_CODE_LENGTH}. Kod guruh sardorida yoki dekanatda bo'ladi. Unda O, I harflari va 0, 1 raqamlari yo'q.`
+              }
               required
             >
               <Input
                 value={code}
-                onChange={(e) => setCode(normalizeEnrollCode(e.target.value))}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setCode(normalizeEnrollCode(raw));
+                  setCodeConfusable(CONFUSABLE_CODE_CHARS.test(raw));
+                }}
                 placeholder="K7M2XR"
-                autoComplete="off"
+                autoComplete="one-time-code"
                 autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck={false}
+                // Kodda raqam ham, harf ham bor — telefonda to'liq
+                // klaviatura kerak, lekin avtomatik tuzatishsiz.
+                inputMode="text"
+                // maxLength ATAYLAB qo'yilmagan: "K7M2-XR" ni ko'chirib
+                // qo'yganda brauzer avval 6 belgigacha kesib tashlaydi
+                // ("K7M2-X") va chiziqcha tozalangandan keyin kod
+                // to'liqsiz qolardi. Uzunlikni normalizeEnrollCode
+                // ortiqcha belgilarni olib tashlagandan KEYIN cheklaydi.
                 required
                 size="lg"
                 className="[&_input]:text-base [&_input]:font-mono [&_input]:uppercase [&_input]:tracking-[0.3em]"
@@ -372,10 +453,7 @@ export default function EnrollmentPage() {
             passportNumber={method === 'passport' ? number : undefined}
             initialGroup={groupHint}
             onSubmit={handleRegister}
-            onCancel={() => {
-              setStep('identify');
-              setError(null);
-            }}
+            onCancel={restartIdentify}
             submitting={loading}
           />
         )}

@@ -5,6 +5,7 @@ import { Notice } from '../settings/kit';
 import { Button, Modal } from '../../ui';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
+import { appendPoint, validatePolygon } from './zonePolygon';
 import type { CameraConfig } from '../../types';
 
 /** Taqiqlangan zona chizish oynasi (TT kriteriya 2) — jonli video ustiga
@@ -48,59 +49,78 @@ export default function CameraZoneModal({
   mode?: ZoneMode;
 }) {
   const text = MODE_TEXT[mode];
-  const existing = mode === 'faceRoi' ? camera?.faceRoi : camera?.restrictedZonePolygon;
   const { token } = useAuth();
   const [points, setPoints] = useState<[number, number][]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Serverdagi joriy holat. `camera` prop oyna ochiq turganda
+   *  YANGILANMAYDI, shuning uchun ilgari "olib tashlash"dan keyin ham
+   *  o'sha tugma turaverardi va "zona bor" deb ko'rsatardi. */
+  const [savedPoints, setSavedPoints] = useState<[number, number][]>([]);
+  /** Xavfli amallarni tasdiqlash: 'clear' — mavjud zonani o'chirish,
+   *  'discard' — saqlanmagan o'zgarishlar bilan chiqib ketish. */
+  const [confirming, setConfirming] = useState<null | 'clear' | 'discard'>(null);
 
   useEffect(() => {
     if (open) {
-      setPoints((mode === 'faceRoi' ? camera?.faceRoi : camera?.restrictedZonePolygon) ?? []);
+      const current = (mode === 'faceRoi' ? camera?.faceRoi : camera?.restrictedZonePolygon) ?? [];
+      setPoints(current);
+      setSavedPoints(current);
       setError(null);
+      setConfirming(null);
     }
   }, [open, camera, mode]);
 
-  async function handleSave() {
+  const dirty = JSON.stringify(points) !== JSON.stringify(savedPoints);
+
+  async function submit(polygon: [number, number][] | null) {
     if (!camera) return;
-    if (points.length > 0 && points.length < 3) {
-      setError("Zona kamida 3 ta nuqtadan iborat bo'lishi kerak");
-      return;
-    }
     setSaving(true);
     setError(null);
     try {
       const saved = await api.patch<CameraConfig>(
         `/api/cameras/${camera.id}/${text.endpoint}`,
-        { polygon: points.length > 0 ? points : null },
+        { polygon },
         token,
       );
+      const next = polygon ?? [];
+      setPoints(next);
+      setSavedPoints(next);
+      setConfirming(null);
       onSave(saved);
-      onClose();
+      return true;
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi");
+      return false;
     } finally {
       setSaving(false);
     }
   }
 
-  async function handleClear() {
-    if (!camera) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const cleared = await api.patch<CameraConfig>(
-        `/api/cameras/${camera.id}/${text.endpoint}`,
-        { polygon: null },
-        token,
-      );
-      setPoints([]);
-      onSave(cleared);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi");
-    } finally {
-      setSaving(false);
+  async function handleSave() {
+    // Barcha nuqtalarni o'chirib "Saqlash" bosilsa, bu mavjud zonani
+    // O'CHIRISH degani — buni tasodifan qilib qo'ymasin.
+    if (points.length === 0 && savedPoints.length > 0) {
+      setConfirming('clear');
+      return;
     }
+    const problem = validatePolygon(points);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    if (await submit(points.length > 0 ? points : null)) onClose();
+  }
+
+  /** Saqlanmagan nuqtalar bilan yopishda ogohlantiramiz — ilgari chizilgan
+   *  zona jimgina yo'qolardi (Escape bosilsa ham). */
+  function handleClose() {
+    if (saving) return;
+    if (dirty) {
+      setConfirming('discard');
+      return;
+    }
+    onClose();
   }
 
   const hasStream = !!camera?.streamUrl && camera.status === 'faol';
@@ -108,22 +128,28 @@ export default function CameraZoneModal({
   return (
     <Modal
       open={open && !!camera}
-      onClose={onClose}
+      onClose={handleClose}
       title={text.title}
       description={camera?.name}
       size="lg"
       dismissible={!saving}
       footer={
         <>
-          {existing && existing.length > 0 && (
-            <Button variant="ghost" icon={Ban} onClick={handleClear} disabled={saving} className="mr-auto text-danger hover:bg-danger-soft hover:text-danger">
+          {savedPoints.length > 0 && (
+            <Button
+              variant="ghost"
+              icon={Ban}
+              onClick={() => setConfirming('clear')}
+              disabled={saving}
+              className="mr-auto text-danger hover:bg-danger-soft hover:text-danger"
+            >
               {text.clear}
             </Button>
           )}
-          <Button onClick={onClose} disabled={saving}>
+          <Button onClick={handleClose} disabled={saving}>
             Bekor qilish
           </Button>
-          <Button variant="primary" onClick={handleSave} loading={saving}>
+          <Button variant="primary" onClick={handleSave} loading={saving} disabled={!dirty}>
             Saqlash
           </Button>
         </>
@@ -141,7 +167,7 @@ export default function CameraZoneModal({
                 priority
                 zoneEditing
                 zonePoints={points}
-                onZonePointAdd={(p) => setPoints((prev) => [...prev, p])}
+                onZonePointAdd={(p) => setPoints((prev) => appendPoint(prev, p))}
               />
             ) : (
               <div className="flex max-w-sm flex-col items-center gap-1.5 px-4 text-center text-subtle">
@@ -156,6 +182,34 @@ export default function CameraZoneModal({
           {hasStream && <p className="text-[13px] text-muted">{text.hint}</p>}
 
           {error && <Notice tone="danger">{error}</Notice>}
+
+          {confirming === 'clear' && (
+            <Notice tone="warning" title={`${text.clear}?`}>
+              <p>Saqlangan hudud butunlay o&apos;chiriladi va buni ortga qaytarib bo&apos;lmaydi.</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button size="sm" variant="primary" loading={saving} onClick={() => submit(null)}>
+                  Ha, olib tashlansin
+                </Button>
+                <Button size="sm" onClick={() => setConfirming(null)} disabled={saving}>
+                  Bekor qilish
+                </Button>
+              </div>
+            </Notice>
+          )}
+
+          {confirming === 'discard' && (
+            <Notice tone="warning" title="Saqlanmagan o'zgarishlar bor">
+              <p>Oyna yopilsa, hozir belgilangan nuqtalar yo&apos;qoladi.</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button size="sm" onClick={onClose}>
+                  Saqlamay chiqish
+                </Button>
+                <Button size="sm" variant="primary" onClick={() => setConfirming(null)}>
+                  Chizishda qolish
+                </Button>
+              </div>
+            </Notice>
+          )}
 
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-[13px] text-muted">

@@ -55,7 +55,8 @@ export function FacultyCard({ faculty, to, enrollTo }: { faculty: FacultyCounts;
     );
   }
   return (
-    <Link to={to} className={cn(CARD, focusRing)} aria-label={`${faculty.name} — davomat ${faculty.rate ?? '—'}%`}>
+    // formatPercent — ma'lumot yo'q bo'lganda "—%" emas, toza "—" o'qiladi.
+    <Link to={to} className={cn(CARD, focusRing)} aria-label={`${faculty.name} — davomat ${formatPercent(faculty.rate)}`}>
       <div className="flex items-start gap-4">
         <div className="min-w-0 flex-1">
           <h3 className="flex items-center gap-1 text-base font-semibold leading-6 text-fg">
@@ -70,7 +71,7 @@ export function FacultyCard({ faculty, to, enrollTo }: { faculty: FacultyCounts;
             )}
           </p>
         </div>
-        <ProgressRing value={faculty.rate} size={64} sublabel="davomat" ariaLabel={`Davomat ${faculty.rate ?? '—'}%`} />
+        <ProgressRing value={faculty.rate} size={64} sublabel="davomat" ariaLabel={`Davomat ${formatPercent(faculty.rate)}`} />
       </div>
       <CountsBar counts={faculty} className="mt-4" />
       <CountsLegend counts={faculty} className="mt-3" />
@@ -83,7 +84,7 @@ export function GroupCard({ group, to, showCourse = false }: { group: GroupStat;
   const empty = group.total === 0;
   const ready = empty || hasAttendanceData(group);
   return (
-    <Link to={to} className={cn(CARD, 'p-4 sm:p-4', focusRing)} aria-label={`${group.name} — davomat ${group.rate ?? '—'}%`}>
+    <Link to={to} className={cn(CARD, 'p-4 sm:p-4', focusRing)} aria-label={empty ? `${group.name} — talaba yo'q` : `${group.name} — davomat ${formatPercent(group.rate)}`}>
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-[15px] font-semibold leading-6 text-fg">{group.name}</h3>
@@ -97,9 +98,15 @@ export function GroupCard({ group, to, showCourse = false }: { group: GroupStat;
             <span>{empty ? "Talaba yo'q" : `${formatNumber(group.total)} talaba`}</span>
           </p>
         </div>
-        {ready && <ProgressRing value={group.rate} size={48} ariaLabel={`Davomat ${group.rate ?? '—'}%`} />}
+        {ready && !empty && <ProgressRing value={group.rate} size={48} ariaLabel={`Davomat ${formatPercent(group.rate)}`} />}
       </div>
-      {ready ? (
+      {empty ? (
+        // Bo'sh guruhda nol chiziq va "0 keldi · 0 kech" izohi o'lchov
+        // o'tkazilgandek ko'rinardi — sabab yozilgani aniqroq.
+        <p className="mt-3 rounded-control border border-dashed border-border bg-surface-2/60 px-2.5 py-2 text-xs text-muted">
+          Guruhga hali talaba biriktirilmagan
+        </p>
+      ) : ready ? (
         <>
           <CountsBar counts={group} size="xs" className="mt-3" />
           <CountsLegend counts={group} compact className="mt-2.5 gap-x-2.5" />

@@ -35,6 +35,9 @@ export function SecurityPanel({
   freshIds: ReadonlySet<string>;
 }) {
   const camPct = camerasTotal > 0 ? (camerasOnline / camerasTotal) * 100 : null;
+  // Server ba'zan aloqadagi kameralarni faol ro'yxatdan ko'proq beradi
+  // (kamera o'chirilgan, lekin oqim hali tirik): manfiy son chiqmasin.
+  const camerasOffline = Math.max(0, camerasTotal - camerasOnline);
   // Ro'yxat 5 ta bilan cheklangan: sonni ro'yxat uzunligidan olish
   // 12 ta ochiq hodisani ekranda "5" qilib ko'rsatardi.
   const openCount = Math.max(highOpen ?? 0, events.length);
@@ -45,16 +48,19 @@ export function SecurityPanel({
         <div className="min-w-0">
           <div className="text-[1.05em] font-medium text-fg">Kameralar tarmoqda</div>
           <div className="text-[0.8em] text-muted">
-            {camerasTotal - camerasOnline > 0
-              ? `${camerasTotal} ta faol kameradan ${camerasTotal - camerasOnline} tasi javob bermayapti`
-              : 'Hammasi ishlayapti'}
+            {camerasTotal === 0
+              ? "Faol kamera yo'q"
+              : camerasOffline > 0
+                ? `${camerasTotal} ta faol kameradan ${camerasOffline} tasi javob bermayapti`
+                : `${camerasTotal} ta faol kameraning hammasi ishlayapti`}
           </div>
         </div>
         <div className="ml-auto text-right">
           <div className={cn('text-[2em] font-semibold leading-none tabular-nums', openCount ? 'text-danger' : 'text-success')}>
             {openCount}
           </div>
-          <div className="mt-[0.3em] text-[0.7em] text-muted">ochiq, yuqori</div>
+          {/* "ochiq, yuqori" nimaning soni ekani tushunarsiz edi. */}
+          <div className="mt-[0.3em] text-[0.7em] text-muted">ochiq yuqori xavfli hodisa</div>
         </div>
       </div>
       {events.length === 0 ? (

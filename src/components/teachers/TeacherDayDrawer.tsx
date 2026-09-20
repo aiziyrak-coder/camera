@@ -95,14 +95,22 @@ export function TeacherDayDrawer({ person, date, onClose, children }: TeacherDay
           <>
             <KeyValue
               items={[
-                { label: 'Fakultet / bo‘lim', value: [data.faculty, data.unit].filter(Boolean).join(' · ') || '—' },
-                { label: "Keldi", value: <span className="tabular-nums">{hhmm(data.checkIn)}</span> },
-                { label: "Ketdi", value: <span className="tabular-nums">{hhmm(data.checkOut)}</span> },
+                // Yalang'och "—" sababni aytmasdi: yozuv yo'qmi, xodim
+                // kelmaganmi yoki kamera tanimaganmi — farqi bilinmasdi.
+                { label: 'Fakultet / bo‘lim', value: [data.faculty, data.unit].filter(Boolean).join(' · ') || 'Reestrda ko‘rsatilmagan' },
+                { label: 'Keldi', value: data.checkIn ? <span className="tabular-nums">{hhmm(data.checkIn)}</span> : <span className="text-subtle">Kelishi qayd etilmagan</span> },
+                { label: 'Ketdi', value: data.checkOut ? <span className="tabular-nums">{hhmm(data.checkOut)}</span> : <span className="text-subtle">Ketishi qayd etilmagan</span> },
                 {
                   label: "Kameralarda ko'rilgan",
-                  value: data.firstSeen ? <span className="tabular-nums">{hhmm(data.firstSeen)} – {hhmm(data.lastSeen)}</span> : '—',
+                  value: data.firstSeen ? (
+                    <span className="tabular-nums">
+                      {hhmm(data.firstSeen)} – {hhmm(data.lastSeen)}
+                    </span>
+                  ) : (
+                    <span className="text-subtle">Kameralar tanimagan</span>
+                  ),
                 },
-                { label: 'Binolar', value: data.buildings.join(', ') || '—' },
+                { label: 'Binolar', value: data.buildings.join(', ') || <span className="text-subtle">Yo‘q</span> },
               ]}
             />
 

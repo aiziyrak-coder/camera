@@ -46,7 +46,16 @@ describe('studentAttendance', () => {
 
   it('countSegments splits on-time from late', () => {
     const seg = countSegments(counts());
-    expect(seg.map((x) => x.value)).toEqual([4, 2, 2, 2, 0]);
+    // Keldi, kech keldi, kelmadi, hali kelmagan, ma'lumot yo'q, dam olish.
+    // Dam olish alohida: u o'lchanmagan kun emas, o'lchanishi shart bo'lmagan kun.
+    expect(seg.map((x) => x.value)).toEqual([4, 2, 2, 2, 0, 0]);
+    expect(seg.map((x) => x.label)).toEqual(['Keldi', 'Kech keldi', 'Kelmadi', 'Hali kelmagan', "Ma'lumot yo'q", 'Dam olish']);
+  });
+
+  it('countSegments keeps a day off out of the unknown segment', () => {
+    const seg = countSegments({ ...counts(), noData: 1, dayOff: 3 });
+    expect(seg[4]).toMatchObject({ label: "Ma'lumot yo'q", value: 1 });
+    expect(seg[5]).toMatchObject({ label: 'Dam olish', value: 3 });
   });
 
   it('countsFromStudents tallies statuses', () => {
@@ -245,5 +254,27 @@ describe("«Ma'lumot yo'q» filtri plitkadagi son bilan bir xil", () => {
     expect(filterStudents(list, 'keldi', '').map((s) => s.id)).toEqual(['c']);
     expect(filterStudents(list, 'dam_olish', '').map((s) => s.id)).toEqual(['b']);
     expect(filterStudents(list, 'all', '')).toHaveLength(3);
+  });
+});
+
+
+describe("«Kelish vaqti» saralashi to'ldirilmagan soatni ham to'g'ri joylaydi", () => {
+  it("\"9:05\" \"10:05\" dan oldin turadi", () => {
+    // Ilgari satrlar solishtirilardi: "9:05" > "10:05" chiqib, kech kelgan
+    // talaba ro'yxat boshiga tushardi.
+    const list = [
+      student('late', 'Zokirov Z', 'kech_keldi', '10:05'),
+      student('early', 'Aliyev A', 'keldi', '9:05'),
+    ];
+    expect(sortStudents(list, 'arrival').map((s) => s.id)).toEqual(['early', 'late']);
+  });
+
+  it("kelmaganlar hamisha oxirida, diqqat tartibida", () => {
+    const list = [
+      student('absent', 'Bekov B', 'kelmadi'),
+      student('waiting', 'Aliyev A', 'kutilmoqda'),
+      student('came', 'Choriyev C', 'keldi', '08:30'),
+    ];
+    expect(sortStudents(list, 'arrival').map((s) => s.id)).toEqual(['came', 'absent', 'waiting']);
   });
 });

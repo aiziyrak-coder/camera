@@ -1,10 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
-import { CheckSquare, Square, Video, VideoOff } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { CheckSquare, Square, TriangleAlert, Video, VideoOff } from 'lucide-react';
 import { Badge, Button, ButtonLink, EmptyState, ErrorState, Modal, SearchInput, Skeleton, cn, type Tone } from '../../ui';
 import { Checkbox, Notice } from '../settings/kit';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
-import type { AIModule, ModuleCameraAssignments } from '../../types';
+import type { AIModule, ModuleCameraAssignment, ModuleCameraAssignments } from '../../types';
+
+/** Server `roleAllowed` / `effectiveRoomType` ham qaytaradi (app/schemas/camera.py:
+ *  ModuleCameraAssignmentOut), lekin src/types dagi umumiy interfeysda ular
+ *  hali yo'q — shu yerda ixtiyoriy maydon sifatida o'qiymiz. */
+type AssignmentRow = ModuleCameraAssignment & { roleAllowed?: boolean; effectiveRoomType?: string | null };
 
 const STATUS_META: Record<string, { label: string; tone: Tone }> = {
   faol: { label: 'Faol', tone: 'success' },
@@ -33,20 +38,28 @@ export default function ModuleCamerasModal({
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
 
+  // Ketma-ket so'rovlar (modul almashtirildi yoki "Qayta urinish" ikki marta
+  // bosildi) bir-birini quvib yetmasin: faqat ENG OXIRGI so'rov javobi qabul
+  // qilinadi, aks holda eski javob yangisining ustiga yozilib qolardi.
+  const requestId = useRef(0);
+
   const load = useCallback(async () => {
     if (!module || !token) return;
+    const id = ++requestId.current;
     setLoading(true);
     setLoadError(null);
     setError(null);
     try {
       const res = await api.get<ModuleCameraAssignments>(`/api/cameras/by-module/${module.code}/assignments`, token);
+      if (id !== requestId.current) return;
       setData(res);
       setPending(new Map());
     } catch (err) {
+      if (id !== requestId.current) return;
       setData(null);
       setLoadError(err instanceof ApiError ? err.message : 'Yuklab bo‘lmadi');
     } finally {
-      setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
   }, [module, token]);
 
@@ -54,6 +67,10 @@ export default function ModuleCamerasModal({
     if (open && module) {
       setFilter('');
       setData(null);
+      // Saqlanmagan o'zgarishlar oldingi ochilishdan (yoki boshqa moduldan)
+      // qolib ketmasin — yuklash muvaffaqiyatsiz bo'lsa load() ularni tozalamaydi.
+      setPending(new Map());
+      setError(null);
       void load();
     }
   }, [open, module, load]);
@@ -73,13 +90,19 @@ export default function ModuleCamerasModal({
     });
   }
 
+  /** Faqat RO'YXATDA KO'RINAYOTGAN kameralarga qo'llanadi — qidiruv yoqilgan
+   *  holda "Hammasini yoqish" ko'rinmayotgan kameralarni ham jimgina
+   *  o'zgartirib yuborardi. */
   function setAll(enabled: boolean) {
     if (!data) return;
-    const next = new Map<string, boolean>();
-    for (const c of data.cameras) {
-      if (c.enabled !== enabled) next.set(c.cameraId, enabled);
-    }
-    setPending(next);
+    setPending((prev) => {
+      const next = new Map(prev);
+      for (const c of visibleCameras) {
+        if (c.enabled === enabled) next.delete(c.cameraId);
+        else next.set(c.cameraId, enabled);
+      }
+      return next;
+    });
   }
 
   async function handleSave() {
@@ -101,14 +124,19 @@ export default function ModuleCamerasModal({
     }
   }
 
-  const allCameras = data?.cameras ?? [];
-  const cameras = allCameras.filter((c) => {
-    if (!filter.trim()) return true;
+  const allCameras: AssignmentRow[] = data?.cameras ?? [];
+  const filtering = filter.trim().length > 0;
+  const visibleCameras = allCameras.filter((c) => {
+    if (!filtering) return true;
     const q = filter.toLowerCase();
     return c.cameraName.toLowerCase().includes(q) || c.building.toLowerCase().includes(q) || c.zone.toLowerCase().includes(q);
   });
 
   const enabledCount = allCameras.filter((c) => isEnabled(c.cameraId, c.enabled)).length;
+  // Yoqilgan, lekin xona turi mos kelmagani uchun modul baribir ishlamaydigan
+  // kameralar (server `roleAllowed=false` deydi). Bularni ko'rsatmasak,
+  // "12 kamera yoqilgan" degan son yolg'on bo'lardi.
+  const blockedCount = allCameras.filter((c) => c.roleAllowed === false && isEnabled(c.cameraId, c.enabled)).length;
 
   let body;
   if (loading) {
@@ -146,15 +174,22 @@ export default function ModuleCamerasModal({
           {enabledCount} / {allCameras.length} kamera yoqilgan
           {pending.size > 0 && <span className="text-primary"> · {pending.size} ta o‘zgarish</span>}
         </p>
+        {blockedCount > 0 && (
+          <Notice tone="warning">
+            {blockedCount} ta yoqilgan kamerada bu modul baribir ishlamaydi — xona turi bu kriteriyaga mos emas. Kameraning
+            xona turini «Kameralar» sahifasida to‘g‘rilang.
+          </Notice>
+        )}
         <div className="max-h-80 overflow-y-auto rounded-control border border-border">
-          {cameras.length === 0 ? (
+          {visibleCameras.length === 0 ? (
             <EmptyState compact bordered={false} title="Kamera topilmadi" description="Qidiruv so'zini o'zgartiring." />
           ) : (
             <ul className="divide-y divide-border">
-              {cameras.map((c) => {
+              {visibleCameras.map((c) => {
                 const on = isEnabled(c.cameraId, c.enabled);
                 const changed = pending.has(c.cameraId);
                 const status = STATUS_META[c.status] ?? { label: c.status, tone: 'neutral' as Tone };
+                const blocked = c.roleAllowed === false;
                 return (
                   <li key={c.cameraId} className={cn('transition-colors hover:bg-surface-2', changed && 'bg-primary-soft/40')}>
                     <label className="flex cursor-pointer items-center gap-3 px-3 py-2.5">
@@ -166,6 +201,15 @@ export default function ModuleCamerasModal({
                           {c.building} · {c.zone}
                         </span>
                       </span>
+                      {blocked && (
+                        <span
+                          className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-warning"
+                          title={`Bu modul ${c.effectiveRoomType ? `«${c.effectiveRoomType}» turidagi` : 'shu turdagi'} xonada ishlamaydi`}
+                        >
+                          <TriangleAlert size={12} aria-hidden="true" />
+                          Xona turi mos emas
+                        </span>
+                      )}
                       <Badge tone={status.tone} dot>
                         {status.label}
                       </Badge>
@@ -187,14 +231,19 @@ export default function ModuleCamerasModal({
       title={module ? `№${module.code} — ${module.name}` : ''}
       description="Qaysi kameralarda bu AI kriteriyasi ishlashi kerakligini belgilang. O‘chirilgan kamera bu modulni hisoblamaydi — tezroq aylanish va kamroq yuk."
       size="lg"
-      dismissible={!saving}
+      // Saqlanmagan o'zgarish bor bo'lsa fonni tasodifan bosish ularni
+      // yo'qotmasin — foydalanuvchi ataylab "Bekor qilish"ni bossin.
+      dismissible={!saving && pending.size === 0}
       footer={
         <>
           <Button onClick={onClose} disabled={saving}>
-            Bekor qilish
+            {pending.size ? 'Bekor qilish' : 'Yopish'}
           </Button>
-          <Button variant="primary" onClick={handleSave} loading={saving} disabled={loading || !!loadError}>
-            {pending.size ? 'Saqlash' : 'Yopish'}
+          {/* Ilgari o'zgarish bo'lmaganda ikkala tugma ham faqat modalni
+              yopardi (asosiy tugma "Yopish" deb turardi) — bir xil ishni
+              qiladigan ikkita tugma chalkash edi. */}
+          <Button variant="primary" onClick={handleSave} loading={saving} disabled={loading || !!loadError || pending.size === 0}>
+            Saqlash
           </Button>
         </>
       }
@@ -208,11 +257,25 @@ export default function ModuleCamerasModal({
               placeholder="Kamera, bino yoki zona bo‘yicha qidirish…"
               className="flex-1 sm:max-w-none"
             />
-            <Button size="sm" variant="ghost" icon={CheckSquare} onClick={() => setAll(true)} disabled={loading}>
-              Hammasini yoqish
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={CheckSquare}
+              onClick={() => setAll(true)}
+              disabled={loading || visibleCameras.length === 0}
+              title={filtering ? `Topilgan ${visibleCameras.length} ta kamerada yoqish` : undefined}
+            >
+              {filtering ? 'Topilganlarni yoqish' : 'Hammasini yoqish'}
             </Button>
-            <Button size="sm" variant="ghost" icon={Square} onClick={() => setAll(false)} disabled={loading}>
-              Hammasini o‘chirish
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={Square}
+              onClick={() => setAll(false)}
+              disabled={loading || visibleCameras.length === 0}
+              title={filtering ? `Topilgan ${visibleCameras.length} ta kamerada o‘chirish` : undefined}
+            >
+              {filtering ? 'Topilganlarni o‘chirish' : 'Hammasini o‘chirish'}
             </Button>
           </div>
         )}

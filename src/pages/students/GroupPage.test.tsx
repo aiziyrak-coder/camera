@@ -19,7 +19,7 @@ const totals: Counts = {
   total: 4, enrolled: 4, present: 2, late: 1, absent: 0, dayOff: 1, notYet: 0, noData: 1, rate: 100,
 };
 
-const detail: GroupDetail = {
+const baseDetail: GroupDetail = {
   date: '2026-09-20',
   isToday: true,
   group: { name: 'DI-2301', facultyId: 'f1', faculty: 'Davolash ishi', course: 1, totals },
@@ -27,6 +27,8 @@ const detail: GroupDetail = {
   lessons: [],
   trend: [],
 };
+
+let detail: GroupDetail = baseDetail;
 
 vi.mock('../../lib/situationApi', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../lib/situationApi')>();
@@ -51,7 +53,10 @@ function renderPage(initial = '/talabalar/guruh/DI-2301') {
 const tile = (label: string) => screen.getByRole('radio', { name: new RegExp(label) });
 
 describe('Guruh sahifasi — holat plitkalari', () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => {
+    localStorage.clear();
+    detail = baseDetail;
+  });
 
   it("«Ma'lumot yo'q» plitkasidagi son bosilgandan keyingi ro'yxat bilan bir xil", async () => {
     // Plitka noData + dayOff ni ko'rsatardi, filtr esa faqat malumot_yoq ni
@@ -82,5 +87,43 @@ describe('Guruh sahifasi — holat plitkalari', () => {
     await waitFor(() => expect(screen.getByText('Botirova Barno')).toBeInTheDocument());
     expect(screen.queryByText('Aliyev Anvar')).not.toBeInTheDocument();
     expect(tile('Kech keldi')).toHaveAttribute('aria-checked', 'true');
+  });
+});
+
+describe('Guruh sahifasi — qidiruv va tozalash', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    detail = baseDetail;
+  });
+
+  it("«Filtrni tozalash» holat filtrini ham, qidiruvni ham bir yo'la oladi", async () => {
+    // Ilgari setQuery/setFilter/setFaceFilter ketma-ket chaqirilardi va
+    // keyingisi eski parametrlardan boshlab oldingisining o'chirganini
+    // qaytarib qo'yardi — holat filtri joyida qolib ketardi.
+    renderPage('/talabalar/guruh/DI-2301?holat=keldi&qidiruv=zzz');
+    await waitFor(() => expect(screen.getByText('Mos talaba topilmadi')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filtrni tozalash' }));
+    await waitFor(() => expect(screen.getByText('Aliyev Anvar')).toBeInTheDocument());
+    expect(screen.getByText('Davronov Davron')).toBeInTheDocument();
+    expect(tile('Jami')).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it("qidiruv URL'da saqlanadi", async () => {
+    renderPage('/talabalar/guruh/DI-2301?qidiruv=Botirova');
+    await waitFor(() => expect(screen.getByText('Botirova Barno')).toBeInTheDocument());
+    expect(screen.queryByText('Aliyev Anvar')).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Talaba ismi…')).toHaveValue('Botirova');
+  });
+
+  it("kelmagan talaba kartasida izohsiz «—» emas, holatning o'zi yoziladi", async () => {
+    detail = {
+      ...baseDetail,
+      students: [student('e', 'Eshonov Eshon', 'kutilmoqda'), student('f', 'Fayzullayev Fayz', 'kelmadi')],
+    };
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Eshonov Eshon')).toBeInTheDocument());
+    expect(screen.getByText('hali kelmadi')).toBeInTheDocument();
+    expect(screen.getByText('kelmadi')).toBeInTheDocument();
   });
 });

@@ -3,7 +3,7 @@ import { RefreshCw, Radio } from 'lucide-react';
 import { api } from '../../lib/apiClient';
 import { Badge, Button, Card, CardHeader, ConfirmDialog, formatNumber, useToast } from '../../ui';
 import type { LiveResource } from '../situation/useLiveResource';
-import { Metric, Recommendation, ResourceBody } from './parts';
+import { Metric, Recommendation, ResourceBody, StatusLine } from './parts';
 import type { SystemStreamStatus } from './systemTypes';
 
 /** Video oqimlar (MediaMTX): shardlar, ro'yxatdan o'tgan oqimlar, qayta sinxronlash. */
@@ -46,19 +46,28 @@ export function StreamsCard({ resource, canResync }: { resource: LiveResource<Sy
                 />
                 <Metric label="Tugunlar" value={data.shardingEnabled ? `${data.shardCount} shard` : '1 tugun'} />
               </div>
-              <ul className="divide-y divide-border rounded-control border border-border">
-                {data.shards.map((shard) => (
-                  <li key={shard.index} className="flex items-center justify-between gap-3 px-3 py-2 text-[13px]" title={shard.error ?? undefined}>
-                    <span className="font-medium text-fg">Tugun {shard.index + 1}</span>
-                    <span className="flex items-center gap-2 tabular-nums text-muted">
-                      {shard.pathCount} oqim · {shard.assignedCameras} kamera
-                      <Badge tone={shard.reachable ? 'success' : 'danger'} dot>
-                        {shard.reachable ? 'Ishlayapti' : "Aloqa yo'q"}
-                      </Badge>
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              {/* Ro'yxat bo'sh bo'lsa ilgari bo'm-bo'sh ramka qolardi — sabab aytilmasdi. */}
+              {data.shards.length === 0 ? (
+                <StatusLine tone="danger">MediaMTX tugunlari topilmadi — video oqimlar ishlamaydi, shluz sozlamalarini tekshiring</StatusLine>
+              ) : (
+                <ul className="divide-y divide-border rounded-control border border-border">
+                  {data.shards.map((shard) => (
+                    <li key={shard.index} className="px-3 py-2 text-[13px]">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-medium text-fg">Tugun {shard.index + 1}</span>
+                        <span className="flex items-center gap-2 tabular-nums text-muted">
+                          {formatNumber(shard.pathCount)} oqim · {formatNumber(shard.assignedCameras)} kamera
+                          <Badge tone={shard.reachable ? 'success' : 'danger'} dot>
+                            {shard.reachable ? 'Ishlayapti' : "Aloqa yo'q"}
+                          </Badge>
+                        </span>
+                      </div>
+                      {/* Qizil rozetning sababi faqat `title`da edi — ko'rinmas tushuntirish. */}
+                      {shard.error && <p className="mt-0.5 break-words text-xs text-danger">{shard.error}</p>}
+                    </li>
+                  ))}
+                </ul>
+              )}
               <Recommendation>{data.recommendation}</Recommendation>
             </div>
           );

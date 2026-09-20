@@ -4,7 +4,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import TabelView from './TabelView';
 import { readState, writeState } from '../../lib/hisobotApi';
-import { tabelPaths, type TabelReport } from '../../lib/tabelApi';
+import { tabelExcelFilename, tabelPaths, type TabelReport } from '../../lib/tabelApi';
 
 /**
  * Oylik tabel — buyurtmachi imzolaydigan hujjat, shuning uchun sinovlar
@@ -103,8 +103,10 @@ describe('Oylik tabel — jadval', () => {
     expect(cell.textContent).toBe('K');
     expect(cell.getAttribute('title')).toBe('2-kun: 09:41 da keldi (kech)');
     expect(cell.getAttribute('aria-label')).toContain('Aliyev Vali');
-    // Sichqonchasiz ham o'qish uchun: katak fokus oladi.
-    expect(cell.getAttribute('tabindex')).toBe('0');
+    // Kataklar tab bilan yurilmaydi: 300 odam x 31 kun = 9 300 ta
+    // to'xtash joyi klaviatura bilan sahifadan chiqishni imkonsiz
+    // qilardi. Izoh title/aria-label orqali baribir o'qiladi.
+    expect(cell.getAttribute('tabindex')).toBeNull();
   });
 
   it("yuzi ro'yxatga olinmagan odam ham qatorga tushadi — hammasi «·»", () => {
@@ -131,12 +133,13 @@ describe('Oylik tabel — jadval', () => {
       ],
     });
     const marks = [...container.querySelectorAll('[data-tabel-cell]')].map((cell) => cell.textContent);
-    expect(marks).toEqual(['+', '·', '·']);
+    // 3-kun — dam olish kuni: katak "·" emas, "D" bo'ladi.
+    expect(marks).toEqual(['+', '·', 'D']);
   });
 
   it("o'ngdagi jami ustunlari har qator uchun chiqadi", () => {
     const { container } = renderSheet();
-    ['Keldi', 'Kech', 'Kelmadi', 'Aniqlanmadi', 'Ish kuni'].forEach((label) => {
+    ['Keldi', 'Kech', 'Kelmadi', "Ma'lumot yo'q", 'Ish kuni'].forEach((label) => {
       expect(screen.getByRole('columnheader', { name: new RegExp(`^${label}$`) })).toBeTruthy();
     });
     const first = container.querySelectorAll('[data-tabel-row]')[0];
@@ -156,6 +159,42 @@ describe('Oylik tabel — jadval', () => {
   it('serverdagi izoh (note) ko\'rsatiladi', () => {
     renderSheet({ note: '15-sentabrdan keyin kamera almashtirilgan.' });
     expect(screen.getByText(/15-sentabrdan keyin/)).toBeTruthy();
+  });
+});
+
+describe('Oylik tabel — jami sonlar qatordagi belgilarga mos', () => {
+  it("server `totals` jadval bilan zid bo'lsa, ko'rinib turgan belgilar yutadi", () => {
+    const { container } = renderSheet({
+      people: [
+        {
+          id: 'p9',
+          fullName: 'Toshev Olim',
+          group: 'DI-2302',
+          enrolled: true,
+          // Faqat 1-kun uchun katak bor: 2-kun «·», 3-kun dam olish («D»).
+          cells: [{ day: 1, mark: '+', title: '1-kun: keldi' }],
+          // Server yakuni noto'g'ri — qog'ozda shu son chiqmasligi kerak.
+          totals: { present: 21, late: 7, absent: 3, unknown: 0, workDays: 31 },
+        },
+      ],
+    });
+    const row = container.querySelector('[data-tabel-row]') as HTMLElement;
+    expect(row.querySelector('[data-total="present"]')?.textContent).toBe('1');
+    expect(row.querySelector('[data-total="late"]')?.textContent).toBe('0');
+    expect(row.querySelector('[data-total="absent"]')?.textContent).toBe('0');
+    expect(row.querySelector('[data-total="unknown"]')?.textContent).toBe('1');
+    // 3-kun dam olish: «D» ish kuni emas.
+    expect(row.querySelector('[data-total="workDays"]')?.textContent).toBe('2');
+  });
+
+  it("pastda «Jami» satri bor va u ustundagi sonlar yig'indisiga teng", () => {
+    const { container } = renderSheet();
+    const foot = container.querySelector('[data-tabel-foot]') as HTMLElement;
+    expect(foot.textContent).toContain('Jami');
+    expect(foot.querySelector('[data-total-all="present"]')?.textContent).toBe('1');
+    expect(foot.querySelector('[data-total-all="late"]')?.textContent).toBe('1');
+    // p1: 0 ta «·»; p2 (yuzi yo'q): serverning uchala «·» kataki.
+    expect(foot.querySelector('[data-total-all="unknown"]')?.textContent).toBe('3');
   });
 });
 
@@ -211,7 +250,21 @@ describe('Oylik tabel — halol holatlar', () => {
   });
 
   it("oyda birorta qayd bo'lmasa jadval ustida sabab yoziladi", () => {
-    renderSheet({ totals: { people: 2, present: 0, late: 0, absent: 0, unknown: 6, notEnrolled: 0 } });
+    // Yakun endi jadvaldagi BELGILARDAN sanaladi, shuning uchun sinovda
+    // ham hamma katak «·» bo'lishi kerak.
+    renderSheet({
+      people: [
+        {
+          id: 'p1',
+          fullName: 'Aliyev Vali',
+          group: 'DI-2301',
+          enrolled: true,
+          cells: DAYS.map((day) => ({ day: day.day, mark: '·', title: '' })),
+          totals: { present: 0, late: 0, absent: 0, unknown: 3, workDays: 3 },
+        },
+      ],
+      totals: { people: 1, present: 0, late: 0, absent: 0, unknown: 3, notEnrolled: 0 },
+    });
     expect(screen.getByRole('status').textContent).toContain('hali birorta davomat qayd etilmagan');
   });
 });
@@ -250,6 +303,17 @@ describe('Oylik tabel — URL va Excel manzili', () => {
     expect(url).toContain('course=2');
     expect(url).toContain('group=101-guruh');
     expect(url).toContain('q=Ali');
+  });
+
+  it('Excel fayl nomida tanlov ham bor (fayllar bir-birini bosmasin)', () => {
+    const base = readState(new URLSearchParams('bolim=talabalar&korinish=tabel&oy=2026-03'), '2026-09-19');
+    const a = tabelExcelFilename({ ...base, faculty: 'f1', course: '2', group: '101-guruh' });
+    const b = tabelExcelFilename({ ...base, faculty: 'f1', course: '2', group: '102-guruh' });
+    expect(a).not.toBe(b);
+    expect(a).toContain('101-guruh');
+    expect(a.endsWith('2026-03.xlsx')).toBe(true);
+    // Filtrsiz tanlovda eski, sodda nom saqlanadi.
+    expect(tabelExcelFilename(base)).toBe('tabel-talabalar-2026-03.xlsx');
   });
 
   it("xodimlar bo'limida bo'linma filtrlari ketadi, bo'shlari emas", () => {

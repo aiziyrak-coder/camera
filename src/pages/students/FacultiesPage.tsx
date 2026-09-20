@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CalendarCheck, CheckCircle2, Clock, GraduationCap, Hourglass, RefreshCw, ScanFace, UserX, Users } from 'lucide-react';
 import { Button, Card, EmptyState, ErrorState, IconButton, Page, SkeletonCards, SkeletonTiles, StatTile, Toolbar, formatNumber, formatPercent, formatUzDate, useShell, useUrlTab, type TabItem } from '../../ui';
 import { getOverview, situationPaths, type Overview } from '../../lib/situationApi';
@@ -16,7 +16,7 @@ const VIEW_PARAM = 'korinish';
 const REFRESH_MS = 60_000;
 const FEED_SIZE = 10;
 
-/** /talabalar — fakultetlar kesimida talabalar davomati. Yuzlar hali kam bo'lsa
+/** /talabalar — har bir fakultet bo'yicha talabalar davomati. Yuzlar hali kam bo'lsa
  *  (studentsDataAvailable=false) asosiy ko'rinish — "Yuz topshirish" kampaniyasi. */
 export default function FacultiesPage() {
   const { date, today, isToday, withDate } = useViewDate();
@@ -42,11 +42,23 @@ export default function FacultiesPage() {
     isToday,
   );
   // Jonli xabarlar kelganda jami sonlar ham yangilansin (server keshi 15 s).
+  // MUHIM: taymer har yangi xabarda qayta boshlanmaydi. Ilgari `live`
+  // o'zgarishi taymerni nolga qaytarardi — ertalabki oqimda xabarlar 5 s dan
+  // tez kelgani uchun jami sonlar umuman yangilanmay qolardi.
+  const reloadTimer = useRef(0);
   useEffect(() => {
-    if (!live.length) return;
-    const id = window.setTimeout(reload, 5_000);
-    return () => window.clearTimeout(id);
+    if (!live.length || reloadTimer.current) return;
+    reloadTimer.current = window.setTimeout(() => {
+      reloadTimer.current = 0;
+      reload();
+    }, 5_000);
   }, [live, reload]);
+  useEffect(
+    () => () => {
+      if (reloadTimer.current) window.clearTimeout(reloadTimer.current);
+    },
+    [],
+  );
 
   const arrivals = useMemo<ArrivalItem[]>(() => {
     const initial = (data?.lastArrivals ?? [])
@@ -101,7 +113,7 @@ export default function FacultiesPage() {
       ) : data && s ? (
         <>
           {!available && (
-            <div className="flex flex-col gap-3 rounded-card border border-warning/30 bg-warning-soft px-4 py-3 text-[13px] text-fg sm:flex-row sm:items-center">
+            <div role="status" className="flex flex-col gap-3 rounded-card border border-warning/30 bg-warning-soft px-4 py-3 text-[13px] text-fg sm:flex-row sm:items-center">
               <AlertTriangle size={16} className="shrink-0 text-warning" aria-hidden="true" />
               <p className="flex-1">
                 <span className="font-semibold">Talabalarning atigi {formatPercent(data.studentsEnrolledPct, 1)} qismi yuzini ro'yxatdan o'tkazgan.</span> Kamera
@@ -121,22 +133,34 @@ export default function FacultiesPage() {
               icon={GraduationCap}
               tone="primary"
               progress={s.rate}
-              hint={`Kutilgan ${formatNumber(s.present + s.absent + s.notYet)} talabadan ${formatNumber(s.present)} tasi keldi`}
+              hint={
+                // rate null bo'lsa asos ham 0 — "Kutilgan 0 talabadan 0 tasi
+                // keldi" degan ma'nosiz izoh o'rniga sababi yoziladi.
+                s.rate === null
+                  ? "Bu kunda birorta talaba kutilmagan — davomat o'lchanmadi"
+                  : `Kutilgan ${formatNumber(s.present + s.absent + s.notYet)} talabadan ${formatNumber(s.present)} tasi keldi`
+              }
               size={presentation ? 'lg' : 'md'}
             />
-            <StatTile label="O'z vaqtida keldi" value={formatNumber(s.present - s.late)} icon={CheckCircle2} tone="success" hint="talaba" />
+            {/* Math.max — CountsLegend bilan bir xil: late > present bo'lib qolsa "-1" chiqmasin. */}
+            <StatTile label="O'z vaqtida keldi" value={formatNumber(Math.max(0, s.present - s.late))} icon={CheckCircle2} tone="success" hint="talaba" />
             <StatTile label="Kech keldi" value={formatNumber(s.late)} icon={Clock} tone="warning" hint="talaba" />
             <StatTile label="Kelmadi" value={formatNumber(s.absent)} icon={UserX} tone="danger" hint="talaba" />
+            {/* O'tgan kunda plitka `noData + dayOff` ni ko'rsatadi: ilgari dam
+                olish kunidagi talabalar hech bir plitkaga tushmay, beshta
+                plitka yig'indisi ro'yxatdagi jami talabaga teng chiqmasdi. */}
             <StatTile
-              label={isToday ? 'Hali kelmagan' : 'Holati aniqlanmagan'}
-              value={formatNumber(isToday ? s.notYet : s.noData)}
+              label={isToday ? 'Hali kelmagan' : "Ma'lumot yo'q"}
+              value={formatNumber(isToday ? s.notYet : s.noData + s.dayOff)}
               icon={isToday ? Hourglass : Users}
               hint={
                 isToday
                   ? s.noData
                     ? `Yuzi ro'yxatdan o'tgan, hali ko'rinmagan · yana ${formatNumber(s.noData)} talabaning yuzi ro'yxatda yo'q`
                     : "Yuzi ro'yxatdan o'tgan, bugun hali ko'rinmagan"
-                  : `Ro'yxatdagi ${formatNumber(s.total)} talabadan — yuzi yo'qligi uchun kamera tanimagan`
+                  : s.dayOff > 0
+                    ? `Kamera tanimagan ${formatNumber(s.noData)} · dam olish kuni ${formatNumber(s.dayOff)}`
+                    : "Kamera tanimagan — odatda yuzi ro'yxatda yo'qligi uchun"
               }
             />
           </div>

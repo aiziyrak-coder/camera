@@ -4,20 +4,36 @@ import { attendanceMeta, cn, TONE_TEXT } from '../../ui';
 import { WallFace, WallPanel } from './primitives';
 
 /** Jonli kelishlar — yangisi tepada, yangi kelgani "suzib" kiradi. */
-export function ArrivalsPanel({ arrivals, freshIds }: { arrivals: LastArrival[]; freshIds: ReadonlySet<string> }) {
+export function ArrivalsPanel({
+  arrivals,
+  freshIds,
+  live = true,
+}: {
+  arrivals: LastArrival[];
+  freshIds: ReadonlySet<string>;
+  /** Server bilan aloqa bormi. Aloqa uzilganda "jonli" deyish yolg'on. */
+  live?: boolean;
+}) {
   return (
     <WallPanel
       area="B"
       title="Jonli kelish"
       icon={<DoorOpen />}
       aside={
-        <span className="flex items-center gap-[0.4em]">
-          <span className="relative flex h-[0.55em] w-[0.55em]">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-60" />
-            <span className="relative inline-flex h-full w-full rounded-full bg-success" />
+        live ? (
+          <span className="flex items-center gap-[0.4em]">
+            <span className="relative flex h-[0.55em] w-[0.55em]">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-60" />
+              <span className="relative inline-flex h-full w-full rounded-full bg-success" />
+            </span>
+            jonli
           </span>
-          jonli
-        </span>
+        ) : (
+          <span className="flex items-center gap-[0.4em] text-danger">
+            <span className="inline-flex h-[0.55em] w-[0.55em] rounded-full bg-danger" />
+            aloqa yo'q
+          </span>
+        )
       }
     >
       {arrivals.length === 0 ? (
@@ -27,12 +43,15 @@ export function ArrivalsPanel({ arrivals, freshIds }: { arrivals: LastArrival[];
           <div className="text-[0.8em]">Kamera odamni kunda birinchi marta taniganda shu yerda paydo bo'ladi</div>
         </div>
       ) : (
-        <ul className="flex min-h-0 flex-1 flex-col gap-[0.55em] overflow-hidden">
+        <ul className="flex min-h-0 flex-1 flex-col gap-[0.55em] overflow-hidden" aria-live="polite">
           {arrivals.map((a, i) => {
             const meta = attendanceMeta(a.status);
             return (
               <li
-                key={a.id + a.time}
+                /* Kalitda vaqt bo'lgani uchun server yozuvi jonli yozuvni
+                   almashtirganda qator qaytadan yaratilib, animatsiya
+                   ikkinchi marta o'ynardi. */
+                key={a.id}
                 className={cn(
                   'flex shrink-0 items-center gap-[0.8em] rounded-[0.8em] border border-transparent bg-surface-2 p-[0.5em] pr-[0.9em] transition-colors duration-1000',
                   freshIds.has(a.id) && 'wall-arrive border-success bg-success-soft',

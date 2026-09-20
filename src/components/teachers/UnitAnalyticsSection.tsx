@@ -8,6 +8,8 @@ import { DeltaBadge } from '../analytics';
 import { StreakBadge } from './RankingTab';
 import { useLoader } from './useLoader';
 
+const PEOPLE_LIMIT = 500;
+
 function weightedRate(rows: Array<{ presentDays: number; absentDays: number }>): number | null {
   const present = rows.reduce((a, r) => a + r.presentDays, 0);
   const absent = rows.reduce((a, r) => a + r.absentDays, 0);
@@ -20,10 +22,19 @@ export function UnitAnalyticsSection({ unitId, unitName, kind, from, to }: { uni
   const navigate = useNavigate();
   const { withDate } = useViewDate();
   const units = useLoader(`ua:${from}:${to}`, (signal) => getAnalyticsUnits({ from, to, kind: 'all', sort: 'rate' }, { signal }), { group: 'ua' });
-  const people = useLoader(`up:${unitId}:${from}:${to}`, (signal) => getAnalyticsPeople({ from, to, unitId, sort: 'late', limit: 500 }, { signal }), { group: 'up' });
+  const people = useLoader(`up:${unitId}:${from}:${to}`, (signal) => getAnalyticsPeople({ from, to, unitId, sort: 'late', limit: PEOPLE_LIMIT }, { signal }), { group: 'up' });
+  // Server chegarasiga tegilsa jadval bo'linmaning HAMMA xodimi emas —
+  // buni aytmasa, ro'yxatda yo'q odam "tahlilga tushmagan" deb o'qilardi.
+  const peopleCapped = (people.data?.length ?? 0) >= PEOPLE_LIMIT;
 
   const unit = units.data?.find((u) => u.id === unitId) ?? null;
-  const ranked = useMemo(() => (units.data ?? []).filter((u) => u.rate !== null && u.kind !== 'lavozim'), [units.data]);
+  // O'rin serverning qaytarish tartibiga ishonib hisoblanardi. Endi ro'yxat
+  // shu yerda davomat bo'yicha kamayish tartibida saralanadi — "N-o'rin"
+  // yonidagi foiz bilan doim mos tushadi.
+  const ranked = useMemo(
+    () => (units.data ?? []).filter((u) => u.rate !== null && u.kind !== 'lavozim').sort((a, b) => (b.rate ?? 0) - (a.rate ?? 0)),
+    [units.data],
+  );
   const position = unit ? ranked.findIndex((u) => u.id === unit.id) + 1 : 0;
   // O'rtacha ham reyting bilan bir xil to'plamdan: "Lavozim bo'yicha" soxta
   // bo'linmasi o'rinlar ro'yxatidan chiqarilgani holda o'rtachaga kirsa,
@@ -95,7 +106,16 @@ export function UnitAnalyticsSection({ unitId, unitName, kind, from, to }: { uni
             value={formatPercent(unit?.rate, 1)}
             progress={unit?.rate}
             delta={unit?.trend !== null && unit?.trend !== undefined ? { value: Number(unit.trend.toFixed(1)), better: 'up', display: `${unit.trend > 0 ? '+' : ''}${unit.trend.toFixed(1)} pp` } : null}
-            hint={unit?.previousRate !== null && unit?.previousRate !== undefined ? `avval ${formatPercent(unit.previousRate, 1)}` : "oldingi davrda ma'lumot yo'q"}
+            hint={
+              // `unit` topilmasa sabab boshqa: bo'linma davr tahliliga umuman
+              // tushmagan. Ilgari bu holat ham "oldingi davrda ma'lumot yo'q"
+              // derdi va odam noto'g'ri xulosa chiqarardi.
+              !unit
+                ? "Bu bo'linma tanlangan davr tahlilida yo'q"
+                : unit.previousRate !== null && unit.previousRate !== undefined
+                  ? `avval ${formatPercent(unit.previousRate, 1)}`
+                  : "oldingi davrda ma'lumot yo'q"
+            }
           />
           <StatTile
             label="Institut o'rtachasiga nisbatan"
@@ -129,7 +149,7 @@ export function UnitAnalyticsSection({ unitId, unitName, kind, from, to }: { uni
 
       <Card padding="none">
         <div className="p-4 pb-2 sm:px-5">
-          <CardHeader title={`${unitName} — xodimlar`} subtitle={`${formatUzRange(from, to)} · ${kind === 'lavozim' ? 'lavozim bo\'yicha' : 'ustunni bosib saralang'}`} className="mb-0" />
+          <CardHeader title={`${unitName} — xodimlar`} subtitle={`${formatUzRange(from, to)} · ${kind === 'lavozim' ? 'lavozim bo\'yicha' : 'ustunni bosib saralang'}${peopleCapped ? ` · eng ko'p kechikkan ${PEOPLE_LIMIT} xodim ko'rsatilmoqda` : ''}`} className="mb-0" />
         </div>
         <DataTable
           columns={columns}

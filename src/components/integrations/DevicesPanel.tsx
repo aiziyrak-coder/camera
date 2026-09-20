@@ -150,7 +150,13 @@ export default function DevicesPanel({
   }
 
   async function copyWebhook(device: AccessDevice) {
-    if (device.webhookPath && (await copyText(webhookUrl(device.webhookPath)))) toast.info('Webhook manzili nusxalandi');
+    if (!device.webhookPath) return;
+    const url = webhookUrl(device.webhookPath);
+    // Ilgari nusxalash muvaffaqiyatsiz bo'lsa (HTTP yoki brauzer ruxsati
+    // yo'q) tugma bosilgani BILINMASDI ham — endi manzil xabar ichida
+    // ko'rsatiladi, qo'lda ko'chirish mumkin.
+    if (await copyText(url)) toast.info('Webhook manzili nusxalandi');
+    else toast.error(`Nusxalab bo'lmadi — manzilni qo'lda ko'chiring: ${url}`);
   }
 
   const columns: DataTableColumn<AccessDevice>[] = [

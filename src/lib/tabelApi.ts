@@ -93,7 +93,10 @@ export const TABEL_MARKS: Record<TabelMark, { label: string; tone: 'success' | '
 const MARK_ALIAS: Record<string, TabelMark> = {
   '-': '–',
   '—': '–',
+  '‒': '–',
+  '−': '–', // matematik minus: Excel'dan nusxalanganda uchraydi
   '.': '·',
+  '•': '·',
   k: 'K',
   d: 'D',
 };
@@ -121,6 +124,59 @@ export const TABEL_MARK_CELL: Record<TabelMark, string> = {
   D: 'bg-surface-2',
   '·': '',
 };
+
+/** Server biror kun uchun katak bermaganda qo'yiladigan belgi. Dam
+ *  olish kunida bu «·» emas, «D» bo'lishi kerak: aks holda jadvalda
+ *  shanba «ma'lumot yo'q» bo'lib turib, ustunning o'zi "dam olish" deb
+ *  bo'yalgan bo'lardi va "Ish kuni" ustuni ham oshib ketardi. */
+export function fallbackMark(day: TabelDay): TabelMark {
+  return day.isWorkDay ? '·' : 'D';
+}
+
+/**
+ * Qatordagi belgilardan yakun.
+ *
+ * Ilgari o'ngdagi jami ustunlari serverning `totals` obyektidan olinardi,
+ * kataklar esa `cells` dan chizilardi. Server biror kun uchun katak
+ * bermasa (yoki `cells` va `totals` bir-biriga mos kelmasa) qog'ozda
+ * IMZOLANADIGAN hujjat o'z-o'ziga zid bo'lib qolardi: qatorda 20 ta «+»
+ * turib, "Keldi" ustunida 21 yozilishi mumkin edi. Endi jami AYNAN
+ * ko'rinib turgan belgilardan sanaladi — nima chizilgan bo'lsa, shu
+ * qo'shiladi. Hisoblash qoidasi backend bilan bir xil
+ * (camera-api/app/services/tabel.py): «D» ish kuni emas, qolgan hamma
+ * kun "ish kuni" deb sanaladi.
+ */
+export function rowTotals(person: TabelPerson, days: TabelDay[]): TabelPersonTotals {
+  const byDay = new Map(person.cells?.map((cell) => [cell.day, cell]) ?? []);
+  const totals: TabelPersonTotals = { present: 0, late: 0, absent: 0, unknown: 0, workDays: 0 };
+  for (const day of days) {
+    const mark = normalizeMark(byDay.get(day.day)?.mark ?? fallbackMark(day));
+    if (mark === 'D') continue;
+    totals.workDays += 1;
+    if (mark === '+') totals.present += 1;
+    else if (mark === 'K') totals.late += 1;
+    else if (mark === '–') totals.absent += 1;
+    else totals.unknown += 1;
+  }
+  return totals;
+}
+
+/** Butun varaqning yakuni — qatorlardan yig'iladi, shuning uchun
+ *  pastdagi "Jami" satri ustidagi sonlar yig'indisiga teng bo'ladi. */
+export function grandTotals(data: TabelReport): TabelTotals {
+  const people = data.people ?? [];
+  const days = data.days ?? [];
+  const totals: TabelTotals = { people: people.length, present: 0, late: 0, absent: 0, unknown: 0, notEnrolled: 0 };
+  for (const person of people) {
+    const row = rowTotals(person, days);
+    totals.present += row.present;
+    totals.late += row.late;
+    totals.absent += row.absent;
+    totals.unknown += row.unknown;
+    if (!person.enrolled) totals.notEnrolled += 1;
+  }
+  return totals;
+}
 
 /** Ustun tepasidagi bitta harf: Du → "D", Seshanba → "S"... bir xil harf
  *  takrorlanmasin deb qisqartmaning o'zi (Du/Se/Ch/Pa/Ju/Sh/Ya) ishlatiladi. */
@@ -162,6 +218,15 @@ export function tabelExcelHref(state: HisobotState): string {
   return `${config.apiBaseUrl}${tabelPaths.excel(state)}`;
 }
 
+/** Fayl nomiga tanlov ham qo'shiladi: ilgari barcha fakultet/guruhlar
+ *  uchun nom bir xil ("tabel-talabalar-2026-03.xlsx") edi va ketma-ket
+ *  yuklab olingan tabellar "Yuklamalar" papkasida bir-birini bosib
+ *  ketardi (yoki "(1)" bo'lib, qaysi biri qaysi guruh ekani bilinmasdi). */
 export function tabelExcelFilename(state: HisobotState): string {
-  return `tabel-${state.section}-${state.month}.xlsx`;
+  const parts = [state.group, state.unit, state.course && `${state.course}-kurs`, state.faculty, state.unitKind]
+    .filter((part): part is string => Boolean(part))
+    .slice(0, 2)
+    .map((part) => part.trim().replace(/[\\/:*?"<>|\s]+/g, '-'))
+    .filter(Boolean);
+  return ['tabel', state.section, ...parts, state.month].join('-') + '.xlsx';
 }

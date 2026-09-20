@@ -31,8 +31,14 @@ export default function AddDepartmentModal({
   const [errors, setErrors] = useState<{ name?: string; form?: string }>({});
   const [submitting, setSubmitting] = useState(false);
 
+  // Har ochilishda oyna toza bo'ladi — bekor qilingan yozuv keyingi
+  // ochilishda maydonda turib qolmasin.
   useEffect(() => {
-    if (open) setErrors({});
+    if (open) {
+      setName('');
+      setBuildingId('');
+      setErrors({});
+    }
   }, [open]);
 
   async function handleSubmit(e: FormEvent) {

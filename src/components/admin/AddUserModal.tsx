@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import { Button, Field, Input, Modal, Select } from '../../ui';
+import { useEffect, useState, type FormEvent } from 'react';
+import { Button, ConfirmDialog, Field, Input, Modal, Select } from '../../ui';
 import { Notice } from '../settings/kit';
 import { required, minLength } from '../../lib/validation';
 import { ApiError, api } from '../../lib/apiClient';
@@ -38,6 +38,27 @@ export default function AddUserModal({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitting, setSubmitting] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+
+  // Har ochilishda oyna toza bo'ladi. Ilgari `reset()` faqat muvaffaqiyatli
+  // saqlashdan keyin chaqirilardi: "Bekor qilish" bosib qayta ochilganda
+  // oldingi login/parol maydonlarda turib qolardi.
+  useEffect(() => {
+    if (open) reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const dirty = Boolean(name || login || email || phone || role || password || confirmPassword);
+
+  /** Yozilgan ma'lumot bir bosishda yo'qolmasin — avval so'raymiz. */
+  function requestClose() {
+    if (submitting) return;
+    if (dirty) {
+      setConfirmDiscard(true);
+      return;
+    }
+    onClose();
+  }
 
   function reset() {
     setName('');
@@ -89,16 +110,17 @@ export default function AddUserModal({
   }
 
   return (
+    <>
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={requestClose}
       title="Yangi foydalanuvchi"
       description="Xodim shu login va parol bilan tizimga kiradi."
       size="md"
       dismissible={!submitting}
       footer={
         <>
-          <Button onClick={onClose} disabled={submitting}>
+          <Button onClick={requestClose} disabled={submitting}>
             Bekor qilish
           </Button>
           <Button type="submit" form="add-user-form" variant="primary" loading={submitting}>
@@ -108,6 +130,10 @@ export default function AddUserModal({
       }
     >
       <form id="add-user-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+        {/* Server xatosi (masalan "Bu login band") oynaning TEPASIDA —
+            ilgari u pastda, uzun forma ostida turardi va uzun ekranda
+            ko'rinmay qolardi. */}
+        {errors.form && <Notice tone="danger">{errors.form}</Notice>}
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="F.I.Sh." required error={errors.name} className="sm:col-span-2">
             <Input placeholder="Alimov Jamshid" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
@@ -138,8 +164,20 @@ export default function AddUserModal({
           </Field>
         </div>
         <Notice tone="neutral">Parol serverda bcrypt bilan xesh (hash) qilinib saqlanadi — uni hech kim, jumladan administrator ham ko&apos;ra olmaydi.</Notice>
-        {errors.form && <Notice tone="danger">{errors.form}</Notice>}
       </form>
     </Modal>
+      <ConfirmDialog
+        open={confirmDiscard}
+        title="Kiritilgan ma'lumotlar o'chib ketadi"
+        message="Yangi foydalanuvchi hali saqlanmagan. Oynani yopsangiz, yozilganlar yo'qoladi."
+        confirmLabel="Ha, yopilsin"
+        cancelLabel="Tahrirga qaytish"
+        onCancel={() => setConfirmDiscard(false)}
+        onConfirm={() => {
+          setConfirmDiscard(false);
+          onClose();
+        }}
+      />
+    </>
   );
 }

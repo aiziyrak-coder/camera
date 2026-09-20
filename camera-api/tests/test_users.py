@@ -163,6 +163,19 @@ class TestUsers:
         resp = await client.delete(f"/api/users/{admin_user['id']}", headers=headers)
         assert resp.status_code == 400
 
+    async def test_cannot_demote_self(self, client: AsyncClient):
+        """O'z rolini pasaytirish ham taqiqlangan (o'chirish kabi)."""
+        headers = await auth_headers(client, "admin", "admin123")
+        me = next(u for u in (await client.get("/api/users", headers=headers)).json()["items"]
+                  if u["login"] == "admin")
+
+        resp = await client.patch(
+            f"/api/users/{me['id']}", headers=headers,
+            json={"name": me["name"], "login": me["login"], "role": "Admin"},
+        )
+        assert resp.status_code == 400, resp.text
+        assert "rol" in resp.json()["detail"].lower()
+
     async def test_admin_cannot_delete_a_super_admin(self, client: AsyncClient):
         """Admin (manageRoles berilgan) Super Admin hisobini o'chira olmaydi.
 
@@ -183,3 +196,18 @@ class TestUsers:
 
         resp = await client.delete(f"/api/users/{original_admin['id']}", headers=operator_headers)
         assert resp.status_code == 403
+
+    async def test_super_admin_column_cannot_be_switched_off(self, client: AsyncClient):
+        """Super Admin ustuni qulflangan bo'lishi kerak.
+
+        require_permission() da Super Admin uchun chetlab o'tish yo'q:
+        'manageRoles' ni superAdmin ustunida o'chirish matritsa sahifasining
+        o'zini abadiy berkitib qo'yardi (UI o'sha ustunni ko'rsatmaydi, ya'ni
+        qaytarib yoqishning iloji ham yo'q edi)."""
+        headers = await auth_headers(client, "admin", "admin123")
+
+        resp = await client.patch("/api/permissions/manageRoles", headers=headers, json={"role": "superAdmin"})
+        assert resp.status_code == 400
+
+        matrix = (await client.get("/api/permissions", headers=headers)).json()
+        assert matrix["manageRoles"]["superAdmin"] is True

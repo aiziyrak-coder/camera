@@ -21,7 +21,7 @@ export default function CameraLocationModal({
   open: boolean;
   cameraIds: string[];
   onClose: () => void;
-  onSaved: (updated: number) => void;
+  onSaved: (updated: number, notFound: number) => void;
 }) {
   const { token } = useAuth();
   const { buildings } = useBuildings();
@@ -60,7 +60,10 @@ export default function CameraLocationModal({
         },
         token,
       );
-      onSaved(res.updated);
+      // Server topa olmagan kameralar (boshqa operator o'chirgan bo'lishi
+      // mumkin) jimgina yutilardi: "12 ta yangilandi" deyilardi-yu, aslida
+      // 10 tasi yangilangan bo'lardi. Endi soni chaqiruvchiga uzatiladi.
+      onSaved(res.updated, res.notFound.length);
       onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi");

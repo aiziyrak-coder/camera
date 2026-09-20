@@ -5,6 +5,8 @@ import { useAuth } from '../../lib/auth';
 import { integrationsApi, progressPercent, statsSummary, type HemisStatus, type HemisTestResult, type SyncRun } from '../../lib/integrationsApi';
 
 const POLL_MS = 2000;
+/** Ketma-ket shuncha urinish xato bo'lsa — kuzatishni to'xtatamiz. */
+const MAX_POLL_FAILURES = 5;
 
 function errorText(err: unknown): string {
   return err instanceof ApiError || err instanceof Error ? err.message : "So'rov bajarilmadi";
@@ -27,6 +29,8 @@ export function useHemisSync() {
   const [testResult, setTestResult] = useState<HemisTestResult | null>(null);
   const [starting, setStarting] = useState(false);
   const pollTimer = useRef<number | null>(null);
+  /** Kuzatish to'xtaganidan keyin uni qaytadan boshlash uchun. */
+  const [pollNonce, setPollNonce] = useState(0);
 
   const loadStatus = useCallback(async () => {
     try {
@@ -65,20 +69,33 @@ export function useHemisSync() {
   useEffect(() => {
     if (!activeRunId) return;
     let cancelled = false;
+    let failures = 0;
     const tick = async () => {
       try {
         const run = await integrationsApi.run(activeRunId, token);
         if (cancelled) return;
+        failures = 0;
         setActiveRun(run);
         if (run.status !== 'ishlamoqda') {
           if (run.status === 'muvaffaqiyatli') toast.success(`HEMIS sinxronlandi. ${statsSummary(run.stats)}`);
-          else toast.error(`HEMIS sinxronlash xato bilan tugadi: ${run.error ?? ''}`);
+          // `run.error` bo'sh bo'lsa ilgari "…xato bilan tugadi: " deb
+          // ikki nuqta bilan tugagan, sababsiz xabar chiqardi.
+          else toast.error(run.error ? `HEMIS sinxronlash xato bilan tugadi: ${run.error}` : 'HEMIS sinxronlash xato bilan tugadi');
           void loadStatus();
           void loadRuns();
           return;
         }
-      } catch {
-        /* vaqtinchalik tarmoq xatosi — keyingi urinishda */
+      } catch (err) {
+        // Ilgari har qanday xato JIM yutilardi: server o'chib qolsa ham
+        // jarayon "ishlamoqda" ko'rinishida abadiy aylanaverardi va
+        // foydalanuvchi progressni kutib o'tirardi. Endi ketma-ket bir
+        // necha urinish muvaffaqiyatsiz bo'lsa — kuzatish to'xtaydi va
+        // sabab ekranda ko'rinadi.
+        failures += 1;
+        if (failures >= MAX_POLL_FAILURES) {
+          if (!cancelled) setStatusError(errorText(err));
+          return;
+        }
       }
       if (!cancelled) pollTimer.current = window.setTimeout(tick, POLL_MS);
     };
@@ -87,7 +104,14 @@ export function useHemisSync() {
       cancelled = true;
       if (pollTimer.current) window.clearTimeout(pollTimer.current);
     };
-  }, [activeRunId, token, toast, loadStatus, loadRuns]);
+  }, [activeRunId, token, toast, loadStatus, loadRuns, pollNonce]);
+
+  /** "Qayta urinish": holatni qayta o'qish va (agar u to'xtagan bo'lsa)
+   *  jarayon kuzatuvini qaytadan boshlash. */
+  const retryStatus = useCallback(() => {
+    setPollNonce((n) => n + 1);
+    void loadStatus();
+  }, [loadStatus]);
 
   const test = useCallback(async () => {
     setTesting(true);
@@ -122,6 +146,7 @@ export function useHemisSync() {
     status,
     statusError,
     loadStatus,
+    retryStatus,
     runs,
     runsError,
     runsLoading,

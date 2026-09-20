@@ -178,7 +178,7 @@ export default function HemisPanel({ hemis }: { hemis: HemisSync }) {
   if (statusError && !status) {
     connection = (
       <Card>
-        <ErrorState variant="block" message={statusError} onRetry={() => void hemis.loadStatus()} />
+        <ErrorState variant="block" message={statusError} onRetry={hemis.retryStatus} />
       </Card>
     );
   } else if (!status) {
@@ -223,6 +223,26 @@ export default function HemisPanel({ hemis }: { hemis: HemisSync }) {
             <code className="font-mono">https://student.universitet.uz/rest</code>) va <code className="font-mono">HEMIS_API_TOKEN</code>{' '}
             (HEMIS admin panelidagi API token) ni kiriting va xizmatni qayta ishga tushiring. Token xavfsizlik uchun faqat serverda
             saqlanadi.
+          </Notice>
+        )}
+
+        {/* Holat bir marta yuklangandan KEYINGI xatolar (masalan,
+            sinxronlash jarayonini kuzatish uzilib qolgani) ilgari hech
+            qayerda ko'rinmasdi: `statusError` faqat `status` umuman
+            yo'q bo'lganda chizilardi. Foydalanuvchi esa to'xtab qolgan
+            progressga qarab o'tiraverardi. */}
+        {statusError && (
+          <Notice
+            tone="danger"
+            className="mt-4"
+            title="Holatni yangilab bo'lmadi"
+            action={
+              <Button size="sm" variant="ghost" onClick={hemis.retryStatus}>
+                Qayta urinish
+              </Button>
+            }
+          >
+            {statusError}
           </Notice>
         )}
 

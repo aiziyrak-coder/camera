@@ -49,6 +49,9 @@ const STAGES: { value: Stage; label: string }[] = [
 ];
 
 function stageOf(g: EnrollGroup): Stage {
+  // Talabasi yo'q guruhda yig'iladigan yuz ham yo'q. Ilgari u "Boshlanmagan
+  // (0%)" ga tushib, "N boshlanmagan" hisobini sun'iy shishirardi.
+  if (g.total === 0) return 'done';
   if (!g.pct) return 'none';
   return g.pct >= 90 ? 'done' : 'progress';
 }
@@ -233,6 +236,9 @@ export function EnrollmentCampaign({ facultyId, today, withDate }: { facultyId?:
 
   return (
     <div className="flex flex-col gap-5">
+      {/* Fonda yangilash yiqilsa ham foydalanuvchi eskirgan sonlarni ko'rib
+          turardi va buni bilmasdi — xato endi ko'rsatiladi. */}
+      {res.error && <ErrorState title="Yangilab bo'lmadi — oxirgi ma'lumot ko'rsatilmoqda" message={res.error} onRetry={res.reload} />}
       <CampaignHero counts={counts} today={today} institute={!scoped} />
 
       {!scoped && faculties.length > 0 && (
@@ -363,7 +369,8 @@ function CampaignHero({ counts, today, institute }: { counts: EnrollCounts; toda
             <DatePicker value={targetDate} onChange={setTargetDate} min={today} max={null} size="sm" ariaLabel="Maqsad sanasi" quick={false} stepper={false} compact />
           </div>
           <Fact icon={Gauge} label="Kuniga kerak">
-            {perDay === null ? <span className="text-muted">—</span> : `${formatNumber(perDay)} ta yuz`}
+            {/* "—" hech narsa tushuntirmasdi: sabab — maqsad sanasi qo'yilmagan. */}
+            {perDay === null ? <span className="font-normal text-muted">maqsad sanasini tanlang</span> : `${formatNumber(perDay)} ta yuz`}
           </Fact>
           {institute && (
             <>
@@ -371,7 +378,7 @@ function CampaignHero({ counts, today, institute }: { counts: EnrollCounts; toda
                 {pace ? `~${formatNumber(Math.round(pace.perDay * 10) / 10)} / kun` : <span className="text-muted">ertadan hisoblanadi</span>}
               </Fact>
               <Fact icon={CalendarCheck2} label="Shu sur'atda tugaydi">
-                {remaining === 0 ? 'Tugadi' : eta ? formatUzDate(eta, { year: false }) : <span className="text-muted">—</span>}
+                {remaining === 0 ? 'Tugadi' : eta ? formatUzDate(eta, { year: false }) : <span className="font-normal text-muted">sur'at nolga teng</span>}
               </Fact>
               {eta && targetDate && remaining > 0 && (
                 <p className={cn('text-xs font-medium', eta <= targetDate ? 'text-success' : 'text-danger')}>

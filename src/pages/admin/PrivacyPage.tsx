@@ -204,7 +204,17 @@ export default function PrivacyPage() {
     >
       {tab === 'umumiy' &&
         (overviewError ? (
-          <ErrorState message={overviewError} onRetry={() => setOverviewNonce((n) => n + 1)} />
+          <ErrorState
+            message={overviewError}
+            onRetry={() => {
+              // Xatoni DARHOL tozalash kerak: aks holda "Qayta urinish"
+              // bosilganda ekran o'zgarmay turardi (so'rov ketayotgani
+              // bilinmasdi) va foydalanuvchi tugmani ishlamayapti deb
+              // qayta-qayta bosardi. Endi skeleton ko'rinadi.
+              setOverviewError(null);
+              setOverviewNonce((n) => n + 1);
+            }}
+          />
         ) : overview ? (
           <>
             <PrivacyKpiTiles overview={overview} onFilter={openFiltered} />

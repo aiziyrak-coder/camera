@@ -78,18 +78,22 @@ export function CampusCamerasCard({ resource }: { resource: LiveResource<CampusC
                     {group.cameras.length === 0 ? (
                       <p className="text-xs text-subtle">Kamera biriktirilmagan</p>
                     ) : (
-                      <div className="flex flex-wrap gap-1.5">
+                      <div className="-m-0.5 flex flex-wrap">
                         {group.cameras.map((camera) => {
                           const s = cameraState(camera);
                           return (
+                            // Bosiladigan joy 16px edi — barmoq uchun juda kichik.
+                            // Katak ko'rinishi o'zgarmaydi, lekin nishon 24px bo'ldi.
                             <button
                               key={camera.id}
                               type="button"
                               onClick={() => setSelected(camera)}
                               title={`${camera.name} · ${camera.zone} · ${s.label}`}
                               aria-label={`${camera.name}, ${s.label}`}
-                              className={cn('h-4 w-4 rounded-[4px] transition-transform hover:scale-125', TONE_SOLID[s.tone], focusRing)}
-                            />
+                              className={cn('m-0.5 inline-flex h-6 w-6 items-center justify-center rounded-[6px] transition-transform hover:scale-125', focusRing)}
+                            >
+                              <span className={cn('h-4 w-4 rounded-[4px]', TONE_SOLID[s.tone])} aria-hidden="true" />
+                            </button>
                           );
                         })}
                       </div>
@@ -122,7 +126,8 @@ export function CampusCamerasCard({ resource }: { resource: LiveResource<CampusC
               { label: 'Qavat', value: selected.floor ?? '—' },
               { label: 'Zona', value: selected.zone || '—' },
               { label: 'Kafedra', value: selected.department || '—' },
-              { label: "Ruxsat / FPS", value: `${selected.resolution || '—'}${selected.fps ? ` · ${selected.fps} fps` : ''}` },
+              // "Ruxsat" (= permission) noto'g'ri tarjima edi; ilovaning qolgan qismida "Tasvir sifati".
+              { label: 'Tasvir sifati', value: `${selected.resolution || '—'}${selected.fps ? ` · ${selected.fps} fps` : ''}` },
               { label: 'Kirish kamerasi', value: selected.isEntrance ? 'Ha' : "Yo'q" },
             ]}
           />

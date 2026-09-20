@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
-import LiveVideoPlayer from './LiveVideoPlayer';
+import LiveVideoPlayer, { streamRetryDelay } from './LiveVideoPlayer';
 
 vi.mock('../lib/useLiveDetection', () => ({ useLiveDetection: () => ({ result: null, slotDenied: false }) }));
 
@@ -192,6 +192,64 @@ describe('LiveVideoPlayer — imzolangan havola (403)', () => {
     expect(view.container.querySelector('video')).not.toBeNull();
 
     view.unmount();
+  });
+});
+
+/** Bir vaqtda o'nlab oqim yiqilganda (MediaMTX shardi qayta ishga tushdi,
+ *  tarmoq bir zumga uzildi) kataklar QAT'IY bir xil vaqtda qayta
+ *  urinmasligi kerak: aks holda server ko'tarilishi bilan devordagi 16 ta
+ *  katak (va har bir televizor) bir zumda hammasi birdan ulanadi va
+ *  shardni qaytadan bo'g'adi. Xuddi shu muammo WebSocket ulanishida
+ *  allaqachon tasodifiy qo'shimcha bilan hal qilingan (realtime.ts). */
+describe('LiveVideoPlayer — qayta ulanish bo‘roni', () => {
+  it('kutish vaqti tasodifiy qo‘shimcha bilan yoyiladi', () => {
+    // Bir xil urinish raqami — lekin bir xil vaqt EMAS.
+    expect(streamRetryDelay(1, () => 0)).toBe(6400);
+    expect(streamRetryDelay(1, () => 1)).toBe(9600);
+    // Chegara ham yoyiladi, lekin o'sish saqlanadi.
+    expect(streamRetryDelay(50, () => 0.5)).toBe(20_000);
+  });
+
+  it('bir vaqtda yiqilgan ikki oqim bir vaqtda qayta urinmaydi', async () => {
+    // Birinchi pleyer eng qisqa, ikkinchisi eng uzun kutishni oladi.
+    const values = [0, 1];
+    let call = 0;
+    const random = vi.spyOn(Math, 'random').mockImplementation(() => values[call++ % values.length]);
+
+    const urlA = 'https://cam.example/s0/cam-a/index.m3u8';
+    const urlB = 'https://cam.example/s0/cam-b/index.m3u8';
+    const a = render(<LiveVideoPlayer streamUrl={urlA} priority />);
+    const b = render(<LiveVideoPlayer streamUrl={urlB} priority />);
+    const attempts = (url: string) =>
+      hlsInstances.filter((instance) => instance.loadSource.mock.calls[0]?.[0] === url).length;
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(attempts(urlA)).toBe(1);
+    expect(attempts(urlB)).toBe(1);
+
+    // Ikkalasi ham bir zumda yiqiladi (yuklash kutish vaqti tugadi).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(31_000);
+    });
+
+    // Qat'iy backoff bilan ikkalasi ham aynan 8000 ms da qaytardi.
+    // Yoyilgan kutish bilan bu oraliqda faqat BIRINCHISI qaytadi.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(7_000);
+    });
+    expect(attempts(urlA)).toBe(2);
+    expect(attempts(urlB)).toBe(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_000);
+    });
+    expect(attempts(urlB)).toBe(2);
+
+    random.mockRestore();
+    a.unmount();
+    b.unmount();
   });
 });
 

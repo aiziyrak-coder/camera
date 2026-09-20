@@ -56,10 +56,14 @@ export function KafedraCard({ kafedra: k, to, trend, trendHint }: KafedraCardPro
 
       <ProgressBar size="sm" segments={kafedraSegments(k)} />
 
-      <div className="grid grid-cols-3 gap-2 border-t border-border pt-3">
+      {/* "Hali kelmagan"lar bu yerda umuman ko'rinmasdi: uch raqam qo'shilib
+          halqa maxrajiga (keldi + kelmadi + hali kelmagan) teng chiqmas,
+          odam esa sababini topolmasdi. */}
+      <div className={cn('grid gap-2 border-t border-border pt-3', k.notYet > 0 ? 'grid-cols-4' : 'grid-cols-3')}>
         <Stat label="Keldi" value={k.present - k.late} tone="success" />
         <Stat label="Kech keldi" value={k.late} tone="warning" />
         <Stat label="Kelmadi" value={k.absent} tone="danger" />
+        {k.notYet > 0 && <Stat label="Hali kelmagan" value={k.notYet} tone="warning" />}
       </div>
 
       {hasLessons && (

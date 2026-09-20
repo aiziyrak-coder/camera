@@ -33,7 +33,7 @@ function Group({ title, units, startRank }: { title: string; units: WallUnit[]; 
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="mb-[0.4em] shrink-0 text-[0.75em] font-medium text-muted">{title}</div>
       {units.length === 0 ? (
-        <div className="text-[0.8em] text-muted">Bugun hali ma'lumot yo'q</div>
+        <div className="text-[0.8em] text-muted">Bugun hali birorta xodim kamerada ko'rinmadi</div>
       ) : (
         <ul className="flex min-h-0 flex-1 flex-col justify-evenly gap-[0.2em] overflow-hidden">
           {units.map((u, i) => (
@@ -49,10 +49,13 @@ export function RankingPanel({
   top,
   bottom,
   chronic,
+  chronicError,
 }: {
   top: WallUnit[];
   bottom: WallUnit[];
   chronic: number | null;
+  /** So'rov xato bergan bo'lsa — "—" ning sababi ekranda yoziladi. */
+  chronicError?: boolean;
 }) {
   // Kichik institutda top va bottom kesishishi mumkin — pastkilarni takrorlamaymiz.
   const topIds = new Set(top.map((u) => u.id));
@@ -60,17 +63,29 @@ export function RankingPanel({
   return (
     <WallPanel area="D" title="Bo'linmalar reytingi" icon={<Trophy />} aside={<span>bugungi davomat</span>}>
       <div className="flex min-h-0 flex-1 flex-col gap-[0.6em]">
-        <Group title="Eng yaxshi 5" units={top} startRank={(i) => i + 1} />
+        {/* "5" qattiq yozilgan edi: bo'linmalar kam bo'lsa ekranda
+            3 ta qator turib, sarlavhada 5 deb yozilardi. */}
+        <Group title={`Eng yaxshi ${top.length}`} units={top} startRank={(i) => i + 1} />
         {/* Bu ro'yxat — eng pastdagilar; "1, 2, 3" raqamlari uni yaxshi
             o'rin kabi ko'rsatardi, shuning uchun raqamlanmaydi. */}
         {bottomOnly.length > 0 && <Group title="Diqqat talab — eng past" units={bottomOnly} />}
         <div className="flex shrink-0 items-center gap-[0.8em] rounded-[0.8em] bg-warning-soft px-[0.9em] py-[0.6em]">
           <Timer className="h-[1.6em] w-[1.6em] shrink-0 text-warning" />
           <div className="min-w-0 flex-1 leading-tight">
-            <div className="text-[0.9em] font-medium text-fg">Takror kech keladigan xodimlar</div>
-            <div className="text-[0.7em] text-muted">so'nggi 14 kunda ≥3 marta kech/kelmagan xodimlar</div>
+            {/* Ko'rsatkich kelmaganlarni ham sanaydi — sarlavha faqat
+                kechikish haqida edi va raqamni kam ko'rsatardi. */}
+            <div className="text-[0.9em] font-medium text-fg">Takror kech qolgan yoki kelmagan xodimlar</div>
+            <div className="text-[0.7em] text-muted">
+              {chronic === null
+                ? chronicError
+                  ? "so'nggi 14 kunlik hisobni serverdan olib bo'lmadi"
+                  : "so'nggi 14 kunlik hisob yuklanmoqda…"
+                : "so'nggi 14 kunda ≥3 marta kech qolgan yoki kelmagan xodimlar"}
+            </div>
           </div>
-          <div className="text-[2em] font-semibold tabular-nums text-warning">{chronic ?? '—'}</div>
+          <div className="text-[2em] font-semibold tabular-nums text-warning">
+            {chronic ?? <span className="text-muted" title="Hisob mavjud emas">—</span>}
+          </div>
         </div>
       </div>
     </WallPanel>

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Send } from 'lucide-react';
 import { Button, Field, Input, Modal, Select, Textarea } from '../../ui';
 import { Notice } from '../settings/kit';
@@ -34,27 +34,49 @@ export default function TestMessageModal({
   const [channel, setChannel] = useState<NotificationChannel>('telegram');
   const [recipient, setRecipient] = useState('');
   const [text, setText] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  // Maydon xatosi (noto'g'ri raqam) va yuborish xatosi (tarmoq/server)
+  // ALOHIDA: ilgari ikkalasi ham "Telefon raqami" maydoni tagida chiqardi
+  // va "Tarmoq xatosi" raqam noto'g'ridek ko'rinardi.
+  const [fieldError, setFieldError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [result, setResult] = useState<NotificationTestResult | null>(null);
   const [sending, setSending] = useState(false);
 
+  // `status` har yangilanishda YANGI obyekt bo'ladi (useApiResource). Effekt
+  // unga bog'liq bo'lganda, oyna ochiq turib holat fonda yangilansa,
+  // foydalanuvchi yozgan raqam va matn jimgina o'chib ketardi. Shuning
+  // uchun faqat `open` ga bog'liq, `status` esa ref orqali o'qiladi.
+  const statusRef = useRef(status);
+  statusRef.current = status;
+
   useEffect(() => {
     if (!open) return;
-    setChannel(status && !status.telegramConfigured && status.smsConfigured ? 'sms' : 'telegram');
+    const s = statusRef.current;
+    setChannel(s && !s.telegramConfigured && s.smsConfigured ? 'sms' : 'telegram');
     setRecipient('');
     setText('');
-    setError(null);
+    setFieldError(null);
+    setSendError(null);
     setResult(null);
-  }, [open, status]);
+  }, [open]);
+
+  /** Kiritish o'zgarsa oldingi natija/xato eskiradi — ular boshqa
+   *  qabul qiluvchiga tegishli bo'lib qoladi, shuning uchun tozalanadi. */
+  function clearOutcome() {
+    setResult(null);
+    setSendError(null);
+    setFieldError(null);
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const [clean, err] = validateRecipient(channel, recipient);
     if (!clean) {
-      setError(err ?? 'Qabul qiluvchini kiriting');
+      setFieldError(err ?? 'Qabul qiluvchini kiriting');
       return;
     }
-    setError(null);
+    setFieldError(null);
+    setSendError(null);
     setResult(null);
     setSending(true);
     try {
@@ -62,7 +84,7 @@ export default function TestMessageModal({
       setResult(res);
       onSent();
     } catch (err2) {
-      setError(err2 instanceof ApiError ? err2.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi");
+      setSendError(err2 instanceof ApiError ? err2.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi");
     } finally {
       setSending(false);
     }
@@ -95,24 +117,41 @@ export default function TestMessageModal({
             value={channel}
             onChange={(v) => {
               setChannel(v as NotificationChannel);
-              setResult(null);
+              clearOutcome();
             }}
             options={CHANNEL_OPTIONS}
           />
         </Field>
         {status && !channelReady && <Notice tone="warning">Bu kanal serverda sozlanmagan — xabar yuborilmaydi, jurnalga sababi yoziladi.</Notice>}
-        <Field label={channel === 'telegram' ? 'Telegram chat ID' : 'Telefon raqami'} required error={error}>
+        <Field label={channel === 'telegram' ? 'Telegram chat ID' : 'Telefon raqami'} required error={fieldError}>
           <Input
             placeholder={channel === 'telegram' ? '123456789 yoki -100…' : '+998 90 123 45 67'}
             value={recipient}
-            onChange={(e) => setRecipient(e.target.value)}
+            onChange={(e) => {
+              setRecipient(e.target.value);
+              clearOutcome();
+            }}
             autoComplete="off"
             className="font-mono"
           />
         </Field>
         <Field label="Matn (ixtiyoriy)" hint={`${text.length} / 500`}>
-          <Textarea placeholder="Bildirishnomalar to'g'ri sozlangan." value={text} onChange={(e) => setText(e.target.value)} maxLength={500} rows={3} />
+          <Textarea
+            placeholder="Bildirishnomalar to'g'ri sozlangan."
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              setResult(null);
+            }}
+            maxLength={500}
+            rows={3}
+          />
         </Field>
+        {sendError && (
+          <Notice tone="danger" title="Yuborib bo'lmadi">
+            {sendError}
+          </Notice>
+        )}
         {result &&
           (result.ok ? (
             <Notice tone="success">Xabar yuborildi.</Notice>

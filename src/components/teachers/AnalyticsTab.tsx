@@ -155,7 +155,10 @@ export function AnalyticsTab() {
           loading={summary.loading}
           value={formatPercent(s?.current.rate, 1)}
           progress={s?.current.rate}
-          delta={kpiDelta(s?.delta.rate, 'up', ' pp')}
+          // Oldingi davrda birorta ish kuni qamrab olinmagan bo'lsa
+          // taqqoslash yo'q: "+100 pp" kabi son chiqib qolardi. Quyidagi
+          // ikki plitka allaqachon shunday himoyalangan edi, bu ikkitasi yo'q.
+          delta={noPrev ? null : kpiDelta(s?.delta.rate, 'up', ' pp')}
           hint={prevHint}
         />
         <StatTile
@@ -164,7 +167,7 @@ export function AnalyticsTab() {
           tone="info"
           loading={summary.loading}
           value={s?.current.avgArrival ?? '—'}
-          delta={kpiDelta(s?.delta.avgArrivalMinutes, 'down', ' daq', 0)}
+          delta={noPrev ? null : kpiDelta(s?.delta.avgArrivalMinutes, 'down', ' daq', 0)}
           hint={s?.previous.avgArrival ? `avval ${s.previous.avgArrival}` : prevHint}
         />
         <StatTile

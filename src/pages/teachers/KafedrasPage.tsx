@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, BarChart3, Building2, Clock, Trophy } from 'lucide-react';
 import { Page, formatUzDate, relativeDayLabel, useUrlTab, type TabItem } from '../../ui';
 import { AnalyticsTab } from '../../components/teachers/AnalyticsTab';
@@ -14,6 +14,7 @@ import { useViewDate } from '../../lib/viewDate';
 
 type TabId = 'bolinmalar' | 'tahlil' | 'reyting' | 'surunkali' | 'kuzatuv';
 
+const TAB_IDS: readonly TabId[] = ['bolinmalar', 'tahlil', 'reyting', 'surunkali', 'kuzatuv'];
 const REFRESH_MS = 60_000;
 
 /** Xodimlar va o'qituvchilar: bo'linmalar, tahlil, reyting, takror
@@ -23,7 +24,17 @@ export default function KafedrasPage() {
   const { date, isToday, today, withDate } = useViewDate();
   const { role } = useAuth();
   const { can } = usePermissions();
-  const units = useLoader(`k:${date}`, (signal) => getKafedras(date, { signal }), { refreshMs: isToday ? REFRESH_MS : undefined });
+  // Ro'yxat faqat "Bo'linmalar" tabida ko'rinadi (boshqa tablarda u
+  // shunchaki tab hisoblagichi uchun kerak). Ilgari har 60 soniyada
+  // "Reyting" yoki "Tahlil" ochiq turganda ham qayta so'ralardi.
+  // Tab ro'yxati o'zgarmas, shuning uchun faol tabni `tabs` tuzilishidan
+  // oldin ham aniq bilish mumkin (noma'lum qiymat standartga tushadi).
+  const [searchParams] = useSearchParams();
+  const rawTab = searchParams.get('tab');
+  const onUnitsTab = !rawTab || !TAB_IDS.includes(rawTab as TabId) || rawTab === 'bolinmalar';
+  const units = useLoader(`k:${date}`, (signal) => getKafedras(date, { signal }), {
+    refreshMs: isToday && onUnitsTab ? REFRESH_MS : undefined,
+  });
 
   const tabs: TabItem<TabId>[] = [
     { id: 'bolinmalar', label: "Bo'linmalar", icon: Building2, count: units.data?.length ?? null },
@@ -53,7 +64,10 @@ export default function KafedrasPage() {
       {tab === 'reyting' && <RankingTab />}
       {tab === 'surunkali' && <ChronicTab />}
       {tab === 'kuzatuv' && <DayTrackingTab date={date} />}
-      {can('editCameraLocation', role) && (
+      {/* Bu maslahat kunlik davomat ro'yxatlariga tegishli. Ilgari u "Davr
+          tahlili" yoki "Reyting" grafiklari ostida ham osilib turardi —
+          o'sha yerda u mavzudan tashqari shovqin edi. */}
+      {can('editCameraLocation', role) && !periodTab && (
         <p className="text-xs text-muted">
           Odamlar davomatga tushmayaptimi — kameralar shu yerdan tekshiriladi:{' '}
           <Link to="/sozlamalar/kameralar?tab=tanish" className="font-medium text-primary hover:underline">

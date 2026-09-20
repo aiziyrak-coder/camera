@@ -3,10 +3,17 @@ import { Users } from 'lucide-react';
 import { Badge, DataTable, SearchInput, StatusBadge, Toolbar, type DataTableColumn } from '../../ui';
 import { getTeachersDay, hhmm } from '../../lib/teachersApi';
 import { useDebouncedValue } from '../../lib/useDebouncedValue';
+import { todayInTashkent } from '../../lib/uzDate';
 import type { TeacherDaySummary } from '../../types';
 import { TeacherDayDrawer } from './TeacherDayDrawer';
 import { useLoader } from './useLoader';
 
+
+/** Vaqt yo'q bo'lganda sababini aytadigan katak (yalang'och "—" o'rniga). */
+function Unseen({ value }: { value: string | null }) {
+  if (!value) return <span className="text-subtle" title="Bu kunda kameralar bu xodimni tanimagan">—</span>;
+  return <span className="tabular-nums">{hhmm(value)}</span>;
+}
 
 export function DayTrackingTab({ date }: { date: string }) {
   const [search, setSearch] = useState('');
@@ -14,6 +21,10 @@ export function DayTrackingTab({ date }: { date: string }) {
   const [selected, setSelected] = useState<TeacherDaySummary | null>(null);
   const load = useCallback((signal: AbortSignal) => getTeachersDay({ date, search: debounced }, { signal }), [date, debounced]);
   const teachers = useLoader(`t:${date}:${debounced}`, load);
+  // Bugungi kun hali tugamagan: kunning oxiridagi darsi bor xodimni soat
+  // 09:00 da qizil qilib "kirmagan" deyish noto'g'ri edi. O'tgan kunlardagina
+  // kam kirilgan dars haqiqatan muammo.
+  const dayFinished = date < todayInTashkent();
 
   const columns: DataTableColumn<TeacherDaySummary>[] = [
     {
@@ -38,9 +49,10 @@ export function DayTrackingTab({ date }: { date: string }) {
       sortValue: (r) => r.attendanceStatus ?? '',
       cell: (r) => <StatusBadge status={r.attendanceStatus ?? 'nomalum'} />,
     },
-    { key: 'firstSeen', header: 'Keldi', align: 'right', sortValue: (r) => r.firstSeen ?? '99', cell: (r) => hhmm(r.firstSeen) },
+    // Yalang'och "—" nimani anglatishini aytmasdi — endi tooltipda sabab bor.
+    { key: 'firstSeen', header: 'Keldi', align: 'right', sortValue: (r) => r.firstSeen ?? '99', cell: (r) => <Unseen value={r.firstSeen} /> },
     // Noma'lum vaqt ikkala ustunda ham OXIRIDA tursin ('99' > har qanday "HH:MM").
-    { key: 'lastSeen', header: "Oxirgi marta ko'ringan", align: 'right', hideOnMobile: true, sortValue: (r) => r.lastSeen ?? '99', cell: (r) => hhmm(r.lastSeen) },
+    { key: 'lastSeen', header: "Oxirgi marta ko'ringan", align: 'right', hideOnMobile: true, sortValue: (r) => r.lastSeen ?? '99', cell: (r) => <Unseen value={r.lastSeen} /> },
     {
       key: 'buildings',
       header: 'Binolar',
@@ -53,14 +65,18 @@ export function DayTrackingTab({ date }: { date: string }) {
       header: 'Darsiga kirgan',
       align: 'right',
       sortValue: (r) => (r.lessonsScheduled ? r.lessonsAttended / r.lessonsScheduled : null),
-      cell: (r) =>
-        r.lessonsScheduled === 0 ? (
-          <span className="text-[13px] text-subtle">jadvalda yo'q</span>
-        ) : (
-          <Badge tone={r.lessonsAttended < r.lessonsScheduled ? 'danger' : 'success'}>
+      cell: (r) => {
+        if (r.lessonsScheduled === 0) return <span className="text-[13px] text-subtle">jadvalda yo'q</span>;
+        const missing = r.lessonsScheduled - r.lessonsAttended;
+        // Kun tugamaguncha kirilmagan dars "hali bo'lmagan dars" bo'lishi
+        // mumkin — u qizil emas, neytral ko'rsatiladi.
+        const tone = missing <= 0 ? 'success' : dayFinished ? 'danger' : 'neutral';
+        return (
+          <Badge tone={tone} title={missing > 0 && !dayFinished ? "Kun hali tugamagan — qolgan darslar hali bo'lmagan bo'lishi mumkin" : undefined}>
             {r.lessonsAttended} / {r.lessonsScheduled}
           </Badge>
-        ),
+        );
+      },
     },
   ];
 
@@ -82,7 +98,7 @@ export function DayTrackingTab({ date }: { date: string }) {
         onRetry={teachers.reload}
         onRowClick={setSelected}
         selectedKey={selected?.id ?? null}
-        rowTone={(r) => (r.lessonsScheduled > r.lessonsAttended ? 'danger' : null)}
+        rowTone={(r) => (dayFinished && r.lessonsScheduled > r.lessonsAttended ? 'danger' : null)}
         emptyTitle={debounced ? 'Hech kim topilmadi' : "Bu kunda hech kim ko'rinmagan"}
         emptyDescription={
           debounced
@@ -100,7 +116,9 @@ export function DayTrackingTab({ date }: { date: string }) {
       {teachers.data && (
         <p className="text-xs text-muted">
           <Users size={12} className="mr-1 inline" aria-hidden="true" />
-          {teachers.data.length} ta xodim
+          {/* Qidiruv serverga ketadi, ya'ni bu son qidiruv natijalari soni —
+              avval u shunchaki "N ta xodim" deb turib, jami kabi o'qilardi. */}
+          {debounced ? `«${debounced}» bo'yicha ${teachers.data.length} ta xodim topildi` : `${teachers.data.length} ta xodim`}
         </p>
       )}
     </>

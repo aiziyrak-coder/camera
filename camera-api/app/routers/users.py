@@ -151,6 +151,13 @@ async def update_user(
     _guard_super_admin_target(user, current_user)
     new_role = _resolve_role(body.role, current_user)
     await _forbid_last_super_admin_demotion(db, user, new_role)
+    # O'zini o'zi pasaytirish ham taqiqlanadi: o'chirish taqiqlangan edi,
+    # lekin rolni o'zgartirish ochiq qolgandi — Super Admin bir bosishda
+    # huquqlar matritsasiga kira olmay qolardi (ikkinchi Super Admin bo'lsa
+    # yuqoridagi tekshiruv ham ushlab qolmaydi).
+    if user.id == current_user.id and new_role != user.role:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "O'z rolingizni o'zgartira olmaysiz — boshqa Super Admin buni qilsin")
 
     user.full_name = body.name
     user.login = body.login
@@ -245,14 +252,23 @@ async def toggle_permission(
     if current_user.role != "super-admin":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Faqat Super Admin huquqlarni o'zgartira oladi")
 
+    # Super Admin ustuni o'zgarmaydi — UsersRolesPage.tsx uni "qulflangan"
+    # qilib ko'rsatadi. require_permission() da Super Admin uchun chetlab
+    # o'tish YO'Q: shu ustundagi bayroq o'chirilsa, o'sha huquq butun
+    # tizimda yo'qoladi va uni qaytarish uchun ham huquq qolmaydi
+    # (masalan 'manageRoles' — matritsa sahifasining o'zi berkiladi).
+    if body.role == "superAdmin":
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Super Admin huquqlari o'zgarmaydi — aks holda tizimga kirish yo'li yopilib qolardi",
+        )
+
     result = await db.execute(select(Permission).where(Permission.key == key))
     permission = result.scalar_one_or_none()
     if permission is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Bunday huquq topilmadi")
 
-    if body.role == "superAdmin":
-        permission.super_admin = not permission.super_admin
-    elif body.role == "cameraSteward":
+    if body.role == "cameraSteward":
         permission.camera_steward = not permission.camera_steward
     else:
         permission.admin = not permission.admin

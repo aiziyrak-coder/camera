@@ -109,12 +109,29 @@ export interface SystemCameraNetwork {
 /** Amal jurnali ustunlari (src/types AuditLogEntry bilan bir xil). */
 export type AuditStatus = 'muvaffaqiyatli' | 'xatolik' | 'ogohlantirish';
 
+/** Resurs chegaralari (foiz). Bitta joyda — kartadagi izoh bilan bir xil bo'lsin. */
+export const RESOURCE_WARN_AT = 60;
+export const RESOURCE_DANGER_AT = 80;
+
 /** Foizli resurs → ohang: >80 xavf, >60 diqqat. */
 export function resourceTone(value: number): 'success' | 'warning' | 'danger' {
-  if (value > 80) return 'danger';
-  if (value > 60) return 'warning';
+  if (value > RESOURCE_DANGER_AT) return 'danger';
+  if (value > RESOURCE_WARN_AT) return 'warning';
   return 'success';
 }
+
+/** Halqa rangining ma'nosi — rang yolg'iz signal bo'lib qolmasligi uchun. */
+export const RESOURCE_TONE_LABEL: Record<'success' | 'warning' | 'danger', string> = {
+  success: "Me'yorida",
+  warning: 'Diqqat',
+  danger: 'Yuqori',
+};
+
+export const RESOURCE_TONE_NOTE: Record<'success' | 'warning' | 'danger', string> = {
+  success: `Yuklama ${RESOURCE_WARN_AT}% dan past — me'yorida`,
+  warning: `Yuklama ${RESOURCE_WARN_AT}% dan yuqori — kuzatib turing`,
+  danger: `Yuklama ${RESOURCE_DANGER_AT}% dan yuqori — video oqimlar va AI sekinlashishi mumkin`,
+};
 
 /** Fon vazifasi nomlari (texnik) → o'qiladigan nom. Noma'lumi o'zicha qoladi. */
 const SWEEP_LABELS: Record<string, string> = {

@@ -1,4 +1,4 @@
-import { api } from './apiClient';
+import { api, type CallOptions } from './apiClient';
 
 /** Kelib-ketish qoidalari (camera-api/app/routers/attendance_policy.py). */
 export interface AttendancePolicy {
@@ -16,8 +16,10 @@ export interface AttendancePolicy {
 
 export type AttendancePolicyInput = Omit<AttendancePolicy, 'staffLateAfter' | 'studentLateAfter' | 'recomputed'>;
 
-export function getAttendancePolicy(token: string | null) {
-  return api.get<AttendancePolicy>('/api/attendance-policy', token);
+/** `opts` — sahifa yopilganda so'rovni bekor qilish uchun (AbortSignal):
+ *  ilgari uni uzatib bo'lmasdi va javob komponent o'chgandan keyin kelardi. */
+export function getAttendancePolicy(token: string | null, opts: CallOptions = {}) {
+  return api.get<AttendancePolicy>('/api/attendance-policy', token, opts);
 }
 
 export function saveAttendancePolicy(token: string | null, body: AttendancePolicyInput) {
@@ -73,6 +75,18 @@ export function validateAttendancePolicy(form: AttendancePolicyInput): Attendanc
     errors.workEnd = "Ish tugashi xodimlar ish boshlanishidan keyin bo'lishi kerak";
   } else if (student !== null && end !== null && end <= student) {
     errors.workEnd = "Ish tugashi dars boshlanishidan keyin bo'lishi kerak";
+  }
+  /* Kechikish chegarasi ish tugashidan keyinga tushib qolmasin.
+     Masalan 08:00 boshlanish + 600 daqiqa emas, 16:00 boshlanish + 120
+     daqiqa: chegara 18:00 bo'ladi-yu, ish 17:00 da tugaydi — o'sha kuni
+     kelgan HAMMA "o'z vaqtida" bo'lib qoladi va kechikish hisobi
+     jimgina o'chib qoladi. Server buni tekshirmaydi. */
+  if (!errors.graceMinutes && end !== null) {
+    const limit = Math.max(staff ?? -1, student ?? -1);
+    if (limit >= 0 && limit + form.graceMinutes >= end) {
+      errors.graceMinutes =
+        "Kechikish chegarasi ish tugashidan keyinga o'tib ketdi — hech kim kech kelgan hisoblanmaydi";
+    }
   }
   return errors;
 }

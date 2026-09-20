@@ -217,5 +217,12 @@ async def build(db: AsyncSession, kind: str, oy: str, f: hisobot.Filters) -> dic
         "people": people,
         "totals": grand,
         "legend": LEGEND,
+        # Bo'lim va kesilganlik alohida maydonlarda: ilgari bu faqat `note`
+        # matnining ichida edi, shuning uchun interfeys qaysi bo'lim
+        # kelganini bilolmay, eski varaqni yangi sarlavha ostida ko'rsatardi.
+        "kind": kind,
+        "capped": capped > 0,
+        "cappedCount": capped,
+        "peopleLimit": PEOPLE_LIMIT,
         "note": _note(kind, len(people), missing, capped, module_off, bool(records)),
     }

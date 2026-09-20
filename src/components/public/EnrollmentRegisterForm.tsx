@@ -67,14 +67,23 @@ export default function EnrollmentRegisterForm({
   // Telefonda 16px dan kichik shrift iOS'da maydonni kattalashtirib yuboradi.
   const mobileText = '[&_input]:text-base';
 
+  // Brauzerning `required` va `minLength` tekshiruvi bo'sh joylarni ham
+  // belgi deb sanaydi: " a " uzunligi 3 bo'lgani uchun o'tib ketardi,
+  // qirqilgandan keyin esa serverga bir harflik ism borardi. Shuning
+  // uchun tekshiruv qirqilgan qiymat bo'yicha, tugmada.
+  const trimmedName = fullName.trim();
+  const trimmedGroup = groupOrPosition.trim();
+  const valid = trimmedName.length >= 3 && trimmedGroup.length > 0;
+
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
+        if (!valid) return;
         onSubmit({
-          fullName: fullName.trim(),
+          fullName: trimmedName,
           type,
-          groupOrPosition: groupOrPosition.trim(),
+          groupOrPosition: trimmedGroup,
           facultyId: facultyId || undefined,
           pinfl,
           passportSeries,
@@ -137,11 +146,13 @@ export default function EnrollmentRegisterForm({
         <span className="font-mono font-semibold text-fg">{pinfl || `${passportSeries} ${passportNumber}`}</span>
       </p>
 
-      <Button type="submit" variant="primary" size="lg" icon={UserPlus} loading={submitting} fullWidth>
+      <Button type="submit" variant="primary" size="lg" icon={UserPlus} loading={submitting} disabled={!valid} fullWidth>
         {submitting ? 'Saqlanmoqda...' : "Ro'yxatdan o'tish"}
       </Button>
 
-      <Button variant="ghost" icon={ArrowLeft} onClick={onCancel} fullWidth>
+      {/* So'rov ketayotganda orqaga qaytish yozuv yaratilishini
+          to'xtatmaydi — faqat odam natijani ko'rmay qoladi. */}
+      <Button variant="ghost" icon={ArrowLeft} onClick={onCancel} disabled={submitting} fullWidth>
         Boshqa raqam bilan qayta urinish
       </Button>
     </form>

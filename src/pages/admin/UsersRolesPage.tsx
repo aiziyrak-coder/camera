@@ -39,8 +39,12 @@ export default function UsersRolesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<AdminUser | null>(null);
   const [deleting, setDeleting] = useState<AdminUser | null>(null);
-  const { role: myRole, token } = useAuth();
+  const { role: myRole, token, userName } = useAuth();
   const { matrix, toggle, saveError, clearSaveError } = usePermissions();
+  // Serverga ketayotgan huquq o'zgarishlari. PATCH /api/permissions/{key}
+  // — "teskarisiga o'zgartir" buyrug'i, shuning uchun ikki marta tez
+  // bosilsa ikki marta aylanib, natija boshlang'ich holatga qaytardi.
+  const [pendingPermissions, setPendingPermissions] = useState<PermissionKey[]>([]);
   const {
     items: users,
     page,
@@ -67,6 +71,17 @@ export default function UsersRolesPage() {
   function refresh() {
     invalidateServerPageCache('/api/users');
     reload();
+  }
+
+  /** Server (app/routers/users.py) rad etadigan o'chirishlar — sababi bilan.
+   *  Hisob egasi `userName` orqali taxmin qilinadi: aniq tekshiruv baribir
+   *  serverda, bu faqat behuda bosishning oldini oladi. */
+  function deleteBlockReason(user: AdminUser): string | null {
+    if (userName && user.name === userName) return "O'zingizni o'chira olmaysiz";
+    if (user.role === 'Super Admin' && myRole !== 'super-admin') {
+      return "Super Admin hisobini faqat Super Admin o'chira oladi";
+    }
+    return null;
   }
 
   async function handleDelete() {
@@ -113,8 +128,10 @@ export default function UsersRolesPage() {
             {u.email && <p className="truncate text-fg">{u.email}</p>}
             <p className="flex flex-wrap items-center gap-1.5 text-muted">
               {u.phone && <span className="tabular-nums">{u.phone}</span>}
+              {/* Yalang'och "Telegram" nishoni nimani bildirishi tushunarsiz
+                  edi — bu telefon raqami emas, bog'langan Telegram hisobi. */}
               {u.telegramLinked && (
-                <Badge tone="success" size="sm">
+                <Badge tone="success" size="sm" title="Telegram hisobi bog'langan — bildirishnomalar shu yerga keladi">
                   Telegram
                 </Badge>
               )}
@@ -132,20 +149,45 @@ export default function UsersRolesPage() {
     },
     {
       key: 'actions',
-      header: '',
+      header: <span className="sr-only">Amallar</span>,
       align: 'right',
       width: '6rem',
       mobileLabel: 'Amallar',
-      cell: (u) => (
-        <div onClick={(e) => e.stopPropagation()} className="flex justify-end gap-1">
-          <IconButton icon={Pencil} label={`${u.name} — tahrirlash`} size="sm" onClick={() => setEditing(u)} />
-          <IconButton icon={Trash2} label={`${u.name} — o'chirish`} size="sm" variant="danger" onClick={() => setDeleting(u)} />
-        </div>
-      ),
+      cell: (u) => {
+        const blocked = deleteBlockReason(u);
+        return (
+          <div onClick={(e) => e.stopPropagation()} className="flex justify-end gap-1">
+            <IconButton icon={Pencil} label={`${u.name} — tahrirlash`} size="sm" onClick={() => setEditing(u)} />
+            {/* Server rad etadigan tugma bosiladigan holda turmasin —
+                sababi tooltipda va ekran o'quvchi uchun yorliqda. */}
+            <IconButton
+              icon={Trash2}
+              label={blocked ? `${u.name} — o'chirib bo'lmaydi: ${blocked}` : `${u.name} — o'chirish`}
+              title={blocked ?? undefined}
+              size="sm"
+              variant="danger"
+              disabled={Boolean(blocked)}
+              onClick={() => setDeleting(u)}
+            />
+          </div>
+        );
+      },
     },
   ];
 
   const permissionKeys = PERMISSION_KEYS.filter((key) => matrix[key]);
+
+  /** Bir kalit bo'yicha bir vaqtda bitta so'rov — tez ikki bosish
+   *  serverdagi qiymatni ikki marta aylantirib qo'ymasin. */
+  function togglePermission(key: PermissionKey, column: 'admin' | 'cameraSteward') {
+    if (pendingPermissions.includes(key)) return;
+    setPendingPermissions((prev) => [...prev, key]);
+    toggle(key, column);
+    // `toggle` promise qaytarmaydi (lib/permissions.tsx) — optimistik
+    // qiymat darhol yangilanadi, javob esa keyin keladi. Qisqa qulf
+    // qo'sh bosishni to'xtatish uchun yetarli.
+    window.setTimeout(() => setPendingPermissions((prev) => prev.filter((k) => k !== key)), 600);
+  }
 
   const permissionColumns: DataTableColumn<PermissionKey>[] = [
     {
@@ -159,7 +201,13 @@ export default function UsersRolesPage() {
       header: 'Super Admin',
       align: 'center',
       width: '9rem',
-      cell: (key) => <PermissionMark granted={matrix[key].superAdmin} locked label={`${PERMISSION_LABELS[key]} — Super Admin`} />,
+      cell: (key) => (
+        <PermissionMark
+          granted={matrix[key].superAdmin}
+          lockedReason="Super Admin huquqlari o'zgarmaydi — aks holda tizimga kirish yo'li yopilib qolardi"
+          label={`${PERMISSION_LABELS[key]} — Super Admin`}
+        />
+      ),
     },
     {
       key: 'admin',
@@ -170,7 +218,8 @@ export default function UsersRolesPage() {
         <PermissionMark
           granted={matrix[key].admin}
           label={`${PERMISSION_LABELS[key]} — Admin`}
-          onToggle={canEdit ? () => toggle(key, 'admin') : undefined}
+          busy={pendingPermissions.includes(key)}
+          onToggle={canEdit ? () => togglePermission(key, 'admin') : undefined}
         />
       ),
     },
@@ -183,7 +232,8 @@ export default function UsersRolesPage() {
         <PermissionMark
           granted={matrix[key].cameraSteward}
           label={`${PERMISSION_LABELS[key]} — Kamera mas'uli`}
-          onToggle={canEdit ? () => toggle(key, 'cameraSteward') : undefined}
+          busy={pendingPermissions.includes(key)}
+          onToggle={canEdit ? () => togglePermission(key, 'cameraSteward') : undefined}
         />
       ),
     },
@@ -302,30 +352,38 @@ export default function UsersRolesPage() {
 
 function PermissionMark({
   granted,
-  locked,
+  lockedReason,
   label,
+  busy,
   onToggle,
 }: {
   granted: boolean;
-  locked?: boolean;
+  /** Qulflangan bo'lsa — NEGA qulflanganining izohi (bo'sh tooltip emas). */
+  lockedReason?: string;
   label: string;
+  busy?: boolean;
   onToggle?: () => void;
 }) {
-  if (onToggle && !locked) {
+  if (onToggle && !lockedReason) {
     return (
       <span className="inline-flex justify-center">
-        <Switch checked={granted} onChange={onToggle} label={label} />
+        <Switch checked={granted} onChange={onToggle} label={label} disabled={busy} />
       </span>
     );
   }
   return (
-    <span
-      role="img"
-      aria-label={`${label}: ${granted ? 'ruxsat bor' : "ruxsat yo'q"}`}
-      title={locked ? "Super Admin huquqlari o'zgarmaydi" : undefined}
-      className={`inline-flex h-6 w-6 items-center justify-center rounded-full ${granted ? 'bg-success-soft text-success' : 'bg-surface-2 text-subtle'}`}
-    >
-      {granted ? <Check size={14} aria-hidden="true" /> : <X size={14} aria-hidden="true" />}
+    <span className="inline-flex items-center justify-center gap-1">
+      <span
+        role="img"
+        aria-label={`${label}: ${granted ? 'ruxsat bor' : "ruxsat yo'q"}${lockedReason ? `. ${lockedReason}` : ''}`}
+        title={lockedReason}
+        className={`inline-flex h-6 w-6 items-center justify-center rounded-full ${granted ? 'bg-success-soft text-success' : 'bg-surface-2 text-subtle'}`}
+      >
+        {granted ? <Check size={14} aria-hidden="true" /> : <X size={14} aria-hidden="true" />}
+      </span>
+      {/* Qulf belgisi ko'rinadigan sabab: ilgari faqat tooltip bor edi va
+          klaviatura bilan yurgan foydalanuvchi uni umuman ko'rmasdi. */}
+      {lockedReason && <Lock size={12} className="text-subtle" aria-hidden="true" />}
     </span>
   );
 }

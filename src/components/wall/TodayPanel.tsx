@@ -28,9 +28,21 @@ function Block({ icon, title, children }: { icon: ReactNode; title: string; chil
   );
 }
 
+/** Foiz faqat yuzi ro'yxatdan o'tganlar bo'yicha o'lchanadi: ro'yxatda
+ *  minglab odam bo'lib, yuzi tasdiqlangani bir necha yuz bo'lsa, "92%"
+ *  butun institut davomati kabi o'qilardi. Qamrov yozilganda raqam
+ *  o'lchov emas, sabab bo'lib ko'rinadi. */
+export function coverageNote(counts: Counts): string | null {
+  if (counts.total <= 0 || counts.enrolled >= counts.total) return null;
+  const n = (v: number) => v.toLocaleString('ru-RU');
+  return `Ro'yxatdagi ${n(counts.total)} kishidan ${n(counts.enrolled)} tasining yuzi ro'yxatdan o'tgan — foiz faqat shular bo'yicha`;
+}
+
 function AttendanceBlock({ counts }: { counts: Counts }) {
   const expected = counts.present + counts.absent + counts.notYet;
+  const note = coverageNote(counts);
   return (
+    <div>
     <div className="flex items-center gap-[1.1em]">
       <WallRing value={counts.rate} size={6.2} sublabel="davomat" />
       <div className="min-w-0 flex-1">
@@ -45,6 +57,8 @@ function AttendanceBlock({ counts }: { counts: Counts }) {
           <Metric label="hali yo'q" value={counts.notYet} tone="text-muted" />
         </div>
       </div>
+    </div>
+      {note && <div className="mt-[0.55em] text-[0.72em] leading-snug text-muted">{note}</div>}
     </div>
   );
 }

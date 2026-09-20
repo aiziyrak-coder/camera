@@ -48,7 +48,10 @@ function FaceGrid({ detail }: { detail: SpotlightDetail }) {
                 {showNames && (
                   <div className="mt-[0.35em] w-full text-center leading-tight">
                     <div className="truncate font-medium text-fg">{f.fullName.split(' ').slice(0, 2).join(' ')}</div>
-                    <div className="tabular-nums text-muted">{f.checkIn ?? '—'}</div>
+                    {/* "—" ning ma'nosi ekranda ko'rinmasdi. */}
+                    <div className="tabular-nums text-muted" title={f.checkIn ? 'Kelgan vaqti' : 'Hali kelmagan'}>
+                      {f.checkIn ?? '—'}
+                    </div>
                   </div>
                 )}
               </div>
@@ -132,10 +135,21 @@ export function SpotlightPanel({
       aside={total > 0 ? <span className="tabular-nums">{index + 1} / {total}</span> : null}
     >
       {layers.length === 0 ? (
+        // Ro'yxat bor, lekin tafsilot hali kelmagan — bu "hech narsa yo'q"
+        // emas, "yuklanmoqda". Ikkalasini bir xil yozish chalg'itardi.
         <div className="flex flex-1 flex-col items-center justify-center text-center text-muted">
           <Sparkles className="mb-[0.5em] h-[2.5em] w-[2.5em] opacity-50" />
-          <div>Bugun hali ko'rsatiladigan bo'linma yoki guruh yo'q</div>
-          <div className="text-[0.8em]">Birinchi kelishlardan so'ng navbat bilan ko'rsatiladi</div>
+          {total > 0 ? (
+            <>
+              <div>Ma'lumot yuklanmoqda…</div>
+              <div className="text-[0.8em]">Navbatdagi bo'linma tafsiloti kutilmoqda</div>
+            </>
+          ) : (
+            <>
+              <div>Bugun hali ko'rsatiladigan bo'linma yoki guruh yo'q</div>
+              <div className="text-[0.8em]">Birinchi kelishlardan so'ng navbat bilan ko'rsatiladi</div>
+            </>
+          )}
         </div>
       ) : (
         <div className="relative min-h-0 flex-1">
@@ -152,8 +166,10 @@ export function SpotlightPanel({
           ))}
         </div>
       )}
+      {/* Panelda `overflow-hidden` bor: manfiy `bottom` chizig'ini butunlay
+          kesib tashlardi — aylanish taymeri ekranda hech qachon ko'rinmasdi. */}
       {total > 1 && (
-        <div className="absolute inset-x-0 -bottom-[0.5em] h-[0.2em] overflow-hidden rounded-full bg-surface-3">
+        <div className="absolute inset-x-0 bottom-0 h-[0.2em] overflow-hidden rounded-full bg-surface-3">
           <div
             key={cycleKey}
             className="wall-progress h-full bg-primary"

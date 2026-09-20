@@ -146,22 +146,30 @@ export default function SituationPage() {
       const item = arrivalFromMessage(message);
       setLiveArrivals((prev) => [item, ...prev.filter((p) => p.id !== item.id)].slice(0, 10));
       setFreshIds((prev) => new Set(prev).add(item.id));
-      freshTimers.current.push(
-        window.setTimeout(() => {
-          setFreshIds((prev) => {
-            const next = new Set(prev);
-            next.delete(item.id);
-            return next;
-          });
-        }, FRESH_MS),
-      );
+      // Taymer o'z vaqti kelganda ro'yxatdan chiqariladi: sahifa soatlab
+      // ochiq turganda ro'yxat cheksiz o'sib ketmasin (xotira oqishi).
+      const timerId = window.setTimeout(() => {
+        freshTimers.current = freshTimers.current.filter((id) => id !== timerId);
+        setFreshIds((prev) => {
+          const next = new Set(prev);
+          next.delete(item.id);
+          return next;
+        });
+      }, FRESH_MS);
+      freshTimers.current.push(timerId);
       bump();
     },
     [date, bump],
   );
-  const live = isToday && canData && canEvents;
-  useLiveAttendance(onAttendance, live);
-  useLiveEvents(bump, isToday && canEvents, bump);
+  // Jonli kelishlar davomat ma'lumotidir — hodisalarni ko'rish huquqiga
+  // bog'lash xato edi: faqat davomat huquqi bor rahbar jonli oqimni
+  // umuman ko'rmasdi.
+  const liveWanted = isToday && canData;
+  useLiveAttendance(onAttendance, liveWanted);
+  // Ulanish holati soketdan olinadi: ilgari ulanish yo'q bo'lsa ham
+  // sarlavhada "Jonli" yozuvi turaverardi.
+  const liveStatus = useLiveEvents(bump, isToday && canEvents, bump);
+  const live = liveWanted && liveStatus === 'live';
 
   const data = overview.data;
   const arrivals = useMemo(() => mergeArrivals(liveArrivals, data?.lastArrivals ?? [], 6), [liveArrivals, data]);
@@ -206,16 +214,17 @@ export default function SituationPage() {
         <a
           href="/markaz-ekran"
           target="_blank"
-          rel="noopener"
+          rel="noopener noreferrer"
           className={buttonClasses({ variant: 'secondary', size: 'sm', className: 'hidden sm:inline-flex' })}
           title="Devor ekrani uchun alohida oynada ochish"
+          aria-label="Katta ekran ko'rinishini yangi oynada ochish"
         >
           <MonitorUp size={15} aria-hidden="true" />
           Katta ekran
         </a>
       )}
       {canData && (
-        <IconButton icon={RefreshCw} label="Yangilash" variant="secondary" size="sm" loading={overview.fetching && Boolean(data)} onClick={refreshNow} />
+        <IconButton icon={RefreshCw} label="Yangilash" variant="secondary" size="sm" loading={overview.fetching} onClick={refreshNow} />
       )}
     </>
   );
@@ -245,8 +254,9 @@ export default function SituationPage() {
   const mkDeltas = (pick: (d: DayCounts) => number, current: number | undefined, better: 'up' | 'down'): KpiDelta[] => {
     if (current === undefined) return [];
     const out: KpiDelta[] = [];
-    if (cmp.previous) out.push({ label: cmp.previousLabel, value: current - pick(cmp.previous), better, title: `${cmp.previous.date}: ${formatNumber(pick(cmp.previous))}` });
-    if (cmp.lastWeek) out.push({ label: cmp.lastWeekLabel, value: current - pick(cmp.lastWeek), better, title: `${cmp.lastWeek.date}: ${formatNumber(pick(cmp.lastWeek))}` });
+    // Birliksiz "+5" nimani bildirishi noma'lum edi — bular odam soni.
+    if (cmp.previous) out.push({ label: cmp.previousLabel, value: current - pick(cmp.previous), better, unit: ' ta', title: `${cmp.previous.date}: ${formatNumber(pick(cmp.previous))}` });
+    if (cmp.lastWeek) out.push({ label: cmp.lastWeekLabel, value: current - pick(cmp.lastWeek), better, unit: ' ta', title: `${cmp.lastWeek.date}: ${formatNumber(pick(cmp.lastWeek))}` });
     return out;
   };
   const presentDeltas = mkDeltas((d) => d.present, staff?.present, 'up');
@@ -262,6 +272,109 @@ export default function SituationPage() {
 
   const studentsLink = canStudentsPages ? withDate('/talabalar') : undefined;
   const teachersLink = canStudentsPages ? withDate('/oqituvchilar') : undefined;
+
+  // Bu uch ko'rsatkich ikkala ko'rinishda (xodimlar avval / talabalar
+  // avval) bir xil edi va JSX ikki marta nusxalangan edi — bitta joyda
+  // ta'riflanadi, shunda matn va mantiq bir joyda o'zgaradi.
+  // Dars jadvali kiritilmagan bo'lsa bu ikki ko'rsatkichni tizim umuman
+  // o'lchay olmaydi — 0% ko'rsatish o'rniga ko'rsatkich chiqmaydi.
+  // Jadval paydo bo'lsa o'zi qaytadi.
+  const lessonTiles = hasLessons ? (
+    <>
+      <KpiTile
+        label="Darsga o'z vaqtida kirgan o'qituvchilar"
+        icon={Users}
+        tone={toneForRate(teacherRate)}
+        value={formatPercent(teacherRate)}
+        segments={
+          data && data.teachers.onTime + data.teachers.late + data.teachers.absent > 0
+            ? [
+                { value: data.teachers.onTime, tone: 'success', label: "O'z vaqtida" },
+                { value: data.teachers.late, tone: 'warning', label: 'Kech keldi' },
+                { value: data.teachers.absent, tone: 'danger', label: 'Kelmadi' },
+              ]
+            : undefined
+        }
+        hint={
+          data
+            ? data.teachers.scheduled > 0
+              ? `Bugun darsi bor ${formatNumber(data.teachers.scheduled)} o'qituvchidan: ${formatNumber(data.teachers.late)} kech kirgan · ${formatNumber(data.teachers.absent)} kirmagan`
+              : "Darsi bor o'qituvchi yo'q"
+            : undefined
+        }
+        to={teachersLink}
+        loading={loadingTiles}
+        big={big}
+      />
+      <KpiTile
+        label={isToday ? 'Bugungi darslar' : 'Shu kungi darslar'}
+        icon={BookOpen}
+        tone="info"
+        value={formatNumber(isToday ? data?.lessons.finished : data?.lessons.total)}
+        suffix={data && isToday ? `/ ${formatNumber(data.lessons.total)}` : undefined}
+        segments={
+          data && isToday && data.lessons.total > 0
+            ? [
+                { value: data.lessons.finished, tone: 'neutral', label: "O'tgan" },
+                { value: data.lessons.ongoing, tone: 'primary', label: 'Davom etmoqda' },
+                { value: data.lessons.upcoming, tone: 'info', label: 'Kutilmoqda' },
+              ]
+            : undefined
+        }
+        hint={
+          data
+            ? isToday
+              ? `${formatNumber(data.lessons.finished)} o'tgan · ${formatNumber(data.lessons.ongoing)} davom etmoqda · ${formatNumber(data.lessons.upcoming)} kutilmoqda`
+              : `${formatNumber(data.lessons.total)} ta dars o'tgan`
+            : undefined
+        }
+        loading={loadingTiles}
+        big={big}
+      />
+    </>
+  ) : null;
+
+  const camerasTile = (
+    <KpiTile
+      label="Ishlab turgan kameralar"
+      icon={Camera}
+      tone={camerasOffline > 0 ? 'warning' : 'success'}
+      value={formatNumber(data?.cameras.online)}
+      suffix={data ? `/ ${formatNumber(data.cameras.active)}` : undefined}
+      segments={
+        data && data.cameras.active > 0
+          ? [
+              { value: data.cameras.online, tone: 'success', label: 'Ishlayapti' },
+              { value: camerasOffline, tone: 'danger', label: 'Aloqada emas' },
+            ]
+          : undefined
+      }
+      hint={data ? (camerasOffline > 0 ? `${formatNumber(data.cameras.active)} ta ishlashi kerak, ${formatNumber(camerasOffline)} tasi aloqada emas` : `${formatNumber(data.cameras.videoFlowing)} tasi hozir tasvir uzatmoqda`) : undefined}
+      to={cameraLink ?? undefined}
+      loading={loadingTiles}
+      big={big}
+    />
+  );
+
+  const eventsTile = (
+    <KpiTile
+      className="col-span-2 sm:col-span-1"
+      label={isToday ? "Hal qilinmagan hodisalar" : 'Shu kuni qayd etilgan hodisalar'}
+      icon={isToday ? AlertOctagon : Bell}
+      tone={isToday ? eventsTone : 'neutral'}
+      value={formatNumber(isToday ? data?.events.open : data?.events.today)}
+      hint={
+        data
+          ? isToday
+            ? `Shundan ${formatNumber(data.events.highOpen)} tasi juda muhim · ${formatNumber(data.events.overdue)} tasining muddati o'tgan · bugun jami ${formatNumber(data.events.today)} ta`
+            : 'Kameralar dasturi shu kuni qayd etgan holatlar'
+          : undefined
+      }
+      to={canEvents ? (isToday ? '/hodisalar' : `/hodisalar?from=${date}&to=${date}&korinish=jurnal`) : undefined}
+      loading={loadingTiles}
+      big={big}
+    />
+  );
 
   return (
     <Page title="Institut holati" subtitle={subtitle} titleAddon={titleAddon} actions={big ? undefined : actions}>
@@ -319,96 +432,26 @@ export default function SituationPage() {
             <KpiTile
               label="Takroran kechikkan yoki kelmagan xodimlar"
               icon={Repeat}
-              tone={chronicCount > 0 ? 'warning' : 'success'}
+              // Ma'lumot kelmaganda yashil "hammasi joyida" rangi xato edi:
+              // "—" nol degani emas, "hisoblanmadi" degani.
+              tone={!chronic.data ? 'neutral' : chronicCount > 0 ? 'warning' : 'success'}
               value={chronic.data ? formatNumber(chronicCount) : '—'}
               hint={
                 chronic.data
                   ? chronicCount > 0
                     ? `So'nggi 30 kunda: ${formatNumber(chronicAbsent)} kishi 3+ kun kelmagan · ${formatNumber(chronicLate)} kishi 3+ kun kech kelgan`
                     : "So'nggi 30 kunda takror kechikkan yoki kelmagan xodim yo'q"
-                  : chronic.error ?? undefined
+                  : chronic.error
+                    ? `Hisoblab bo'lmadi: ${chronic.error}`
+                    : "So'nggi 30 kunlik ma'lumot hali hisoblanmadi"
               }
               to={canStudentsPages ? withDate('/oqituvchilar?tab=surunkali') : undefined}
               loading={chronic.loading && !chronic.data}
               big={big}
             />
-            {/* Dars jadvali kiritilmagan bo'lsa bu ikki ko'rsatkichni
-                tizim umuman o'lchay olmaydi — 0% ko'rsatish o'rniga
-                ko'rsatkich chiqmaydi. Jadval paydo bo'lsa o'zi qaytadi. */}
-            {hasLessons && (
-              <>
-              <KpiTile
-                label="Darsga o'z vaqtida kirgan o'qituvchilar"
-                icon={Users}
-                tone={toneForRate(teacherRate)}
-                value={formatPercent(teacherRate)}
-                segments={
-                  data && data.teachers.onTime + data.teachers.late + data.teachers.absent > 0
-                    ? [
-                        { value: data.teachers.onTime, tone: 'success', label: "O'z vaqtida" },
-                        { value: data.teachers.late, tone: 'warning', label: 'Kech keldi' },
-                        { value: data.teachers.absent, tone: 'danger', label: 'Kelmadi' },
-                      ]
-                    : undefined
-                }
-                hint={
-                  data
-                    ? data.teachers.scheduled > 0
-                      ? `Bugun darsi bor ${formatNumber(data.teachers.scheduled)} o'qituvchidan: ${formatNumber(data.teachers.late)} kech kirgan · ${formatNumber(data.teachers.absent)} kirmagan`
-                      : "Darsi bor o'qituvchi yo'q"
-                    : undefined
-                }
-                to={teachersLink}
-                loading={loadingTiles}
-                big={big}
-              />
-              <KpiTile
-                label={isToday ? 'Bugungi darslar' : 'Shu kungi darslar'}
-                icon={BookOpen}
-                tone="info"
-                value={formatNumber(isToday ? data?.lessons.finished : data?.lessons.total)}
-                suffix={data && isToday ? `/ ${formatNumber(data.lessons.total)}` : undefined}
-                segments={
-                  data && isToday && data.lessons.total > 0
-                    ? [
-                        { value: data.lessons.finished, tone: 'neutral', label: "O'tgan" },
-                        { value: data.lessons.ongoing, tone: 'primary', label: 'Davom etmoqda' },
-                        { value: data.lessons.upcoming, tone: 'info', label: 'Kutilmoqda' },
-                      ]
-                    : undefined
-                }
-                hint={
-                  data
-                    ? isToday
-                      ? `${formatNumber(data.lessons.finished)} o'tgan · ${formatNumber(data.lessons.ongoing)} davom etmoqda · ${formatNumber(data.lessons.upcoming)} kutilmoqda`
-                      : `${formatNumber(data.lessons.total)} ta dars o'tgan`
-                    : undefined
-                }
-                loading={loadingTiles}
-                big={big}
-              />
-              </>
-            )}
+            {lessonTiles}
             {isToday ? (
-              <KpiTile
-                label="Ishlab turgan kameralar"
-                icon={Camera}
-                tone={camerasOffline > 0 ? 'warning' : 'success'}
-                value={formatNumber(data?.cameras.online)}
-                suffix={data ? `/ ${formatNumber(data.cameras.active)}` : undefined}
-                segments={
-                  data && data.cameras.active > 0
-                    ? [
-                        { value: data.cameras.online, tone: 'success', label: 'Ishlayapti' },
-                        { value: camerasOffline, tone: 'danger', label: 'Aloqada emas' },
-                      ]
-                    : undefined
-                }
-                hint={data ? (camerasOffline > 0 ? `${formatNumber(data.cameras.active)} ta ishlashi kerak, ${formatNumber(camerasOffline)} tasi aloqada emas` : `${formatNumber(data.cameras.videoFlowing)} tasi hozir tasvir uzatmoqda`) : undefined}
-                to={cameraLink ?? undefined}
-                loading={loadingTiles}
-                big={big}
-              />
+              {camerasTile}
             ) : (
               <KpiTile
                 label="Yuz topshirgan talabalar"
@@ -424,23 +467,7 @@ export default function SituationPage() {
                 big={big}
               />
             )}
-            <KpiTile
-              className="col-span-2 sm:col-span-1"
-              label={isToday ? "Hal qilinmagan hodisalar" : 'Shu kuni qayd etilgan hodisalar'}
-              icon={isToday ? AlertOctagon : Bell}
-              tone={isToday ? eventsTone : 'neutral'}
-              value={formatNumber(isToday ? data?.events.open : data?.events.today)}
-              hint={
-                data
-                  ? isToday
-                    ? `Shundan ${formatNumber(data.events.highOpen)} tasi juda muhim · ${formatNumber(data.events.overdue)} tasining muddati o'tgan · bugun jami ${formatNumber(data.events.today)} ta`
-                    : 'Kameralar dasturi shu kuni qayd etgan holatlar'
-                  : undefined
-              }
-              to={canEvents ? (isToday ? '/hodisalar' : `/hodisalar?from=${date}&to=${date}&korinish=jurnal`) : undefined}
-              loading={loadingTiles}
-              big={big}
-            />
+            {eventsTile}
                         </>
             ) : (
               <>
@@ -501,83 +528,9 @@ export default function SituationPage() {
                 big={big}
               />
             )}
-            {/* Dars jadvali kiritilmagan bo'lsa bu ikki ko'rsatkichni
-                tizim umuman o'lchay olmaydi — 0% ko'rsatish o'rniga
-                ko'rsatkich chiqmaydi. Jadval paydo bo'lsa o'zi qaytadi. */}
-            {hasLessons && (
-              <>
-              <KpiTile
-                label="Darsga o'z vaqtida kirgan o'qituvchilar"
-                icon={Users}
-                tone={toneForRate(teacherRate)}
-                value={formatPercent(teacherRate)}
-                segments={
-                  data && data.teachers.onTime + data.teachers.late + data.teachers.absent > 0
-                    ? [
-                        { value: data.teachers.onTime, tone: 'success', label: "O'z vaqtida" },
-                        { value: data.teachers.late, tone: 'warning', label: 'Kech keldi' },
-                        { value: data.teachers.absent, tone: 'danger', label: 'Kelmadi' },
-                      ]
-                    : undefined
-                }
-                hint={
-                  data
-                    ? data.teachers.scheduled > 0
-                      ? `Bugun darsi bor ${formatNumber(data.teachers.scheduled)} o'qituvchidan: ${formatNumber(data.teachers.late)} kech kirgan · ${formatNumber(data.teachers.absent)} kirmagan`
-                      : "Darsi bor o'qituvchi yo'q"
-                    : undefined
-                }
-                to={teachersLink}
-                loading={loadingTiles}
-                big={big}
-              />
-              <KpiTile
-                label={isToday ? 'Bugungi darslar' : 'Shu kungi darslar'}
-                icon={BookOpen}
-                tone="info"
-                value={formatNumber(isToday ? data?.lessons.finished : data?.lessons.total)}
-                suffix={data && isToday ? `/ ${formatNumber(data.lessons.total)}` : undefined}
-                segments={
-                  data && isToday && data.lessons.total > 0
-                    ? [
-                        { value: data.lessons.finished, tone: 'neutral', label: "O'tgan" },
-                        { value: data.lessons.ongoing, tone: 'primary', label: 'Davom etmoqda' },
-                        { value: data.lessons.upcoming, tone: 'info', label: 'Kutilmoqda' },
-                      ]
-                    : undefined
-                }
-                hint={
-                  data
-                    ? isToday
-                      ? `${formatNumber(data.lessons.finished)} o'tgan · ${formatNumber(data.lessons.ongoing)} davom etmoqda · ${formatNumber(data.lessons.upcoming)} kutilmoqda`
-                      : `${formatNumber(data.lessons.total)} ta dars o'tgan`
-                    : undefined
-                }
-                loading={loadingTiles}
-                big={big}
-              />
-              </>
-            )}
+            {lessonTiles}
             {isToday ? (
-              <KpiTile
-                label="Ishlab turgan kameralar"
-                icon={Camera}
-                tone={camerasOffline > 0 ? 'warning' : 'success'}
-                value={formatNumber(data?.cameras.online)}
-                suffix={data ? `/ ${formatNumber(data.cameras.active)}` : undefined}
-                segments={
-                  data && data.cameras.active > 0
-                    ? [
-                        { value: data.cameras.online, tone: 'success', label: 'Ishlayapti' },
-                        { value: camerasOffline, tone: 'danger', label: 'Aloqada emas' },
-                      ]
-                    : undefined
-                }
-                hint={data ? (camerasOffline > 0 ? `${formatNumber(data.cameras.active)} ta ishlashi kerak, ${formatNumber(camerasOffline)} tasi aloqada emas` : `${formatNumber(data.cameras.videoFlowing)} tasi hozir tasvir uzatmoqda`) : undefined}
-                to={cameraLink ?? undefined}
-                loading={loadingTiles}
-                big={big}
-              />
+              {camerasTile}
             ) : (
               <KpiTile
                 label="Xodimlar keldi"
@@ -594,23 +547,7 @@ export default function SituationPage() {
                 big={big}
               />
             )}
-            <KpiTile
-              className="col-span-2 sm:col-span-1"
-              label={isToday ? "Hal qilinmagan hodisalar" : 'Shu kuni qayd etilgan hodisalar'}
-              icon={isToday ? AlertOctagon : Bell}
-              tone={isToday ? eventsTone : 'neutral'}
-              value={formatNumber(isToday ? data?.events.open : data?.events.today)}
-              hint={
-                data
-                  ? isToday
-                    ? `Shundan ${formatNumber(data.events.highOpen)} tasi juda muhim · ${formatNumber(data.events.overdue)} tasining muddati o'tgan · bugun jami ${formatNumber(data.events.today)} ta`
-                    : 'Kameralar dasturi shu kuni qayd etgan holatlar'
-                  : undefined
-              }
-              to={canEvents ? (isToday ? '/hodisalar' : `/hodisalar?from=${date}&to=${date}&korinish=jurnal`) : undefined}
-              loading={loadingTiles}
-              big={big}
-            />
+            {eventsTile}
                         </>
             )}
           </section>
@@ -656,7 +593,7 @@ export default function SituationPage() {
                 isToday={isToday}
                 big={big}
               />
-              <ArrivalsChart rows={data?.arrivalsByHour ?? null} loading={loadingTiles} currentHour={isToday && data ? hourOf(data.generatedAt) : null} big={big} />
+              <ArrivalsChart rows={data?.arrivalsByHour ?? null} loading={loadingTiles} currentHour={isToday && data ? hourOf(data.generatedAt) : null} isToday={isToday} big={big} />
             {canLessons && hasLessons && (
               <LessonsTimeline
                 lessons={lessons.data?.items ?? null}
@@ -681,6 +618,12 @@ export default function SituationPage() {
                 groupLink={canStudentsPages ? (name) => withDate(situationPaths.group(name)) : null}
                 teacherLessons={lateTeachers}
                 teacherLink={canStudentsPages ? (lesson) => (lesson.teacherId ? withDate(situationPaths.person(lesson.teacherId)) : null) : null}
+                unavailable={[
+                  groups.error && !groups.data ? 'Guruhlar' : null,
+                  isToday && canEvents && topEvents.error && !topEvents.data ? 'Hodisalar' : null,
+                  canLessons && hasLessons && lessons.error && !lessons.data ? 'Darslar' : null,
+                ].filter((x): x is string => Boolean(x))}
+                isToday={isToday}
                 big={big}
               />
               {isToday && (

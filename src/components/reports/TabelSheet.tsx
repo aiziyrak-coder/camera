@@ -4,7 +4,10 @@ import {
   TABEL_MARKS,
   TABEL_MARK_CELL,
   TABEL_MARK_CLASS,
+  fallbackMark,
+  grandTotals,
   normalizeMark,
+  rowTotals,
   weekdayLetter,
   weekdayName,
   type TabelPerson,
@@ -23,7 +26,10 @@ const TOTAL_COLUMNS: { key: keyof TabelPerson['totals']; label: string; hint: st
   { key: 'present', label: 'Keldi', hint: 'Kelgan kunlar soni' },
   { key: 'late', label: 'Kech', hint: 'Kech kelgan kunlar soni' },
   { key: 'absent', label: 'Kelmadi', hint: 'Kelmagan kunlar soni' },
-  { key: 'unknown', label: 'Aniqlanmadi', hint: "Ma'lumot yo'q bo'lgan kunlar soni" },
+  // Ustun nomi shartli belgilar ro'yxatidagi («·  Ma'lumot yo'q») va
+  // Excel'dagi nom bilan bir xil bo'lishi kerak — "Aniqlanmadi" uchinchi
+  // nom edi va imzolayotgan odam uni alohida narsa deb o'ylardi.
+  { key: 'unknown', label: "Ma'lumot yo'q", hint: "Ma'lumot yo'q bo'lgan kunlar soni" },
   { key: 'workDays', label: 'Ish kuni', hint: 'Oydagi ish kunlari soni' },
 ];
 
@@ -52,6 +58,7 @@ const OFFSET = { no: 'left-0', name: 'left-10', group: 'left-[15.5rem]' };
  */
 export default function TabelSheet({ data, groupLabel, today = todayInTashkent() }: TabelSheetProps) {
   const todayDay = today.slice(0, 7) === data.month ? Number(today.slice(8, 10)) : null;
+  const sheetTotals = grandTotals(data);
 
   return (
     <div data-tabel-scroll className="overflow-x-auto rounded-card border border-border bg-surface">
@@ -109,7 +116,11 @@ export default function TabelSheet({ data, groupLabel, today = todayInTashkent()
         </thead>
         <tbody>
           {data.people.map((person, index) => {
-            const byDay = new Map(person.cells.map((cell) => [cell.day, cell]));
+            const byDay = new Map(person.cells?.map((cell) => [cell.day, cell]) ?? []);
+            // Jami — qatorda CHIZILGAN belgilardan (tabelApi.rowTotals),
+            // server `totals`idan emas: qog'ozdagi son ko'z bilan sanab
+            // chiqilganda ham to'g'ri chiqishi shart.
+            const totals = rowTotals(person, data.days);
             // Zebra chiziq yopishgan ustunlarda ham ko'rinsin — shuning
             // uchun fon qatorga emas, HAR katakka beriladi.
             const stripe = index % 2 === 1 ? 'bg-surface-2/50' : 'bg-surface';
@@ -138,8 +149,9 @@ export default function TabelSheet({ data, groupLabel, today = todayInTashkent()
                 </td>
                 {data.days.map((day) => {
                   const cell = byDay.get(day.day);
-                  // Server katak bermagan kun ham bo'sh qolmasin: "·" va sababi.
-                  const mark = normalizeMark(cell?.mark ?? '·');
+                  // Server katak bermagan kun ham bo'sh qolmasin: ish
+                  // kunida "·", dam olish kunida "D" (fallbackMark).
+                  const mark = normalizeMark(cell?.mark ?? fallbackMark(day));
                   const title =
                     cell?.title ||
                     (person.enrolled
@@ -153,7 +165,6 @@ export default function TabelSheet({ data, groupLabel, today = todayInTashkent()
                       data-mark={mark}
                       data-rest={day.isWorkDay ? undefined : ''}
                       data-today={todayDay === day.day ? '' : undefined}
-                      tabIndex={0}
                       title={title}
                       aria-label={`${person.fullName}, ${title}`}
                       className={cn(
@@ -175,13 +186,40 @@ export default function TabelSheet({ data, groupLabel, today = todayInTashkent()
                     data-total={column.key}
                     className={cn(BODY, stripe, 'border-l border-border text-center')}
                   >
-                    {person.totals?.[column.key] ?? 0}
+                    {totals[column.key]}
                   </td>
                 ))}
               </tr>
             );
           })}
         </tbody>
+        {/* Pastdagi "Jami" satri: imzolovchi varaqning yakunini bir
+            qarashda ko'radi. Sonlar qatorlardan yig'iladi, shuning uchun
+            ustunni ko'z bilan qo'shib chiqqanda ham shu son chiqadi. */}
+        <tfoot>
+          <tr data-tabel-foot className="border-t-2 border-border font-semibold">
+            <td className={cn(BODY, STICKY_BODY, OFFSET.no, COL.no, 'bg-surface-2 text-center')} aria-hidden="true" />
+            <th
+              scope="row"
+              colSpan={2}
+              className={cn(BODY, STICKY_BODY, OFFSET.name, 'bg-surface-2 text-left')}
+            >
+              Jami
+            </th>
+            {data.days.map((day) => (
+              <td key={day.day} className={cn(BODY, 'bg-surface-2 px-0')} aria-hidden="true" />
+            ))}
+            {TOTAL_COLUMNS.map((column) => (
+              <td
+                key={column.key}
+                data-total-all={column.key}
+                className={cn(BODY, 'border-l border-border bg-surface-2 text-center')}
+              >
+                {column.key === 'workDays' ? '—' : sheetTotals[column.key]}
+              </td>
+            ))}
+          </tr>
+        </tfoot>
       </table>
     </div>
   );

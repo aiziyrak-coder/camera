@@ -20,9 +20,6 @@ import type {
 
 // ───────────────────────────────────────────── Holatlar
 
-/** Setkadagi holat tartibi (filtr chiplari va "holat bo'yicha" saralash). */
-export const STATUS_ORDER: AttendanceStatus[] = ['keldi', 'kech_keldi', 'kelmadi', 'kutilmoqda', 'malumot_yoq', 'dam_olish'];
-
 export const STATUS_META: Record<AttendanceStatus, { label: string; short: string; tone: Tone }> = {
   keldi: { label: 'Keldi', short: 'Keldi', tone: 'success' },
   kech_keldi: { label: 'Kech keldi', short: 'Kech', tone: 'warning' },
@@ -117,7 +114,10 @@ export function countSegments(counts: Counts): ProgressSegment[] {
     { value: counts.late, tone: 'warning', label: 'Kech keldi' },
     { value: counts.absent, tone: 'danger', label: 'Kelmadi' },
     { value: counts.notYet, tone: 'neutral', label: 'Hali kelmagan' },
-    { value: counts.noData + counts.dayOff, tone: 'neutral', label: "Ma'lumot yo'q" },
+    { value: counts.noData, tone: 'neutral', label: "Ma'lumot yo'q" },
+    // Dam olish kuni — o'lchanmagan emas, o'lchanishi SHART BO'LMAGAN kun.
+    // Ikkovini bitta segmentga qo'shish "ma'lumot yo'q" ni sun'iy kattalashtirardi.
+    { value: counts.dayOff, tone: 'neutral', label: 'Dam olish' },
   ];
 }
 
@@ -207,19 +207,6 @@ export function filterStudents<T extends Pick<GroupStudent, 'fullName' | 'status
   );
 }
 
-export function tallyStatuses(students: readonly Pick<GroupStudent, 'status'>[]): Record<AttendanceStatus, number> {
-  const tally: Record<AttendanceStatus, number> = {
-    keldi: 0,
-    kech_keldi: 0,
-    kelmadi: 0,
-    kutilmoqda: 0,
-    malumot_yoq: 0,
-    dam_olish: 0,
-  };
-  for (const s of students) tally[s.status] = (tally[s.status] ?? 0) + 1;
-  return tally;
-}
-
 /** "Holat bo'yicha" — kelmaganlar birinchi (devor ekranida kimga e'tibor
  *  kerakligi darhol ko'rinadi); "Kelish vaqti" — erta kelganlar birinchi. */
 const ATTENTION_ORDER: Record<AttendanceStatus, number> = {
@@ -241,9 +228,14 @@ export function sortStudents<T extends Pick<GroupStudent, 'fullName' | 'status' 
     return [...students].sort((a, b) => ATTENTION_ORDER[a.status] - ATTENTION_ORDER[b.status] || byName(a, b));
   }
   return [...students].sort((a, b) => {
-    if (a.checkIn && b.checkIn) return a.checkIn.localeCompare(b.checkIn) || byName(a, b);
-    if (a.checkIn) return -1;
-    if (b.checkIn) return 1;
+    // Server "9:05" ko'rinishida ham qaytarishi mumkin — satrlarni solishtirsak
+    // "9:05" > "10:05" chiqib, kech kelgan talaba ro'yxat boshiga tushardi.
+    // Shuning uchun daqiqaga o'girib solishtiriladi.
+    const am = clockMinutes(toClock(a.checkIn));
+    const bm = clockMinutes(toClock(b.checkIn));
+    if (am !== null && bm !== null) return am - bm || byName(a, b);
+    if (am !== null) return -1;
+    if (bm !== null) return 1;
     return ATTENTION_ORDER[a.status] - ATTENTION_ORDER[b.status] || byName(a, b);
   });
 }
@@ -333,7 +325,7 @@ export function clockMinutes(clock: string | null | undefined): number | null {
   return h * 60 + m;
 }
 
-/** 14 kunlik trend oxiridagi sana bo'yicha o'rtacha (null kunlarsiz). */
+/** Trend nuqtalarining o'rtacha foizi; ma'lumotsiz (null) kunlar hisobga olinmaydi. */
 export function averageRate(points: readonly { rate: number | null }[]): number | null {
   const values = points.map((p) => p.rate).filter((r): r is number => r !== null);
   if (!values.length) return null;

@@ -75,6 +75,24 @@ const RETRY_BASE_MS = 6_000;
 const RETRY_MAX_MS = 20_000;
 const SHOW_ERROR_AFTER_ATTEMPTS = 10;
 
+/** Qayta urinish kutish vaqti — TASODIFIY qo'shimcha bilan.
+ *
+ * Nega tasodif kerak: MediaMTX shardi qayta ishga tushganda (yoki tarmoq
+ * bir zumga uzilganda) devordagi 16 ta katakning HAMMASI bir vaqtda xato
+ * oladi. Qat'iy backoff bilan ular keyin ham bir vaqtda uriniladi: +8s
+ * da o'n oltitasi birdan, +10s da yana o'n oltitasi... Situatsion markaz
+ * televizori bitta emas, va har biri shu zarbani takrorlaydi — server
+ * ko'tarilishi bilan ulanishlar "bo'roni" keladi va shard qayta
+ * bo'g'iladi. Shu sababli urinishlar ±20% ga yoyiladi.
+ *
+ * Xuddi shu muammo WebSocket ulanishida allaqachon shunday hal qilingan
+ * (src/lib/realtime.ts — reconnectDelay), HLS pleyerida esa qolib
+ * ketgan edi. */
+export function streamRetryDelay(attempt: number, random: () => number = Math.random): number {
+  const base = Math.min(RETRY_BASE_MS + attempt * 2000, RETRY_MAX_MS);
+  return Math.round(base * (0.8 + random() * 0.4));
+}
+
 // Jonli chekkadan orqada qolishni kuzatish.
 //
 // Nega kerak: bu monitoring devori — ekrandagi tasvir HOZIRGI holatni
@@ -227,7 +245,7 @@ export default function LiveVideoPlayer({
       setLoading(true);
       setRetrying(true);
       setError(attemptRef.current >= SHOW_ERROR_AFTER_ATTEMPTS);
-      const backoff = Math.min(RETRY_BASE_MS + attemptRef.current * 2000, RETRY_MAX_MS);
+      const backoff = streamRetryDelay(attemptRef.current);
       retryTimer = setTimeout(() => {
         if (!cancelled) void start();
       }, backoff);

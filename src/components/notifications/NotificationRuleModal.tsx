@@ -16,6 +16,7 @@ import {
   type NotificationKind,
   type NotificationRule,
   type NotificationRuleInput,
+  type NotificationStatus,
 } from '../../lib/notificationsApi';
 import type { EventSeverity } from '../../types';
 
@@ -68,11 +69,14 @@ const legendClass = 'mb-2 text-[13px] font-medium text-fg';
 export default function NotificationRuleModal({
   open,
   rule,
+  status = null,
   onClose,
   onSaved,
 }: {
   open: boolean;
   rule: NotificationRule | null;
+  /** Kanal holati — tanlangan kanal serverda sozlanmagan bo'lsa ogohlantirish uchun. */
+  status?: NotificationStatus | null;
   onClose: () => void;
   onSaved: (rule: NotificationRule) => void;
 }) {
@@ -86,15 +90,21 @@ export default function NotificationRuleModal({
   // saqlashda JIMGINA yo'qolardi (noto'g'ri raqam yozilib, Enter bosilmasa
   // qoida usiz saqlanardi) — endi saqlash to'xtatiladi.
   const [recipientDraft, setRecipientDraft] = useState('');
+  // Kanal almashtirilganda mos kelmaydigan qabul qiluvchilar olib tashlanadi.
+  // Ilgari bu JIMGINA bo'lardi: SMS qoidasiga o'tib qaytgan odam Telegram
+  // chat ID larini yo'qotib, sababini bilmay qolardi.
+  const [droppedRecipients, setDroppedRecipients] = useState<string[]>([]);
 
   useEffect(() => {
     if (open) {
       setForm(toForm(rule));
       setErrors({});
       setRecipientDraft('');
+      setDroppedRecipients([]);
     }
   }, [open, rule]);
 
+  const channelUnconfigured = status ? (form.channel === 'telegram' ? !status.telegramConfigured : !status.smsConfigured) : false;
   const sortedModules = useMemo(() => [...modules].sort((a, b) => a.code - b.code), [modules]);
   const eventKindsSelected = form.kinds.includes('event') || form.kinds.includes('event_overdue');
   const buildingFilterApplies = eventKindsSelected || form.kinds.some((k) => k === 'camera_offline' || k === 'camera_online');
@@ -103,17 +113,28 @@ export default function NotificationRuleModal({
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  /** Xato faqat keyingi "Saqlash"da yangilanardi — odam kamchilikni
+   *  tuzatgandan keyin ham qizil yozuv turaverardi. Endi darhol ketadi. */
+  function clearError(key: keyof Errors) {
+    setErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev));
+  }
+
   function toggle<T>(list: T[], item: T): T[] {
     return list.includes(item) ? list.filter((x) => x !== item) : [...list, item];
   }
 
   function changeChannel(channel: NotificationChannel) {
-    // Boshqa kanal qoidasiga mos kelmaydigan qabul qiluvchilar olib tashlanadi.
-    setForm((f) => ({
-      ...f,
-      channel,
-      recipients: f.recipients.filter((r) => validateRecipient(channel, r)[1] === null),
-    }));
+    // Boshqa kanal qoidasiga mos kelmaydigan qabul qiluvchilar olib tashlanadi
+    // — va nimasi olib tashlangani aytiladi.
+    //
+    // Hisob-kitob `setForm` YANGILOVCHISIDAN TASHQARIDA: yangilovchi sof
+    // bo'lishi shart, ichida boshqa setState chaqirilsa StrictMode ikki
+    // marta ishlatib, `droppedRecipients` ni ikki xil natija bilan yozardi.
+    const kept = form.recipients.filter((r) => validateRecipient(channel, r)[1] === null);
+    const dropped = form.recipients.filter((r) => !kept.includes(r));
+    setDroppedRecipients(dropped);
+    setForm((f) => ({ ...f, channel, recipients: kept }));
+    if (kept.length > 0) setErrors((prev) => ({ ...prev, recipients: undefined }));
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -174,7 +195,15 @@ export default function NotificationRuleModal({
       <form id="notification-rule-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-5">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
           <Field label="Qoida nomi" required error={errors.name}>
-            <Input placeholder="Masalan: Navbatchi operatorlar" value={form.name} onChange={(e) => set('name', e.target.value)} maxLength={120} />
+            <Input
+              placeholder="Masalan: Navbatchi operatorlar"
+              value={form.name}
+              onChange={(e) => {
+                set('name', e.target.value);
+                clearError('name');
+              }}
+              maxLength={120}
+            />
           </Field>
           <Checkbox
             label="Yoqilgan"
@@ -189,11 +218,34 @@ export default function NotificationRuleModal({
           <ChoiceCards name="notification-channel" value={form.channel} onChange={changeChannel} options={CHANNEL_OPTIONS} />
         </fieldset>
 
+        {/* Sahifadagi ogohlantirish faqat IKKALA kanal ham sozlanmaganda
+            chiqardi. Telegram sozlangan-u SMS yo'q bo'lsa, odam SMS qoidasini
+            yaratib qo'yib, nega xabar kelmasligini bilmay qolardi. */}
+        {channelUnconfigured && (
+          <Notice tone="warning">
+            {`«${form.channel === 'sms' ? 'SMS' : 'Telegram'}» kanali serverda sozlanmagan — qoida saqlanadi, lekin xabar yuborilmaydi (jurnalga sababi yoziladi).`}
+          </Notice>
+        )}
+
+        {droppedRecipients.length > 0 && (
+          <Notice tone="warning">
+            {`Kanal almashtirilgani uchun ${droppedRecipients.length} ta qabul qiluvchi olib tashlandi: `}
+            <span className="font-mono">{droppedRecipients.join(', ')}</span>
+            {` — ular ${form.channel === 'sms' ? 'SMS' : 'Telegram'} uchun yaroqsiz.`}
+          </Notice>
+        )}
+
         <RecipientChipsInput
           channel={form.channel}
           value={form.recipients}
-          onChange={(next) => set('recipients', next)}
-          onDraftChange={setRecipientDraft}
+          onChange={(next) => {
+            set('recipients', next);
+            if (next.length) clearError('recipients');
+          }}
+          onDraftChange={(draft) => {
+            setRecipientDraft(draft);
+            if (!draft.trim()) clearError('recipients');
+          }}
           error={errors.recipients}
         />
 
@@ -211,7 +263,11 @@ export default function NotificationRuleModal({
                 label={kind.label}
                 description={kind.hint}
                 checked={form.kinds.includes(kind.value)}
-                onChange={() => set('kinds', toggle(form.kinds, kind.value))}
+                onChange={() => {
+                  const next = toggle(form.kinds, kind.value);
+                  set('kinds', next);
+                  if (next.length) clearError('kinds');
+                }}
                 className={cn(
                   'rounded-control border px-3 py-2.5 transition-colors',
                   form.kinds.includes(kind.value) ? 'border-primary/40 bg-primary-soft/50' : 'border-border hover:border-border-strong',

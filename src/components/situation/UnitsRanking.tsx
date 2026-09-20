@@ -24,7 +24,12 @@ export function UnitsRanking({ units, loading, error, onRetry, linkFor, allLink,
     <Card className="flex flex-col">
       <CardHeader
         title="Qaysi bo'linmada xodimlar yaxshi keladi"
-        subtitle={`${formatNumber(ranked)} ta bo'linma ${isToday ? 'bugun' : 'shu kuni'} ishga kelgan xodimlar ulushi bo'yicha saralandi`}
+        subtitle={
+          // Yuklanayotganda "0 ta bo'linma saralandi" deb yozish xato edi.
+          loading
+            ? "Bo'linmalar ro'yxati yuklanmoqda…"
+            : `${formatNumber(ranked)} ta bo'linma ${isToday ? 'bugun' : 'shu kuni'} ishga kelgan xodimlar ulushi bo'yicha saralandi (kamida 3 kishi kutilgan bo'linmalar)`
+        }
         icon={Trophy}
         actions={
           allLink ? (
@@ -56,6 +61,13 @@ export function UnitsRanking({ units, loading, error, onRetry, linkFor, allLink,
         />
       ) : (
         <div className="grid gap-x-6 gap-y-5 md:grid-cols-2">
+          {/* Eski ma'lumot ekranda qolsa ham, yangilanish uzilganini
+              aytmaslik — raqamlarni haqiqiy holat deb ko'rsatish bo'lardi. */}
+          {error && (
+            <p className="md:col-span-2 -mt-1 text-xs text-warning">
+              Oxirgi yangilanish muvaffaqiyatsiz: {error}. Quyidagi raqamlar eskirgan bo'lishi mumkin.
+            </p>
+          )}
           <RankList title="Eng yaxshi bo'linmalar" icon={Trophy} tone="success" rows={top} startRank={1} linkFor={linkFor} big={big} />
           {bottom.length > 0 && (
             <RankList title="Eng past bo'linmalar" icon={TrendingDown} tone="danger" rows={bottom} startRank={ranked} descending linkFor={linkFor} big={big} />

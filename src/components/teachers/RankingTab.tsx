@@ -97,6 +97,10 @@ export function RankingTab() {
     { group: 'people' },
   );
 
+  // Server LIMIT ta yozuv qaytaradi: aynan shuncha kelgan bo'lsa ro'yxat
+  // manbadayoq kesilgan. Ilgari sahifa faqat "birinchi 100 kishi" derdi va
+  // qolgan 400+ kishini qidiruv bilan ham topib bo'lmasligi aytilmasdi.
+  const serverCapped = (people.data?.length ?? 0) >= LIMIT;
   const { items, truncated } = useMemo(() => {
     let rows = people.data ?? [];
     if (mode === 'late') rows = rows.filter((p) => p.lateDays > 0);
@@ -139,7 +143,12 @@ export function RankingTab() {
         ) : (
           <RankingList items={items} loading={people.loading} ariaLabel={cfg.label} />
         )}
-        {truncated && <p className="mt-3 text-center text-xs text-muted">Birinchi {SHOWN} kishi ko'rsatilmoqda — ro'yxatni qisqartirish uchun qidiruvdan foydalaning</p>}
+        {(truncated || serverCapped) && (
+          <p className="mt-3 text-center text-xs text-muted">
+            {truncated && `Birinchi ${SHOWN} kishi ko'rsatilmoqda — ro'yxatni qisqartirish uchun qidiruvdan foydalaning.`}
+            {serverCapped && ` Bu reytingga «${cfg.label}» bo'yicha eng yuqori ${LIMIT} kishi olinadi — qidiruv ham shu ${LIMIT} kishi ichida ishlaydi.`}
+          </p>
+        )}
       </Card>
     </>
   );

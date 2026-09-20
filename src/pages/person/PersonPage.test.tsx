@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { CalendarDay, PersonProfile } from '../../lib/situationApi';
@@ -42,9 +42,10 @@ const summary: AttendanceSummary = {
   workingWeekdays: [1, 2, 3, 4, 5, 6],
 };
 
+const getPerson = vi.fn(async () => profile);
 vi.mock('../../lib/situationApi', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../lib/situationApi')>();
-  return { ...original, getPerson: vi.fn(async () => profile) };
+  return { ...original, getPerson: (...args: unknown[]) => getPerson(...(args as [])) };
 });
 vi.mock('../../lib/apiClient', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../lib/apiClient')>();
@@ -95,5 +96,29 @@ describe('Shaxs sahifasi — davomat ko\'rsatkichlari', () => {
     // present (3) kech kelganni ham o'z ichiga oladi — plitkada u ayriladi.
     expect(screen.getByText('2 kun')).toBeInTheDocument();
     expect(screen.getAllByText('1 kun')).toHaveLength(2);
+  });
+});
+
+beforeEach(() => {
+  getPerson.mockClear();
+});
+
+describe('Shaxs sahifasi — URL dagi davr', () => {
+  // ?gacha= bugundan keyin bo'lsa u bugunga qisqartiriladi. BUTUN oraliq
+  // kelajakda bo'lganda qisqartirishdan keyin from > to bo'lib qolar va
+  // serverga teskari oraliq ketardi.
+  it('never sends an inverted range when the whole period is in the future', async () => {
+    renderPage('/shaxs/p1?dan=2026-10-01&gacha=2026-10-31');
+    await waitFor(() => expect(getPerson).toHaveBeenCalled());
+    const [, range] = getPerson.mock.calls[0] as unknown as [string, { from: string; to: string }];
+    expect(range.from <= range.to).toBe(true);
+    expect(range.to <= TODAY).toBe(true);
+  });
+
+  it('keeps a valid range from the URL', async () => {
+    renderPage('/shaxs/p1?dan=2026-09-01&gacha=2026-09-10');
+    await waitFor(() => expect(getPerson).toHaveBeenCalled());
+    const [, range] = getPerson.mock.calls[0] as unknown as [string, { from: string; to: string }];
+    expect(range).toMatchObject({ from: '2026-09-01', to: '2026-09-10' });
   });
 });

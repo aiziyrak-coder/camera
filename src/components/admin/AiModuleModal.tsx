@@ -48,7 +48,16 @@ export default function AiModuleModal({
     }
   }, [open, module]);
 
+  // O'zgarish bor-yo'qligi: (1) tegilmagan formani saqlash serverda bekorga
+  // audit yozuvi qoldiradi ("AI modulni sozladi"), (2) o'zgarish bo'lsa fonni
+  // tasodifan bosish kiritilganni yo'qotmasligi kerak.
+  const initial = module ? toForm(module) : null;
+  const dirty =
+    !!form && !!initial && (form.threshold !== initial.threshold || form.sensitivity !== initial.sensitivity || form.active !== initial.active);
+
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
+    // Qiymat o'zgardi — eski xato xabari endi shu qiymatga tegishli emas.
+    if (error) setError(null);
     setForm((f) => (f ? { ...f, [key]: value } : f));
   }
 
@@ -80,13 +89,13 @@ export default function AiModuleModal({
       title="Modulni sozlash"
       description={module ? `№${module.code} — ${module.name}` : undefined}
       size="md"
-      dismissible={!saving}
+      dismissible={!saving && !dirty}
       footer={
         <>
           <Button onClick={onClose} disabled={saving}>
-            Bekor qilish
+            {dirty ? 'Bekor qilish' : 'Yopish'}
           </Button>
-          <Button type="submit" form="ai-module-form" variant="primary" loading={saving}>
+          <Button type="submit" form="ai-module-form" variant="primary" loading={saving} disabled={!dirty}>
             Saqlash
           </Button>
         </>

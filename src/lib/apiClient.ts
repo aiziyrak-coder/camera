@@ -21,6 +21,25 @@ interface RequestOptions {
   timeoutMs?: number;
 }
 
+/** FastAPI/pydantic 422 javoblari inglizcha ("String should have at least 8
+ *  characters") — ular o'zbekcha interfeysga to'g'ridan-to'g'ri chiqib
+ *  ketardi. Bu yerda maydon nomi bilan tushunarli xabar yasaymiz; noma'lum
+ *  holatda esa umumiy o'zbekcha matn beriladi. */
+function validationMessage(items: { msg?: string; loc?: unknown[] }[], status: number): string {
+  const fields = items
+    .map((item) => {
+      const loc = Array.isArray(item.loc) ? item.loc : [];
+      const name = [...loc].reverse().find((part) => typeof part === 'string' && part !== 'body');
+      return typeof name === 'string' ? name : null;
+    })
+    .filter((name): name is string => Boolean(name));
+  const unique = [...new Set(fields)];
+  if (unique.length > 0) {
+    return `Kiritilgan ma'lumot noto'g'ri: ${unique.join(', ')}. Maydonlarni tekshirib qayta urinib ko'ring`;
+  }
+  return `Kiritilgan ma'lumot noto'g'ri (${status}). Maydonlarni tekshirib qayta urinib ko'ring`;
+}
+
 export interface CallOptions {
   signal?: AbortSignal;
 }
@@ -138,7 +157,10 @@ async function request<T>(
     try {
       const data = await res.json();
       if (typeof data.detail === 'string') detail = data.detail;
-      else if (Array.isArray(data.detail)) detail = data.detail.map((d: { msg?: string }) => d.msg).join(', ');
+      else if (Array.isArray(data.detail)) detail = validationMessage(data.detail, res.status);
+      // slowapi 429'ni `{"error": ...}` ko'rinishida qaytaradi — `detail` yo'q,
+      // shuning uchun foydalanuvchi quruq "(429)" ko'rardi.
+      else if (res.status === 429) detail = "Juda ko'p urinish. Bir daqiqadan so'ng qayta urinib ko'ring";
     } catch {
       /* javob JSON emas — standart xabar bilan davom etamiz */
     }

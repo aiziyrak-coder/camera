@@ -45,6 +45,9 @@ export function QuickSearch({
   const [searchedFor, setSearchedFor] = useState('');
   /** Ikkala so'rov ham yiqildi — "topilmadi" emas, xato ko'rsatiladi. */
   const [failed, setFailed] = useState(false);
+  /** Faqat bittasi yiqildi: ro'yxat chiqadi, lekin u to'liq emasligi aytiladi
+   *  (ilgari xato jimgina yutilib, qisqa ro'yxat to'liqdek ko'rinardi). */
+  const [partial, setPartial] = useState<'group' | 'person' | null>(null);
   const text = useDebouncedValue(query.trim(), 250);
 
   useEffect(() => {
@@ -54,6 +57,7 @@ export function QuickSearch({
       setSearchedFor('');
       setSearching(false);
       setFailed(false);
+      setPartial(null);
       return;
     }
     const controller = new AbortController();
@@ -71,6 +75,9 @@ export function QuickSearch({
       setGroups(g.status === 'fulfilled' ? g.value.slice(0, GROUP_LIMIT) : []);
       setPeople(p.status === 'fulfilled' ? p.value.items.slice(0, PEOPLE_LIMIT) : []);
       setFailed(g.status === 'rejected' && p.status === 'rejected');
+      setPartial(
+        g.status === 'rejected' && p.status === 'fulfilled' ? 'group' : p.status === 'rejected' && g.status === 'fulfilled' ? 'person' : null,
+      );
       setHighlight(0);
       setSearchedFor(text);
       setSearching(false);
@@ -146,7 +153,7 @@ export function QuickSearch({
         placeholder="Guruh yoki talabani qidirish…"
         aria-label="Guruh yoki talabani qidirish"
         role="combobox"
-        aria-expanded={showList}
+        aria-expanded={showList || showEmpty || showError}
         aria-controls={listId}
         aria-autocomplete="list"
         aria-activedescendant={showList ? `${listId}-${highlight}` : undefined}
@@ -177,6 +184,11 @@ export function QuickSearch({
           aria-label="Topilganlar"
           className="absolute z-30 mt-1.5 max-h-[22rem] w-full animate-pop-in overflow-y-auto rounded-card border border-border bg-surface p-1 shadow-pop"
         >
+          {partial && (
+            <li role="presentation" className="px-2.5 py-1.5 text-[11px] text-warning">
+              {partial === 'group' ? "Guruhlarni qidirib bo'lmadi — faqat talabalar ko'rsatilmoqda" : "Talabalarni qidirib bo'lmadi — faqat guruhlar ko'rsatilmoqda"}
+            </li>
+          )}
           {options.map((option, index) => {
             const active = index === highlight;
             const firstPerson = option.kind === 'person' && (index === 0 || options[index - 1].kind === 'group');

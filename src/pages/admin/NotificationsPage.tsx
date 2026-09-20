@@ -258,7 +258,7 @@ export default function NotificationsPage() {
 
       {tab === 'jurnal' && <NotificationLogTable refreshKey={logRefresh} filters={logFilters} />}
 
-      <NotificationRuleModal open={modalOpen} rule={editing} onClose={() => setModalOpen(false)} onSaved={handleSaved} />
+      <NotificationRuleModal open={modalOpen} rule={editing} status={status} onClose={() => setModalOpen(false)} onSaved={handleSaved} />
       <TestMessageModal open={testOpen} status={status} onClose={() => setTestOpen(false)} onSent={() => setLogRefresh((n) => n + 1)} />
       <ConfirmDialog
         open={!!deleting}

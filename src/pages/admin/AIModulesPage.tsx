@@ -83,7 +83,12 @@ export default function AIModulesPage() {
   const [toggling, setToggling] = useState<string | null>(null);
 
   const loadModules = useCallback(() => {
-    if (!token) return;
+    // Token yo'q bo'lsa ham yuklanish holatidan chiqamiz — aks holda sahifa
+    // abadiy skelet ko'rsatib turardi (loading hech qachon false bo'lmasdi).
+    if (!token) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     api
       .get<AIModule[]>('/api/ai-modules', token)
@@ -96,7 +101,11 @@ export default function AIModulesPage() {
   }, [token]);
 
   const loadSuppressions = useCallback(() => {
-    if (!token) return;
+    // Token yo'q — jadval abadiy "yuklanmoqda" bo'lib qolmasin.
+    if (!token) {
+      setSuppressions([]);
+      return;
+    }
     setSuppressions(null);
     setSuppressionsError(null);
     api
@@ -158,19 +167,22 @@ export default function AIModulesPage() {
   async function applyModeChange() {
     if (!modeChange || !token) return;
     const { module, mode } = modeChange;
-    try {
-      const saved = await api.patch<AIModule>(
-        `/api/ai-modules/${module.id}`,
-        { threshold: module.threshold, sensitivity: module.sensitivity, active: module.active, mode },
-        token,
-      );
-      handleSave(saved);
-      toast.success(mode === 'ishchi' ? `${module.name} — ishchi rejimga o'tkazildi` : `${module.name} — sinov rejimiga o'tkazildi`);
-    } catch (err) {
-      toast.error(errorText(err));
-    } finally {
-      setModeChange(null);
-    }
+    // Xatoni USHLAMAYMIZ: ConfirmDialog uni o'z ichida ko'rsatadi va dialog
+    // ochiq qoladi. Ilgari xato toast'ga chiqib, dialog baribir yopilardi —
+    // server sababini (masalan "kamida 30 ta baholangan signal kerak")
+    // foydalanuvchi ko'rmay qolardi.
+    const saved = await api.patch<AIModule>(
+      `/api/ai-modules/${module.id}`,
+      { threshold: module.threshold, sensitivity: module.sensitivity, active: module.active, mode },
+      token,
+    );
+    handleSave(saved);
+    setModeChange(null);
+    toast.success(mode === 'ishchi' ? `${module.name} — ishchi rejimga o'tkazildi` : `${module.name} — sinov rejimiga o'tkazildi`);
+    // Rejim o'zgarishi serverda boshqa sonlarni ham qayta hisoblaydi (sinovga
+    // o'tkazilganda ko'rilmagan signallar namunalarga ko'chiriladi) — bitta
+    // modul javobi bu sonlarni yangilamaydi, shuning uchun ro'yxat qayta yuklanadi.
+    loadModules();
   }
 
   async function restore(item: ModuleSuppression) {
@@ -301,12 +313,20 @@ export default function AIModulesPage() {
           to={trialPendingTotal > 0 ? '/hodisalar?korinish=sinov' : undefined}
           loading={firstLoad}
         />
+        {/* Xato bo'lganda "0" ko'rsatish yolg'on bo'lardi ("to'xtatilgan juftlik
+            yo'q" deb tushuniladi) — ro'yxat yuklanmagani aytiladi. */}
         <StatTile
           label="To'xtatilgan juftliklar"
-          value={suppressions ? formatNumber(suppressions.length) : '—'}
-          hint={needsTuning > 0 ? `${needsTuning} ta modulni sozlash kerak` : 'Kamera × modul'}
+          value={suppressionsError || !suppressions ? '—' : formatNumber(suppressions.length)}
+          hint={
+            suppressionsError
+              ? "Ro'yxatni yuklab bo'lmadi"
+              : needsTuning > 0
+                ? `${needsTuning} ta modulni sozlash kerak`
+                : 'Kamera × modul'
+          }
           icon={ShieldOff}
-          tone={suppressions?.length ? 'danger' : 'neutral'}
+          tone={suppressionsError ? 'neutral' : suppressions?.length ? 'danger' : 'neutral'}
           loading={suppressions === null && !suppressionsError}
         />
       </div>
@@ -387,7 +407,17 @@ export default function AIModulesPage() {
         </section>
       )}
 
-      <AiModuleModal open={!!editing} onClose={() => setEditing(null)} module={editing} onSave={handleSave} />
+      {/* Sozlash modali jimgina yopilardi — boshqa amallar (yoqish/rejim) kabi
+          bu yerda ham saqlangani tasdiqlanadi. */}
+      <AiModuleModal
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        module={editing}
+        onSave={(saved) => {
+          handleSave(saved);
+          toast.success(`${saved.name} — sozlamalar saqlandi`);
+        }}
+      />
       <ModuleCamerasModal
         open={!!assigningCameras}
         module={assigningCameras}
@@ -501,10 +531,20 @@ function ModuleCard({
               {m.measuredPrecision != null ? `${m.measuredPrecision}%` : <span className="text-xs font-medium text-muted">O&apos;lchanmagan</span>}
             </dd>
           </div>
-          <div className="px-2 py-2" title="Operator tasdiqlagan / baholangan signallar, oxirgi 90 kun">
+          {/* Sinovda ko'rsatkich "baholangan / ishchi rejim uchun kerak" bo'ladi —
+              izoh ham shunga mos kelishi kerak edi (ilgari ikkala holatda ham
+              "tasdiqlangan / baholangan" deyilardi, bu esa noto'g'ri). */}
+          <div
+            className="px-2 py-2"
+            title={
+              m.mode === 'sinov'
+                ? `Baholangan sinov signallari — ishchi rejim uchun kamida ${PROMOTION_MIN_REVIEWS} ta kerak (oxirgi 90 kun)`
+                : 'Operator baholagan signallar (tasdiqlangan + rad etilgan), oxirgi 90 kun'
+            }
+          >
             <dt className="text-[11px] font-medium text-muted">Baholangan</dt>
             <dd className="mt-0.5 text-sm font-semibold tabular-nums text-fg">
-              {m.mode === 'sinov' ? `${reviewed} / ${PROMOTION_MIN_REVIEWS}` : formatNumber(reviewed)}
+              {m.mode === 'sinov' ? `${formatNumber(reviewed)} / ${PROMOTION_MIN_REVIEWS}` : formatNumber(reviewed)}
             </dd>
           </div>
           <div className="px-2 py-2" title="Faol kameralarda bu modul yoqilgan">

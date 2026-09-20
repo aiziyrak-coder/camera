@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { BarChart3, BookOpen, CalendarCheck, Clock, LayoutGrid, Rows3, Timer, UserCheck, Users } from 'lucide-react';
 import {
   Avatar,
@@ -8,6 +8,7 @@ import {
   ButtonLink,
   DataTable,
   DateRangePicker,
+  detectPreset,
   EmptyState,
   ErrorState,
   KeyValue,
@@ -24,6 +25,7 @@ import {
   Toolbar,
   formatPercent,
   formatUzRange,
+  isIsoDate,
   rangeForPreset,
   toneForRate,
   useShell,
@@ -55,19 +57,51 @@ const SORT_OPTIONS: { value: TeacherSort; label: string }[] = [
 ];
 const REFRESH_MS = 60_000;
 
+/** Darsga o'z vaqtida kirish davri URL'da (`?dan=&gacha=`): ilgari u faqat komponent
+ *  ichidagi `useState` edi — sahifani yangilash yoki havolani ulashish
+ *  tanlangan davrni yo'qotardi va qabul qiluvchi boshqa raqamlarni ko'rardi.
+ *  URL'da qiymat bo'lmasa — ko'rilayotgan sanagacha 30 kun. */
+function useKafedraPeriod(date: string): [DateRangeValue, (value: DateRangeValue) => void] {
+  const [params, setParams] = useSearchParams();
+  const from = params.get('dan');
+  const to = params.get('gacha');
+  const custom = params.get('davr') === 'oraliq';
+  const value = useMemo<DateRangeValue>(() => {
+    if (isIsoDate(from) && isIsoDate(to) && from <= to) {
+      return { from, to, preset: custom ? 'custom' : detectPreset({ from, to }, PERIOD_PRESETS, date) };
+    }
+    return rangeForPreset('last30', date);
+  }, [from, to, custom, date]);
+
+  const setValue = useCallback(
+    (next: DateRangeValue) => {
+      setParams(
+        (prev) => {
+          const p = new URLSearchParams(prev);
+          p.set('dan', next.from);
+          p.set('gacha', next.to);
+          if (next.preset === 'custom') p.set('davr', 'oraliq');
+          else p.delete('davr');
+          return p;
+        },
+        { replace: true },
+      );
+    },
+    [setParams],
+  );
+  return [value, setValue];
+}
+
 export default function KafedraPage() {
   const { departmentId = '' } = useParams();
   const { date, isToday, withDate } = useViewDate();
   const { presentation } = useShell();
 
-  // Punktuallik davri: standart — ko'rilayotgan sanagacha 30 kun.
-  const [period, setPeriod] = useState<DateRangeValue>(() => rangeForPreset('last30', date));
+  // Darsga o'z vaqtida kirish davri: standart — ko'rilayotgan sanagacha 30 kun.
+  const [period, setPeriod] = useKafedraPeriod(date);
   const [view, setView] = usePersistedState<View>('kafedra.view', 'grid');
   const [sort, setSort] = usePersistedState<TeacherSort>('kafedra.sort', 'lateness');
   const [search, setSearch] = useState('');
-  useEffect(() => {
-    setPeriod((p) => (p.preset === 'custom' ? p : rangeForPreset(p.preset as FixedPreset, date)));
-  }, [date]);
   // Boshqa bo'linmaga o'tilganda eski qidiruv so'zi yangi ro'yxatni
   // "Hech kim topilmadi" holatida qoldirmasin.
   useEffect(() => {
@@ -97,13 +131,23 @@ export default function KafedraPage() {
 
   // Dars jadvali yo'q bo'lsa dars asosidagi tartiblar ro'yxatdan chiqadi
   // (saqlangan tanlov ham "kechikish"ga qaytadi — Select bo'sh qolmasin).
+  // `data` kelmaguncha "dars jadvali yo'q" deb hisoblamaymiz: aks holda
+  // yuklanish paytida "Darsga kam kirganlar" tartibi ro'yxatdan tushib,
+  // Select o'zi "kechikish"ga sakrab, keyin qaytib kelardi.
   const periodLessons = data?.period.lessons ?? 0;
-  const hasPeriodLessonsForSort = periodLessons > 0;
+  const hasPeriodLessonsForSort = data ? periodLessons > 0 : LESSON_TEACHER_SORTS.includes(sort);
   const sortOptions = hasPeriodLessonsForSort ? SORT_OPTIONS : SORT_OPTIONS.filter((o) => !LESSON_TEACHER_SORTS.includes(o.value));
   const effectiveSort = resolveTeacherSort(sort, hasPeriodLessonsForSort);
 
+  // Tab hisoblagichi qidiruvdan keyin jadvaldagi qatorlar soniga teng
+  // bo'lsin: ilgari u doim bo'linmadagi JAMI xodimni ko'rsatib, ro'yxatda
+  // 2 kishi turganda tabda "48" yozilardi.
+  const visibleTeachers = useMemo(() => {
+    const list = data?.teachers ?? [];
+    return search.trim() ? list.filter((t) => matchesName(t.fullName, search)).length : list.length;
+  }, [data?.teachers, search]);
   const tabs: TabItem<TabId>[] = [
-    { id: 'oqituvchilar', label: "O'qituvchilar", icon: Users, count: data?.teachers.length ?? null },
+    { id: 'oqituvchilar', label: "O'qituvchilar", icon: Users, count: data ? visibleTeachers : null },
     { id: 'tahlil', label: 'Tahlil', icon: BarChart3 },
     // Tab ro'yxatda bo'lmasa `?tab=darslar` standart tabga tushadi (resolveTab).
     ...(scheduledLessons > 0
@@ -130,7 +174,7 @@ export default function KafedraPage() {
       subtitle={
         data
           ? [
-              "Bo'linma xodimlari bugun ishga kelganmi va darsga o'z vaqtida kirganmi",
+              `Bo'linma xodimlari ${data.isToday ? 'bugun' : 'shu kuni'} ishga kelganmi va darsga o'z vaqtida kirganmi`,
               data.building,
               `${data.today.total} xodim`,
               data.unassigned ? "Bu ro'yxatda reestrda bo'linmasi ko'rsatilmagan xodimlar turibdi" : null,
@@ -179,6 +223,11 @@ export default function KafedraPage() {
         ) : undefined
       }
     >
+      {/* Davr almashganda yangi so'rov yiqilsa ekranda ESKI davr raqamlari
+          qolardi — hech qanday belgisiz. Endi eskirgani aytiladi. */}
+      {data && detail.error && (
+        <ErrorState title="Yangilab bo'lmadi — ekrandagi raqamlar eski" message={detail.error} onRetry={detail.reload} />
+      )}
       {!periodValid ? (
         // Oraliq teskari kiritilganda sahifa avval butunlay bo'sh qolardi —
         // hech qanday xabar ham, ma'lumot ham yo'q edi.
@@ -215,6 +264,7 @@ export default function KafedraPage() {
           ) : (
             <LessonsSection
               rows={lessons.data?.items ?? []}
+              total={lessons.data?.total ?? 0}
               loading={lessons.loading}
               error={lessons.data ? null : lessons.error}
               onRetry={lessons.reload}
@@ -231,22 +281,28 @@ function KafedraTiles({ data }: { data: KafedraDetail }) {
   const p = data.period;
   const checked = p.onTime + p.late + p.missed;
   const hasLessons = p.lessons > 0;
+  // "Bugun" faqat bugungi kun ko'rilayotganda — ?sana= bilan o'tgan kunga
+  // o'tilganda plitkalar baribir "Bugun" derdi.
+  const dayWord = data.isToday ? 'Bugun' : 'Shu kuni';
+  // Foiz maxraji — holati aniqlangan xodimlar; katta sondagi maxraj ham
+  // AYNAN shu bo'lishi kerak, aks holda "10 / 20" yonida 83% turardi.
+  const decided = t.present + t.absent + t.notYet;
   // Foiz maxraji — holati aniqlangan xodimlar (keldi + kelmadi + hali
   // kelmagan): yuzi ro'yxatdan o'tmaganlar foizga umuman kirmaydi, shuning
   // uchun "jami xodimning N% qismi" deyish noto'g'ri edi.
   return (
     <div className={cn('grid grid-cols-2 gap-3', hasLessons ? 'lg:grid-cols-4' : 'lg:grid-cols-2')}>
       <StatTile
-        label="Bugun ishga kelgan xodimlar"
+        label={`${dayWord} ishga kelgan xodimlar`}
         icon={UserCheck}
         tone={toneForRate(t.rate)}
         value={t.present}
-        unit={`/ ${t.total}`}
+        unit={`/ ${decided}`}
         progress={t.rate}
-        hint={`Holati aniq ${t.present + t.absent + t.notYet} xodimdan ${formatPercent(t.rate)} keldi · ${t.absent} kishi kelmadi${t.notYet ? ` · ${t.notYet} kishi hali kelmagan` : ''}${t.noData ? ` · ${t.noData} xodimning yuzi ro'yxatdan o'tmagan` : ''}`}
+        hint={`Holati aniq ${decided} xodimdan ${formatPercent(t.rate)} keldi · ${t.absent} kishi kelmadi${t.notYet ? ` · ${t.notYet} kishi hali kelmagan` : ''}${t.noData ? ` · ${t.noData} xodimning yuzi ro'yxatdan o'tmagan` : ''}`}
       />
       <StatTile
-        label="Bugun kech kelgan xodimlar"
+        label={`${dayWord} kech kelgan xodimlar`}
         icon={Timer}
         tone={t.late ? 'warning' : 'neutral'}
         value={t.late}
@@ -313,7 +369,7 @@ function TeachersSection({ data, date, view, sort, search, withDate }: { data: K
     },
     {
       key: 'status',
-      header: 'Bugun',
+      header: data.isToday ? 'Bugun' : 'Shu kuni',
       cell: (t) => <StatusBadge status={t.status === 'malumot_yoq' ? 'nomalum' : t.status} time={t.checkIn} />,
     },
     ...(hasTodayLessons
@@ -434,10 +490,18 @@ function TeachersSection({ data, date, view, sort, search, withDate }: { data: K
   );
 }
 
-function LessonsSection({ rows, loading, error, onRetry }: { rows: Lesson[]; loading: boolean; error: string | null; onRetry: () => void }) {
+function LessonsSection({ rows, total, loading, error, onRetry }: { rows: Lesson[]; total: number; loading: boolean; error: string | null; onRetry: () => void }) {
   const [selected, setSelected] = useState<Lesson | null>(null);
   return (
     <>
+      {/* Tab hisoblagichi serverdagi `total` ni ko'rsatadi, jadvalga esa
+          bir sahifa (500 ta) tushadi. Ular teng bo'lmasa foydalanuvchi ikki
+          xil sonni ko'rib, sababini bilmasdi. */}
+      {total > rows.length && (
+        <p className="text-xs text-muted">
+          Bu kunda jami {total} ta dars bor — jadvalda birinchi {rows.length} tasi ko'rsatilmoqda.
+        </p>
+      )}
       <LessonsTable
         rows={rows}
         loading={loading}

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { KafedraDetail, KafedraTeacher } from '../../lib/situationApi';
 
@@ -104,6 +104,30 @@ describe('KafedraPage — «Bugun ishga kelgan xodimlar» plitkasi', () => {
     expect(hint.textContent).toContain("8 xodimning yuzi ro'yxatdan o'tmagan");
     expect(hint.textContent).not.toContain("Bo'linmadagi 20 xodimning");
   });
+
+  // Katta son "10 / 20" edi, yonidagi progress esa 83,3% — ikki xil maxraj
+  // bitta plitkada. Maxraj foiznikiga tenglashtirildi (10 / 12).
+  it('shows the fraction over the same denominator as the percentage', async () => {
+    getKafedra.mockResolvedValue(detail());
+    renderPage();
+    await screen.findByText(/Holati aniq/);
+    expect(screen.getByText('/ 12')).toBeTruthy();
+    expect(screen.queryByText('/ 20')).toBeNull();
+  });
+});
+
+describe('KafedraPage — o\'tgan sanada "Bugun" deyilmaydi', () => {
+  // ?sana= bilan o'tgan kunga o'tilganda plitkalar, ustun sarlavhasi va
+  // sahifa izohi baribir "bugun" derdi — raqamlar boshqa kunniki edi.
+  it('labels the tiles and the status column with the viewed day', async () => {
+    localStorage.setItem('kafedra.view', JSON.stringify('table'));
+    getKafedra.mockResolvedValue(detail({ isToday: false, date: '2026-09-15' }));
+    renderPage('/oqituvchilar/kafedra/u1?sana=2026-09-15');
+    await waitFor(() => expect(screen.getByText(/Shu kuni ishga kelgan xodimlar/)).toBeTruthy());
+    expect(screen.getByText(/Shu kuni kech kelgan xodimlar/)).toBeTruthy();
+    expect(screen.queryByText(/Bugun ishga kelgan xodimlar/)).toBeNull();
+    expect(screen.getByRole('columnheader', { name: /Shu kuni/ })).toBeTruthy();
+  });
 });
 
 describe('KafedraPage — dars ustuni dars jadvaliga bog\'liq', () => {
@@ -138,5 +162,38 @@ describe('KafedraPage — havolalar ko\'rilayotgan sanani saqlaydi', () => {
     for (const link of links) {
       expect(link.getAttribute('href')).toContain('sana=2026-09-15');
     }
+  });
+});
+
+describe('KafedraPage — punktuallik davri URL da', () => {
+  // Davr ilgari faqat komponent ichidagi useState edi: sahifani yangilash
+  // yoki havolani ulashish tanlangan davrni yo'qotardi.
+  it('takes the period from ?dan=/?gacha=', async () => {
+    getKafedra.mockResolvedValue(detail());
+    renderPage('/oqituvchilar/kafedra/u1?dan=2026-08-01&gacha=2026-08-31');
+    await waitFor(() => expect(getKafedra).toHaveBeenCalled());
+    const [, params] = getKafedra.mock.calls[0] as unknown as [string, { from: string; to: string }];
+    expect(params).toMatchObject({ from: '2026-08-01', to: '2026-08-31' });
+  });
+
+  it('ignores an inverted range in the URL instead of querying it', async () => {
+    getKafedra.mockResolvedValue(detail());
+    renderPage('/oqituvchilar/kafedra/u1?dan=2026-08-31&gacha=2026-08-01');
+    await waitFor(() => expect(getKafedra).toHaveBeenCalled());
+    const [, params] = getKafedra.mock.calls[0] as unknown as [string, { from: string; to: string }];
+    expect(params.from <= params.to).toBe(true);
+  });
+});
+
+describe("KafedraPage — tab hisoblagichi jadvalga mos", () => {
+  // Hisoblagich doim bo'linmadagi JAMI xodimni ko'rsatardi: qidiruvdan
+  // keyin ro'yxatda 0 kishi qolsa ham tabda eski son turardi.
+  it('counts the rows that the search actually leaves', async () => {
+    getKafedra.mockResolvedValue(detail({ teachers: [teacher(), teacher({ id: 't2', fullName: 'Karimova Dilnoza' })] }));
+    renderPage();
+    const tab = await screen.findByRole('tab', { name: /O'qituvchilar/ });
+    expect(tab.textContent).toContain('2');
+    fireEvent.change(screen.getByLabelText("O'qituvchini qidirish"), { target: { value: 'Karimova' } });
+    await waitFor(() => expect(screen.getByRole('tab', { name: /O'qituvchilar/ }).textContent).toContain('1'));
   });
 });

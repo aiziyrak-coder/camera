@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Link2, RefreshCw, Unlink, UserRound } from 'lucide-react';
 import { Button, Card, CardHeader, ErrorState, SkeletonText } from '../../ui';
 import { Notice } from '../settings/kit';
@@ -16,10 +16,33 @@ export default function MyTelegramCard() {
   const [link, setLink] = useState<TelegramLink | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // "Bog'ladim — holatni tekshirish" bosilganda, agar hali bog'lanmagan
+  // bo'lsa, EKRANDA HECH NARSA O'ZGARMASDI — tugma buzuq deb o'ylanardi.
+  // Javob kelgach natijani aytamiz.
+  const [checkRequested, setCheckRequested] = useState(false);
+  const [checkMessage, setCheckMessage] = useState<string | null>(null);
+  const lastData = useRef(data);
+
+  useEffect(() => {
+    if (lastData.current === data) return; // yangi javob kelmadi
+    lastData.current = data;
+    if (!checkRequested) return;
+    setCheckRequested(false);
+    setCheckMessage(
+      data?.telegramLinked ? null : "Hali bog'lanmagan — havolani oching va Telegram'da «Start» ni bosing, so'ng qayta tekshiring.",
+    );
+  }, [data, checkRequested]);
+
+  function checkStatus() {
+    setCheckMessage(null);
+    setCheckRequested(true);
+    reload();
+  }
 
   async function createLink() {
     setBusy(true);
     setError(null);
+    setCheckMessage(null);
     try {
       setLink(await notificationsApi.linkMyTelegram(token));
     } catch (err) {
@@ -70,9 +93,10 @@ export default function MyTelegramCard() {
         ) : link ? (
           <>
             <TelegramLinkBox link={link} />
-            <Button icon={RefreshCw} onClick={reload} fullWidth>
+            <Button icon={RefreshCw} onClick={checkStatus} loading={loading} fullWidth>
               Bog'ladim — holatni tekshirish
             </Button>
+            {checkMessage && <Notice tone="warning">{checkMessage}</Notice>}
           </>
         ) : (
           <Button variant="primary" icon={Link2} onClick={() => void createLink()} loading={busy} fullWidth>

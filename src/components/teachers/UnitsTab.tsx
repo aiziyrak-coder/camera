@@ -23,29 +23,37 @@ import {
 import { getAnalyticsUnits, getLessons, situationPaths, type KafedraStat, type UnitKind } from '../../lib/situationApi';
 import { kafedraSegments, summarizeKafedras, summarizePunctuality, unitKindLabel } from '../../lib/teachersApi';
 import { usePersistedState } from '../../lib/usePersistedState';
+import { useUrlChoice } from './analyticsPeriod';
 import { DeltaBadge } from '../analytics';
 import { KafedraCard } from './KafedraCard';
 import { TeacherSearch } from './TeacherSearch';
 import { useLoader, type Loader } from './useLoader';
 
 type View = 'cards' | 'table';
-type KindFilter = 'kafedra' | 'dekanat' | 'bolim' | 'all';
+type KindFilter = 'kafedra' | 'dekanat' | 'bolim' | 'lavozim' | 'all';
+const KIND_FILTER_IDS: readonly KindFilter[] = ['all', 'kafedra', 'dekanat', 'bolim', 'lavozim'];
 
 const REFRESH_MS = 60_000;
+const LESSON_PAGE_SIZE = 500;
 
 /** "Bo'linmalar" tabi: tur bo'yicha filtr, kartalar/jadval, 7 kunlik trend. */
 export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<KafedraStat[]>; date: string; isToday: boolean; withDate: (path: string) => string }) {
   const { presentation } = useShell();
   const navigate = useNavigate();
   const [view, setView] = usePersistedState<View>('oqituvchilar.view', 'cards');
-  const [kind, setKind] = usePersistedState<KindFilter>('oqituvchilar.kind', 'all');
+  // Bo'linma turi URL'da (`?tur=`), localStorage'da emas: ilgari havolani
+  // ulashgan odam "Kafedralar" ni ko'rib turardi, qabul qiluvchi esa o'z
+  // brauzeridagi eski tanlovni — ikkalasi boshqa ro'yxat ko'rardi.
+  // AnalyticsTab o'z filtri uchun `?turi=` dan foydalanadi, shuning uchun
+  // nom boshqa: tab almashganda tanlovlar bir-birini buzmaydi.
+  const [kind, setKind] = useUrlChoice<KindFilter>('tur', KIND_FILTER_IDS, 'all');
   // Bo'linmalar ro'yxatidagi `lessonsToday` — darslar bor-yo'qligining
   // tekin manbasi. Jadval kiritilmagan kunda 500 ta darsni so'ramaymiz;
   // jadval paydo bo'lishi bilan so'rov o'zi qayta tiklanadi.
   const scheduledLessons = useMemo(() => (loader.data ?? []).reduce((sum, u) => sum + u.lessonsToday, 0), [loader.data]);
   const lessons = useLoader(
     scheduledLessons > 0 ? `l:${date}` : null,
-    (signal) => getLessons({ date, pageSize: 500 }, { signal }),
+    (signal) => getLessons({ date, pageSize: LESSON_PAGE_SIZE }, { signal }),
     { refreshMs: isToday ? REFRESH_MS : undefined },
   );
   // Trend: tanlangan kungacha 7 kun vs undan oldingi 7 kun.
@@ -53,7 +61,12 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
   const trends = useLoader(`tr:${week.from}:${week.to}`, (signal) => getAnalyticsUnits({ from: week.from, to: week.to, kind: 'all' }, { signal }));
   const trendById = useMemo(() => new Map((trends.data ?? []).map((u) => [u.id, u.trend])), [trends.data]);
   // O'tgan kunni ko'rayotganda "oxirgi 7 kun" yolg'on bo'lardi — haqiqiy oraliq yoziladi.
-  const trendHint = `${formatUzRange(week.from, week.to)} davomati undan oldingi 7 kunga nisbatan`;
+  // Trend so'rovi yiqilganda har bir qator "—" ko'rsatardi va bu "ma'lumot
+  // yo'q" dan farq qilmasdi — sabab endi tooltipda aytiladi.
+  const trendFailed = Boolean(trends.error && !trends.data);
+  const trendHint = trendFailed
+    ? "O'zgarishni hisoblab bo'lmadi — trend so'rovi yiqildi"
+    : `${formatUzRange(week.from, week.to)} davomati undan oldingi 7 kunga nisbatan`;
 
   const all = useMemo(() => loader.data ?? [], [loader.data]);
   const counts = useMemo(() => {
@@ -64,6 +77,9 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
   const rows = useMemo(() => (kind === 'all' ? all : all.filter((u) => u.kind === kind)), [all, kind]);
   const summary = useMemo(() => summarizeKafedras(rows), [rows]);
   const punctuality = useMemo(() => (lessons.data ? summarizePunctuality(lessons.data.items) : null), [lessons.data]);
+  // Bir sahifada 500 ta dars keladi: undan ko'p bo'lsa foiz kunning
+  // HAMMASIDAN emas, birinchi sahifadan chiqadi — buni aytib qo'yamiz.
+  const lessonsCapped = Boolean(lessons.data && lessons.data.total > lessons.data.items.length);
   // Dars plitkalari ko'rsatilayotgan bo'linmalarga bog'liq: filtr ostidagi
   // bo'linmalarda dars bo'lmasa plitkalar chizilmaydi.
   const hasLessons = summary.lessons > 0;
@@ -92,7 +108,8 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
     { key: 'staffTotal', header: 'Jami xodim', align: 'right', sortValue: (k) => k.staffTotal, sortFirst: 'desc' },
     {
       key: 'rate',
-      header: 'Bugun ishga kelgani',
+      // O'tgan kunni ko'rayotganda "Bugun" yolg'on sarlavha edi.
+      header: isToday ? 'Bugun ishga kelgani' : 'Shu kuni ishga kelgani',
       width: '15rem',
       sortValue: (k) => k.rate,
       cell: (k) => (
@@ -113,10 +130,10 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
       align: 'right',
       sortValue: (k) => trendById.get(k.id) ?? null,
       cell: (k) => (
-        <DeltaBadge value={trendById.get(k.id)} unit="pp" emptyLabel="—" title={trendHint} />
+        <DeltaBadge value={trendById.get(k.id)} unit="pp" emptyLabel={trendFailed ? 'xato' : '—'} title={trendHint} />
       ),
     },
-    { key: 'lessonsToday', header: 'Bugungi darslar', align: 'right', hideOnMobile: true, sortValue: (k) => k.lessonsToday, sortFirst: 'desc' },
+    { key: 'lessonsToday', header: isToday ? 'Bugungi darslar' : 'Shu kungi darslar', align: 'right', hideOnMobile: true, sortValue: (k) => k.lessonsToday, sortFirst: 'desc' },
     {
       key: 'lessonIssues',
       header: "O'qituvchi kech kirgan / kirmagan",
@@ -141,6 +158,10 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
     { id: 'kafedra' as const, label: 'Kafedralar', count: counts.kafedra || null },
     { id: 'dekanat' as const, label: 'Dekanatlar', count: counts.dekanat || null },
     { id: 'bolim' as const, label: "Bo'limlar", count: counts.bolim || null },
+    // Lavozimi bor, lekin bo'linmasi yozilmagan xodimlar (productionda 139 ta).
+    // Bu tab bo'lmasa kafedra + dekanat + bo'lim "Hammasi" ga teng chiqmaydi
+    // va o'sha odamlar faqat "Hammasi" da ko'rinib, ko'zdan qochadi.
+    { id: 'lavozim' as const, label: "Bo'linmasi yozilmagan", count: counts.lavozim || null },
   ];
 
   return (
@@ -173,7 +194,10 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
           tone={toneForRate(staffRate)}
           loading={loader.loading}
           value={summary.present}
-          unit={`/ ${summary.staffTotal}`}
+          // Maxraj AYNAN foiz maxraji (holati aniqlangan xodimlar). Ilgari
+          // bu yerda jami xodim turardi: "10 / 20" yozilib, yonidagi
+          // progress 83% ni ko'rsatardi — ikki xil maxraj, bitta plitkada.
+          unit={`/ ${summary.decided}`}
           progress={staffRate}
           hint={
             staffRate === null
@@ -204,7 +228,7 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
                 punctuality
                   ? `Tekshirilgan ${punctuality.onTime + punctuality.late + punctuality.missed} darsdan ${punctuality.onTime} tasiga o'qituvchi o'z vaqtida kirgan${
                       kind === 'all' ? '' : ' · barcha bo‘linmalar bo‘yicha'
-                    }`
+                    }${lessonsCapped ? ` · bu kunda ${lessons.data?.total} dars bor, foiz birinchi ${LESSON_PAGE_SIZE} tasidan hisoblangan` : ''}`
                   : undefined
               }
             />
@@ -214,7 +238,7 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
               tone={summary.lateLessons + summary.missedLessons ? 'danger' : 'neutral'}
               loading={loader.loading}
               value={summary.lateLessons + summary.missedLessons}
-              hint={`Bugungi ${summary.lessons} darsdan: ${summary.lateLessons} tasiga kech kirgan · ${summary.missedLessons} tasiga umuman kirmagan`}
+              hint={`${isToday ? 'Bugungi' : 'Shu kungi'} ${summary.lessons} darsdan: ${summary.lateLessons} tasiga kech kirgan · ${summary.missedLessons} tasiga umuman kirmagan`}
             />
           </>
         )}

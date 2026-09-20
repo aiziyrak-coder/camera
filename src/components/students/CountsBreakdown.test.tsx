@@ -22,8 +22,15 @@ describe('CountsLegend', () => {
     expect(screen.queryByText('-1')).not.toBeInTheDocument();
   });
 
-  it("dam olish va ma'lumotsiz kunlar bitta qatorda", () => {
+  it("dam olish va ma'lumotsiz kunlar bitta qatorda, lekin tooltipda ajratilgan", () => {
+    // Qator bitta (son plitkadagiga mos), ammo "dam olish" — o'lchanmagan
+    // emas, o'lchanishi shart bo'lmagan kun: buni tooltip aytib turadi.
     render(<CountsLegend counts={counts({ noData: 2, dayOff: 3 })} />);
-    expect(screen.getByTitle("Ma'lumot yo'q: 5")).toBeInTheDocument();
+    expect(screen.getByTitle("Ma'lumot yo'q: 5 (kamera tanimagan 2 · dam olish 3)")).toBeInTheDocument();
+  });
+
+  it("dam olish kuni bo'lmasa tooltip oddiy qoladi", () => {
+    render(<CountsLegend counts={counts({ noData: 2, dayOff: 0 })} />);
+    expect(screen.getByTitle("Ma'lumot yo'q: 2")).toBeInTheDocument();
   });
 });

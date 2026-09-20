@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useCallback, useMemo } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, CalendarCheck, LayoutGrid, RefreshCw, Rows3, ScanFace, SearchX, Users } from 'lucide-react';
 import {
   Button,
@@ -26,7 +26,7 @@ import {
   type TabItem,
 } from '../../ui';
 import { NO_FACULTY_ID, getFaculty, getGroups, situationPaths, type CourseBlock, type Counts, type GroupStat } from '../../lib/situationApi';
-import { enrolledPct, groupsToCourses, hasAttendanceData, normalizeText, sortGroups, sumCounts, type GroupSortKey } from '../../lib/studentAttendance';
+import { courseLabel, enrolledPct, groupsToCourses, hasAttendanceData, normalizeText, sortGroups, sumCounts, type GroupSortKey } from '../../lib/studentAttendance';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { useViewDate } from '../../lib/viewDate';
 import { CountsBar, CountsLegend } from '../../components/students/CountsBreakdown';
@@ -36,6 +36,8 @@ import { EnrollmentCampaign } from '../../components/students/EnrollmentCampaign
 
 type ViewId = 'davomat' | 'yuz';
 const VIEW_PARAM = 'korinish';
+const QUERY_PARAM = 'qidiruv';
+const COURSE_PARAM = 'kurs';
 const VIEWS: TabItem<ViewId>[] = [
   { id: 'davomat', label: 'Davomat', icon: CalendarCheck },
   { id: 'yuz', label: 'Yuz topshirish', icon: ScanFace },
@@ -73,7 +75,39 @@ export default function FacultyPage() {
     refreshMs: isToday ? 60_000 : undefined,
   });
   const data = faculty.data;
-  const [query, setQuery] = useState('');
+  // Qidiruv URL'da saqlanadi: sahifa yangilanganda yoki havola ulashilganda
+  // ro'yxat aynan o'sha holatda ochiladi (ilgari faqat komponent holatida edi).
+  const [params, setParams] = useSearchParams();
+  const query = params.get(QUERY_PARAM) ?? '';
+  const setQuery = useCallback(
+    (next: string) =>
+      setParams(
+        (prev) => {
+          const p = new URLSearchParams(prev);
+          if (next) p.set(QUERY_PARAM, next);
+          else p.delete(QUERY_PARAM);
+          return p;
+        },
+        { replace: true },
+      ),
+    [setParams],
+  );
+  // Qidiruv ham, kurs tabi ham BITTA setParams'da tozalanadi: ketma-ket ikki
+  // chaqiruv bir-birini bosib ketardi (ikkinchisi eski parametrlardan boshlab
+  // birinchisining o'chirganini qaytarib qo'yardi).
+  const resetSearch = useCallback(
+    () =>
+      setParams(
+        (prev) => {
+          const p = new URLSearchParams(prev);
+          p.delete(QUERY_PARAM);
+          p.delete(COURSE_PARAM);
+          return p;
+        },
+        { replace: true },
+      ),
+    [setParams],
+  );
   const [sort, setSort] = usePersistedState<GroupSortKey>('talabalar.fakultet.saralash', 'name');
   const [view, setView] = usePersistedState<'cards' | 'table'>('talabalar.fakultet.korinish', 'cards');
   // Talabasi yo'q fakultet "Yuz topshirish" bilan ochilmaydi — yig'iladigan
@@ -88,21 +122,33 @@ export default function FacultyPage() {
     ],
     [data],
   );
-  const [course, setCourse] = useUrlTab(courseTabs, { param: 'kurs', defaultTab: 'all' });
+  const [course, setCourse] = useUrlTab(courseTabs, { param: COURSE_PARAM, defaultTab: 'all' });
 
   const blocks = useMemo(() => {
     const needle = normalizeText(query);
     return (data?.courses ?? [])
       .filter((c) => course === 'all' || (c.course === null ? 'none' : String(c.course)) === course)
-      .map((c) => ({ ...c, groups: sortGroups(c.groups.filter((g) => !needle || normalizeText(g.name).includes(needle)), sort) }));
+      .map((c) => {
+        const groups = sortGroups(c.groups.filter((g) => !needle || normalizeText(g.name).includes(needle)), sort);
+        // Qidiruv guruhlarni kesganda sarlavhadagi "N guruh" kesilgan
+        // ro'yxatdan, "M talaba · davomat X%" esa butun kursdan olinardi —
+        // bitta qatorda ikki xil to'plam. Endi jami ham ko'rinayotgan
+        // guruhlardan hisoblanadi.
+        return { ...c, groups, totals: needle ? sumCounts(groups) : c.totals };
+      });
   }, [data, course, query, sort]);
   const flat = useMemo(() => sortGroups(blocks.flatMap((b) => b.groups), sort), [blocks, sort]);
-  const summary = course === 'all' ? data?.totals : blocks[0]?.totals;
+  // Qidiruv faol bo'lganda yuqoridagi umumiy karta ham FAQAT ko'rinayotgan
+  // guruhlardan hisoblanadi — ilgari halqa butun fakultetni ko'rsatib,
+  // pastdagi bitta topilgan guruh bilan zid chiqardi.
+  const searching = normalizeText(query).length > 0;
+  const summary = searching ? (flat.length ? sumCounts(flat) : undefined) : course === 'all' ? data?.totals : blocks[0]?.totals;
   const groupCount = data?.courses.reduce((n, c) => n + c.groups.length, 0) ?? 0;
 
   const columns: DataTableColumn<GroupStat>[] = [
     { key: 'name', header: 'Guruh', cell: (g) => <span className="font-medium text-fg">{g.name}</span>, sortValue: (g) => g.name },
-    { key: 'course', header: 'Kurs', cell: (g) => (g.course ? `${g.course}-kurs` : '—'), sortValue: (g) => g.course, hideOnMobile: true },
+    // Ilgari kursi ko'rsatilmagan guruhda izohsiz "—" turardi — endi sababi yoziladi.
+    { key: 'course', header: 'Kurs', cell: (g) => courseLabel(g.course), sortValue: (g) => g.course, hideOnMobile: true },
     { key: 'total', header: 'Jami talaba', align: 'right', cell: (g) => formatNumber(g.total), sortValue: (g) => g.total },
     {
       key: 'faces',
@@ -119,7 +165,8 @@ export default function FacultyPage() {
         </span>
       ),
     },
-    { key: 'on', header: "O'z vaqtida", align: 'right', cell: (g) => formatNumber(g.present - g.late), sortValue: (g) => g.present - g.late },
+    // Math.max — CountsLegend bilan bir xil: buzuq ma'lumotda "-1" chiqmasin.
+    { key: 'on', header: "O'z vaqtida", align: 'right', cell: (g) => formatNumber(Math.max(0, g.present - g.late)), sortValue: (g) => Math.max(0, g.present - g.late) },
     { key: 'late', header: 'Kech keldi', align: 'right', cell: (g) => formatNumber(g.late), sortValue: (g) => g.late },
     { key: 'absent', header: 'Kelmadi', align: 'right', cell: (g) => formatNumber(g.absent), sortValue: (g) => g.absent },
     // O'tgan kunda "hali kelmagan" bo'lmaydi (server pending=false) — o'rniga
@@ -140,7 +187,12 @@ export default function FacultyPage() {
       width: '11rem',
       sortValue: (g) => g.rate,
       sortFirst: 'asc',
-      cell: (g) => !hasAttendanceData(g) ? (
+      // Bo'sh guruhda sabab boshqa: yuz kam emas, talabaning o'zi yo'q.
+      cell: (g) => g.total === 0 ? (
+        <span className="text-xs text-muted" title="Guruhga talaba biriktirilmagan">
+          talaba yo'q
+        </span>
+      ) : !hasAttendanceData(g) ? (
         <span className="text-xs text-muted" title="Guruhda yuzini ro'yxatdan o'tkazgan talaba juda kam">
           hisoblab bo'lmaydi
         </span>
@@ -189,7 +241,7 @@ export default function FacultyPage() {
               <ProgressRing value={summary.rate} size={88} sublabel="davomat" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-fg">
-                  {course === 'all' ? 'Fakultet bo\'yicha' : blocks[0]?.label}
+                  {searching ? 'Topilgan guruhlar bo\'yicha' : course === 'all' ? 'Fakultet bo\'yicha' : blocks[0]?.label}
                   <span className="ml-2 font-normal text-muted">
                     {formatNumber(summary.present)} / {formatNumber(summary.present + summary.absent + summary.notYet)} keldi
                   </span>
@@ -203,7 +255,10 @@ export default function FacultyPage() {
           <Toolbar
             end={
               <>
-                <Select value={sort} onChange={(v) => setSort(v as GroupSortKey)} options={SORTS} ariaLabel="Saralash" />
+                {/* Jadvalda saralash ustun sarlavhalari orqali bo'ladi —
+                    ikkinchi tanlagich faqat chalg'itardi: ikkita raqobatdosh
+                    saralash bir-birini bekor qilardi. */}
+                {view === 'cards' && <Select value={sort} onChange={(v) => setSort(v as GroupSortKey)} options={SORTS} ariaLabel="Saralash" />}
                 <Tabs
                   variant="segmented"
                   ariaLabel="Ko'rinish"
@@ -227,7 +282,17 @@ export default function FacultyPage() {
               description="Talabalar «Shaxslar reestri» bo'limida guruhlarga biriktiriladi. Shundan keyin guruhlar shu yerda ko'rinadi."
             />
           ) : flat.length === 0 ? (
-            <EmptyState compact icon={SearchX} title="Guruh topilmadi" action={<Button size="sm" onClick={() => setQuery('')}>Qidiruvni tozalash</Button>} />
+            <EmptyState
+              compact
+              icon={SearchX}
+              title="Guruh topilmadi"
+              description={course === 'all' ? undefined : "Qidirilayotgan guruh boshqa kursda bo'lishi mumkin."}
+              action={
+                <Button size="sm" onClick={resetSearch}>
+                  {course === 'all' ? 'Qidiruvni tozalash' : 'Qidiruv va kurs filtrini tozalash'}
+                </Button>
+              }
+            />
           ) : view === 'table' ? (
             <DataTable
               ariaLabel="Guruhlar"

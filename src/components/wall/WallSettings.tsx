@@ -1,5 +1,5 @@
 import { Check, Copy, X } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { buildWallQuery, PANEL_TITLES, WALL_PANELS, type WallConfig, type WallPanelId } from '../../lib/wallApi';
 import { Button, cn, IconButton, Input } from '../../ui';
 
@@ -17,6 +17,16 @@ export function WallSettings({
   const [rotate, setRotate] = useState(String(config.rotate));
   const [cameras, setCameras] = useState(config.cameras.join(','));
   const [copied, setCopied] = useState(false);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
+  const copyTimer = useRef<number | null>(null);
+  // Oyna "S" tugmasi bilan ochiladi — fokus hech qayerga ko'chmasa,
+  // klaviatura bilan ishlaydigan foydalanuvchi oynaga umuman tusha olmasdi.
+  useEffect(() => {
+    closeRef.current?.focus();
+    return () => {
+      if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
+    };
+  }, []);
 
   const draft: WallConfig = {
     panels: panels.length ? panels : config.panels,
@@ -36,7 +46,11 @@ export function WallSettings({
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
+      // Oyna yopilgach taymer ishlamasin (yo'q komponentga setState).
+      copyTimer.current = window.setTimeout(() => {
+        copyTimer.current = null;
+        setCopied(false);
+      }, 1500);
     } catch {
       /* clipboard yopiq — foydalanuvchi matnni o'zi ko'chiradi */
     }
@@ -51,7 +65,7 @@ export function WallSettings({
     >
       <div className="mb-3 flex items-center">
         <div className="font-semibold text-fg">Ekran sozlamalari</div>
-        <IconButton label="Yopish" icon={X} variant="ghost" size="sm" className="ml-auto" onClick={onClose} />
+        <IconButton ref={closeRef} label="Yopish" icon={X} variant="ghost" size="sm" className="ml-auto" onClick={onClose} />
       </div>
       <div className="mb-1 text-xs font-medium text-muted">Panellar</div>
       <div className="mb-3 grid grid-cols-2 gap-1.5">
@@ -81,10 +95,16 @@ export function WallSettings({
       <label className="mb-1 block text-xs font-medium text-muted" htmlFor="wall-cams">
         Kamera ID lari (vergul bilan, 4 tagacha)
       </label>
-      <Input id="wall-cams" value={cameras} onChange={(e) => setCameras(e.target.value)} placeholder="bo'sh qoldirilsa — tasvir berayotgan birinchi 2 ta kamera" className="mb-3" />
+      <Input id="wall-cams" value={cameras} onChange={(e) => setCameras(e.target.value)} placeholder="bo'sh qoldirilsa — tasvir berayotgan birinchi 2 ta kamera" className="mb-1" />
+      {/* Ortiqchasi jimgina tashlab yuborilardi — endi buni aytamiz. */}
+      <p className="mb-3 text-xs text-warning" role={cameras.split(',').filter((x) => x.trim()).length > 4 ? 'status' : undefined}>
+        {cameras.split(',').filter((x) => x.trim()).length > 4
+          ? `Faqat birinchi 4 tasi olinadi: ${draft.cameras.join(', ')}`
+          : ' '}
+      </p>
       <div className="mb-3 break-all rounded-control bg-surface-2 p-2 font-mono text-xs text-muted">{url}</div>
       <div className="flex gap-2">
-        <Button variant="secondary" icon={copied ? Check : Copy} onClick={copy}>
+        <Button variant="secondary" icon={copied ? Check : Copy} onClick={copy} aria-live="polite">
           {copied ? 'Nusxalandi' : 'URL nusxa'}
         </Button>
         <Button className="ml-auto" onClick={() => onApply(draft)}>

@@ -24,8 +24,15 @@ export default function AddGroupModal({
   const [errors, setErrors] = useState<{ name?: string; faculty?: string; course?: string; form?: string }>({});
   const [submitting, setSubmitting] = useState(false);
 
+  // Har ochilishda oyna toza bo'ladi — bekor qilingan yozuv keyingi
+  // ochilishda maydonda turib qolmasin.
   useEffect(() => {
-    if (open) setErrors({});
+    if (open) {
+      setName('');
+      setFacultyId('');
+      setCourse('1');
+      setErrors({});
+    }
   }, [open]);
 
   async function handleSubmit(e: FormEvent) {
@@ -77,12 +84,20 @@ export default function AddGroupModal({
         <Field label="Guruh nomi" required error={errors.name}>
           <Input placeholder="DI-2301" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
         </Field>
-        <Field label="Fakultet" required error={errors.faculty}>
+        {/* Fakultetsiz guruh yaratib bo'lmaydi: bo'sh tanlagich o'rniga
+            nima qilish kerakligi aytiladi. */}
+        <Field
+          label="Fakultet"
+          required
+          error={errors.faculty}
+          hint={faculties.length === 0 ? "Hali bitta ham fakultet yo'q — avval «Fakultetlar» bo'limida fakultet qo'shing." : undefined}
+        >
           <Select
             value={facultyId}
             onChange={setFacultyId}
-            placeholder="Tanlang"
+            placeholder={faculties.length === 0 ? "Fakultet yo'q" : 'Tanlang'}
             options={faculties.map((f) => ({ value: f.id, label: f.name }))}
+            disabled={faculties.length === 0}
             className="sm:w-full"
           />
         </Field>

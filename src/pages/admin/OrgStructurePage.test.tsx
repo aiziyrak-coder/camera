@@ -1,58 +1,61 @@
-import { describe, expect, it } from 'vitest';
-import { deleteConsequences } from './OrgStructurePage';
-import type { Building, Department, Faculty, StudentGroup } from '../../types';
+// @vitest-environment jsdom
+import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 
 /**
- * QA: o'chirish tasdig'i.
+ * QA: tashkiliy tuzilma sahifasi.
  *
- * Ilgari to'rttala tur uchun bitta matn turardi — "«X» butunlay o'chiriladi".
- * Amalda oqibatlar juda har xil:
- *   • fakultet o'chirilsa uning GURUHLARI ham ketadi
- *     (app/models/org.py: student_groups.faculty_id ondelete="CASCADE"),
- *   • bino o'chirilsa qavat sxemalari ketadi (floor_plans CASCADE),
- *     kameralar esa qoladi-yu binosiz bo'ladi (cameras.building_id SET NULL).
- * Admin buni tasdiqlashdan OLDIN bilishi kerak.
+ * Fakultet o'chirilganda backend uning guruhlarini ham o'chiradi
+ * (student_groups.faculty_id ondelete="CASCADE") — tasdiq oynasi buni
+ * aytadi, lekin ekrandagi ro'yxat yangilanmasdi va "Guruhlar" tabida
+ * allaqachon o'chgan guruhlar ko'rinib turardi.
  */
 
-const building: Building = { id: 'b1', name: '1-Bino', cameraCount: 12, floors: 4, sortOrder: 0 };
-const faculty: Faculty = { id: 'f1', name: 'Davolash ishi', courseCount: 6, studentCount: 540 };
-const group: StudentGroup = { id: 'g1', name: 'DI-2301', faculty: 'Davolash ishi', course: 2, studentCount: 25 };
-const department: Department = { id: 'd1', name: 'Anatomiya', buildingId: 'b1', buildingName: '1-Bino', cameraCount: 3 };
+const del = vi.fn().mockResolvedValue(undefined);
 
-describe('deleteConsequences', () => {
-  it('fakultet: guruhlari birga o\'chishini aytadi', () => {
-    const { lost, kept } = deleteConsequences({ kind: 'faculty', item: faculty }, 20);
-    expect(lost.join(' ')).toMatch(/20 ta guruh/);
-    expect(kept.join(' ')).toMatch(/540 ta talaba/);
-  });
+vi.mock('../../lib/auth', () => ({ useAuth: () => ({ token: 't', role: 'super-admin' }) }));
+vi.mock('../../lib/permissions', () => ({ usePermissions: () => ({ can: () => true }) }));
+vi.mock('../../lib/apiClient', () => ({
+  ApiError: class ApiError extends Error {},
+  isAbortError: () => false,
+  api: {
+    del: (...args: unknown[]) => del(...args),
+    get: (path: string) => {
+      if (path === '/api/buildings') return Promise.resolve([]);
+      if (path === '/api/departments') return Promise.resolve([]);
+      if (path === '/api/faculties') {
+        return Promise.resolve([{ id: 'f1', name: 'Stomatologiya', courseCount: 5, studentCount: 10 }]);
+      }
+      return Promise.resolve([
+        { id: 'g1', name: 'DI-2301', faculty: 'Stomatologiya', course: 2, studentCount: 10 },
+      ]);
+    },
+  },
+}));
 
-  it('bino: qavat sxemalari ketadi, kameralar qoladi', () => {
-    const { lost, kept } = deleteConsequences({ kind: 'building', item: building }, 0);
-    expect(lost.join(' ')).toMatch(/qavat/i);
-    expect(kept.join(' ')).toMatch(/12 ta kamera/);
-  });
+import OrgStructurePage from './OrgStructurePage';
 
-  it("guruh: talabalar reestrda qolishi aytiladi", () => {
-    const { kept } = deleteConsequences({ kind: 'group', item: group }, 0);
-    expect(kept.join(' ')).toMatch(/25 ta talaba/);
-  });
+describe('OrgStructurePage — fakultet o’chirish', () => {
+  it("fakultet bilan birga uning guruhlari ham ro'yxatdan chiqadi", async () => {
+    render(
+      <MemoryRouter initialEntries={['/tuzilma?tab=fakultetlar']}>
+        <OrgStructurePage />
+      </MemoryRouter>,
+    );
 
-  it('kafedra: kameralar kafedrasiz qoladi', () => {
-    const { kept } = deleteConsequences({ kind: 'department', item: department }, 0);
-    expect(kept.join(' ')).toMatch(/3 ta kamera/);
-  });
+    // Jadval ish stoli va telefon ko'rinishida ikki marta chiziladi.
+    await waitFor(() => expect(screen.getAllByText('Stomatologiya').length).toBeGreaterThan(0));
 
-  it('har bir turda ham "o\'chadi", ham "qoladi" ro\'yxati bo\'sh emas', () => {
-    const targets = [
-      { kind: 'building' as const, item: building },
-      { kind: 'faculty' as const, item: faculty },
-      { kind: 'group' as const, item: group },
-      { kind: 'department' as const, item: department },
-    ];
-    for (const target of targets) {
-      const { lost, kept } = deleteConsequences(target, 0);
-      expect(lost.length).toBeGreaterThan(0);
-      expect(kept.length).toBeGreaterThan(0);
-    }
+    fireEvent.click(screen.getAllByLabelText("«Stomatologiya» — o'chirish")[0]);
+    // Tasdiq oynasi guruh yo'qolishini aytadi.
+    expect(screen.getByText(/1 ta guruh/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: "O'chirish" }));
+    await waitFor(() => expect(del).toHaveBeenCalledWith('/api/faculties/f1', 't'));
+
+    // Guruhlar tabiga o'tamiz — o'chgan guruh ko'rinmasligi kerak.
+    fireEvent.click(screen.getAllByRole('tab', { name: /Guruhlar/ })[0]);
+    await waitFor(() => expect(screen.queryByText('DI-2301')).toBeNull());
   });
 });

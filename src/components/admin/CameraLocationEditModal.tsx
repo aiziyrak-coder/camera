@@ -62,7 +62,7 @@ export default function CameraLocationEditModal({
   const [departments, setDepartments] = useState<Department[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<{ name?: string; zone?: string }>({});
+  const [fieldErrors, setFieldErrors] = useState<{ name?: string; zone?: string; floor?: string }>({});
   const { zones, reload: reloadZones } = useCameraZones(building || undefined);
   // Monitoring devoridagi kamera obyektida xona turi yo'q — u yerdan
   // ochilganda bu maydonlar ko'rsatilmaydi va YUBORILMAYDI (aks holda
@@ -115,12 +115,20 @@ export default function CameraLocationEditModal({
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!camera) return;
+    // Forma `noValidate` bilan yuboriladi, ya'ni input'dagi min/max
+    // brauzer tomonidan TEKSHIRILMAYDI: "2,5" yoki "999" yozilsa
+    // Number(...) ni serverga jo'natardik (bo'sh bo'lmagan, lekin
+    // raqamsiz qiymatda esa NaN → JSON'da null bo'lib ketardi).
+    const floorValue = floor.trim() === '' ? null : Number(floor);
+    const floorInvalid =
+      floorValue !== null && (!Number.isInteger(floorValue) || floorValue < -5 || floorValue > 50);
     const nextErrors = {
       name: name.trim().length < 2 ? 'Kamera nomi kamida 2 belgi bo‘lishi kerak' : undefined,
       zone: !zone.trim() ? 'Zona (xona) nomini kiriting' : undefined,
+      floor: floorInvalid ? "Qavat -5 dan 50 gacha butun son bo'lishi kerak" : undefined,
     };
     setFieldErrors(nextErrors);
-    if (nextErrors.name || nextErrors.zone) return;
+    if (nextErrors.name || nextErrors.zone || nextErrors.floor) return;
     setSaving(true);
     setError(null);
     try {
@@ -131,7 +139,7 @@ export default function CameraLocationEditModal({
           building: building || undefined,
           // Bo'sh maydon "qavat belgilanmagan" degani; buni None'dan
           // ("tegmaslik") ajratish uchun alohida bayroq bor.
-          floor: floor.trim() === '' ? null : Number(floor),
+          floor: floorValue,
           clearFloor: floor.trim() === '',
           zone: zone.trim(),
           department: department || undefined,
@@ -192,7 +200,7 @@ export default function CameraLocationEditModal({
         </Field>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Qavat" hint="Bo'sh — qavat belgilanmagan">
+          <Field label="Qavat" hint="Bo'sh — qavat belgilanmagan" error={fieldErrors.floor}>
             <Input type="number" min={-5} max={50} placeholder="Belgilanmagan" value={floor} onChange={(event) => setFloor(event.target.value)} />
           </Field>
           <Field label="Zona (xona)" required error={fieldErrors.zone}>

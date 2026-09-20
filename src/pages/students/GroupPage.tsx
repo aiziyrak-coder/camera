@@ -71,7 +71,13 @@ type TabId = 'talabalar' | 'darslar' | 'dinamika';
 type Density = 'normal' | 'large';
 
 const FILTER_PARAM = 'holat';
-const FILTERS: StudentFilter[] = ['all', 'keldi', 'kech_keldi', 'kelmadi', 'kutilmoqda', 'malumot_yoq', 'dam_olish'];
+const QUERY_PARAM = 'qidiruv';
+/** useUrlTab'ning standart parametri — filtr bilan bitta yangilanishda o'zgarishi uchun kerak. */
+const TAB_PARAM = 'tab';
+// dam_olish bu yerda yo'q: u "Ma'lumot yo'q" plitkasiga qo'shib ko'rsatiladi
+// (matchesFilter). Aks holda ?holat=dam_olish hech bir plitka belgilanmagan,
+// tushunarsiz holatga olib kelardi.
+const FILTERS: StudentFilter[] = ['all', 'keldi', 'kech_keldi', 'kelmadi', 'kutilmoqda', 'malumot_yoq'];
 const SORT_OPTIONS: { value: StudentSort; label: string }[] = [
   { value: 'name', label: 'Ism bo\'yicha' },
   { value: 'status', label: 'Avval kelmaganlar' },
@@ -120,7 +126,29 @@ export default function GroupPage() {
   const { presentation } = useShell();
   const [params, setParams] = useSearchParams();
   const filter = parseFilter(params.get(FILTER_PARAM));
-  const [query, setQuery] = useState('');
+  // Qidiruv ham URL'da: havolani ulashganda yoki sahifani yangilaganda
+  // setka aynan o'sha holatda ochiladi.
+  const query = params.get(QUERY_PARAM) ?? '';
+  // Bir necha parametr HAR DOIM bitta yangilanishda o'zgaradi. Ilgari
+  // setFilter/setFaceFilter/setTab ketma-ket chaqirilardi va ikkinchisi eski
+  // parametrlardan boshlab birinchisining o'chirganini qaytarib qo'yardi
+  // (masalan "Filtrni tozalash" holat filtrini tozalamasdi).
+  const patchParams = useCallback(
+    (apply: (p: URLSearchParams) => void) =>
+      setParams(
+        (prev) => {
+          const p = new URLSearchParams(prev);
+          apply(p);
+          return p;
+        },
+        { replace: true },
+      ),
+    [setParams],
+  );
+  const setQuery = useCallback(
+    (next: string) => patchParams((p) => (next ? p.set(QUERY_PARAM, next) : p.delete(QUERY_PARAM))),
+    [patchParams],
+  );
   const [sort, setSort] = usePersistedState<StudentSort>('talabalar.guruh.saralash', 'name');
   const [density, setDensity] = usePersistedState<Density>('talabalar.guruh.olcham', 'normal');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -207,16 +235,13 @@ export default function GroupPage() {
   const selected = selectedIndex >= 0 ? visible[selectedIndex] : selectedId ? (photos.get(selectedId) ?? null) : null;
 
   function setFaceFilter(next: FaceFilter) {
-    setParams(
-      (prev) => {
-        const p = new URLSearchParams(prev);
-        if (next === 'all') p.delete(FACE_PARAM);
-        else p.set(FACE_PARAM, next);
-        return p;
-      },
-      { replace: true },
-    );
-    if (tab !== 'talabalar') setTab('talabalar');
+    patchParams((p) => {
+      if (next === 'all') p.delete(FACE_PARAM);
+      else p.set(FACE_PARAM, next);
+      // Filtr setkaga tegishli — "Talabalar" tabiga qaytariladi
+      // (TAB_PARAM o'chirilishi = standart tab).
+      p.delete(TAB_PARAM);
+    });
   }
 
   /** Yuz topshirish ko'rinishida yuzi yo'q talaba → QR/ko'rsatma paneli. */
@@ -230,23 +255,27 @@ export default function GroupPage() {
   }
 
   function setFilter(next: StudentFilter) {
-    setParams(
-      (prev) => {
-        const p = new URLSearchParams(prev);
-        if (next === 'all') p.delete(FILTER_PARAM);
-        else p.set(FILTER_PARAM, next);
-        return p;
-      },
-      { replace: true },
-    );
-    if (tab !== 'talabalar') setTab('talabalar');
+    patchParams((p) => {
+      if (next === 'all') p.delete(FILTER_PARAM);
+      else p.set(FILTER_PARAM, next);
+      p.delete(TAB_PARAM);
+    });
+  }
+
+  /** Qidiruv + holat + yuz filtri — bittada (FilterBar "Tozalash"). */
+  function resetFilters() {
+    patchParams((p) => {
+      p.delete(QUERY_PARAM);
+      p.delete(FILTER_PARAM);
+      p.delete(FACE_PARAM);
+    });
   }
 
   const totals = data?.group.totals;
   const byStatus = totals ? countsByStatus(totals) : null;
-  const filterTiles: FilterTile[] = byStatus
+  const filterTiles: FilterTile[] = totals && byStatus
     ? [
-        { id: 'all', label: 'Jami', value: totals!.total, tone: 'neutral' },
+        { id: 'all', label: 'Jami', value: totals.total, tone: 'neutral' },
         { id: 'keldi', label: STATUS_META.keldi.label, value: byStatus.keldi, tone: 'success' },
         { id: 'kech_keldi', label: STATUS_META.kech_keldi.label, value: byStatus.kech_keldi, tone: 'warning' },
         { id: 'kelmadi', label: STATUS_META.kelmadi.label, value: byStatus.kelmadi, tone: 'danger' },
@@ -304,7 +333,10 @@ export default function GroupPage() {
           )}
           {group.updatedAt && (
             <span className="hidden text-xs tabular-nums text-subtle sm:inline">
-              Yangilandi {group.updatedAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+              {/* Butun tizim Toshkent vaqtida ishlaydi — brauzer boshqa mintaqada
+                  bo'lsa bu yerda boshqa soat chiqib, "eskirgan" degan noto'g'ri
+                  taassurot qoldirardi. */}
+              Yangilandi {group.updatedAt.toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tashkent' })}
             </span>
           )}
           <IconButton icon={RefreshCw} label="Yangilash" variant="secondary" onClick={group.reload} loading={group.refreshing} />
@@ -398,11 +430,7 @@ export default function GroupPage() {
               onSort={setSort}
               density={density}
               onDensity={setDensity}
-              onResetFilter={() => {
-                setQuery('');
-                setFilter('all');
-                setFaceFilter('all');
-              }}
+              onResetFilter={resetFilters}
               onOpen={openStudent}
               selectedId={selectedId}
               enrollMode={mode === 'yuz'}
@@ -413,7 +441,7 @@ export default function GroupPage() {
             />
           )}
 
-          {tab === 'darslar' && data.lessons.length > 0 && <LessonList lessons={data.lessons} onOpen={setLesson} />}
+          {tab === 'darslar' && <LessonList lessons={data.lessons} onOpen={setLesson} />}
 
           {tab === 'dinamika' && <TrendTab points={data.trend} />}
         </>
@@ -525,7 +553,8 @@ function StudentsTab({
               onClick={() => onOpen(m.personId)}
               className="rounded-full bg-surface px-2 py-0.5 text-xs font-medium text-fg shadow-sm hover:text-primary"
             >
-              {m.fullName ?? "Noma'lum"} <span className="tabular-nums text-muted">{m.checkIn}</span>
+              {m.fullName ?? "Noma'lum"}{' '}
+              <span className="tabular-nums text-muted">{m.checkIn ?? 'hozir'}</span>
             </button>
           ))}
         </div>
@@ -583,16 +612,18 @@ function StudentsTab({
                 photoUrl={student.photoUrl}
                 status={student.status === 'malumot_yoq' ? 'nomalum' : student.status}
                 time={student.checkIn}
+                // Bu tarmoqqa faqat yuzi tasdiqlangan talaba tushadi, shuning
+                // uchun "yuzi yo'q" shoxobchasi o'lik edi — olib tashlandi.
+                // "—" o'rniga holatning o'zi yoziladi: bo'sh chiziqcha nimani
+                // anglatishini hech kim bilmasdi.
                 subtitle={
-                  student.biometricsStatus !== 'tasdiqlangan' ? (
-                    <span className="text-warning">Yuzi ro'yxatda yo'q</span>
-                  ) : student.checkOut ? (
-                    `ketdi ${student.checkOut}`
-                  ) : isAwaiting(student.status) ? (
-                    '—'
-                  ) : (
-                    'kirdi'
-                  )
+                  student.checkOut
+                    ? `ketdi ${student.checkOut}`
+                    : student.status === 'kutilmoqda'
+                      ? 'hali kelmadi'
+                      : student.status === 'kelmadi'
+                        ? 'kelmadi'
+                        : 'kirdi'
                 }
                 onClick={() => onOpen(student.id)}
                 selected={student.id === selectedId}
@@ -645,7 +676,7 @@ function TrendTab({ points }: { points: TrendPoint[] }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile label="14 kunlik o'rtacha" value={formatPercent(avg, 1)} progress={avg} tone={avg === null ? 'neutral' : undefined} hint="Har kuni kelgan talabalar ulushi" />
+        <StatTile label="14 kunlik o'rtacha" value={formatPercent(avg, 1)} progress={avg} hint="Ma'lumot bor kunlar bo'yicha o'rtacha" />
         <StatTile
           label="Eng ko'p kelgan kun"
           value={formatPercent(best?.rate ?? null, 1)}

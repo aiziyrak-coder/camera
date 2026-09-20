@@ -191,7 +191,7 @@ export default function StudentsStaffPage() {
   const toast = useToast();
   // ?search=<matn>&tur=talaba|xodim — boshqa sahifalardan (turniket jurnali,
   // tanilmagan kartalar) aniq odamga havola. `tur` — sahifa tabi ham.
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [tab] = useUrlTab(PERSON_TABS, { param: 'tur', defaultTab: 'xodim' });
   const [facultyFilter, setFacultyFilter] = useState('');
   const [courseFilter, setCourseFilter] = useState<number | null>(null);
@@ -212,6 +212,19 @@ export default function StudentsStaffPage() {
 
   const isStudents = tab === 'talaba';
   const pageSize = PAGE_SIZES.includes(pageSizeChoice) ? pageSizeChoice : 10;
+
+  // ?search= bir marta o'qiladi va URL'dan olib tashlanadi. Ilgari u faqat
+  // birinchi renderda olinardi: komponent tirik turganda boshqa sahifadan
+  // ikkinchi marta kelinsa qidiruv o'zgarmasdi; qidiruvni tozalagandan
+  // keyin sahifa yangilansa esa eski so'z URL'dan qaytib kelardi.
+  useEffect(() => {
+    const fromUrl = searchParams.get('search');
+    if (fromUrl === null) return;
+    setSearch(fromUrl);
+    const next = new URLSearchParams(searchParams);
+    next.delete('search');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   // Bo'lim almashganda bo'limga xos filtrlar tozalanadi. Holat filtri
   // ataylab saqlanadi: "ro'yxatdan o'tmaganlar"ni ikkala bo'limda ketma-ket
@@ -251,18 +264,32 @@ export default function StudentsStaffPage() {
 
   // Qamrov ro'yxatdan MUSTAQIL: u filtrlangan sahifani emas, butun bo'limni
   // ko'rsatadi. Ikkala tur bitta so'rovda — tablardagi sonlar ham shundan.
+  // Bekor qilish bayrog'i: sahifadan chiqilgandan keyin yoki yangi so'rov
+  // ketgandan keyin kech kelgan javob eskirgan statistikani yozib
+  // qo'ymasligi uchun. Ilgari har `refresh()` yangi so'rov ochar, javoblar
+  // qaysi kelsa o'sha yozilardi.
+  const overviewRun = useRef(0);
   const loadOverview = useCallback(() => {
     if (!token) return;
+    const run = ++overviewRun.current;
     api
       .get<Overview>('/api/students-staff/overview', token)
       .then((data) => {
+        if (run !== overviewRun.current) return;
         setOverview(data);
         setOverviewError(false);
       })
-      .catch(() => setOverviewError(true));
+      .catch(() => {
+        if (run === overviewRun.current) setOverviewError(true);
+      });
   }, [token]);
 
-  useEffect(loadOverview, [loadOverview]);
+  useEffect(() => {
+    loadOverview();
+    return () => {
+      overviewRun.current += 1;
+    };
+  }, [loadOverview]);
 
 
   function refresh() {
@@ -472,8 +499,10 @@ export default function StudentsStaffPage() {
       toolbar={toolbar}
       actions={
         <>
+          {/* "Aniqlash" nimani aniqlashini aytmasdi — endi yorliqning o'zi
+              aytadi (tooltipni hamma ham ochmaydi). */}
           <Button icon={Clock} onClick={() => setLookup({ open: true, person: null })} disabled={!token} title="Odam yuzini aniq qachon tasdiqlaganini topish">
-            Aniqlash
+            Tasdiq vaqti
           </Button>
           <Button icon={Download} onClick={() => setExportOpen(true)} disabled={!token}>
             Yuklab olish
@@ -490,6 +519,17 @@ export default function StudentsStaffPage() {
 
       {!current && !overviewError && <SkeletonTiles count={4} className="xl:grid-cols-4" />}
 
+      {/* Statistika yangilanmagan bo'lsa jim turmaymiz: eski raqamlar
+          to'g'riday ko'rinib qolardi. */}
+      {overviewError && current && (
+        <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-warning/30 bg-warning-soft px-4 py-2.5 text-[13px] text-fg">
+          <span>Quyidagi raqamlar eskirgan bo'lishi mumkin — qamrov statistikasini yangilab bo'lmadi.</span>
+          <Button size="sm" onClick={loadOverview}>
+            Qayta urinish
+          </Button>
+        </div>
+      )}
+
       {current && (
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
           <StatTile icon={Users} tone="primary" label={`Jami ${PERSON_LABELS[tab].toLowerCase()}`} value={formatNumber(current.total)} onClick={() => pickStatus('')} />
@@ -502,7 +542,19 @@ export default function StudentsStaffPage() {
             progress={current.percent}
             onClick={() => pickStatus('tasdiqlangan')}
           />
-          <StatTile icon={Hourglass} tone="warning" label="Kutilmoqda" value={formatNumber(current.pending)} hint="tasdiq jarayonida" />
+          {/* «Tasdiqlanmagan» filtri kutilayotganlarni HAM qamrab oladi
+              (missing + pending), shuning uchun ikkala kartochka ham o'sha
+              filtrga olib boradi va izohda buni aytadi. Ilgari «Yuzi yo'q»
+              kartochkasi faqat `missing` raqamini ko'rsatib, bosilganda
+              undan ko'p qator chiqarardi — raqam ro'yxatga mos kelmasdi. */}
+          <StatTile
+            icon={Hourglass}
+            tone="warning"
+            label="Kutilmoqda"
+            value={formatNumber(current.pending)}
+            hint="tasdiq jarayonida"
+            onClick={() => pickStatus('tasdiqlanmagan')}
+          />
           <StatTile
             icon={UserRoundX}
             tone="neutral"

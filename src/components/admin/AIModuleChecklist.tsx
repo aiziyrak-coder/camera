@@ -45,9 +45,13 @@ export default function AIModuleChecklist({
               <div className="flex shrink-0 items-center gap-1">
                 {!readOnly && onToggleGroup && runnable.length > 0 && (
                   <>
+                    {/* Har toifada bir xil «Hammasi / Hech biri» matni takrorlanadi —
+                        ekran o'quvchida qaysi toifa ekani bilinmasdi, shuning uchun
+                        aria-label'da toifa nomi bor. */}
                     <button
                       type="button"
                       onClick={() => onToggleGroup(group, true)}
+                      aria-label={`${group}. ${label} — hamma modullarni yoqish`}
                       className={cn(linkButton, 'text-primary hover:bg-primary-soft')}
                     >
                       Hammasi
@@ -58,14 +62,22 @@ export default function AIModuleChecklist({
                     <button
                       type="button"
                       onClick={() => onToggleGroup(group, false)}
+                      aria-label={`${group}. ${label} — hamma modullarni o'chirish`}
                       className={cn(linkButton, 'text-muted hover:bg-surface-2 hover:text-fg')}
                     >
                       Hech biri
                     </button>
                   </>
                 )}
-                <span className="ml-1 text-xs font-medium tabular-nums text-muted">
-                  {enabledInGroup}/{runnable.length}
+                {/* "3/5" o'zi hech narsa aytmaydi — nima sanalayotgani izohda. */}
+                <span
+                  className="ml-1 text-xs font-medium tabular-nums text-muted"
+                  title={`Ishlaydigan ${runnable.length} ta moduldan ${enabledInGroup} tasi yoqilgan`}
+                >
+                  <span aria-hidden="true">
+                    {enabledInGroup}/{runnable.length}
+                  </span>
+                  <span className="sr-only">{`Ishlaydigan ${runnable.length} ta moduldan ${enabledInGroup} tasi yoqilgan`}</span>
                 </span>
               </div>
             </div>

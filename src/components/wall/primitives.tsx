@@ -91,9 +91,12 @@ export function WallRing({
 /** Raqam silliq o'zgaradi (0.8 s). */
 export function AnimatedNumber({ value, className }: { value: number; className?: string }) {
   const [shown, setShown] = useState(value);
-  const fromRef = useRef(value);
+  // Ekranda hozir turgan son. Animatsiya tugamasdan yangi qiymat kelsa
+  // (devor ekrani har 20 s da yangilanadi) keyingi animatsiya ana shu
+  // sondan boshlanadi — ilgari nishondan boshlanib, raqam sakrardi.
+  const shownRef = useRef(value);
   useEffect(() => {
-    const from = fromRef.current;
+    const from = shownRef.current;
     if (from === value) return;
     const start = performance.now();
     let raf = 0;
@@ -101,15 +104,12 @@ export function AnimatedNumber({ value, className }: { value: number; className?
       const k = Math.min(1, (now - start) / 800);
       const eased = 1 - Math.pow(1 - k, 3);
       const v = Math.round(from + (value - from) * eased);
+      shownRef.current = v;
       setShown(v);
       if (k < 1) raf = requestAnimationFrame(tick);
-      else fromRef.current = value;
     };
     raf = requestAnimationFrame(tick);
-    return () => {
-      cancelAnimationFrame(raf);
-      fromRef.current = value;
-    };
+    return () => cancelAnimationFrame(raf);
   }, [value]);
   return <span className={cn('tabular-nums', className)}>{shown.toLocaleString('ru-RU')}</span>;
 }

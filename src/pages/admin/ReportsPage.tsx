@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { CalendarDays, ChartNoAxesColumn, Download, GraduationCap, Printer, UserRound } from 'lucide-react';
+import { CalendarDays, ChartNoAxesColumn, Download, GraduationCap, Loader2, Printer, TriangleAlert, UserRound } from 'lucide-react';
 import {
   Button,
   ErrorState,
@@ -9,6 +9,7 @@ import {
   SkeletonTiles,
   Tabs,
   buttonClasses,
+  cn,
   formatUzRange,
   useToast,
   type TabItem,
@@ -69,7 +70,20 @@ export default function ReportsPage() {
   const sheet = useApiResource<TabelReport>(tabel ? tabelPaths.data(state) : null);
   // Bo'lim almashganda eski bo'lim ma'lumoti ko'rinmasin.
   const data = report.data && report.data.kind === kind ? report.data : null;
-  const sheetData = sheet.data && sheet.data.month === state.month ? sheet.data : null;
+  /* Tabel javobida `kind` maydoni yo'q, shuning uchun qaysi BO'LIM uchun
+     kelganini o'zimiz eslab qolamiz. Ilgari faqat oy solishtirilardi:
+     xodimlardan talabalarga o'tilganda oy o'zgarmagani uchun ekranda
+     xodimlarning qatorlari "Guruh" ustuni bilan turib qolardi — imzoga
+     ketadigan hujjat uchun jiddiy xato. (Eski so'rov useApiResource'da
+     bekor qilinadi, shuning uchun javob kelganda joriy bo'lim aynan
+     shu javobning bo'limi bo'ladi.) */
+  const [sheetSection, setSheetSection] = useState(state.section);
+  useEffect(() => {
+    if (sheet.data) setSheetSection(state.section);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- faqat yangi javob kelganda
+  }, [sheet.data]);
+  const sheetData =
+    sheet.data && sheet.data.month === state.month && sheetSection === state.section ? sheet.data : null;
   const filterOptions = options.data;
 
   const update = useCallback(
@@ -87,16 +101,23 @@ export default function ReportsPage() {
 
   async function exportExcel() {
     if (!tabel && !criterion) return;
+    // Ikki marta bosilganda ikkita so'rov ketmasin: 300 qatorli tabelni
+    // server sekundlab tuzadi, foydalanuvchi esa "ishlamadi" deb yana
+    // bosadi.
+    if (exporting) return;
     setExporting(true);
     try {
       const path = tabel ? tabelPaths.excel(state) : hisobotPaths.export(state, criterion);
       const blob = await api.blob(path, token);
-      downloadBlob(
-        blob,
-        tabel ? tabelExcelFilename(state) : `hisobot-${state.section}-${criterion}-${state.from}_${state.to}.xlsx`,
-      );
+      const filename = tabel
+        ? tabelExcelFilename(state)
+        : `hisobot-${state.section}-${criterion}-${state.from}_${state.to}.xlsx`;
+      downloadBlob(blob, filename);
+      // Yuklab olish brauzerda jimgina ketadi — hech qanday belgi
+      // bo'lmasa, foydalanuvchi "hech nima bo'lmadi" deb o'ylardi.
+      toast.success(`${filename} yuklab olindi`);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Excel faylni yuklab bo'lmadi");
+      toast.error(err instanceof ApiError ? err.message : "Excel faylni yuklab bo'lmadi — qaytadan urinib ko'ring");
     } finally {
       setExporting(false);
     }
@@ -118,7 +139,14 @@ export default function ReportsPage() {
       subtitle={subtitle}
       actions={
         <span className="flex gap-2 print-hide">
-          <Button variant="secondary" icon={Printer} onClick={() => window.print()} disabled={!ready}>
+          {/* Yangilanayotgan varaqni chop etib qo'yish mumkin emas:
+              eski sonlar qog'ozga tushib, imzolanib ketardi. */}
+          <Button
+            variant="secondary"
+            icon={Printer}
+            onClick={() => window.print()}
+            disabled={!ready || (tabel ? sheet.loading : report.loading)}
+          >
             Chop etish
           </Button>
           {/* Tabelda — oddiy havola: faylni server tuzadi, o'ng tugma bilan
@@ -127,15 +155,28 @@ export default function ReportsPage() {
             <a
               href={tabelExcelHref(state)}
               data-tabel-excel
-              className={buttonClasses({ variant: 'secondary', size: 'md' })}
+              className={cn(
+                buttonClasses({ variant: 'secondary', size: 'md' }),
+                (!ready || exporting) && 'pointer-events-none opacity-60',
+              )}
               onClick={(event) => {
                 event.preventDefault();
+                // `aria-disabled` bosishni to'xtatmaydi: tabel hali
+                // yuklanmaganida yoki fayl tuzilayotganida bosilsa,
+                // ikkinchi (va noto'g'ri filtrli) so'rov ketardi.
+                if (!ready || exporting) return;
                 void exportExcel();
               }}
               aria-disabled={!ready || exporting}
+              aria-busy={exporting}
+              tabIndex={!ready || exporting ? -1 : undefined}
             >
-              <Download size={16} aria-hidden="true" />
-              Excel
+              {exporting ? (
+                <Loader2 size={16} aria-hidden="true" className="animate-spin" />
+              ) : (
+                <Download size={16} aria-hidden="true" />
+              )}
+              {exporting ? 'Tayyorlanmoqda…' : 'Excel'}
             </a>
           ) : (
             <Button variant="secondary" icon={Download} onClick={exportExcel} loading={exporting} disabled={!data}>
@@ -170,6 +211,9 @@ export default function ReportsPage() {
             <SkeletonCard />
           ) : (
             <div className={sheet.loading ? 'opacity-70 transition-opacity' : 'transition-opacity'}>
+              {/* Yangilash xatosi ilgari jimgina yutilardi: ekranda eski
+                  oyning tabeli turaverardi va uni chop etish mumkin edi. */}
+              {sheet.error && <StaleWarning message={sheet.error} onRetry={sheet.reload} />}
               <TabelView data={sheetData} section={state.section} />
             </div>
           )}
@@ -194,6 +238,7 @@ export default function ReportsPage() {
               </div>
             ) : (
               <div className={report.loading ? 'opacity-70 transition-opacity' : 'transition-opacity'}>
+                {report.error && <StaleWarning message={report.error} onRetry={report.reload} />}
                 <ReportView
                   data={data}
                   onDrill={canDrill ? (rowId) => {
@@ -207,5 +252,22 @@ export default function ReportsPage() {
         </div>
       )}
     </Page>
+  );
+}
+
+/** Ma'lumot ekranda turibdi, lekin oxirgi yangilash xato bilan tugadi —
+ *  eskirgan sonlar chop etilib ketmasligi uchun ochiq aytiladi. */
+function StaleWarning({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <p
+      role="alert"
+      className="print-hide mb-3 flex flex-wrap items-center gap-2 rounded-card border border-warning/40 bg-warning-soft px-3 py-2 text-[13px] text-fg"
+    >
+      <TriangleAlert size={15} aria-hidden="true" className="shrink-0" />
+      <span>Ko&apos;rsatilayotgan ma&apos;lumot eskirgan bo&apos;lishi mumkin: {message}</span>
+      <button type="button" onClick={onRetry} className="font-medium underline underline-offset-2">
+        Qayta urinish
+      </button>
+    </p>
   );
 }

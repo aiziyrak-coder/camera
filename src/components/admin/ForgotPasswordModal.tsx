@@ -2,7 +2,8 @@ import { useState, type FormEvent } from 'react';
 import { CheckCircle2, User } from 'lucide-react';
 import { Button, Field, Input, Modal } from '../../ui';
 import { required } from '../../lib/validation';
-import { ApiError, api } from '../../lib/apiClient';
+import { api } from '../../lib/apiClient';
+import { authErrorMessage } from './authErrors';
 import { isBackendConfigured } from '../../lib/config';
 
 export default function ForgotPasswordModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -34,7 +35,9 @@ export default function ForgotPasswordModal({ open, onClose }: { open: boolean; 
         await api.post('/api/auth/forgot-password', { login: login.trim() });
         setSent(true);
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi");
+        // 429 (daqiqasiga 5 ta so'rov) umumiy "(429)" matni bilan kelardi —
+        // authErrors.ts izohiga qarang.
+        setError(authErrorMessage(err));
       } finally {
         setLoading(false);
       }
@@ -57,7 +60,8 @@ export default function ForgotPasswordModal({ open, onClose }: { open: boolean; 
           <p className="text-base font-semibold text-fg">So&apos;rov qabul qilindi</p>
           <p className="text-[13px] leading-relaxed text-muted">
             Agar bunday hisob mavjud bo&apos;lsa va unga elektron pochta biriktirilgan bo&apos;lsa, parolni tiklash havolasi shu manzilga
-            yuborildi. Email topilmasa, tizim administratoriga murojaat qiling.
+            yuborildi. Havola 30 daqiqa va faqat bir marta amal qiladi. Email topilmasa, spam papkasini tekshiring yoki tizim
+            administratoriga murojaat qiling.
           </p>
         </div>
       </Modal>

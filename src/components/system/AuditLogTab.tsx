@@ -6,6 +6,7 @@ import { useServerPage } from '../../lib/useServerPage';
 import type { AuditLogEntry } from '../../types';
 import { Badge, Button, DataTable, FilterBar, StatTile, filterActiveCount, formatNumber, useToast, type DataTableColumn, type FilterFieldEntry, type Tone } from '../../ui';
 import { Pager } from './Pager';
+import { formatServerTime } from './parts';
 import type { AuditStatus } from './systemTypes';
 
 const STATUS: Record<AuditStatus, { label: string; tone: Tone }> = {
@@ -32,9 +33,22 @@ const MODULES = [
 ];
 
 const PAGE_SIZE = 20;
+const MAX_EXPORT_ROWS = 20_000;
+
+const TILES: Array<{ id: AuditStatus; label: string; icon: typeof CheckCircle2; tone: Tone }> = [
+  { id: 'muvaffaqiyatli', label: 'Muvaffaqiyatli', icon: CheckCircle2, tone: 'success' },
+  { id: 'xatolik', label: 'Xatoliklar', icon: AlertCircle, tone: 'danger' },
+  { id: 'ogohlantirish', label: 'Ogohlantirishlar', icon: AlertTriangle, tone: 'warning' },
+];
+
+const TILE_BORDER: Record<AuditStatus, string> = {
+  muvaffaqiyatli: 'border-success',
+  xatolik: 'border-danger',
+  ogohlantirish: 'border-warning',
+};
 
 const COLUMNS: DataTableColumn<AuditLogEntry>[] = [
-  { key: 'timestamp', header: 'Vaqt', width: '11rem', cell: (row) => <span className="whitespace-nowrap font-mono text-xs text-muted">{row.timestamp}</span> },
+  { key: 'timestamp', header: 'Vaqt', width: '11rem', cell: (row) => <span className="whitespace-nowrap font-mono text-xs text-muted">{formatServerTime(row.timestamp, true) ?? '—'}</span> },
   { key: 'user', header: 'Foydalanuvchi', cell: (row) => <span className="font-medium text-fg">{row.user}</span> },
   { key: 'action', header: 'Amal', cell: (row) => <span className="text-fg">{row.action}</span> },
   { key: 'module', header: 'Modul' },
@@ -48,6 +62,9 @@ export function AuditLogTab({ canExport }: { canExport: boolean }) {
   const [status, setStatus] = useState<AuditStatus | ''>('');
   const [module, setModule] = useState('');
   const [counts, setCounts] = useState<Record<AuditStatus, number> | null>(null);
+  // Hisoblagichlar so'rovi xato bersa `counts` null qolib, plitkalar cheksiz
+  // "yuklanmoqda" skeletonida turardi. Endi urinish tugagani alohida belgilanadi.
+  const [countsDone, setCountsDone] = useState(false);
   const [exporting, setExporting] = useState(false);
 
   const { items, page, setPage, totalPages, total, loading, error, reload } = useServerPage<AuditLogEntry>(
@@ -58,15 +75,22 @@ export function AuditLogTab({ canExport }: { canExport: boolean }) {
 
   useEffect(() => {
     const controller = new AbortController();
-    Promise.all(
-      (Object.keys(STATUS) as AuditStatus[]).map((s) =>
-        api.get<Page<AuditLogEntry>>(`/api/audit-log${buildQuery({ status: s, module: module || undefined, pageSize: 1 })}`, undefined, { signal: controller.signal }),
-      ),
-    )
-      .then(([ok, err, warn]) => setCounts({ muvaffaqiyatli: ok.total, xatolik: err.total, ogohlantirish: warn.total }))
-      .catch(() => {
+    setCountsDone(false);
+    void (async () => {
+      try {
+        const [ok, err, warn] = await Promise.all(
+          (Object.keys(STATUS) as AuditStatus[]).map((s) =>
+            api.get<Page<AuditLogEntry>>(`/api/audit-log${buildQuery({ status: s, module: module || undefined, pageSize: 1 })}`, undefined, { signal: controller.signal }),
+          ),
+        );
+        if (!controller.signal.aborted) setCounts({ muvaffaqiyatli: ok.total, xatolik: err.total, ogohlantirish: warn.total });
+      } catch {
         /* hisoblagichlar ixtiyoriy — jadval o'z xatosini ko'rsatadi */
-      });
+      } finally {
+        // Urinish tugadi: muvaffaqiyatsiz bo'lsa ham plitkalar skeletondan chiqadi.
+        if (!controller.signal.aborted) setCountsDone(true);
+      }
+    })();
     return () => controller.abort();
   }, [module]);
 
@@ -83,7 +107,11 @@ export function AuditLogTab({ canExport }: { canExport: boolean }) {
         all.push(...res.items);
         pages = res.totalPages;
         current += 1;
-      } while (current <= pages);
+      } while (current <= pages && all.length < MAX_EXPORT_ROWS);
+      // Jurnal yuz minglab yozuvdan iborat bo'lishi mumkin — chegarasiz yig'ish
+      // brauzerni muzlatardi. Kesilgani foydalanuvchidan yashirilmaydi.
+      const truncated = all.length > MAX_EXPORT_ROWS || (current <= pages && all.length >= MAX_EXPORT_ROWS);
+      if (all.length > MAX_EXPORT_ROWS) all.length = MAX_EXPORT_ROWS;
       // Bo'sh fayl yuklab berish — "ishladi" degan taassurot qoldirib,
       // amalda hech nima bermaydi. Sababi aytiladi.
       if (all.length === 0) {
@@ -99,6 +127,7 @@ export function AuditLogTab({ canExport }: { canExport: boolean }) {
         all.map((l) => [l.timestamp, l.user, l.action, l.module, STATUS[l.status]?.label ?? l.status, l.ip]),
         `tizim-jurnali-${new Date().toISOString().slice(0, 10)}.csv`,
       );
+      if (truncated) toast.info(`Eksport ${formatNumber(MAX_EXPORT_ROWS)} ta yozuv bilan cheklandi — davrni filtrlab qayta yuklang`);
     } catch {
       toast.error("Jurnalni eksport qilib bo'lmadi");
     } finally {
@@ -130,9 +159,24 @@ export function AuditLogTab({ canExport }: { canExport: boolean }) {
   return (
     <>
       <section aria-label="Holatlar bo'yicha" className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
-        <StatTile label="Muvaffaqiyatli" icon={CheckCircle2} tone="success" value={formatNumber(counts?.muvaffaqiyatli)} loading={!counts} onClick={() => toggleStatus('muvaffaqiyatli')} className={status === 'muvaffaqiyatli' ? 'border-success' : undefined} />
-        <StatTile label="Xatoliklar" icon={AlertCircle} tone="danger" value={formatNumber(counts?.xatolik)} loading={!counts} onClick={() => toggleStatus('xatolik')} className={status === 'xatolik' ? 'border-danger' : undefined} />
-        <StatTile label="Ogohlantirishlar" icon={AlertTriangle} tone="warning" value={formatNumber(counts?.ogohlantirish)} loading={!counts} onClick={() => toggleStatus('ogohlantirish')} className={status === 'ogohlantirish' ? 'border-warning' : undefined} />
+        {TILES.map((tile) => {
+          const on = status === tile.id;
+          return (
+            <StatTile
+              key={tile.id}
+              // Tanlanganlik faqat ramka rangi bilan ko'rsatilardi — rangni
+              // ajratolmaydigan foydalanuvchi filtr yoqiqligini bilmasdi.
+              label={on ? `${tile.label} · filtr yoqilgan` : tile.label}
+              icon={tile.icon}
+              tone={tile.tone}
+              value={formatNumber(counts?.[tile.id])}
+              loading={!counts && !countsDone}
+              hint={on ? 'Bekor qilish uchun bosing' : 'Faqat shu holatni ko’rish uchun bosing'}
+              onClick={() => toggleStatus(tile.id)}
+              className={on ? TILE_BORDER[tile.id] : undefined}
+            />
+          );
+        })}
       </section>
 
       <FilterBar

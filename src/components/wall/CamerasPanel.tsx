@@ -7,7 +7,7 @@ import type { CameraFeed } from '../../types';
 import { WallPanel } from './primitives';
 
 /** 2–4 jonli kamera. Kanal kengligini tejash uchun faqat tanlangan
- *  (yoki birinchi onlayn) kameralar; onlayn kamera yo'q bo'lsa panel
+ *  (yoki birinchi aloqadagi) kameralar; aloqadagi kamera yo'q bo'lsa panel
  *  umuman chiqmaydi (`onEmpty`).
  *
  *  `onPrune` — sozlamalarda o'chirilgan kamera ekran sozlamasida abadiy
@@ -36,7 +36,12 @@ export function CamerasPanel({
           if (items.length > 0) setKnownIds(new Set(items.map((c) => c.id)));
         })
         .catch(() => {
-          /* oflayn — oxirgi ro'yxat qoladi */
+          // Birinchi so'rov xato bersa `cams` abadiy `null` bo'lib qolardi:
+          // `onAvailability` hech qachon chaqirilmas, devor joylashuvida
+          // "F" maydoni bo'm-bo'sh teshik bo'lib turaverardi. Bo'sh
+          // ro'yxat "kamera yo'q" degan aniq javob beradi; keyingi
+          // muvaffaqiyatli so'rov panelni qaytaradi.
+          if (!cancelled) setCams((prev) => prev ?? []);
         });
     void load();
     const t = window.setInterval(load, 5 * 60_000);

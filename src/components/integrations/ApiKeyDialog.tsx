@@ -7,6 +7,11 @@ import { copyText } from './clipboard';
 
 function CopyRow({ label, value, secret = false }: { label: string; value: string; secret?: boolean }) {
   const [copied, setCopied] = useState(false);
+  // Nusxalash muvaffaqiyatsiz tugashi mumkin (HTTP, brauzer ruxsati yo'q) —
+  // ilgari bunda MUTLAQO hech narsa ko'rinmasdi: foydalanuvchi "Nusxa"ni
+  // bosib, kalit buferga tushgan deb o'ylab oynani yopardi va kalitni
+  // butunlay yo'qotardi (u qayta ko'rsatilmaydi).
+  const [failed, setFailed] = useState(false);
   return (
     <div className="flex flex-col gap-1.5">
       <p className="text-[13px] font-medium text-fg">{label}</p>
@@ -24,7 +29,9 @@ function CopyRow({ label, value, secret = false }: { label: string; value: strin
           icon={copied ? Check : Copy}
           aria-label={`${label} — nusxa olish`}
           onClick={async () => {
-            if (await copyText(value)) {
+            const ok = await copyText(value);
+            setFailed(!ok);
+            if (ok) {
               setCopied(true);
               window.setTimeout(() => setCopied(false), 2000);
             }
@@ -33,6 +40,14 @@ function CopyRow({ label, value, secret = false }: { label: string; value: strin
           {copied ? 'Olindi' : 'Nusxa'}
         </Button>
       </div>
+      <p role="status" aria-live="polite" className="sr-only">
+        {copied ? `${label} nusxalandi` : ''}
+      </p>
+      {failed && (
+        <p role="alert" className="text-xs font-medium text-danger">
+          Nusxalab bo'lmadi — matnni belgilab, Ctrl+C bilan qo'lda ko'chiring.
+        </p>
+      )}
     </div>
   );
 }

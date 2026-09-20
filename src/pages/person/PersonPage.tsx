@@ -33,7 +33,7 @@ import {
   type DateRangeValue,
   type TabItem,
 } from '../../ui';
-import { api } from '../../lib/apiClient';
+import { api, isAbortError } from '../../lib/apiClient';
 import { getAttendancePolicy } from '../../lib/attendancePolicyApi';
 import { useAuth } from '../../lib/auth';
 import { usePermissions } from '../../lib/permissions';
@@ -63,7 +63,7 @@ import { CalendarLegend, MonthCalendar } from '../../components/attendance/Month
 import { LessonDrawer, TeacherPunctuality } from '../../components/students/LessonViews';
 import { PersonPhoto } from '../../components/students/PersonPhoto';
 import { ArrivalTimeChart } from '../../components/students/TrendCharts';
-import { useAsyncData } from '../../components/students/useAsyncData';
+import { errorText, useAsyncData } from '../../components/students/useAsyncData';
 import { GroupEnrollDrawer, type EnrollDrawerTarget } from '../../components/students/GroupEnrollDrawer';
 import { EnrollCta, StaffKpis, WeekdayPatternCard } from '../../components/attendance/PersonInsights';
 
@@ -71,6 +71,8 @@ type TabId = 'davomat' | 'darslar' | 'harakatlar';
 const PRESETS = ['week', 'month', 'last30', 'lastMonth'] as const;
 const MAX_CALENDAR_MONTHS = 6;
 const MONTH_TTL_MS = 60_000;
+/** Server `recentVisits` ni shuncha yozuv bilan cheklaydi. */
+const RECENT_VISITS_LIMIT = 20;
 
 // Oylik yozuvlar keshi (odam+oy) — sahifadan chiqib qaytganda darhol chiziladi.
 const monthCache = new Map<string, { at: number; days: AttendanceDay[] }>();
@@ -79,6 +81,10 @@ const cacheKey = (personId: string, month: string) => `${personId}:${month}`;
 /** /api/attendance/{id}?month= — ko'rinayotgan oylar (erta ketish, yozuv borligi). */
 function useMonthRecords(personId: string, months: string[]) {
   const [state, setState] = useState<Record<string, AttendanceDay[]>>({});
+  // Oy so'rovi yiqilsa kalendar avval abadiy "yuklanmoqda" bo'lib turardi:
+  // xato `.catch(() => null)` da yutilardi, foydalanuvchi na sababni ko'rar,
+  // na qayta urinish tugmasini topardi.
+  const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
   const monthsKey = months.join(',');
 
@@ -92,8 +98,10 @@ function useMonthRecords(personId: string, months: string[]) {
       if (!hit || Date.now() - hit.at > MONTH_TTL_MS) missing.push(m);
     }
     setState(fresh);
+    setError(null);
     if (!missing.length) return;
     const controller = new AbortController();
+    const failed: string[] = [];
     Promise.all(
       missing.map((m) =>
         api
@@ -102,7 +110,10 @@ function useMonthRecords(personId: string, months: string[]) {
             monthCache.set(cacheKey(personId, m), { at: Date.now(), days });
             return [m, days] as const;
           })
-          .catch(() => null),
+          .catch((err: unknown) => {
+            if (!isAbortError(err)) failed.push(errorText(err));
+            return null;
+          }),
       ),
     ).then((results) => {
       if (controller.signal.aborted) return;
@@ -111,6 +122,7 @@ function useMonthRecords(personId: string, months: string[]) {
         for (const r of results) if (r) next[r[0]] = r[1];
         return next;
       });
+      setError(failed[0] ?? null);
     });
     return () => controller.abort();
   }, [personId, monthsKey, version]);
@@ -133,7 +145,7 @@ function useMonthRecords(personId: string, months: string[]) {
     },
     [personId],
   );
-  return { records: state, invalidate, apply };
+  return { records: state, error, invalidate, apply, reload: invalidate };
 }
 
 function readRange(params: URLSearchParams, today: string): DateRangeValue {
@@ -141,6 +153,12 @@ function readRange(params: URLSearchParams, today: string): DateRangeValue {
   const to = params.get('gacha');
   if (isIsoDate(from) && isIsoDate(to) && from <= to) {
     const clampedTo = to > today ? today : to;
+    // `gacha` bugundan keyin bo'lsa u bugungi kunga qisqartiriladi. Ilgari
+    // BUTUN oraliq kelajakda bo'lganda (masalan ?dan=2026-10-01&gacha=
+    // 2026-10-31) qisqartirishdan keyin from > to bo'lib qolardi va serverga
+    // teskari oraliq ketardi. Bunday oraliqda ko'rsatadigan hech narsa yo'q —
+    // standart oyga qaytamiz.
+    if (from > clampedTo) return rangeForPreset('month', today);
     return { from, to: clampedTo, preset: detectPreset({ from, to: clampedTo }, PRESETS, today) };
   }
   return rangeForPreset('month', today);
@@ -201,11 +219,15 @@ export default function PersonPage() {
   const isStaff = person?.type === 'xodim';
   // Kechikish chegarasi — Sozlamalar → Ish vaqti (talaba/xodim alohida),
   // server kech_keldi ni shu qoida bilan yozadi. Ilgari 09:00 qotirilgan edi.
-  const policy = useAsyncData('attendance-policy', () => getAttendancePolicy(null));
+  const policy = useAsyncData('attendance-policy', (signal) => getAttendancePolicy(null, { signal }));
   const lateCutoff = lateAfterMinutes(
     person?.type === 'talaba' ? policy.data?.studentLateAfter : policy.data?.staffLateAfter,
   );
   const lateLabel = `${String(Math.floor(lateCutoff / 60)).padStart(2, '0')}:${String(lateCutoff % 60).padStart(2, '0')}`;
+  // Qoida hali kelmagan (yoki so'rov yiqilgan) bo'lsa `lateCutoff` — koddagi
+  // zaxira qiymat. Uni ANIQ soat sifatida yozib qo'yish yolg'on bo'lardi:
+  // izohlar faqat haqiqiy qoida kelganda soatni nomlaydi.
+  const cutoffKnown = policy.data != null;
   // Xodim: oldingi, xuddi shu uzunlikdagi davr — KPI o'zgarishlari uchun.
   const prevRange = previousRange(range.from, range.to);
   const previous = useAsyncData<PersonProfile>(
@@ -259,10 +281,25 @@ export default function PersonPage() {
   );
 
   const todayCell = cellsByMonth[currentMonth]?.find((c) => c.date === today) ?? null;
+  // Joriy oy yozuvlari hali kelmaganda "Bugun" plitkasi «Kutilmoqda» deb
+  // turib, keyin «Keldi»ga sakrardi — yolg'on holat. Ma'lumot kelguncha
+  // «Noma'lum» (StatusBadge uni neytral ko'rsatadi).
+  const todayLoaded = cellsByMonth[currentMonth] != null;
   const todayStatus =
-    todayCell && todayCell.isRecord ? todayCell.status : person?.biometricsStatus === 'tasdiqlangan' ? 'kutilmoqda' : 'nomalum';
+    todayCell && todayCell.isRecord
+      ? todayCell.status
+      : todayLoaded && person?.biometricsStatus === 'tasdiqlangan'
+        ? 'kutilmoqda'
+        : 'nomalum';
 
-  const allCells = useMemo(() => Object.values(cellsByMonth).flatMap((c) => c ?? []).sort((a, b) => a.date.localeCompare(b.date)), [cellsByMonth]);
+  // Kun oynasidagi «oldingi/keyingi» faqat KO'RINAYOTGAN oylar bo'ylab
+  // yursin. Ilgari bu yerga joriy oy ham qo'shilardi (u "Bugun" plitkasi
+  // uchun yuklanadi), shuning uchun avgustni ko'rib turgan odam «keyingi»
+  // bilan kalendarda umuman yo'q sentyabr kuniga tushib qolardi.
+  const allCells = useMemo(
+    () => calendarMonths.flatMap((m) => cellsByMonth[m] ?? []).sort((a, b) => a.date.localeCompare(b.date)),
+    [calendarMonths, cellsByMonth],
+  );
   const selectedIndex = selectedDate ? allCells.findIndex((c) => c.date === selectedDate) : -1;
   const selectedCell: CalendarCell | null =
     selectedIndex >= 0
@@ -284,13 +321,18 @@ export default function PersonPage() {
   const prevCell = selectedIndex > 0 ? allCells[selectedIndex - 1] : null;
   const nextCell = selectedIndex >= 0 && selectedIndex < allCells.length - 1 && allCells[selectedIndex + 1].status !== 'kelajak' ? allCells[selectedIndex + 1] : null;
 
+  const visitsCapped = (data?.recentVisits.length ?? 0) >= RECENT_VISITS_LIMIT;
   const tabs: TabItem<TabId>[] = [
     { id: 'davomat', label: 'Davomat', icon: CalendarDays },
     // Dars jadvali yo'q shaxsda tab ham yo'q — doimo bo'sh jadval o'rniga.
     ...(data && data.lessons.length > 0
       ? [{ id: 'darslar' as const, label: 'Darslar', icon: GraduationCap, count: data.lessons.length }]
       : []),
-    { id: 'harakatlar', label: "Qayerda ko'ringan", icon: Footprints, count: data?.recentVisits.length ?? null },
+    // Server tashriflarni 20 ta bilan cheklaydi (situation.py: .limit(20)).
+    // Shu sababli "20" — davrdagi tashriflar soni EMAS, faqat chegara: uni
+    // tab hisoblagichida ko'rsatish "bu davrda 20 marta ko'ringan" degan
+    // yolg'on ma'no berardi.
+    { id: 'harakatlar', label: "Qayerda ko'ringan", icon: Footprints, count: visitsCapped ? null : (data?.recentVisits.length ?? null) },
   ];
   const [tab, setTab] = useUrlTab(tabs, { defaultTab: 'davomat' });
 
@@ -425,7 +467,11 @@ export default function PersonPage() {
                     <Card>
                       <CardHeader
                         title="Har kuni soat nechada kelgan"
-                        subtitle={`Har bir nuqta — bir kun. To'q sariq nuqta — soat ${lateLabel} dan keyin kelgan, ya'ni kech kelgan kun`}
+                        subtitle={
+                          cutoffKnown
+                            ? `Har bir nuqta — bir kun. To'q sariq nuqta — soat ${lateLabel} dan keyin kelgan, ya'ni kech kelgan kun`
+                            : "Har bir nuqta — bir kun. To'q sariq nuqta — kech kelgan kun"
+                        }
                         icon={LogIn}
                       />
                       {data.calendar.some((d) => d.checkIn) ? (
@@ -453,8 +499,8 @@ export default function PersonPage() {
                   progress={data.totals.rate}
                   hint={`Yozuv bor ${data.totals.present + data.totals.absent} kundan ${data.totals.present} tasida kelgan`}
                 />
-                <StatTile label="O'z vaqtida kelgan" value={`${data.totals.present - data.totals.late} kun`} icon={CheckCircle2} tone="success" hint={`Soat ${lateLabel} gacha`} />
-                <StatTile label="Kech kelgan" value={`${data.totals.late} kun`} icon={Clock} tone="warning" hint={`Soat ${lateLabel} dan keyin`} />
+                <StatTile label="O'z vaqtida kelgan" value={`${data.totals.present - data.totals.late} kun`} icon={CheckCircle2} tone="success" hint={cutoffKnown ? `Soat ${lateLabel} gacha` : 'Ish boshlanish vaqtidan oldin kelgan kunlar'} />
+                <StatTile label="Kech kelgan" value={`${data.totals.late} kun`} icon={Clock} tone="warning" hint={cutoffKnown ? `Soat ${lateLabel} dan keyin` : 'Ish boshlanish vaqtidan keyin kelgan kunlar'} />
                 <StatTile label="Kelmagan" value={`${data.totals.absent} kun`} icon={UserX} tone="danger" hint="Hech bir kamerada ko'rinmagan" />
                 <StatTile
                   label="Odatda kelish vaqti"
@@ -485,6 +531,9 @@ export default function PersonPage() {
                       />
                     ))}
                   </div>
+                  {/* Oy yozuvlari kelmasa kalendar bo'sh kataklar bilan
+                      qolib ketmasin — sabab va qayta urinish ko'rsatiladi. */}
+                  {months.error && <ErrorState className="mt-4" title="Kalendar yuklanmadi" message={months.error} onRetry={() => months.reload()} />}
                   <CalendarLegend className="mt-4 border-t border-border pt-3" />
                 </Card>
                 <div className="flex flex-col gap-5">
@@ -508,7 +557,11 @@ export default function PersonPage() {
                     <Card>
                       <CardHeader
                         title="Har kuni soat nechada kelgan"
-                        subtitle={`Har bir nuqta — bir kun. To'q sariq nuqta — soat ${lateLabel} dan keyin kelgan kun`}
+                        subtitle={
+                          cutoffKnown
+                            ? `Har bir nuqta — bir kun. To'q sariq nuqta — soat ${lateLabel} dan keyin kelgan kun`
+                            : "Har bir nuqta — bir kun. To'q sariq nuqta — kech kelgan kun"
+                        }
                         icon={LogIn}
                       />
                       {data.calendar.some((d) => d.checkIn) ? (
@@ -544,8 +597,10 @@ export default function PersonPage() {
             ) : (
               <div className="flex flex-col gap-4">
                 <p className="text-[13px] text-muted">
-                  Bu odam qaysi kunlari, soat nechada va qaysi kamerada ko'ringani. Oxirgi {data.recentVisits.length} ta yozuv, yangisi
-                  birinchi.
+                  Bu odam qaysi kunlari, soat nechada va qaysi kamerada ko'ringani — yangisi birinchi.{' '}
+                  {visitsCapped
+                    ? `Bu ro'yxatda eng so'nggi ${RECENT_VISITS_LIMIT} ta yozuvgina ko'rsatiladi — davrda undan ko'p bo'lishi mumkin. To'liq kun uchun kalendardan kunni oching.`
+                    : `Tanlangan davrda ${data.recentVisits.length} ta yozuv.`}
                 </p>
                 {visitsByDate(data.recentVisits).map((day) => (
                   <Card key={day.date} padding="sm">

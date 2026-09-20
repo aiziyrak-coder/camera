@@ -116,3 +116,17 @@ describe('misc', () => {
     expect(shiftIsoDate('2026-03-01', 1)).toBe('2026-02-28');
   });
 });
+
+describe('mergeArrivalLists vaqt formati', () => {
+  it('server ISO vaqt qaytarsa ham jonli kelishlarni yo\'qotmaydi', () => {
+    const server = [{ id: 's1', time: '2026-09-20T08:10:00' }];
+    const live = [{ id: 'l1', time: '08:12' }];
+    expect(mergeArrivalLists(server, live).map((a) => a.id)).toEqual(['l1', 's1']);
+  });
+
+  it('serverdan oldingi eski jonli yozuvni qo\'shmaydi', () => {
+    const server = [{ id: 's1', time: '2026-09-20T08:10:00' }];
+    const live = [{ id: 'l1', time: '08:05' }];
+    expect(mergeArrivalLists(server, live).map((a) => a.id)).toEqual(['s1']);
+  });
+});

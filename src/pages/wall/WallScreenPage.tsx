@@ -98,16 +98,18 @@ function useFresh() {
   useEffect(() => () => timers.current.forEach((t) => window.clearTimeout(t)), []);
   const mark = useCallback((id: string) => {
     setIds((prev) => new Set(prev).add(id));
-    timers.current.push(
-      window.setTimeout(() => {
-        setIds((prev) => {
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        });
-        timers.current = timers.current.slice(-50);
-      }, FRESH_MS),
-    );
+    // Ishlagan taymer ro'yxatdan o'zi chiqadi. Ilgari ro'yxat `slice(-50)`
+    // bilan qirqilardi: bu hali ishlamagan taymerlarni ham tashlab
+    // yuborardi va ular yopilganda tozalanmay qolardi.
+    const timer = window.setTimeout(() => {
+      timers.current = timers.current.filter((t) => t !== timer);
+      setIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }, FRESH_MS);
+    timers.current.push(timer);
   }, []);
   const clear = useCallback(() => setIds(new Set()), []);
   return [ids, mark, clear] as const;
@@ -129,9 +131,21 @@ function useAspect() {
   const read = () => (typeof window === 'undefined' ? 16 / 9 : window.innerWidth / Math.max(1, window.innerHeight));
   const [aspect, setAspect] = useState(read);
   useEffect(() => {
-    const on = () => setAspect(read());
+    // `resize` soniyasiga o'nlab marta keladi; har biri butun devorni
+    // qayta chizardi. Kadrga bir marta yetarli.
+    let raf = 0;
+    const on = () => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = 0;
+        setAspect(read());
+      });
+    };
     window.addEventListener('resize', on);
-    return () => window.removeEventListener('resize', on);
+    return () => {
+      if (raf) window.cancelAnimationFrame(raf);
+      window.removeEventListener('resize', on);
+    };
   }, []);
   return aspect;
 }
@@ -188,8 +202,10 @@ export default function WallScreenPage() {
     };
   }, [allowed]);
 
-  // ── Surunkali kechikuvchilar (14 kun, xodimlar)
+  // ── Takror kechikkanlar (14 kun, xodimlar)
   const [chronic, setChronic] = useState<number | null>(null);
+  // Xato jimgina yutilib, panelda abadiy "—" turardi — sababi yoziladi.
+  const [chronicError, setChronicError] = useState(false);
   const wallDate = wall?.date;
   useEffect(() => {
     if (!allowed || !wallDate || !config.panels.includes('D')) return;
@@ -198,9 +214,13 @@ export default function WallScreenPage() {
       ctrl?.abort();
       ctrl = new AbortController();
       getChronic(shiftIsoDate(wallDate, 13), wallDate, { signal: ctrl.signal })
-        .then((rows) => setChronic(rows.length))
-        .catch(() => {
-          /* ko'rsatilmaydi — "—" */
+        .then((rows) => {
+          setChronic(rows.length);
+          setChronicError(false);
+        })
+        .catch((err) => {
+          if (isAbortError(err)) return;
+          setChronicError(true);
         });
     };
     load();
@@ -457,7 +477,7 @@ export default function WallScreenPage() {
                 studentsEnroll={wall.enrollment.students}
               />
             )}
-            {effectivePanels.includes('B') && <ArrivalsPanel arrivals={arrivals} freshIds={freshArrivals} />}
+            {effectivePanels.includes('B') && <ArrivalsPanel arrivals={arrivals} freshIds={freshArrivals} live={online} />}
             {effectivePanels.includes('C') && (
               <SpotlightPanel
                 detail={detail}
@@ -467,7 +487,7 @@ export default function WallScreenPage() {
                 cycleKey={cycleKey}
               />
             )}
-            {effectivePanels.includes('D') && <RankingPanel top={wall.topUnits} bottom={wall.bottomUnits} chronic={chronic} />}
+            {effectivePanels.includes('D') && <RankingPanel top={wall.topUnits} bottom={wall.bottomUnits} chronic={chronic} chronicError={chronicError} />}
             {effectivePanels.includes('E') && (
               <SecurityPanel
                 events={highEvents}

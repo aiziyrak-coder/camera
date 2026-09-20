@@ -1,7 +1,8 @@
 import { ChevronDown, Cpu } from 'lucide-react';
 import { Badge, Card, CardHeader, cn, formatNumber, type Tone } from '../../ui';
+import { formatDuration } from '../../lib/integrationsApi';
 import type { LiveResource } from '../situation/useLiveResource';
-import { Metric, Recommendation, ResourceBody, StatusLine } from './parts';
+import { Metric, Recommendation, ResourceBody, StatusLine, formatServerTime } from './parts';
 import { sweepLabel, type SweepStatus, type SystemAiStatus } from './systemTypes';
 
 function sweepState(sweep: SweepStatus): { label: string; tone: Tone } {
@@ -27,7 +28,16 @@ export function AiRuntimeCard({ resource }: { resource: LiveResource<SystemAiSta
           const failing = sweeps.filter((s) => s.lastError);
           const paused = sweeps.filter((s) => s.paused);
           const gpuActive = ai.gpu.faceGpuActive || ai.gpu.objectGpuActive;
-          const gpuLabel = ai.gpu.cudaAvailable ? (ai.gpu.faceGpuActive ? 'CUDA faol' : 'mavjud, CPU ishlatilmoqda') : "yo'q, CPU'da";
+          // Rozet yashil bo'lib, yozuvda "CPU ishlatilmoqda" turishi mumkin edi: rang
+          // face||object bo'yicha, yozuv esa faqat face bo'yicha hisoblanardi.
+          const gpuParts = [ai.gpu.faceGpuActive ? 'yuz' : null, ai.gpu.objectGpuActive ? 'obyekt' : null].filter(Boolean);
+          const gpuLabel = !ai.gpu.cudaAvailable
+            ? "yo'q, CPU'da"
+            : gpuActive
+              ? `CUDA faol (${gpuParts.join(', ')})`
+              : 'mavjud, CPU ishlatilmoqda';
+          const tickAt = formatServerTime(ai.lastTick.finishedAt);
+          const pollSeconds = ai.schedulerPollSeconds ?? 0;
           const gate = ai.faceInferenceGate;
           return (
             <div className="space-y-4">
@@ -40,14 +50,15 @@ export function AiRuntimeCard({ resource }: { resource: LiveResource<SystemAiSta
 
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 <Metric
-                  label="Oxirgi daqiqada"
-                  value={`${ai.lastTick.modulesRan} modul`}
-                  hint={`${ai.lastTick.criticalRan} kritik · ${ai.lastTick.standardRan} standart`}
+                  label={pollSeconds > 0 ? `Oxirgi siklda (har ${formatDuration(pollSeconds)})` : 'Oxirgi siklda'}
+                  value={`${formatNumber(ai.lastTick.modulesRan)} modul`}
+                  hint={`${formatNumber(ai.lastTick.criticalRan)} kritik · ${formatNumber(ai.lastTick.standardRan)} standart${tickAt ? ` · ${tickAt}` : ''}`}
                 />
                 <Metric
                   label="Parallel slotlar"
                   value={`${ai.sweepSlots.inUse} / ${ai.sweepSlots.max}`}
-                  tone={ai.sweepSlots.inUse >= ai.sweepSlots.max ? 'warning' : undefined}
+                  // max = 0 bo'lsa 0 >= 0 rost bo'lib, bo'sh navbat sariq ko'rinardi.
+                  tone={ai.sweepSlots.max > 0 && ai.sweepSlots.inUse >= ai.sweepSlots.max ? 'warning' : undefined}
                   hint="Band / jami"
                 />
                 <Metric
@@ -66,7 +77,7 @@ export function AiRuntimeCard({ resource }: { resource: LiveResource<SystemAiSta
                 ) : (
                   entrance && (
                     <StatusLine tone="success">
-                      Kirish/chiqish davomati: har {entrance.intervalSeconds} s, oxirgisi {seconds(entrance.lastDurationSeconds)} davom etdi ({formatNumber(entrance.runs)} marta)
+                      Kirish/chiqish davomati: har {formatDuration(entrance.intervalSeconds)}, oxirgisi {seconds(entrance.lastDurationSeconds)} davom etdi ({formatNumber(entrance.runs)} marta)
                     </StatusLine>
                   )
                 )}
@@ -94,10 +105,13 @@ export function AiRuntimeCard({ resource }: { resource: LiveResource<SystemAiSta
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-[13px] font-medium text-fg">{sweepLabel(sweep.name)}</p>
                             <p className="truncate text-xs tabular-nums text-muted">
-                              {sweep.tier === 'critical' ? 'Kritik' : 'Standart'} · har {sweep.intervalSeconds} s · oxirgisi {seconds(sweep.lastDurationSeconds)} ·{' '}
+                              {sweep.tier === 'critical' ? 'Kritik' : 'Standart'} · har {formatDuration(sweep.intervalSeconds)} · oxirgisi {seconds(sweep.lastDurationSeconds)} ·{' '}
                               {formatNumber(sweep.runs)} marta
                               {sweep.failures > 0 ? ` · ${formatNumber(sweep.failures)} xato` : ''}
+                              {formatServerTime(sweep.lastFinishedAt) ? ` · ${formatServerTime(sweep.lastFinishedAt)}` : ''}
                             </p>
+                            {/* Xato matni faqat `title`da edi — sichqonchasiz va klaviaturada ko'rinmasdi. */}
+                            {sweep.lastError && <p className="mt-0.5 break-words text-xs text-danger">Xato: {sweep.lastError}</p>}
                           </div>
                           <Badge tone={state.tone} dot className={cn('shrink-0')}>
                             {state.label}

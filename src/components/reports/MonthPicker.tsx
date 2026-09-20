@@ -40,6 +40,12 @@ export default function MonthPicker({ value, onChange, max = monthOf(todayInTash
   const previous = shiftMonth(month, -1);
   const next = shiftMonth(month, 1);
   const canGoNext = next <= max;
+  // Ro'yxatdagi eng eski yildan orqaga o'tib bo'lmaydi: ilgari "Oldingi
+  // oy" tugmasi cheksiz edi va tasodifan 2019-yilga tushib qolgan
+  // foydalanuvchi tanlangan yilni ro'yxatda ko'rib, nega bo'sh tabel
+  // chiqayotganini tushunmasdi.
+  const minMonth = `${yearList[0]}-01`;
+  const canGoPrev = previous >= minMonth;
 
   function setPart(part: 'year' | 'month', raw: string) {
     const candidate = part === 'year' ? `${raw}-${month.slice(5, 7)}` : `${month.slice(0, 4)}-${raw}`;
@@ -51,17 +57,26 @@ export default function MonthPicker({ value, onChange, max = monthOf(todayInTash
       <IconButton
         icon={ChevronLeft}
         label="Oldingi oy"
+        title={canGoPrev ? 'Oldingi oy' : `${yearList[0]}-yildan oldingi tabel saqlanmaydi`}
         onClick={() => onChange(previous)}
         size="sm"
+        disabled={!canGoPrev}
       />
       <Select
         value={month.slice(5, 7)}
         onChange={(m) => setPart('month', m)}
         ariaLabel="Oy"
-        options={UZ_MONTHS.map((name, index) => ({
-          value: String(index + 1).padStart(2, '0'),
-          label: `${name[0].toUpperCase()}${name.slice(1)}`,
-        }))}
+        // Kelajakdagi oy tanlanmaydi: ilgari ro'yxatdan "Dekabr" tanlansa
+        // qiymat jimgina joriy oyga qaytarilardi va foydalanuvchi
+        // tanlagani "yo'qolib" qolardi. Endi bunday variantlar o'chiq.
+        options={UZ_MONTHS.map((name, index) => {
+          const value = String(index + 1).padStart(2, '0');
+          return {
+            value,
+            label: `${name[0].toUpperCase()}${name.slice(1)}`,
+            disabled: `${month.slice(0, 4)}-${value}` > max,
+          };
+        })}
       />
       <Select
         value={month.slice(0, 4)}
@@ -72,6 +87,8 @@ export default function MonthPicker({ value, onChange, max = monthOf(todayInTash
       <IconButton
         icon={ChevronRight}
         label="Keyingi oy"
+        // Nega o'chiq ekani sichqoncha ostida yozilib tursin.
+        title={canGoNext ? 'Keyingi oy' : "Kelajakdagi oy uchun tabel tuzilmaydi"}
         onClick={() => onChange(next)}
         size="sm"
         disabled={!canGoNext}

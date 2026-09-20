@@ -14,15 +14,21 @@ import {
   type AttendancePolicyInput,
 } from '../../lib/attendancePolicyApi';
 
-const DAYS: [number, string][] = [
-  [1, 'Du'],
-  [2, 'Se'],
-  [3, 'Ch'],
-  [4, 'Pa'],
-  [5, 'Ju'],
-  [6, 'Sh'],
-  [7, 'Ya'],
+/** ISO hafta kuni: qisqartma (tugmada) va to'liq nomi (ekran o'quvchi
+ *  va sichqoncha izohi uchun — "Pa" nimani anglatishi ko'rinmasdi). */
+const DAYS: [number, string, string][] = [
+  [1, 'Du', 'Dushanba'],
+  [2, 'Se', 'Seshanba'],
+  [3, 'Ch', 'Chorshanba'],
+  [4, 'Pa', 'Payshanba'],
+  [5, 'Ju', 'Juma'],
+  [6, 'Sh', 'Shanba'],
+  [7, 'Ya', 'Yakshanba'],
 ];
+
+/** Server saqlangandan keyin oxirgi shuncha kundagi yozuvlarni qayta
+ *  hisoblaydi (camera-api/app/routers/attendance_policy.py:RECOMPUTE_DAYS). */
+const RECOMPUTE_DAYS = 60;
 
 /** Ish vaqti: kim "kech keldi" hisoblanishi shu yerda belgilanadi. */
 const SUBTITLE = "Kim o'z vaqtida, kim kech kelgani shu qoidadan hisoblanadi";
@@ -40,10 +46,19 @@ export default function WorkHoursPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [nonce, setNonce] = useState(0);
+  /** "Saqlash" bosilgandan keyingi tasdiq bosqichi — saqlash serverda
+   *  oxirgi 60 kundagi yozuvlarni QAYTA HISOBLAYDI, ya'ni allaqachon
+   *  ko'rilgan hisobotlardagi "keldi/kech keldi" o'zgarishi mumkin.
+   *  Ilgari bu og'ir amal bitta bosishdan ogohlantirishsiz ketardi. */
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
+    // So'rov javobi kech kelganda (token almashdi yoki sahifa yopildi)
+    // eski qoida formani bosib ketmasin.
+    let alive = true;
     getAttendancePolicy(token)
       .then((p) => {
+        if (!alive) return;
         const next: AttendancePolicyInput = {
           staffStart: p.staffStart,
           studentStart: p.studentStart,
@@ -57,8 +72,30 @@ export default function WorkHoursPage() {
         setErrors({});
         setError(null);
       })
-      .catch((err) => setError(err instanceof ApiError ? err.message : "Qoidani yuklab bo'lmadi"));
+      .catch((err) => {
+        if (!alive) return;
+        setError(err instanceof ApiError ? err.message : "Qoidani yuklab bo'lmadi");
+      });
+    return () => {
+      alive = false;
+    };
   }, [token, nonce]);
+
+  /** Saqlanmagan o'zgarish bormi — hook'lar erta `return`dan oldin
+   *  chaqirilishi shart, shuning uchun shu yerda hisoblanadi. */
+  const dirty = form !== null && saved !== null && JSON.stringify(saved) !== JSON.stringify(form);
+
+  // Saqlamay chiqib ketilsa ogohlantiriladi: sahifada boshqa hech qanday
+  // avtosaqlash yo'q, yopilgan tab bilan qoida o'zgarishi yo'qolardi.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
 
   // Sarlavha uchta holatda ham bir xil — aks holda yuklanishdan
   // yuklangan holatga o'tganda sahifa boshi sakrardi.
@@ -78,15 +115,32 @@ export default function WorkHoursPage() {
   }
 
   const current = form;
-  const set = (patch: Partial<AttendancePolicyInput>) => setForm({ ...current, ...patch });
+  const set = (patch: Partial<AttendancePolicyInput>) => {
+    // Qiymat o'zgardi — avval so'ralgan tasdiq endi boshqa qoidaga
+    // tegishli bo'lardi, shuning uchun bekor qilinadi.
+    setConfirming(false);
+    setForm({ ...current, ...patch });
+  };
   const staffLate = addMinutes(current.staffStart, current.graceMinutes);
   const studentLate = addMinutes(current.studentStart, current.graceMinutes);
-  const dirty = saved !== null && JSON.stringify(saved) !== JSON.stringify(current);
+
+  /** Birinchi bosish — tekshirish va tasdiq so'rash; ikkinchisi — saqlash. */
+  function requestSave() {
+    const found = validateAttendancePolicy(current);
+    setErrors(found);
+    if (Object.keys(found).length > 0) {
+      setConfirming(false);
+      toast.error("Qoida saqlanmadi — qizil bilan belgilangan maydonlarni to'g'rilang");
+      return;
+    }
+    setConfirming(true);
+  }
 
   async function save() {
     const found = validateAttendancePolicy(current);
     setErrors(found);
     if (Object.keys(found).length > 0) {
+      setConfirming(false);
       toast.error("Qoida saqlanmadi — qizil bilan belgilangan maydonlarni to'g'rilang");
       return;
     }
@@ -94,10 +148,13 @@ export default function WorkHoursPage() {
     try {
       const res = await saveAttendancePolicy(token, current);
       setSaved(current);
+      setConfirming(false);
       toast.success(
         res.recomputed
-          ? `Saqlandi. Oxirgi 60 kundagi ${res.recomputed} ta yozuv yangi qoida bo'yicha qayta hisoblandi`
-          : 'Saqlandi',
+          ? `Saqlandi. Oxirgi ${RECOMPUTE_DAYS} kundagi ${res.recomputed} ta yozuv yangi qoida bo'yicha qayta hisoblandi`
+          // "Saqlandi" ning o'zi savol tug'dirardi: qayta hisoblash
+          // ishladimi yoki yo'qmi bilinmasdi.
+          : `Saqlandi. Oxirgi ${RECOMPUTE_DAYS} kunda o'zgartirish talab qiladigan yozuv topilmadi`,
       );
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Saqlab bo'lmadi");
@@ -113,7 +170,7 @@ export default function WorkHoursPage() {
       breadcrumbs={BREADCRUMBS}
       actions={
         <span title={canEdit ? undefined : "Davomatni boshqarish huquqi yo'q — Foydalanuvchilar bo'limida yoqiladi"}>
-          <Button variant="primary" icon={Save} loading={saving} disabled={!canEdit || !dirty} onClick={save}>
+          <Button variant="primary" icon={Save} loading={saving} disabled={!canEdit || !dirty} onClick={requestSave}>
             Saqlash
           </Button>
         </span>
@@ -122,6 +179,38 @@ export default function WorkHoursPage() {
       {!canEdit && (
         <Notice tone="neutral">
           Qoidani faqat ko&apos;rib turibsiz. O&apos;zgartirish uchun &quot;Davomat&quot; huquqi kerak.
+        </Notice>
+      )}
+
+      {/* Og'ir amal oldidan tasdiq: saqlash faqat qoidani yozib qo'ymaydi,
+          balki oxirgi 60 kundagi davomat yozuvlarini qayta hisoblaydi. */}
+      {confirming && !saving && (
+        <Notice
+          tone="warning"
+          title="Saqlashdan oldin tasdiqlang"
+          action={
+            <span className="flex gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setConfirming(false)}>
+                Bekor qilish
+              </Button>
+              <Button variant="primary" size="sm" onClick={save}>
+                Ha, saqlansin
+              </Button>
+            </span>
+          }
+        >
+          Yangi qoida darhol kuchga kiradi va oxirgi {RECOMPUTE_DAYS} kundagi yozuvlarning holati (
+          <b>keldi</b> / <b>kech keldi</b>) qaytadan hisoblanadi. Allaqachon chop etilgan hisobot va tabeldagi
+          sonlar o&apos;zgarishi mumkin. Kelish vaqtlari va qo&apos;lda tuzatilgan yozuvlar tegilmaydi.
+        </Notice>
+      )}
+
+      {/* Qayta hisoblash bir necha soniya davom etishi mumkin — tugmadagi
+          aylanma yetarli emas, nima bo'layotgani yozib turiladi. */}
+      {saving && (
+        <Notice tone="info" title="Saqlanmoqda">
+          Qoida yozilmoqda va oxirgi {RECOMPUTE_DAYS} kundagi yozuvlar qayta hisoblanmoqda. Ma&apos;lumot ko&apos;p
+          bo&apos;lsa bu bir necha soniya olishi mumkin — sahifani yopmang.
         </Notice>
       )}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
@@ -138,12 +227,20 @@ export default function WorkHoursPage() {
               error={errors.graceMinutes}
               hint="Shu daqiqagacha kelganlar o'z vaqtida hisoblanadi"
             >
+              {/* Qiymat jimgina 0..180 ga "qisib" qo'yilmaydi: ilgari 200
+                  yozilsa maydonda 180 paydo bo'lardi va foydalanuvchi o'zi
+                  yozgan sonni yo'qotardi. Endi chegara xatosi ko'rsatiladi
+                  (validateAttendancePolicy). */}
               <Input
                 type="number"
                 min={0}
                 max={180}
                 value={current.graceMinutes}
-                onChange={(e) => set({ graceMinutes: Math.max(0, Math.min(180, Number(e.target.value) || 0)) })}
+                invalid={Boolean(errors.graceMinutes)}
+                onChange={(e) => {
+                  const raw = Number(e.target.value);
+                  set({ graceMinutes: Number.isFinite(raw) ? Math.trunc(raw) : 0 });
+                }}
               />
             </Field>
             <Field label="Ish tugashi" error={errors.workEnd} hint="Undan oldin oxirgi marta ko'ringan — erta ketgan">
@@ -153,14 +250,16 @@ export default function WorkHoursPage() {
 
           <div>
             <p className="mb-2 text-[13px] font-medium text-fg">Ish kunlari</p>
-            <div className="flex flex-wrap gap-1.5">
-              {DAYS.map(([day, label]) => {
+            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Ish kunlari">
+              {DAYS.map(([day, label, fullName]) => {
                 const on = current.workDays.includes(day);
                 return (
                   <button
                     key={day}
                     type="button"
                     aria-pressed={on}
+                    aria-label={fullName}
+                    title={`${fullName} — ${on ? 'ish kuni' : 'dam olish kuni'}`}
                     disabled={!canEdit}
                     onClick={() =>
                       set({

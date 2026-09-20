@@ -21,8 +21,15 @@ export default function AddFacultyModal({
   const [errors, setErrors] = useState<{ name?: string; courseCount?: string; form?: string }>({});
   const [submitting, setSubmitting] = useState(false);
 
+  // Har ochilishda oyna toza bo'ladi. Ilgari faqat xatolar tozalanardi:
+  // "Bekor qilish" bosilgandan keyin qayta ochilganda oldingi yozuv
+  // maydonda turar, admin bilmasdan uni saqlab yuborishi mumkin edi.
   useEffect(() => {
-    if (open) setErrors({});
+    if (open) {
+      setName('');
+      setCourseCount('6');
+      setErrors({});
+    }
   }, [open]);
 
   async function handleSubmit(e: FormEvent) {

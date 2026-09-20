@@ -4,7 +4,7 @@ import { Button, Field, Input, cn } from '../../ui';
 import TelegramLinkBox from './TelegramLinkBox';
 import { ApiError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
-import { notificationsApi, type TelegramLink } from '../../lib/notificationsApi';
+import { normalizeUzPhone, notificationsApi, type TelegramLink } from '../../lib/notificationsApi';
 
 export interface ParentFieldsValue {
   parentPhone: string;
@@ -103,6 +103,15 @@ export default function ParentNotifyFields({
               </span>
             </span>
           </label>
+          {/* Yoqilgan, lekin yuboradigan joy yo'q: na yaroqli telefon, na
+              bog'langan Telegram. Ilgari bu JIMGINA saqlanardi va ota-ona
+              hech qachon xabar olmasdi — sababini hech kim bilmasdi. */}
+          {value.parentNotifyEnabled && !telegramLinked && !normalizeUzPhone(value.parentPhone) && (
+            <p role="alert" className="rounded-control border border-warning/30 bg-warning-soft px-2.5 py-2 text-xs font-medium text-warning">
+              Xabar yuborish yoqilgan, lekin manzil yo&apos;q: yaroqli telefon raqami (+998XXXXXXXXX) kiriting yoki ota-ona Telegramini
+              bog&apos;lang — aks holda hech qanday xabar bormaydi.
+            </p>
+          )}
           {!personId && (
             <p className="text-xs text-muted">Ota-ona Telegramini bog&apos;lash havolasi yozuv saqlangandan keyin tahrirlash oynasida yaratiladi.</p>
           )}
@@ -111,7 +120,11 @@ export default function ParentNotifyFields({
               {telegramLinked ? (
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-control bg-success-soft px-3 py-2">
                   <span className="text-xs font-semibold text-success">Ota-ona Telegrami bog&apos;langan</span>
-                  <Button size="sm" variant="ghost" icon={Unlink} onClick={unlink} loading={busy} className="text-danger hover:text-danger">
+                  {/* `disabled` (forma saqlanmoqda / faqat o'qish) uzish
+                      tugmasiga ham tegishli — ilgari faqat bog'lash tugmasida
+                      edi va yozuv qulflangan holatda ham uzib yuborish
+                      mumkin bo'lardi. */}
+                  <Button size="sm" variant="ghost" icon={Unlink} onClick={unlink} loading={busy} disabled={disabled} className="text-danger hover:text-danger">
                     Uzish
                   </Button>
                 </div>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BookOpen, Building2, Landmark, Pencil, Plus, Trash2, Users2 } from 'lucide-react';
 import { Badge, Button, ConfirmDialog, DataTable, ErrorState, FilterBar, filterActiveCount, formatNumber, IconButton, Page, useToast, useUrlTab, type DataTableColumn, type FilterFieldEntry, type TabItem } from '../../ui';
@@ -81,7 +81,7 @@ export function deleteConsequences(target: DeleteTarget, groupsInFaculty: number
   }
   const department = item as Department;
   return {
-    lost: ['Kafedra bo’yicha filtr'],
+    lost: ["Kafedra bo'yicha filtr"],
     kept: [
       department.cameraCount > 0
         ? `${formatNumber(department.cameraCount)} ta kamera — o'chmaydi, kafedrasiz qoladi`
@@ -157,7 +157,13 @@ export default function OrgStructurePage() {
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      // Token yo'q bo'lsa so'rov yuborilmaydi — `loading` true qolsa sahifa
+      // abadiy skeleton ko'rsatib turardi. "Yuklanmoqda" emas, "ma'lumot
+      // yo'q" — tugallangan holat.
+      setLoading(false);
+      return;
+    }
     const controller = new AbortController();
     const opts = { signal: controller.signal };
     setLoading(true);
@@ -196,6 +202,18 @@ export default function OrgStructurePage() {
   );
   const [tab] = useUrlTab(tabs);
 
+  // Bo'lim almashganda filtrlar tozalanadi. Ilgari "Binolar"da yozilgan
+  // qidiruv "Fakultetlar"ga o'tganda ham qo'llanib turardi: jadval bo'sh
+  // chiqar, sababi esa boshqa tabdagi matn edi.
+  const previousTab = useRef(tab);
+  useEffect(() => {
+    if (previousTab.current === tab) return;
+    previousTab.current = tab;
+    setSearch('');
+    setFacultyFilter('');
+    setCourseFilter('');
+  }, [tab]);
+
   const query = search.trim().toLocaleLowerCase('uz');
 
   const shownBuildings = useMemo(() => buildings.filter((b) => matches(b.name, query)), [buildings, query]);
@@ -232,8 +250,21 @@ export default function OrgStructurePage() {
       // ConfirmDialog xatoni o'z ichida ko'rsatadi va yopilmaydi.
       throw new Error(err instanceof ApiError ? err.message : `${DELETE_META[kind].noun}ni o'chirib bo'lmadi`);
     }
-    if (kind === 'building') setBuildings((prev) => prev.filter((b) => b.id !== item.id));
-    if (kind === 'faculty') setFaculties((prev) => prev.filter((f) => f.id !== item.id));
+    if (kind === 'building') {
+      setBuildings((prev) => prev.filter((b) => b.id !== item.id));
+      // Bino o'chsa kafedralar QOLADI, lekin binosiz bo'ladi (tasdiq oynasida
+      // shunday yozilgan). Mahalliy ro'yxatda eski bino nomi turib qolsa,
+      // "Kafedralar" tabi o'chirilgan binoni ko'rsatib turardi.
+      setDepartments((prev) => prev.map((d) => (d.buildingId === item.id ? { ...d, buildingId: null, buildingName: '' } : d)));
+    }
+    if (kind === 'faculty') {
+      setFaculties((prev) => prev.filter((f) => f.id !== item.id));
+      // Backendda student_groups.faculty_id ondelete="CASCADE" — fakultet
+      // bilan uning guruhlari ham o'chadi. Tasdiq oynasi buni aytadi, lekin
+      // mahalliy ro'yxat yangilanmasdi: "Guruhlar" tabida allaqachon
+      // o'chgan guruhlar ko'rinib turardi (va fakultet sanoqlarida sanalardi).
+      setGroups((prev) => prev.filter((g) => g.faculty !== item.name));
+    }
     if (kind === 'group') setGroups((prev) => prev.filter((g) => g.id !== item.id));
     if (kind === 'department') setDepartments((prev) => prev.filter((d) => d.id !== item.id));
     toast.success(`«${item.name}» o'chirildi`);
@@ -397,8 +428,10 @@ export default function OrgStructurePage() {
     />
   );
 
+  // "Guruhlar" tabida fakultet/kurs filtri ham bor: filtr tufayli ro'yxat
+  // bo'sh bo'lsa "Guruh qo'shish" tugmasi noto'g'ri maslahat bo'ladi.
   const emptyAction = (id: TabId) =>
-    canEdit && !query ? (
+    canEdit && !(id === 'guruhlar' ? filtersActive : query) ? (
       <Button icon={Plus} variant="primary" onClick={() => setAddOpen(id)}>
         {ADD_LABEL[id]}
       </Button>
@@ -417,7 +450,15 @@ export default function OrgStructurePage() {
       tabs={tabs}
       actions={
         canEdit && (
-          <Button variant="primary" icon={Plus} onClick={() => setAddOpen(tab)} disabled={loading}>
+          <Button
+            variant="primary"
+            icon={Plus}
+            onClick={() => setAddOpen(tab)}
+            disabled={loading || error !== null}
+            // O'chirilgan tugma sababsiz qolmasin: "Guruh qo'shish" fakultetlar
+            // ro'yxatini talab qiladi, shuning uchun yuklanmaguncha bosilmaydi.
+            title={error ? "Tuzilma yuklanmadi — avval qayta urinib ko'ring" : loading ? 'Tuzilma yuklanmoqda…' : undefined}
+          >
             {ADD_LABEL[tab]}
           </Button>
         )

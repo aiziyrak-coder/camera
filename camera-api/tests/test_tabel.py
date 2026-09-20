@@ -195,7 +195,22 @@ async def test_excel_opens_with_title_block(client, admin, world):
     assert ws["A6"].value == "№" and ws["B6"].value == "F.I.Sh."
     assert ws["D6"].value == 1  # birinchi kun ustuni
     assert ws["A8"].value == 1 and ws["B8"].value == "Aliyev Anvar"
-    assert ws.freeze_panes == "C8"
+    # Uchta chap ustun qotib turadi (guruh ustuni ham ko'rinib tursin).
+    assert ws.freeze_panes == "D8"
+    assert ws.page_setup.orientation == "landscape"
+
+
+async def test_excel_marks_land_on_the_right_day(client, admin, world):
+    """Belgilar kun raqami bo'yicha joylanadi, ro'yxatdagi o'rin bo'yicha emas."""
+    res = await client.get("/api/hisobot/tabel", params={"kind": "talaba", "oy": world["month"]}, headers=admin)
+    data = res.json()
+    person = data["people"][0]
+    wb = load_workbook(BytesIO((await client.get(
+        "/api/hisobot/tabel.xlsx", params={"kind": "talaba", "oy": world["month"]}, headers=admin)).content))
+    ws = wb["Tabel"]
+    for i, day in enumerate(data["days"]):
+        mark = next((c["mark"] for c in person["cells"] if c["day"] == day["day"]), "")
+        assert ws.cell(8, 4 + i).value == (mark or None), day["day"]
 
 
 async def test_permission_is_enforced(client, db_session, seeded, world):

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { TriangleAlert } from 'lucide-react';
-import { Badge, DataTable, ErrorState, SkeletonTiles, StatTile, cn, type DataTableColumn } from '../../ui';
+import { RefreshCw, TriangleAlert } from 'lucide-react';
+import { Badge, Button, DataTable, ErrorState, SkeletonTiles, StatTile, cn, type DataTableColumn } from '../../ui';
 import { ApiError, isAbortError } from '../../lib/apiClient';
 import { getAttendanceCameras } from '../../lib/teachersApi';
 import type { AttendanceCamera, AttendanceCameras } from '../../types';
@@ -136,6 +136,21 @@ export function AttendanceCamerasPanel() {
 
   return (
     <div className="flex flex-col gap-5">
+      {/* Tashxis ma'lumoti bir marta olinadi va o'zi yangilanmaydi: kabel
+          ulanib, kamera tasvir bera boshlaganini ko'rish uchun ilgari butun
+          sahifani qayta yuklash kerak edi. */}
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          icon={RefreshCw}
+          onClick={() => {
+            setData(null);
+            setNonce((n) => n + 1);
+          }}
+        >
+          Yangilash
+        </Button>
+      </div>
       {(!data.staffModuleActive || !data.studentModuleActive) && (
         <div className="flex items-start gap-2 rounded-card border border-warning/30 bg-warning-soft px-4 py-3 text-[13px] text-warning">
           <TriangleAlert size={16} className="mt-0.5 shrink-0" aria-hidden="true" />

@@ -166,8 +166,14 @@ def build_tabel_workbook(data: dict) -> bytes:
         ws.cell(row, 1, n).alignment = center
         ws.cell(row, 2, person["fullName"])
         ws.cell(row, 3, person["group"])
-        for i, (cell_data, day) in enumerate(zip(person["cells"], days)):
-            cell = ws.cell(row, first_day_col + i, cell_data["mark"])
+        # Belgilar kun RAQAMI bo'yicha joylanadi. Ilgari zip() bilan o'rin
+        # bo'yicha yozilardi: ro'yxatda bitta kun tushib qolsa, qolgan
+        # hamma belgi bir kun chapga surilib, imzolangan tabelga noto'g'ri
+        # sanalar bilan tushardi.
+        by_day = {c["day"]: c for c in person["cells"]}
+        for i, day in enumerate(days):
+            cell_data = by_day.get(day["day"])
+            cell = ws.cell(row, first_day_col + i, cell_data["mark"] if cell_data else "")
             cell.alignment = center
             cell.border = _BOX
             if not day["isWorkDay"]:
@@ -180,7 +186,15 @@ def build_tabel_workbook(data: dict) -> bytes:
             ws.cell(row, col).border = _BOX
         row += 1
 
-    ws.freeze_panes = f"C{head + 2}"  # birinchi ikki ustun va sarlavha qatori
+    # Uchta chap ustun (№, F.I.Sh., guruh) qotib turishi kerak — ilgari "C"
+    # bo'lgani uchun guruh ustuni o'ngga surilganda ko'rinmay ketardi.
+    ws.freeze_panes = f"D{head + 2}"
+    # Excel'da ham ilovadagidek A4 albom, kenglikka moslab chiqsin.
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.print_title_rows = f"{head}:{head + 1}"
     ws.column_dimensions["A"].width = 5
     ws.column_dimensions["B"].width = 34

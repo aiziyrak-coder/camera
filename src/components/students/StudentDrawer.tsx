@@ -20,14 +20,19 @@ import { useAsyncData } from './useAsyncData';
 
 const RECENT_DAYS = 14;
 
-function Metric({ icon: Icon, label, value }: { icon: typeof LogIn; label: string; value: string }) {
+function Metric({ icon: Icon, label, value, empty }: { icon: typeof LogIn; label: string; value: string | null; empty: string }) {
   return (
     <div className="rounded-control border border-border bg-surface-2/60 px-3 py-2">
       <p className="flex items-center gap-1 text-[11px] font-medium text-muted">
         <Icon size={12} aria-hidden="true" />
         {label}
       </p>
-      <p className="mt-0.5 text-base font-semibold tabular-nums text-fg">{value}</p>
+      {/* Qiymat yo'q bo'lsa izohsiz "—" o'rniga sababi yoziladi. */}
+      {value ? (
+        <p className="mt-0.5 text-base font-semibold tabular-nums text-fg">{value}</p>
+      ) : (
+        <p className="mt-0.5 text-[13px] font-medium text-muted">{empty}</p>
+      )}
     </div>
   );
 }
@@ -122,8 +127,8 @@ export function StudentDrawer({
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <Metric icon={LogIn} label="Keldi" value={student.checkIn ?? '—'} />
-          <Metric icon={LogOut} label="Ketdi" value={student.checkOut ?? '—'} />
+          <Metric icon={LogIn} label="Keldi" value={student.checkIn} empty="Qayd etilmagan" />
+          <Metric icon={LogOut} label="Ketdi" value={student.checkOut} empty="Chiqishi qayd etilmagan" />
         </div>
 
         <section>
@@ -164,6 +169,10 @@ export function StudentDrawer({
               <Skeleton className="h-12 w-full" />
               <Skeleton className="h-12 w-full" />
             </div>
+          ) : profile.error && !data ? (
+            // Ilgari so'rov yiqilganda ham "dars jadvalda yo'q" deb yozilardi —
+            // bu yolg'on bo'sh holat edi.
+            <ErrorState message={profile.error} onRetry={profile.reload} />
           ) : dayLessons.length === 0 ? (
             <p className="rounded-control bg-surface-2 px-3 py-2.5 text-[13px] text-muted">Bu kunda dars jadvalda yo'q.</p>
           ) : (

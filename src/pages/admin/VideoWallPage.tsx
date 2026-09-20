@@ -32,11 +32,17 @@ export default function VideoWallPage({ standalone = false }: { standalone?: boo
     setCameraRequest((prev) => ({ id: requestedId, nonce: (prev?.nonce ?? 0) + 1 }));
   }, [requestedId]);
 
+  // Eski parametrlar ikkinchi monitor ("ekran") ko'rinishida ham
+  // tozalanishi kerak: `view=` saqlanadi, faqat eskirgan `bino/qavat/
+  // kamera/q/tab` olib tashlanadi. Aks holda `?kamera=` manzilda abadiy
+  // qolib, "orqaga" bosilganda qayta ishlardi.
   useEffect(() => {
-    if (standalone || !entry.changed) return;
+    if (!entry.changed) return;
     setParams(new URLSearchParams(entry.nextSearch), { replace: true });
-  }, [standalone, entry, setParams]);
+  }, [entry, setParams]);
 
-  if (standalone) return <VideoWall standalone />;
+  // Ilgari "ekran" ko'rinishi `?kamera=` va `?q=` ni butunlay e'tiborsiz
+  // qoldirardi: ikkinchi monitorga yuborilgan havola hech narsa qilmasdi.
+  if (standalone) return <VideoWall standalone initialSearch={entry.search} cameraRequest={cameraRequest} />;
   return <VideoWall initialSearch={entry.search} cameraRequest={cameraRequest} />;
 }

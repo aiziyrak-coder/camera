@@ -140,7 +140,9 @@ export function normalizeUzPhone(raw: string | null | undefined): string | null 
   let digits = raw.replace(/\D/g, '');
   if (digits.length === 9) digits = `998${digits}`;
   else if (digits.length === 10 && digits.startsWith('8')) digits = `998${digits.slice(1)}`;
-  if (!/^998\d{9}$/.test(digits)) return null;
+  // Operator/hudud kodi ham tekshiriladi (backend sms.py bilan bir xil):
+  // aks holda Telegram ID (123456789) yaroqli telefon deb qabul qilinardi.
+  if (!/^998(20|33|50|55|6[1-9]|7[0-9]|88|9[0-9])\d{7}$/.test(digits)) return null;
   return `+${digits}`;
 }
 

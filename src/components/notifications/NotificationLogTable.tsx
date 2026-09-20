@@ -19,6 +19,17 @@ const STATUS_TONE: Record<NotificationLogStatus, Tone> = {
   otkazildi: 'neutral',
 };
 
+/** Server yangi holat qo'shsa (masalan 'navbatda'), `STATUS_LABELS` da u
+ *  bo'lmaydi: ilgari bunda Badge BO'SH chiqardi va tone `undefined` bo'lardi
+ *  — jurnalda holat ustuni umuman yo'qolardi. Kanal/turda bo'lgani kabi
+ *  xom qiymatga qaytamiz. */
+function statusLabel(status: NotificationLogStatus): string {
+  return STATUS_LABELS[status] ?? status;
+}
+function statusTone(status: NotificationLogStatus): Tone {
+  return STATUS_TONE[status] ?? 'neutral';
+}
+
 const STATUS_OPTIONS = (Object.keys(STATUS_LABELS) as NotificationLogStatus[]).map((s) => ({ value: s, label: STATUS_LABELS[s] }));
 const CHANNEL_OPTIONS = [
   { value: 'telegram', label: CHANNEL_LABELS.telegram },
@@ -101,8 +112,8 @@ const COLUMNS: DataTableColumn<NotificationLogEntry>[] = [
     key: 'status',
     header: 'Holat',
     cell: (r) => (
-      <Badge tone={STATUS_TONE[r.status]} dot>
-        {STATUS_LABELS[r.status]}
+      <Badge tone={statusTone(r.status)} dot>
+        {statusLabel(r.status)}
       </Badge>
     ),
   },
@@ -156,7 +167,7 @@ export default function NotificationLogTable({ refreshKey, filters = EMPTY_LOG_F
           <div className="flex flex-col gap-5">
             <KeyValue
               items={[
-                { label: 'Holat', value: <Badge tone={STATUS_TONE[open.status]} dot>{STATUS_LABELS[open.status]}</Badge> },
+                { label: 'Holat', value: <Badge tone={statusTone(open.status)} dot>{statusLabel(open.status)}</Badge> },
                 { label: 'Turi', value: kindLabel(open.kind) },
                 { label: 'Kanal', value: CHANNEL_LABELS[open.channel] ?? open.channel },
                 { label: 'Qabul qiluvchi', value: <span className="font-mono text-xs">{open.recipient}</span> },

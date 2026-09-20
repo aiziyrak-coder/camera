@@ -27,7 +27,10 @@ TOKEN_TTL_SECONDS = 29 * 24 * 3600
 _token: tuple[str, float] | None = None
 _token_lock = asyncio.Lock()
 
-_UZ_PHONE_RE = re.compile(r"^998\d{9}$")
+# Operator/hudud kodi ham tekshiriladi: ilgari istalgan 9 raqam raqam
+# sifatida qabul qilinardi va Telegram ID (masalan 123456789)
+# "+998123456789" bo'lib SMS ro'yxatiga tushib ketardi.
+_UZ_PHONE_RE = re.compile(r"^998(20|33|50|55|6[1-9]|7[0-9]|88|9[0-9])\d{7}$")
 
 
 def normalize_phone(raw: str | None) -> str | None:

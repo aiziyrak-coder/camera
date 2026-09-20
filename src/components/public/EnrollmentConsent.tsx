@@ -31,7 +31,16 @@ export default function EnrollmentConsent({ onContinue, onBack }: EnrollmentCons
         if (!cancelled) setText(data);
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof ApiError ? err.message : "Rozilik matnini yuklab bo'lmadi");
+        if (cancelled) return;
+        // Server xatosining matni (5xx da "Internal Server Error",
+        // 422 da pydantic yozuvi) ingliz tilida keladi va o'zbekcha
+        // ommaviy sahifada odamga hech narsa aytmaydi.
+        const serverSaid = err instanceof ApiError && err.status < 500 && err.status !== 422;
+        setError(
+          serverSaid
+            ? (err as ApiError).message
+            : "Rozilik matnini yuklab bo'lmadi. Internet aloqasini tekshirib, qayta urinib ko'ring.",
+        );
       });
     return () => {
       cancelled = true;

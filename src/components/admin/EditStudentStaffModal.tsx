@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useState, type FormEvent } from 'react';
 import { Camera, Loader2 } from 'lucide-react';
-import { Avatar, Button, ErrorState, Field, Input, Modal, Select } from '../../ui';
+import { Avatar, Button, ConfirmDialog, ErrorState, Field, Input, Modal, Select } from '../../ui';
 import FaceCapture from './FaceCapture';
 import { required } from '../../lib/validation';
 import { ApiError, api } from '../../lib/apiClient';
@@ -69,6 +69,10 @@ export default function EditStudentStaffModal({
   const [capturing, setCapturing] = useState(false);
   const [newFace, setNewFace] = useState<string | null>(null);
   const [parentTelegramLinked, setParentTelegramLinked] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  // Tafsilot so'rovini qayta yuborish uchun (xato bo'lganda JSHSHIR/pasport
+  // maydonlari qulflanib qolardi va oynani yopib ochishdan boshqa yo'l yo'q edi).
+  const [detailNonce, setDetailNonce] = useState(0);
 
   useEffect(() => {
     if (!record) return;
@@ -78,6 +82,7 @@ export default function EditStudentStaffModal({
     setCapturing(false);
     setNewFace(null);
     setParentTelegramLinked(false);
+    setConfirmDiscard(false);
     if (!token) return;
     // JSHSHIR va pasport ro'yxatda yuborilmaydi — faqat tahrirlash ochilganda.
     let cancelled = false;
@@ -99,7 +104,7 @@ export default function EditStudentStaffModal({
     return () => {
       cancelled = true;
     };
-  }, [record, token]);
+  }, [record, token, detailNonce]);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => (f ? { ...f, [key]: value } : f));
@@ -193,18 +198,32 @@ export default function EditStudentStaffModal({
 
   const isStudent = form?.type === 'talaba';
   const identityLocked = loadingDetail || !original;
+  // Saqlanmagan o'zgarish bormi: tafsilot kelgan bo'lsa unga, aks holda
+  // ro'yxatdagi yozuvga solishtiramiz.
+  const baseline = original ?? (record ? toForm(record) : null);
+  const dirty = Boolean(form && baseline && JSON.stringify(form) !== JSON.stringify(baseline)) || Boolean(newFace);
+
+  function requestClose() {
+    if (saving) return;
+    if (dirty) {
+      setConfirmDiscard(true);
+      return;
+    }
+    onClose();
+  }
 
   return (
+    <>
     <Modal
       open={!!record}
-      onClose={onClose}
+      onClose={requestClose}
       title="Ma'lumotlarni tahrirlash"
       description={record ? record.fullName : undefined}
       size="md"
       dismissible={!saving}
       footer={
         <>
-          <Button onClick={onClose} disabled={saving}>
+          <Button onClick={requestClose} disabled={saving}>
             Bekor qilish
           </Button>
           <Button type="submit" form={formId} variant="primary" loading={saving} disabled={loadingDetail}>
@@ -215,7 +234,11 @@ export default function EditStudentStaffModal({
     >
       {form && record && (
         <form id={formId} onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-          {errors.form && <ErrorState title="Xatolik" message={errors.form} />}
+          {/* Tafsilot yuklanmasa JSHSHIR/pasport maydonlari qulflangan
+              qoladi — shu yerdan qayta urinib ko'rish mumkin. */}
+          {errors.form && (
+            <ErrorState title="Xatolik" message={errors.form} onRetry={identityLocked ? () => setDetailNonce((n) => n + 1) : undefined} />
+          )}
           <Field label="F.I.Sh." required error={errors.fullName}>
             <Input value={form.fullName} onChange={(e) => set('fullName', e.target.value)} />
           </Field>
@@ -350,5 +373,18 @@ export default function EditStudentStaffModal({
         </form>
       )}
     </Modal>
+      <ConfirmDialog
+        open={confirmDiscard}
+        title="O'zgarishlar saqlanmadi"
+        message="Oynani yopsangiz, kiritilgan o'zgarishlar va olingan yangi yuz surati yo'qoladi."
+        confirmLabel="Ha, yopilsin"
+        cancelLabel="Tahrirga qaytish"
+        onCancel={() => setConfirmDiscard(false)}
+        onConfirm={() => {
+          setConfirmDiscard(false);
+          onClose();
+        }}
+      />
+    </>
   );
 }

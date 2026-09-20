@@ -73,3 +73,24 @@ describe('validateAttendancePolicy', () => {
     expect(validateAttendancePolicy({ ...BASE, graceMinutes: 180 }).graceMinutes).toBeUndefined();
   });
 });
+
+describe('kechikish chegarasi ish tugashidan oshib ketmasin', () => {
+  it("16:00 + 120 daqiqa 17:00 dan oshadi — xato", () => {
+    const errors = validateAttendancePolicy({
+      ...BASE,
+      staffStart: '16:00',
+      studentStart: '16:00',
+      graceMinutes: 120,
+      workEnd: '17:00',
+    });
+    expect(errors.graceMinutes).toMatch(/kech kelgan hisoblanmaydi/);
+  });
+
+  it("odatiy qoidada bu xato chiqmaydi", () => {
+    expect(validateAttendancePolicy(BASE).graceMinutes).toBeUndefined();
+  });
+
+  it("180 dan katta qiymat ham xato beradi", () => {
+    expect(validateAttendancePolicy({ ...BASE, graceMinutes: 200 }).graceMinutes).toMatch(/0 dan 180 gacha/);
+  });
+});

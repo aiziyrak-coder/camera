@@ -13,17 +13,22 @@ interface Props {
   loading: boolean;
   /** Bugun bo'lsa joriy soat belgilanadi. */
   currentHour: number | null;
+  /** Bo'sh holat matni bugun/o'tgan kun uchun farq qiladi. */
+  isToday?: boolean;
   big?: boolean;
 }
 
-const pad = (hour: number) => `${String(hour).padStart(2, '0')}:00`;
+// 23:00 oralig'i "23:00–24:00" emas, "23:00–00:00" bo'lishi kerak:
+// sutkada 24:00 degan soat yo'q.
+const pad = (hour: number) => `${String(((hour % 24) + 24) % 24).padStart(2, '0')}:00`;
 
 /** "Kelish dinamikasi": soatlar bo'yicha birinchi kelishlar (talaba + xodim). */
-export function ArrivalsChart({ rows, loading, currentHour, big }: Props) {
+export function ArrivalsChart({ rows, loading, currentHour, isToday = true, big }: Props) {
   const theme = useChartTheme();
   const data = useMemo(() => (rows ?? []).map((row) => ({ ...row, label: String(row.hour).padStart(2, '0') })), [rows]);
-  const peak = rows ? peakHour(rows) : null;
-  const total = data.reduce((sum, row) => sum + row.students + row.staff, 0);
+  // Har renderda qayta hisoblanmasin — jadval har 30 soniyada yangilanadi.
+  const peak = useMemo(() => (rows ? peakHour(rows) : null), [rows]);
+  const total = useMemo(() => data.reduce((sum, row) => sum + row.students + row.staff, 0), [data]);
   const height = big ? 300 : 240;
 
   return (
@@ -56,8 +61,12 @@ export function ArrivalsChart({ rows, loading, currentHour, big }: Props) {
           compact
           bordered={false}
           icon={TrendingUp}
-          title="Bugun hali hech kim ko'rinmadi"
-          description="Kamera birinchi odamni taniganda ustunlar shu yerda paydo bo'ladi."
+          title={isToday ? "Bugun hali hech kim ko'rinmadi" : "Bu kuni hech kim ko'rinmagan"}
+          description={
+            isToday
+              ? 'Kamera birinchi odamni taniganda ustunlar shu yerda paydo bo\'ladi.'
+              : "Bu kunda kameralar birorta odamni tanimagan — dam olish kuni yoki kameralar ishlamagan bo'lishi mumkin."
+          }
         />
       ) : (
         <div className="-ml-2 w-[calc(100%+0.5rem)]" style={{ height }} role="img" aria-label={`Kelish dinamikasi: jami ${total} kishi`}>

@@ -1,6 +1,6 @@
 import { useId, useState, type FormEvent } from 'react';
 import { Check } from 'lucide-react';
-import { Button, ErrorState, Field, Input, Modal, Select, cn } from '../../ui';
+import { Button, ConfirmDialog, ErrorState, Field, Input, Modal, Select, cn } from '../../ui';
 import { required, minLength } from '../../lib/validation';
 import PassportUploadStep from './PassportUploadStep';
 import FaceCapture from './FaceCapture';
@@ -88,6 +88,7 @@ export default function AddStudentStaffModal({
   const [existing, setExisting] = useState<StudentStaffRecord | null>(null);
   const [allowDuplicate, setAllowDuplicate] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -114,7 +115,20 @@ export default function AddStudentStaffModal({
 
   function handleClose() {
     resetAll();
+    setConfirmDiscard(false);
     onClose();
+  }
+
+  /** Sehrgar uzun: pasport yuklangan va yuz olingan bo'lsa, tasodifiy
+   *  yopilish butun ishni yo'qotadi. Shuning uchun so'raymiz. */
+  function requestClose() {
+    if (saving) return;
+    const started = step > 1 || Boolean(form.fullName.trim() || form.type || form.faculty || form.groupOrPosition.trim());
+    if (started) {
+      setConfirmDiscard(true);
+      return;
+    }
+    handleClose();
   }
 
   function validateStep1(): boolean {
@@ -222,7 +236,7 @@ export default function AddStudentStaffModal({
   const footer =
     step === 1 ? (
       <>
-        <Button onClick={handleClose}>Bekor qilish</Button>
+        <Button onClick={requestClose}>Bekor qilish</Button>
         {!hasSimilar && (
           <Button type="submit" form={formId} variant="primary" loading={checking}>
             {checking ? 'Tekshirilmoqda…' : 'Keyingi'}
@@ -234,14 +248,24 @@ export default function AddStudentStaffModal({
         <Button onClick={() => setStep(1)} className="mr-auto">
           Orqaga
         </Button>
-        <Button variant="primary" disabled={!passportPhoto} onClick={() => setStep(3)}>
+        <Button onClick={requestClose}>Bekor qilish</Button>
+        {/* O'chirilgan tugma sababi aytiladi — ilgari u shunchaki bosilmasdi. */}
+        <Button
+          variant="primary"
+          disabled={!passportPhoto}
+          title={passportPhoto ? undefined : 'Avval pasport nusxasini yuklang'}
+          onClick={() => setStep(3)}
+        >
           Keyingi
         </Button>
       </>
     ) : step === 3 ? (
-      <Button onClick={() => setStep(2)} className="mr-auto">
-        Orqaga
-      </Button>
+      <>
+        <Button onClick={() => setStep(2)} className="mr-auto">
+          Orqaga
+        </Button>
+        <Button onClick={requestClose}>Bekor qilish</Button>
+      </>
     ) : (
       <>
         <Button onClick={() => setStep(3)} disabled={saving} className="mr-auto">
@@ -252,16 +276,23 @@ export default function AddStudentStaffModal({
             Qo&apos;lda tekshirish uchun saqlash
           </Button>
         )}
-        <Button variant="primary" disabled={!matchResult?.passed} loading={saving} onClick={handleSave}>
+        <Button
+          variant="primary"
+          disabled={!matchResult?.passed}
+          title={matchResult?.passed ? undefined : "Yuz pasport rasmiga mos kelmaguncha saqlab bo'lmaydi"}
+          loading={saving}
+          onClick={handleSave}
+        >
           Saqlash
         </Button>
       </>
     );
 
   return (
+    <>
     <Modal
       open={open}
-      onClose={handleClose}
+      onClose={requestClose}
       title="Yangi shaxs qo'shish"
       description="Ma'lumotlar, pasport nusxasi va jonli yuz surati — kameralar odamni shu yuz orqali taniydi."
       size="md"
@@ -397,5 +428,15 @@ export default function AddStudentStaffModal({
         </div>
       )}
     </Modal>
+      <ConfirmDialog
+        open={confirmDiscard}
+        title="Qo'shishni to'xtatasizmi?"
+        message="Kiritilgan ma'lumotlar, yuklangan pasport nusxasi va olingan yuz surati saqlanmaydi."
+        confirmLabel="Ha, to'xtatilsin"
+        cancelLabel="Davom ettirish"
+        onCancel={() => setConfirmDiscard(false)}
+        onConfirm={handleClose}
+      />
+    </>
   );
 }

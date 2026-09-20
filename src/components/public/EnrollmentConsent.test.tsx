@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import EnrollmentConsent from './EnrollmentConsent';
 import * as enrollment from '../../lib/enrollment';
+import { ApiError } from '../../lib/apiClient';
 import type { ConsentText } from '../../lib/enrollment';
 
 const TEXT: ConsentText = {
@@ -55,7 +56,22 @@ describe('EnrollmentConsent', () => {
     vi.spyOn(enrollment, 'fetchConsentText').mockRejectedValue(new Error('tarmoq'));
     render(<EnrollmentConsent onContinue={() => {}} onBack={() => {}} />);
 
-    expect(await screen.findByText("Rozilik matnini yuklab bo'lmadi")).toBeInTheDocument();
+    expect(await screen.findByText(/Rozilik matnini yuklab bo'lmadi/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /skanerlashga o'tish/ })).toBeNull();
+  });
+
+  it('server xatosining inglizcha matni ekranga chiqmaydi (5xx/422)', async () => {
+    vi.spyOn(enrollment, 'fetchConsentText').mockRejectedValue(new ApiError(500, 'Internal Server Error'));
+    render(<EnrollmentConsent onContinue={() => {}} onBack={() => {}} />);
+
+    expect(await screen.findByText(/Rozilik matnini yuklab bo'lmadi/)).toBeInTheDocument();
+    expect(screen.queryByText(/Internal Server Error/)).toBeNull();
+  });
+
+  it('serverning 4xx dagi o‘zbekcha xabari esa ko‘rsatiladi', async () => {
+    vi.spyOn(enrollment, 'fetchConsentText').mockRejectedValue(new ApiError(403, "Rozilik matni o'chirilgan"));
+    render(<EnrollmentConsent onContinue={() => {}} onBack={() => {}} />);
+
+    expect(await screen.findByText("Rozilik matni o'chirilgan")).toBeInTheDocument();
   });
 });

@@ -116,7 +116,11 @@ export default function UnmatchedPanel({
               label="Raqamni nusxalash"
               size="sm"
               onClick={async () => {
+                // Nusxalash muvaffaqiyatsiz bo'lsa ilgari hech narsa
+                // ko'rinmasdi — foydalanuvchi raqam buferda deb o'ylab,
+                // reestrga bo'sh qiymat qo'yardi.
                 if (await copyText(value)) toast.info(`${value} nusxalandi`);
+                else toast.error(`Nusxalab bo'lmadi — raqamni qo'lda ko'chiring: ${value}`);
               }}
             />
             <IconButton icon={UserSearch} label="Reestrda qidirish" size="sm" onClick={() => navigate(peopleSearchLink(value))} />

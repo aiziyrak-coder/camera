@@ -5,6 +5,7 @@ import { formatUzMonth } from '../../lib/uzDate';
 import {
   TABEL_MARKS,
   TABEL_MARK_CLASS,
+  grandTotals,
   normalizeMark,
   type TabelLegendItem,
   type TabelReport,
@@ -36,15 +37,11 @@ export default function TabelView({ data, section }: TabelViewProps) {
   const peopleWord = section === 'talabalar' ? 'talaba' : 'xodim';
   const legend = data.legend?.length ? data.legend : FALLBACK_LEGEND;
   const monthText = data.monthLabel || formatUzMonth(data.month);
-  // Server jamini bermasa ham sahifa yiqilmasin.
-  const total = data.totals ?? {
-    people: data.people?.length ?? 0,
-    present: 0,
-    late: 0,
-    absent: 0,
-    unknown: 0,
-    notEnrolled: 0,
-  };
+  // Yakunlar jadvaldagi belgilardan sanaladi (tabelApi.grandTotals) —
+  // ekrandagi "N talaba, M tasining yuzi yo'q" satri va jadvalning
+  // pastidagi "Jami" satri bitta manbadan chiqsin. Ilgari bu yerda
+  // server `totals`i turardi va jadval bilan farq qilishi mumkin edi.
+  const total = grandTotals(data);
 
   // Oy tanlangan, odamlar bor, lekin birorta ham qayd yo'q: bo'sh
   // jadvalni jim ko'rsatish o'rniga sababini aytamiz.
@@ -121,16 +118,25 @@ export default function TabelView({ data, section }: TabelViewProps) {
       <section className="tabel-legend" aria-label="Shartli belgilar">
         <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">Shartli belgilar</p>
         <ul className="flex flex-wrap gap-x-5 gap-y-1.5 text-[12px] text-muted">
-          {legend.map((item) => {
+          {legend.map((item, index) => {
             const mark = normalizeMark(item.mark);
             return (
-              <li key={item.mark} className="flex items-center gap-1.5">
+              // Kalitda indeks ham bor: server bitta belgini ikki marta
+              // yuborsa React kalitlari to'qnashib, ro'yxat buzilardi.
+              <li key={`${item.mark}-${index}`} className="flex items-center gap-1.5">
                 <span className={cn('w-4 text-center font-bold', TABEL_MARK_CLASS[mark])}>{item.mark}</span>
                 <span>{item.label}</span>
               </li>
             );
           })}
         </ul>
+        {/* O'ngdagi ustunlar nimani anglatishi qog'ozda hech qayerda
+            yozilmagan edi — imzolovchi "Ish kuni" nimadan hisoblanganini
+            so'rardi. Bitta gap bilan tushuntiriladi. */}
+        <p className="mt-1.5 text-[11px] text-muted">
+          O&apos;ngdagi ustunlar — shu odamning oy bo&apos;yicha yakuni. «Ish kuni» — dam olish («D») bo&apos;lmagan
+          kunlar soni; «Keldi» + «Kech» + «Kelmadi» + «Ma&apos;lumot yo&apos;q» ayni shunga teng.
+        </p>
       </section>
 
       {/* Imzo bloki — faqat qog'ozda. */}

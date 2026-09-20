@@ -36,17 +36,31 @@ export function AiModulesCard({ resource }: { resource: LiveResource<AIModule[]>
               {active.map((module) => {
                 const m = maturity(module);
                 return (
-                  <li key={module.id} className="flex items-center gap-3 py-2">
-                    <span className="w-7 shrink-0 text-xs tabular-nums text-subtle">#{module.code}</span>
-                    <p className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg" title={module.name}>
-                      {module.name}
-                    </p>
-                    <Badge tone={m.tone} dot title={module.maturityNote}>
-                      {m.label}
-                    </Badge>
-                    <span className="w-12 shrink-0 text-right text-[13px] font-semibold tabular-nums text-fg" title="Operator ko'rib chiqqan signallar asosidagi aniqlik">
-                      {formatPercent(module.measuredPrecision ?? null)}
-                    </span>
+                  <li key={module.id} className="py-2">
+                    <div className="flex items-center gap-3">
+                      <span className="w-7 shrink-0 text-xs tabular-nums text-subtle">#{module.code}</span>
+                      <p className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg" title={module.name}>
+                        {module.name}
+                      </p>
+                      <Badge tone={m.tone} dot title={module.maturityNote}>
+                        {m.label}
+                      </Badge>
+                      <span
+                        className="w-12 shrink-0 text-right text-[13px] font-semibold tabular-nums text-fg"
+                        // "—" nimani anglatishi aytilmasdi: aniqlik nol emas, hali o'lchanmagan.
+                        title={
+                          module.measuredPrecision === null || module.measuredPrecision === undefined
+                            ? "Aniqlik hali o'lchanmagan — operator yetarlicha signalni ko'rib chiqishi kerak"
+                            : "Operator ko'rib chiqqan signallar asosidagi aniqlik"
+                        }
+                      >
+                        {formatPercent(module.measuredPrecision ?? null)}
+                      </span>
+                    </div>
+                    {/* Qizil "Sozlash kerak" — nima qilish kerakligi faqat tooltipda edi. */}
+                    {m.tone === 'danger' && module.maturityNote && (
+                      <p className="ml-10 mt-0.5 text-xs leading-relaxed text-danger">{module.maturityNote}</p>
+                    )}
                   </li>
                 );
               })}

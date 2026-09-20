@@ -15,10 +15,18 @@ type Threshold = (typeof THRESHOLD_VALUES)[number];
 const THRESHOLDS = THRESHOLD_VALUES.map((n) => ({ value: n, label: `kamida ${n} kun` }));
 
 function DateChips({ dates, tone, max = 12 }: { dates: string[]; tone: 'warning' | 'danger'; max?: number }) {
+  // Eng so'nggi `max` kun ko'rsatiladi. Oldin yashirilganlar shunchaki
+  // "+7" deb turardi — nimaning 7 tasi ekani ham, qaysi kunlar ekani ham
+  // noma'lum edi.
   const shown = dates.slice(-max);
+  const hidden = dates.length - shown.length;
   return (
     <span className="flex flex-wrap gap-1">
-      {dates.length > shown.length && <span className="text-[11px] text-muted">+{dates.length - shown.length}</span>}
+      {hidden > 0 && (
+        <span className="text-[11px] text-muted" title={`Yana ${hidden} ta eskiroq kun: ${dates.slice(0, hidden).join(', ')}`}>
+          +{hidden} eskiroq kun
+        </span>
+      )}
       {shown.map((d) => (
         <span key={d} className={cn('rounded px-1.5 py-0.5 text-[11px] font-medium tabular-nums', tone === 'warning' ? 'bg-warning-soft text-warning' : 'bg-danger-soft text-danger')}>
           {formatUzDate(d, { year: false })}
@@ -81,6 +89,10 @@ export function ChronicTab() {
   const rows = useMemo(() => chronic.data ?? [], [chronic.data]);
   const lateCount = rows.filter((r) => r.reasons.includes('kech_keldi')).length;
   const absentCount = rows.filter((r) => r.reasons.includes('kelmadi')).length;
+  // Ikkala sababi ham bor odam ikkala songa kiradi, shuning uchun
+  // lateCount + absentCount > rows.length bo'lishi mumkin. Buni aytmasdan
+  // yozish "23 xodim: 18 + 12" kabi qo'shilmaydigan raqamlar berardi.
+  const bothCount = rows.filter((r) => r.reasons.includes('kech_keldi') && r.reasons.includes('kelmadi')).length;
 
   function exportCsv() {
     exportRowsAsCsv(
@@ -111,6 +123,7 @@ export function ChronicTab() {
             Tanlangan davrda <span className="font-semibold text-fg">{rows.length}</span> xodim kamida {minLate} kun kech kelgan yoki
             kamida {minAbsent} kun kelmagan: <span className="text-warning">{lateCount} kishi takror kech kelgan</span> ·{' '}
             <span className="text-danger">{absentCount} kishi takror kelmagan</span>
+            {bothCount > 0 && <> · shundan {bothCount} kishida har ikkala holat ham bor (ikkala songa kiradi)</>}
           </p>
         )}
         {chronic.error && !chronic.data ? (

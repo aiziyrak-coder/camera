@@ -35,6 +35,33 @@ function tashkentHhmm(value: Date): string {
   return `${hh}:${mm}`;
 }
 
+/** So'rov xatoga uchramasdan "osilib" qolishi mumkin (tarmoq qora tuynuk,
+ *  proksi ushlab qolgan ulanish): bunda `online` true bo'lib qolaveradi.
+ *  Ekran kunlab qarovsiz turadi — ertalabki raqamlarni kechqurun ham
+ *  "Ulangan" yozuvi bilan ko'rsatish eng yomon xato. So'rov davri 20 s;
+ *  uch marta o'tkazib yuborilgan bo'lsa — ma'lumot eskirgan deb hisoblanadi. */
+export const STALE_AFTER_MS = 70_000;
+
+export interface ConnectionState {
+  /** true — yashil "Ulangan"; false — ogohlantiruvchi holat. */
+  ok: boolean;
+  label: string;
+}
+
+/** Ulanish chipidagi matn va holat. `now` — test uchun beriladi. */
+export function connectionState(online: boolean, updatedAt: Date | null, now: Date): ConnectionState {
+  const upd = updatedAt ? tashkentHhmm(updatedAt) : '—';
+  if (!online) return { ok: false, label: `Ulanish uzildi · oxirgi ${upd}` };
+  if (!updatedAt) return { ok: false, label: "Ma'lumot hali kelmadi" };
+  const ageMs = now.getTime() - updatedAt.getTime();
+  if (ageMs > STALE_AFTER_MS) {
+    const mins = Math.floor(ageMs / 60_000);
+    const ago = mins >= 60 ? `${Math.floor(mins / 60)} soat` : `${Math.max(1, mins)} daqiqa`;
+    return { ok: false, label: `Yangilanmayapti · ${ago} oldingi ma'lumot (${upd})` };
+  }
+  return { ok: true, label: `Ulangan · ${upd}` };
+}
+
 function useNow(intervalMs = 1000) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -47,7 +74,7 @@ function useNow(intervalMs = 1000) {
 export function WallHeader({ online, updatedAt }: { online: boolean; updatedAt: Date | null }) {
   const now = useNow();
   const { hh, mm, ss, dateLabel } = tashkentClock(now);
-  const upd = updatedAt ? tashkentHhmm(updatedAt) : '—';
+  const conn = connectionState(online, updatedAt, now);
   return (
     <header className="flex shrink-0 items-center gap-[1.2em] px-[0.4em]">
       <img src="/favicon.svg" alt="" className="h-[2.8em] w-[2.8em] shrink-0" />
@@ -58,15 +85,18 @@ export function WallHeader({ online, updatedAt }: { online: boolean; updatedAt: 
         <div className="truncate text-[0.85em] text-muted">Davomat va xavfsizlik — real vaqtda</div>
       </div>
       <div className="ml-auto flex items-center gap-[1.6em]">
+        {/* Yorliqda yangilangan vaqt allaqachon bor edi — `title` uni
+            ikkinchi marta takrorlardi. Holat o'zgarishi ekran o'quvchiga
+            ham yetib borishi uchun `role="status"`. */}
         <div
+          role="status"
           className={cn(
             'flex items-center gap-[0.5em] rounded-full px-[0.9em] py-[0.35em] text-[0.85em] font-medium',
-            online ? 'bg-success-soft text-success' : 'wall-blink bg-danger-soft text-danger',
+            conn.ok ? 'bg-success-soft text-success' : 'wall-blink bg-danger-soft text-danger',
           )}
-          title={`Yangilandi: ${upd}`}
         >
-          {online ? <Wifi className="h-[1.1em] w-[1.1em]" /> : <WifiOff className="h-[1.1em] w-[1.1em]" />}
-          {online ? `Ulangan · ${upd}` : `Ulanish uzildi · oxirgi ${upd}`}
+          {conn.ok ? <Wifi className="h-[1.1em] w-[1.1em]" aria-hidden="true" /> : <WifiOff className="h-[1.1em] w-[1.1em]" aria-hidden="true" />}
+          {conn.label}
         </div>
         <div className="text-right leading-none">
           <div className="text-[3em] font-semibold tabular-nums tracking-tight text-fg">

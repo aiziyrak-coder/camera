@@ -39,6 +39,38 @@ const STEP_UI: Record<LivenessStep, { title: string; hint: string; arrow: string
 const PROBE_WIDTH = 480;
 const PROBE_INTERVAL_MS = 700;
 
+/** Serverga SAQLASH uchun yuboriladigan kadrning eng katta kengligi.
+ *
+ *  Chegarasiz bo'lsa kadr kameraning o'z o'lchamida ketardi: `ideal:
+ *  1280` faqat iltimos, majburiyat emas — 4K veb-kamera yoki zamonaviy
+ *  telefon 3840px kadr beradi va bitta JPEG 2-3 MB ga chiqadi. Uchta
+ *  kadr = 9 MB, mobil internetda esa bu bir necha daqiqalik kutish va
+ *  serverda 413. Tanib olish uchun 1280px dan ortig'i baribir kerak
+ *  emas — model kadrni o'zi kichraytiradi. */
+const MAX_FRAME_WIDTH = 1280;
+const FRAME_QUALITY = 0.85;
+
+/** getUserMedia xatolari — sabablari butunlay boshqa, demak matni ham
+ *  boshqa bo'lishi kerak. Nomlar brauzerlar bo'yicha farq qiladi
+ *  (Firefox'da NotReadableError o'rniga TrackStartError, eski
+ *  Chrome'da NotFoundError o'rniga DevicesNotFoundError). */
+const CAMERA_ERRORS: Record<string, string> = {
+  NotAllowedError:
+    "Kameraga ruxsat berilmadi. Manzil satridagi qulf belgisini bosib kameraga «Ruxsat» bering, so‘ng «Qayta urinish»ni bosing.",
+  PermissionDeniedError:
+    "Kameraga ruxsat berilmadi. Manzil satridagi qulf belgisini bosib kameraga «Ruxsat» bering, so‘ng «Qayta urinish»ni bosing.",
+  NotFoundError: 'Bu qurilmada kamera topilmadi. Kamerasi bor telefon yoki kompyuterdan oching.',
+  DevicesNotFoundError: 'Bu qurilmada kamera topilmadi. Kamerasi bor telefon yoki kompyuterdan oching.',
+  NotReadableError:
+    'Kamerani boshqa dastur band qilgan. Skype, Zoom, Telegram yoki kamera ochiq boshqa oynani yoping va qayta urinib ko‘ring.',
+  TrackStartError:
+    'Kamerani boshqa dastur band qilgan. Skype, Zoom, Telegram yoki kamera ochiq boshqa oynani yoping va qayta urinib ko‘ring.',
+  OverconstrainedError: 'Kamera talab qilingan sifatni qo‘llab-quvvatlamadi. Boshqa kamera bilan urinib ko‘ring.',
+  SecurityError: 'Brauzer sozlamalari bu sahifada kameraga ruxsat bermayapti.',
+  AbortError: 'Kamera kutilmaganda uzildi. Qayta urinib ko‘ring.',
+  default: 'Kamerani ochib bo‘lmadi. Qayta urinib ko‘ring.',
+};
+
 /** Bosqich tasdiqlanishi uchun ketma-ket necha marta mos kelishi kerak.
  *  Bir lahzalik tasodifiy burilish hisobga olinmasligi uchun. */
 const STABLE_HITS = 2;
@@ -70,8 +102,15 @@ export default function EnrollmentFaceCapture({
   const hitsRef = useRef(0);
   const busyRef = useRef(false);
   const doneRef = useRef(false);
+  // Ochilgan blob-havolalar. Effekt ichidagi tozalash `captured` state'ini
+  // ko'ra olmaydi (u birinchi renderdagi bo'sh massivni yodda tutadi),
+  // shuning uchun ro'yxat ref'da ham saqlanadi.
+  const urlsRef = useRef<string[]>([]);
 
   const [ready, setReady] = useState(false);
+  /** Kamerani qayta ochish uchun hisoblagich — sahifani yangilamasdan
+   *  (yangilash kiritilgan JSHSHIR va kodni yo'q qilib yuborardi). */
+  const [attempt, setAttempt] = useState(0);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [hint, setHint] = useState('Kamera ishga tushmoqda...');
@@ -81,14 +120,30 @@ export default function EnrollmentFaceCapture({
   const step = LIVENESS_STEPS[stepIndex];
   const finished = stepIndex >= LIVENESS_STEPS.length;
 
+  const stopStream = useCallback(() => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    // srcObject bo'shatilmasa Chrome kamera chirog'ini yonib turgan
+    // holatda qoldiradi, hatto treklar to'xtatilgan bo'lsa ham.
+    if (videoRef.current) videoRef.current.srcObject = null;
+  }, []);
+
   // ─────────────────────────── Kamerani ochish
   useEffect(() => {
     let cancelled = false;
+    setReady(false);
+    setCameraError(null);
+    setHint('Kamera ishga tushmoqda...');
 
     async function start() {
       if (!navigator.mediaDevices?.getUserMedia) {
+        // Eng ko'p uchraydigan sabab brauzer emas, manzil: getUserMedia
+        // faqat https:// (yoki localhost) da mavjud. "Boshqa brauzerda
+        // oching" deyish odamni bekorga sarson qilardi.
         setCameraError(
-          "Bu brauzer kameraga kirishni qo‘llab-quvvatlamaydi. Boshqa brauzerda oching.",
+          window.isSecureContext
+            ? "Bu brauzer kameraga kirishni qo‘llab-quvvatlamaydi. Boshqa brauzerda oching."
+            : "Sahifa xavfsiz ulanishda (https) emas — brauzer kameraga ruxsat bermaydi. Havolani https:// bilan oching.",
         );
         return;
       }
@@ -111,31 +166,39 @@ export default function EnrollmentFaceCapture({
         setReady(true);
         setHint('Yuzingiz doira ichida to‘liq ko‘rinsin');
       } catch (err) {
+        if (cancelled) return;
+        // Har bir DOMException nomi butunlay boshqa sabab va boshqa
+        // yechim: ruxsat rad etilgani bilan kamerani boshqa dastur band
+        // qilgani bir xil xabar olsa, odam nima qilishni bilmaydi.
         const name = err instanceof DOMException ? err.name : '';
-        setCameraError(
-          name === 'NotAllowedError'
-            ? 'Kameraga ruxsat berilmadi. Brauzer sozlamalaridan ruxsat bering va sahifani yangilang.'
-            : name === 'NotFoundError'
-              ? 'Kamera topilmadi. Kamerasi bor qurilmadan urinib ko‘ring.'
-              : 'Kamerani ochib bo‘lmadi. Boshqa dastur uni band qilmaganini tekshiring.',
-        );
+        setCameraError(CAMERA_ERRORS[name] ?? CAMERA_ERRORS.default);
       }
     }
 
     start();
     return () => {
       cancelled = true;
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
+      stopStream();
     };
-  }, []);
+  }, [attempt, stopStream]);
+
+  // Uchala kadr olingach kamerani darhol o'chiramiz. Aks holda kadrlar
+  // serverga yuklanayotganda (va xato bo'lsa — undan ham uzoqroq)
+  // kamera chirog'i yonib turaverardi: odam suratga olish tugaganini
+  // ko'rib turibdi, kamera esa hali ham unga qarab turibdi.
+  useEffect(() => {
+    if (finished) stopStream();
+  }, [finished, stopStream]);
 
   // ─────────────────────────── Kadr olish
-  const grab = useCallback((maxWidth?: number): Promise<Blob | null> => {
+  const grab = useCallback((probeWidth?: number): Promise<Blob | null> => {
     const video = videoRef.current;
     if (!video || !video.videoWidth) return Promise.resolve(null);
 
-    const scale = maxWidth ? Math.min(1, maxWidth / video.videoWidth) : 1;
+    // Yo'naltirish kadri kichik, saqlanadigan kadr esa katta — lekin
+    // ikkalasi ham cheklangan (MAX_FRAME_WIDTH sababi yuqorida).
+    const maxWidth = probeWidth ?? MAX_FRAME_WIDTH;
+    const scale = Math.min(1, maxWidth / video.videoWidth);
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(video.videoWidth * scale);
     canvas.height = Math.round(video.videoHeight * scale);
@@ -146,7 +209,7 @@ export default function EnrollmentFaceCapture({
     // kameraning haqiqiy tasviri boradi.
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     return new Promise((resolve) =>
-      canvas.toBlob((b) => resolve(b), 'image/jpeg', maxWidth ? 0.65 : 0.9),
+      canvas.toBlob((b) => resolve(b), 'image/jpeg', probeWidth ? 0.65 : FRAME_QUALITY),
     );
   }, []);
 
@@ -181,7 +244,9 @@ export default function EnrollmentFaceCapture({
         if (!full || stopped) return;
         hitsRef.current = 0;
         framesRef.current = [...framesRef.current, full];
-        setCaptured((prev) => [...prev, URL.createObjectURL(full)]);
+        const url = URL.createObjectURL(full);
+        urlsRef.current = [...urlsRef.current, url];
+        setCaptured((prev) => [...prev, url]);
         setMatching(false);
         setStepIndex((i) => i + 1);
       } catch {
@@ -209,36 +274,38 @@ export default function EnrollmentFaceCapture({
   // Serverdan xato kelsa boshidan boshlaymiz — qaysi kadr o‘tmaganini
   // bilmaymiz, va yarim to‘plam bilan davom etish noto‘g‘ri natija
   // beradi.
-  useEffect(() => {
-    if (!externalError) return;
+  const reset = useCallback(() => {
     doneRef.current = false;
     hitsRef.current = 0;
     framesRef.current = [];
-    setCaptured((prev) => {
-      prev.forEach((url) => URL.revokeObjectURL(url));
-      return [];
-    });
-    setStepIndex(0);
-    setMatching(false);
-  }, [externalError]);
-
-  useEffect(
-    () => () => {
-      captured.forEach((url) => URL.revokeObjectURL(url));
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
-
-  function restart() {
-    doneRef.current = false;
-    hitsRef.current = 0;
-    framesRef.current = [];
-    captured.forEach((url) => URL.revokeObjectURL(url));
+    urlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    urlsRef.current = [];
     setCaptured([]);
     setStepIndex(0);
     setMatching(false);
-  }
+    // Eski maslahat matni ("Boshingizni chapga buring") qolib ketmasin:
+    // bosqich 1 ga qaytdi, lekin yozuv oldingi urinishdan qolgan bo'lardi.
+    setHint('');
+    // Kadrlar to'plangach kamera o'chirilgan — boshidan boshlash uchun
+    // uni qaytadan ochish kerak.
+    setAttempt((n) => n + 1);
+  }, []);
+
+  useEffect(() => {
+    if (!externalError) return;
+    reset();
+  }, [externalError, reset]);
+
+  // Sahifadan chiqilganda ochiq blob-havolalarni bo'shatamiz. Ref orqali:
+  // state'ni o'qiydigan bo'sh bog'liqlikli effekt birinchi renderdagi
+  // bo'sh massivni ko'radi va hech narsani bo'shatmasdi (xotira oqimi).
+  useEffect(
+    () => () => {
+      urlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      urlsRef.current = [];
+    },
+    [],
+  );
 
   // ─────────────────────────── Ko‘rinish
   if (cameraError) {
@@ -247,7 +314,10 @@ export default function EnrollmentFaceCapture({
         <Notice tone="danger" icon={VideoOff} title="Kamera ochilmadi">
           {cameraError}
         </Notice>
-        <Button size="lg" icon={RotateCcw} onClick={() => window.location.reload()} fullWidth>
+        {/* Sahifani YANGILAMAYMIZ: yangilash kiritilgan JSHSHIR, guruh
+            kodi va berilgan rozilikni yo'q qilib, odamni birinchi
+            bosqichga qaytarib yuborardi. Faqat kamera qayta ochiladi. */}
+        <Button size="lg" icon={RotateCcw} onClick={() => setAttempt((n) => n + 1)} fullWidth>
           Qayta urinish
         </Button>
       </div>
@@ -282,11 +352,15 @@ export default function EnrollmentFaceCapture({
             playsInline
             muted
             autoPlay
+            aria-label="Kameradan jonli tasvir"
             className="h-full w-full scale-x-[-1] object-cover"
           />
-          {!ready && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-white">
-              <ScanFace size={30} className="animate-pulse" />
+          {!ready && !finished && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/60 text-white">
+              <ScanFace size={30} className="animate-pulse" aria-hidden="true" />
+              {/* Faqat pulsatsiya qilayotgan ikonka "sindimi yoki
+                  yuklanyaptimi" degan savol tug'dirardi. */}
+              <span className="text-xs">Kamera ishga tushmoqda...</span>
             </div>
           )}
         </div>
@@ -305,16 +379,20 @@ export default function EnrollmentFaceCapture({
         )}
       </div>
 
-      {/* Bosqich va maslahat */}
-      <div className="text-center">
+      {/* Bosqich va maslahat.
+          aria-live butun blokda: ko'rmaydigan foydalanuvchi uchun aynan
+          shu ikki qator yagona yo'riqnoma — bosqich o'zgargani ham,
+          "yuz topilmadi" kabi maslahat ham eshitilishi kerak. Ilgari
+          faqat sarlavhada edi va jonli maslahat umuman aytilmasdi. */}
+      <div className="text-center" role="status" aria-live="polite" aria-atomic="true">
         {finished ? (
           <p className="flex items-center justify-center gap-1.5 text-sm font-semibold text-success">
-            <Check size={16} />
+            <Check size={16} aria-hidden="true" />
             Uchala bosqich bajarildi
           </p>
         ) : (
           <>
-            <p className="text-[15px] font-semibold text-fg" aria-live="polite">
+            <p className="text-[15px] font-semibold text-fg">
               {stepIndex + 1}/{total} — {ui?.title}
             </p>
             <p
@@ -350,7 +428,13 @@ export default function EnrollmentFaceCapture({
       )}
 
       {externalError && (
-        <Notice tone="warning">{externalError} Bosqichlar boshidan boshlandi.</Notice>
+        // role="alert" o'ramda: Notice faqat "danger" ohangida e'lon
+        // qiladi, bu xabar esa tiklanadigan (warning), lekin baribir
+        // eshitilishi shart — aks holda ko'rmaydigan foydalanuvchi
+        // nega hammasi boshidan boshlanganini bilmaydi.
+        <div role="alert">
+          <Notice tone="warning">{externalError} Bosqichlar boshidan boshlandi.</Notice>
+        </div>
       )}
 
       {submitting && (
@@ -361,7 +445,7 @@ export default function EnrollmentFaceCapture({
       )}
 
       {captured.length > 0 && !submitting && (
-        <Button variant="ghost" size="sm" icon={RotateCcw} onClick={restart} className="mx-auto">
+        <Button variant="ghost" size="sm" icon={RotateCcw} onClick={reset} className="mx-auto">
           Boshidan boshlash
         </Button>
       )}

@@ -89,6 +89,40 @@ describe('Fakultet sahifasi', () => {
     expect(screen.queryByTestId('kampaniya')).not.toBeInTheDocument();
   });
 
+  it('kurs sarlavhasidagi jami qidiruvdan keyin ko\'rinayotgan guruhlarga mos keladi', async () => {
+    // Ilgari "N guruh" qidiruvdan keyingi sondan, "M talaba · davomat X%"
+    // esa butun kursdan olinardi — bitta qatorda ikki xil to'plam.
+    renderPage();
+    await waitFor(() => expect(screen.getByText(/3 guruh · 30 talaba/)).toBeInTheDocument());
+
+    fireEvent.change(screen.getByPlaceholderText('Guruh nomi…'), { target: { value: 'DI-2302' } });
+    await waitFor(() => expect(screen.getByText(/1 guruh/)).toBeInTheDocument());
+    const header = screen.getByText(/1 guruh/);
+    expect(header.textContent).toContain('10 talaba');
+    expect(header.textContent).not.toContain('30 talaba');
+  });
+
+  it("qidiruv URL'dan o'qiladi — chuqur havola bir xil ro'yxatni beradi", async () => {
+    // Ilgari qidiruv faqat komponent holatida edi: havolani ulashganda yoki
+    // sahifani yangilaganda ro'yxat to'liq holatga qaytib ketardi.
+    renderPage('/talabalar/fakultet/f1?qidiruv=DI-2302');
+    await waitFor(() => expect(screen.getByText('DI-2302')).toBeInTheDocument());
+    expect(screen.queryByText('DI-2301')).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Guruh nomi…')).toHaveValue('DI-2302');
+  });
+
+  it("qidiruv faol bo'lganda umumiy karta ham topilgan guruhlardan hisoblanadi", async () => {
+    // Ilgari halqa butun fakultetni (30 talaba) ko'rsatib turardi, pastda esa
+    // bitta guruh — bitta ekranda ikki xil to'plam.
+    renderPage();
+    await waitFor(() => expect(screen.getByText(/Fakultet bo'yicha/)).toBeInTheDocument());
+
+    fireEvent.change(screen.getByPlaceholderText('Guruh nomi…'), { target: { value: 'DI-2302' } });
+    await waitFor(() => expect(screen.getByText(/Topilgan guruhlar bo'yicha/)).toBeInTheDocument());
+    // Bitta guruh: 5 kelgan / (5 + 3 + 2) kutilgan.
+    expect(screen.getByText(/Topilgan guruhlar bo'yicha/).textContent).toContain('5 / 10 keldi');
+  });
+
   it("o'tgan sanada sarlavhada «bugun» deyilmaydi", async () => {
     renderPage('/talabalar/fakultet/f1?sana=2020-05-04');
     await waitFor(() => expect(screen.getByText('Davolash ishi')).toBeInTheDocument());

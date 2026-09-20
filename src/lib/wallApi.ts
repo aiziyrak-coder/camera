@@ -318,11 +318,21 @@ export function mergeArrival<T extends { id: string }>(list: readonly T[], item:
   return [item, ...list.filter((x) => x.id !== item.id)].slice(0, limit);
 }
 
+/** Vaqtni "HH:MM" ga keltiradi. Jonli yozuvlar `hhmm()` dan ("08:12"),
+ *  server yozuvlari esa to'liq ISO ("2026-09-20T08:12:03") bo'lishi mumkin —
+ *  ularni satr sifatida to'g'ridan-to'g'ri solishtirish barcha jonli
+ *  kelishlarni yo'qotib yuborardi ("08:12" < "2026-..."). */
+function hhmmOf(time: string): string {
+  const m = /(\d{2}):(\d{2})/.exec(time);
+  return m ? `${m[1]}:${m[2]}` : time;
+}
+
 /** Poll natijasini jonli qo'shilganlar bilan birlashtiradi: server hali
  *  ko'rmagan (keshdagi) yangi kelishlar yo'qolib qolmasin. */
 export function mergeArrivalLists<T extends { id: string; time: string }>(server: readonly T[], live: readonly T[], limit = 12): T[] {
   const seen = new Set(server.map((a) => a.id));
-  const extra = live.filter((a) => !seen.has(a.id) && (!server[0] || a.time >= server[0].time));
+  const head = server[0] ? hhmmOf(server[0].time) : null;
+  const extra = live.filter((a) => !seen.has(a.id) && (head === null || hhmmOf(a.time) >= head));
   return [...extra, ...server].slice(0, limit);
 }
 

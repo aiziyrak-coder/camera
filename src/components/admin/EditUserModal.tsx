@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { KeyRound, Send } from 'lucide-react';
-import { Badge, Button, Field, Input, Modal, Select } from '../../ui';
+import { Badge, Button, ConfirmDialog, Field, Input, Modal, Select } from '../../ui';
 import { Notice } from '../settings/kit';
 import { required, minLength } from '../../lib/validation';
 import { ApiError, api } from '../../lib/apiClient';
@@ -45,6 +45,7 @@ export default function EditUserModal({
   const [resetError, setResetError] = useState<string | null>(null);
   const [resetDone, setResetDone] = useState(false);
   const [resetSubmitting, setResetSubmitting] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -54,6 +55,7 @@ export default function EditUserModal({
       setNewPassword('');
       setResetError(null);
       setResetDone(false);
+      setConfirmDiscard(false);
     }
   }, [user]);
 
@@ -119,18 +121,32 @@ export default function EditUserModal({
   }
 
   const busy = saving || resetSubmitting;
+  // O'zgartirilgan maydonlar saqlanmasdan yo'qolib ketmasin.
+  const dirty = Boolean(user && form && JSON.stringify(form) !== JSON.stringify(toForm(user)));
+
+  function requestClose() {
+    if (busy) return;
+    if (dirty || newPassword) {
+      setConfirmDiscard(true);
+      return;
+    }
+    onClose();
+  }
 
   return (
+    <>
     <Modal
       open={!!user}
-      onClose={onClose}
+      onClose={requestClose}
       title="Foydalanuvchini tahrirlash"
       description={user ? `${user.name} · oxirgi kirish: ${user.lastLogin}` : undefined}
       size="md"
       dismissible={!busy}
       footer={
         <>
-          <Button onClick={onClose} disabled={saving}>
+          {/* Ilgari faqat `saving` tekshirilardi: parol tiklash so'rovi
+              ketayotganda oynani yopib, natijani ko'rmay qolish mumkin edi. */}
+          <Button onClick={requestClose} disabled={busy}>
             Bekor qilish
           </Button>
           <span title={lockedTarget ? "Super Admin hisobini faqat Super Admin o'zgartira oladi" : undefined}>
@@ -150,6 +166,9 @@ export default function EditUserModal({
             </Notice>
           )}
           <form id="edit-user-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+            {/* Server xatosi formaning tepasida — pastda, "Parolni tiklash"
+                bo'limi ostida qolib ketmasin. */}
+            {errors.form && <Notice tone="danger">{errors.form}</Notice>}
             <fieldset disabled={lockedTarget} className="grid gap-4 border-0 p-0 sm:grid-cols-2">
               <Field label="F.I.Sh." required error={errors.name} className="sm:col-span-2">
                 <Input value={form.name} onChange={(e) => set('name', e.target.value)} />
@@ -185,7 +204,6 @@ export default function EditUserModal({
                 </Badge>
               </div>
             )}
-            {errors.form && <Notice tone="danger">{errors.form}</Notice>}
           </form>
 
           <section className="border-t border-border pt-4" aria-labelledby="reset-password-title">
@@ -211,7 +229,7 @@ export default function EditUserModal({
                   Foydalanuvchi uchun yangi parol darhol o&apos;rnatiladi (email talab qilinmaydi) — barcha eski
                   sessiyalari avtomatik tugatiladi.
                 </Notice>
-                <Field label="Yangi parol" hint="Kamida 8 belgi" error={resetError}>
+                <Field label="Yangi parol" required hint="Kamida 8 belgi" error={resetError}>
                   <Input
                     type="password"
                     value={newPassword}
@@ -234,5 +252,18 @@ export default function EditUserModal({
         </div>
       )}
     </Modal>
+      <ConfirmDialog
+        open={confirmDiscard}
+        title="O'zgarishlar saqlanmadi"
+        message="Oynani yopsangiz, kiritilgan o'zgarishlar yo'qoladi."
+        confirmLabel="Ha, yopilsin"
+        cancelLabel="Tahrirga qaytish"
+        onCancel={() => setConfirmDiscard(false)}
+        onConfirm={() => {
+          setConfirmDiscard(false);
+          onClose();
+        }}
+      />
+    </>
   );
 }

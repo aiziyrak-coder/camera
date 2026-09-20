@@ -46,13 +46,15 @@ import {
   type FilterFieldEntry,
   type TabItem,
 } from '../../ui';
+import { eventQueryParams, type Quick } from '../../components/events/eventQuery';
 import EventDrawer from '../../components/events/EventDrawer';
 import EventsPager from '../../components/events/EventsPager';
 import ResolveDialog from '../../components/events/ResolveDialog';
 import ReviewCard, { EventThumb, cameraLabel } from '../../components/events/ReviewCard';
 import SlaBadge from '../../components/events/SlaBadge';
-import { ApiError, api, fetchAllPages, isAbortError } from '../../lib/apiClient';
+import { ApiError, api, buildQuery, isAbortError, type Page as ApiPage } from '../../lib/apiClient';
 import { exportRowsAsCsv } from '../../lib/csvExport';
+import { EVENT_CSV_HEADERS, eventCsvRow, eventsCsvFilename } from '../../components/events/eventCsv';
 import { useAuth } from '../../lib/auth';
 import { usePermissions } from '../../lib/permissions';
 import { SEVERITY_TONE, STATUS_LABEL } from '../../lib/eventLabels';
@@ -65,11 +67,6 @@ import type { AIEvent, EventStatus, EventSummary } from '../../types';
 
 type View = 'navbat' | 'jurnal' | 'sinov';
 type Decision = 'tasdiqlangan' | 'rad_etilgan';
-/** Tezkor filtrlar: menga tayinlangan, muddati o'tgan, hech kimga tayinlanmagan. */
-type Quick = '' | 'mening' | 'muddati' | 'tayinlanmagan';
-
-// Ko'rib chiqish navbati — qaror kutayotgan hodisalar.
-const QUEUE_STATUSES = 'yangi,jarayonda';
 
 const SEVERITY_OPTIONS = [
   { value: 'yuqori', label: 'Yuqori' },
@@ -145,7 +142,10 @@ function QuickChip({
     >
       <Icon size={14} aria-hidden="true" />
       {label}
-      {count !== undefined && <span className="tabular-nums opacity-80">{count.toLocaleString('ru-RU')}</span>}
+      {/* Sonlar butun sahifada bir xil (formatCount) formatlanadi —
+          ilgari bu yerda ru-RU ishlatilgani uchun chiplardagi raqamlar
+          qolgan joylardan boshqacha ajratilardi. */}
+      {count !== undefined && <span className="tabular-nums opacity-80">{formatCount(count)}</span>}
     </button>
   );
 }
@@ -155,6 +155,11 @@ export default function EventsPage() {
   const { can } = usePermissions();
   // Hodisa — dalil: standart bo'yicha faqat Super Admin o'chiradi.
   const canDelete = can('deleteEvents', role);
+  // Eksport faylida shaxs ismlari bor — bu `exportData` huquqi bilan
+  // himoyalanadi (Audit jurnalidagi eksport ham shunday, SystemPage.tsx).
+  // Ilgari tugma hodisalar sahifasiga kira oladigan HAMMAGA ko'rinardi —
+  // ya'ni eksport huquqi kimga berilgani amalda hech narsani anglatmasdi.
+  const canExport = can('exportData', role);
   const toast = useToast();
   const [params, setParams] = useSearchParams();
 
@@ -210,19 +215,16 @@ export default function EventsPage() {
   // ma'nosiz so'rov umuman yuborilmaydi.
   const rangeInvalid = Boolean(from && to && from > to);
 
+  const activeQuery = eventQueryParams({ queue, severity, statusFilter, quick, moduleCode, building, from, to, search });
+  // Saralash ham eksportga uzatiladi: ilgari fayldagi qatorlar tartibi
+  // ekrandagidan boshqacha chiqardi (server standart tartibida).
+  const listSort = quick === 'muddati' ? 'due' : queue ? 'severity' : undefined;
+
   const { items, page, setPage, totalPages, total, pageSize, loading, error, reload } = useServerPage<AIEvent>(
     '/api/events',
     {
-      severity: severity || undefined,
-      status: queue ? QUEUE_STATUSES : statusFilter || (quick === 'tayinlanmagan' ? QUEUE_STATUSES : undefined),
-      assignedTo: quick === 'mening' ? 'me' : quick === 'tayinlanmagan' ? 'none' : undefined,
-      overdue: quick === 'muddati' ? 'true' : undefined,
-      moduleCodes: moduleCode || undefined,
-      building: building || undefined,
-      from: from || undefined,
-      to: to || undefined,
-      search: search.trim() || undefined,
-      sort: quick === 'muddati' ? 'due' : queue ? 'severity' : undefined,
+      ...activeQuery,
+      sort: listSort,
     },
     queue ? 12 : 20,
     { enabled: !trialView && !rangeInvalid },
@@ -238,6 +240,10 @@ export default function EventsPage() {
   useEffect(() => {
     if (!trialView || !token || !moduleCode) {
       setSample([]);
+      // Oldingi so'rov xato bergan bo'lsa, modul tanlovi tozalangandan
+      // keyin ham ekranda o'sha xato turardi ("Modulni tanlang" o'rniga).
+      setSampleError(null);
+      setSampleLoading(false);
       return;
     }
     const controller = new AbortController();
@@ -489,59 +495,74 @@ export default function EventsPage() {
   // uchun natija kutilganidan boshqacha chiqmaydi. Kadr havolalari
   // (shaxsiy ma'lumot) faylga TUSHMAYDI.
   const [exporting, setExporting] = useState(false);
+  // Eksport bir nechta so'rovdan iborat (5000 qator = 10 ta so'rov, o'nlab
+  // soniya). Ilgari tugma shunchaki "aylanardi" va foydalanuvchi ish
+  // qotib qolganmi yoki ketayotganmi bilmasdi — endi qancha yozuv
+  // yig'ilgani ko'rinib turadi.
+  const [exportProgress, setExportProgress] = useState<{ loaded: number; total: number } | null>(null);
+  const exportAbort = useRef<AbortController | null>(null);
+  // Sahifadan chiqib ketilganda yarim qolgan eksport so'rovlari to'xtaydi.
+  useEffect(() => () => exportAbort.current?.abort(), []);
 
   async function exportCsv() {
     if (exporting) return;
+    // Teskari oraliqda ro'yxat so'rovi YUBORILMAYDI — eksport ham
+    // yubormasligi kerak, aks holda ekranda "so'rov yuborilmadi" turgan
+    // paytda faylga butun jurnal (sanasiz) tushib ketardi.
+    if (rangeInvalid) {
+      toast.error("Sana oralig'i teskari — avval sanalarni to'g'rilang");
+      return;
+    }
+    const controller = new AbortController();
+    exportAbort.current = controller;
     setExporting(true);
+    setExportProgress({ loaded: 0, total: 0 });
     try {
-      const rows = await fetchAllPages<AIEvent>(
-        '/api/events',
-        token,
-        {
-          severity: severity || undefined,
-          status: queue ? QUEUE_STATUSES : statusFilter || undefined,
-          assignedTo: quick === 'mening' ? 'me' : quick === 'tayinlanmagan' ? 'none' : undefined,
-          overdue: quick === 'muddati' ? 'true' : undefined,
-          moduleCodes: moduleCode || undefined,
-          building: building || undefined,
-          from: from || undefined,
-          to: to || undefined,
-          search: search.trim() || undefined,
-        },
-        EXPORT_PAGE_SIZE,
-        EXPORT_MAX_ROWS,
-      );
-      if (rows.length === 0) {
-        toast.error('Joriy filtrga mos hodisa yo’q — eksport qilishga narsa yo’q');
+      // Sahifalar QO'LDA aylanib chiqiladi (fetchAllPages o'rniga), chunki
+      // bizga ikkita narsa kerak: borish jarayonini ko'rsatish va serverdagi
+      // HAQIQIY `total`. `total` bo'lmasa "5000 ta keldi" ni "aynan 5000 ta
+      // bor" dan ajratib bo'lmaydi va kesilgani haqida yolg'on (yoki
+      // umuman hech qanday) ogohlantirish chiqardi.
+      const collected: AIEvent[] = [];
+      let serverTotal = 0;
+      let pageNo = 1;
+      let pagesLeft = 1;
+      do {
+        const res = await api.get<ApiPage<AIEvent>>(
+          `/api/events${buildQuery({ ...activeQuery, sort: listSort, page: pageNo, pageSize: EXPORT_PAGE_SIZE })}`,
+          token,
+          { signal: controller.signal },
+        );
+        collected.push(...res.items);
+        serverTotal = res.total;
+        pagesLeft = res.totalPages;
+        setExportProgress({ loaded: collected.length, total: Math.min(res.total, EXPORT_MAX_ROWS) });
+        pageNo += 1;
+      } while (pageNo <= pagesLeft && collected.length < EXPORT_MAX_ROWS);
+
+      if (collected.length === 0) {
+        // Bu xato emas — shunchaki filtrga mos yozuv yo'q.
+        toast.info('Joriy filtrga mos hodisa yo’q — eksport qilishga narsa yo’q');
         return;
       }
-      exportRowsAsCsv(
-        ['Vaqt', 'Kriteriya', 'Kamera', 'Bino', 'Shaxs', 'Ishonch %', 'Muhimlik', 'Holat', "Mas'ul", 'Muddat', "Ko'rib chiqdi", 'Yechim'],
-        rows.map((event) => [
-          event.timestamp,
-          `№${event.moduleCode} ${event.moduleName}`,
-          cameraLabel(event),
-          event.building ?? '',
-          event.personName ?? '',
-          event.confidence,
-          event.severity,
-          STATUS_LABEL[event.status] ?? event.status,
-          event.assignedToName ?? '',
-          event.dueAt ?? '',
-          event.reviewedBy ?? '',
-          event.resolutionNote ?? '',
-        ]),
-        `hodisalar-${todayInTashkent()}.csv`,
-      );
-      toast.success(
-        rows.length >= EXPORT_MAX_ROWS
-          ? `${formatCount(rows.length)} ta yozuv yuklandi (eng ko'pi) — oraliqni toraytiring`
-          : `${formatCount(rows.length)} ta yozuv yuklandi`,
-      );
+      const truncated = serverTotal > EXPORT_MAX_ROWS;
+      const rows = truncated ? collected.slice(0, EXPORT_MAX_ROWS) : collected;
+      exportRowsAsCsv(EVENT_CSV_HEADERS as unknown as string[], rows.map(eventCsvRow), eventsCsvFilename(todayInTashkent()));
+      if (truncated) {
+        // Jimgina kesish — tekshiruvga chala fayl berish degani. Shuning
+        // uchun bu muvaffaqiyat emas, ogohlantirish.
+        toast.error(
+          `Faylga faqat ${formatCount(rows.length)} ta yozuv tushdi — filtrga ${formatCount(serverTotal)} ta mos keladi. Sana oralig'ini toraytiring.`,
+        );
+      } else {
+        toast.success(`${formatCount(rows.length)} ta yozuv yuklandi`);
+      }
     } catch (err) {
-      toast.error(errorText(err));
+      if (!isAbortError(err)) toast.error(errorText(err));
     } finally {
+      if (exportAbort.current === controller) exportAbort.current = null;
       setExporting(false);
+      setExportProgress(null);
     }
   }
 
@@ -698,7 +719,13 @@ export default function EventsPage() {
       header: (
         <input
           type="checkbox"
-          aria-label="Sahifadagi barcha hodisalarni tanlash"
+          // Qisman tanlangan sahifa "hech nima tanlanmagan" bo'lib
+          // ko'rinmasin: indeterminate faqat DOM xossasi, shuning uchun
+          // ref orqali qo'yiladi.
+          ref={(node) => {
+            if (node) node.indeterminate = !allOnPageSelected && rows.some((r) => selected.has(r.id));
+          }}
+          aria-label={allOnPageSelected ? 'Sahifadagi tanlovni bekor qilish' : 'Sahifadagi barcha hodisalarni tanlash'}
           checked={allOnPageSelected}
           onChange={() => setSelected(allOnPageSelected ? new Set() : new Set(rows.map((r) => r.id)))}
           className="h-4 w-4 cursor-pointer rounded accent-primary"
@@ -886,8 +913,13 @@ export default function EventsPage() {
   function renderJournal() {
     return (
       <>
+        {/* Klaviatura bilan belgilaganda tanlovlar soni e'lon qilinsin. */}
         {selected.size > 0 && (
-          <div className="sticky top-16 z-20 flex flex-wrap items-center gap-2 rounded-card border border-primary/30 bg-primary-soft px-3 py-2 shadow-card">
+          <div
+            role="status"
+            aria-live="polite"
+            className="sticky top-16 z-20 flex flex-wrap items-center gap-2 rounded-card border border-primary/30 bg-primary-soft px-3 py-2 shadow-card"
+          >
             <span className="text-sm font-semibold text-primary">{selected.size} ta tanlandi</span>
             <Button size="sm" variant="primary" icon={Check} onClick={() => bulkReview('tasdiqlangan')} disabled={bulkBusy}>
               Tasdiqlash
@@ -941,9 +973,11 @@ export default function EventsPage() {
       defaultTab="navbat"
       actions={
         <>
-          {!trialView && (
+          {!trialView && canExport && (
             <Button icon={Download} onClick={exportCsv} loading={exporting} disabled={exporting}>
-              Excel uchun yuklash (CSV)
+              {exportProgress
+                ? `Yuklanmoqda… ${formatCount(exportProgress.loaded)}${exportProgress.total ? ` / ${formatCount(exportProgress.total)}` : ''}`
+                : 'Excel uchun yuklash (CSV)'}
             </Button>
           )}
           <Button icon={RefreshCw} onClick={trialView ? () => setSampleNonce((n) => n + 1) : refreshAll} loading={!trialView && loading && rows.length > 0}>
@@ -1010,16 +1044,19 @@ export default function EventsPage() {
         </div>
       )}
 
+      {/* Bitta xabar, bitta amal: ilgari ErrorState va uning tuzatish
+          tugmasi ikkita alohida blokda chizilardi — tugma xabardan
+          ajralib, alohida "sahifa amali" bo'lib ko'rinardi. */}
       {!trialView && rangeInvalid && (
-        <ErrorState
-          title="Sana oralig'i teskari"
-          message={`Boshlanish sanasi (${from}) tugash sanasidan (${to}) keyin turibdi — shuning uchun so'rov yuborilmadi.`}
-        />
-      )}
-      {!trialView && rangeInvalid && (
-        <Button className="self-start" onClick={() => setParam({ from: to, to: from })}>
-          Sanalarni almashtirish
-        </Button>
+        <div className="flex flex-col gap-2">
+          <ErrorState
+            title="Sana oralig'i teskari"
+            message={`Boshlanish sanasi (${from}) tugash sanasidan (${to}) keyin turibdi — shuning uchun so'rov yuborilmadi.`}
+          />
+          <Button className="self-start" onClick={() => setParam({ from: to, to: from })}>
+            Sanalarni almashtirish
+          </Button>
+        </div>
       )}
 
       {!trialView && pendingNew > 0 && (
@@ -1039,7 +1076,8 @@ export default function EventsPage() {
 
       {trialView ? renderTrialBody() : queue ? renderQueueBody() : renderJournal()}
 
-      {!trialView && queue && rows.length > 0 && (
+      {/* Jurnaldagidek: bitta sahifaga sig'sa sahifalagich ortiqcha. */}
+      {!trialView && queue && rows.length > 0 && totalPages > 1 && (
         <EventsPager page={page} totalPages={totalPages} total={total} pageSize={pageSize} onChange={setPage} />
       )}
 

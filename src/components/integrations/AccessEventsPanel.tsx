@@ -36,6 +36,22 @@ export function AccessEventsToolbar({
   devices: AccessDevice[];
 }) {
   const set = <K extends keyof AccessEventFilters>(key: K, value: AccessEventFilters[K]) => onChange({ ...filters, [key]: value });
+
+  /** Sana oralig'i teskari bo'lib qolmasin.
+   *
+   *  `min`/`max` atributlari faqat KALENDARdan tanlashni cheklaydi —
+   *  sanani klaviaturadan yozganda ular hech narsa qilmaydi. Natijada
+   *  "01.09 dan 01.08 gacha" kabi oraliq serverga ketib, jadval doim
+   *  bo'sh chiqardi va foydalanuvchi "hodisa yo'q" deb o'ylardi. Endi
+   *  ikkinchi chegara birinchisiga tortiladi. */
+  const setRange = (key: 'from' | 'to', value: string) => {
+    const next = { ...filters, [key]: value };
+    if (next.from && next.to && next.from > next.to) {
+      if (key === 'from') next.to = value;
+      else next.from = value;
+    }
+    onChange(next);
+  };
   const fields: FilterFieldEntry[] = [
     { kind: 'search', value: filters.search, onChange: (v) => set('search', v), placeholder: 'Ism, karta yoki xodim raqami' },
     {
@@ -58,7 +74,7 @@ export function AccessEventsToolbar({
             type="date"
             value={filters.from}
             max={filters.to || undefined}
-            onChange={(e) => set('from', e.target.value)}
+            onChange={(e) => setRange('from', e.target.value)}
             aria-label="Sanadan"
             className="min-w-0 flex-1 sm:w-40 sm:flex-none"
           />
@@ -69,7 +85,7 @@ export function AccessEventsToolbar({
             type="date"
             value={filters.to}
             min={filters.from || undefined}
-            onChange={(e) => set('to', e.target.value)}
+            onChange={(e) => setRange('to', e.target.value)}
             aria-label="Sanagacha"
             className="min-w-0 flex-1 sm:w-40 sm:flex-none"
           />

@@ -83,7 +83,7 @@ describe('WorkHoursPage', () => {
 
   it("barcha ish kunlari o'chirilsa saqlanmaydi", async () => {
     await renderPage();
-    for (const day of ['Du', 'Se', 'Ch', 'Pa', 'Ju']) {
+    for (const day of ['Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma']) {
       fireEvent.click(screen.getByRole('button', { name: day }));
     }
     fireEvent.click(screen.getByRole('button', { name: /Saqlash/ }));
@@ -99,11 +99,46 @@ describe('WorkHoursPage', () => {
     expect(savePolicy).not.toHaveBeenCalled();
   });
 
-  it("to'g'ri qiymat saqlanadi", async () => {
+  it("to'g'ri qiymat tasdiqdan keyin saqlanadi", async () => {
     await renderPage();
     fireEvent.change(screen.getByLabelText(/Ish tugashi/), { target: { value: '18:00' } });
     fireEvent.click(screen.getByRole('button', { name: /Saqlash/ }));
+    // Birinchi bosishda hali hech narsa yuborilmaydi — og'ir amal
+    // (oxirgi 60 kunni qayta hisoblash) tasdiq so'raydi.
+    expect(savePolicy).not.toHaveBeenCalled();
+    await screen.findByText(/Saqlashdan oldin tasdiqlang/);
+
+    fireEvent.click(screen.getByRole('button', { name: /Ha, saqlansin/ }));
     await waitFor(() => expect(savePolicy).toHaveBeenCalledTimes(1));
     expect(savePolicy.mock.calls[0][1]).toMatchObject({ workEnd: '18:00' });
+  });
+
+  it("tasdiqda nima bo'lishi yozilgan va «Bekor qilish» saqlamaydi", async () => {
+    await renderPage();
+    fireEvent.change(screen.getByLabelText(/Ish tugashi/), { target: { value: '18:00' } });
+    fireEvent.click(screen.getByRole('button', { name: /Saqlash/ }));
+    const notice = await screen.findByText(/oxirgi 60 kundagi yozuvlarning holati/);
+    expect(notice).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /Bekor qilish/ }));
+    expect(savePolicy).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Saqlashdan oldin tasdiqlang/)).toBeNull();
+  });
+
+  it("kechikish chegarasi 180 daqiqadan oshsa jimgina qisilmaydi, xato chiqadi", async () => {
+    await renderPage();
+    const grace = screen.getByLabelText(/Kechikishga ruxsat/) as HTMLInputElement;
+    fireEvent.change(grace, { target: { value: '200' } });
+    // Qiymat 180 ga "tuzatilmaydi" — foydalanuvchi yozgani turadi.
+    expect(grace.value).toBe('200');
+    fireEvent.click(screen.getByRole('button', { name: /Saqlash/ }));
+    await screen.findByText(/0 dan 180 gacha/);
+    expect(savePolicy).not.toHaveBeenCalled();
+  });
+
+  it("ish kuni tugmalarining to'liq nomi bor", async () => {
+    await renderPage();
+    expect(screen.getByRole('button', { name: 'Payshanba' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Ish kunlari' })).toBeTruthy();
   });
 });

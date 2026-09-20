@@ -203,18 +203,25 @@ export default function CamerasZonesPage() {
   }, [statusFilter, buildingFilter, floorFilter, zoneFilter, roomTypeFilter, search, page]);
 
   const floorOptions = useMemo(() => {
-    const selectedBuilding = buildings.find((b) => b.name === buildingFilter);
-    const highest = Math.max(
-      selectedBuilding?.floors ?? 0,
-      ...buildings.map((b) => b.floors ?? 0),
-      5,
-    );
+    // Bino tanlangan bo'lsa — FAQAT o'sha binoning qavatlari. Ilgari
+    // barcha binolarning maksimumi ham hisobga olinardi, shuning uchun
+    // 2 qavatli binoni tanlaganda ham ro'yxatda 9-qavatgacha turardi va
+    // mavjud bo'lmagan qavat bo'yicha filtrlash mumkin edi.
+    const selectedBuilding = buildingFilter ? buildings.find((b) => b.name === buildingFilter) : undefined;
+    const highest = buildingFilter
+      ? Math.max(selectedBuilding?.floors ?? 0, 1)
+      : Math.max(...buildings.map((b) => b.floors ?? 0), 5);
     const options = Array.from({ length: highest }, (_, index) => ({
       value: String(index + 1),
       label: `${index + 1}-qavat`,
     }));
+    // Tanlangan qavat yangi ro'yxatga sig'masa ham tanlagichda ko'rinsin —
+    // aks holda filtr ishlab turadi-yu, maydon bo'sh ko'rinadi.
+    if (floorFilter && floorFilter !== UNASSIGNED_FLOOR && !options.some((o) => o.value === floorFilter)) {
+      options.push({ value: floorFilter, label: `${floorFilter}-qavat` });
+    }
     return [...options, { value: UNASSIGNED_FLOOR, label: 'Qavat belgilanmagan' }];
-  }, [buildings, buildingFilter]);
+  }, [buildings, buildingFilter, floorFilter]);
 
   const zoneOptions = useMemo(() => {
     const options = zones.map((z) => ({ value: z.zone, label: `${z.zone} (${z.cameraCount})` }));
@@ -321,11 +328,27 @@ export default function CamerasZonesPage() {
   function handleModulesSaved(saved: CameraConfig) {
     refreshCameras();
     if (viewing?.id === saved.id) setViewing(saved);
+    toast.success(`${saved.name}: AI modullar saqlandi`);
   }
 
   function afterLocationChange() {
     refreshCameras();
     loadSummary();
+  }
+
+  /** Saqlanganini AYTAMIZ. Oyna yopilib ro'yxat jimgina yangilanardi —
+   *  qator ko'rinmayotgan sahifada bo'lsa (yoki o'zgarish kichik bo'lsa)
+   *  foydalanuvchi saqlandimi-yo'qmi bilmasdi va qayta-qayta bosardi. */
+  function handleLocationSaved(saved: CameraConfig) {
+    afterLocationChange();
+    toast.success(`${saved.name}: joylashuv saqlandi`);
+  }
+
+  function handleZoneSaved(saved: CameraConfig, kind: 'zone' | 'door') {
+    refreshCameras();
+    const has = kind === 'zone' ? (saved.restrictedZonePolygon?.length ?? 0) > 0 : (saved.faceRoi?.length ?? 0) > 0;
+    const what = kind === 'zone' ? 'Taqiqlangan zona' : 'Eshik hududi';
+    toast.success(`${saved.name}: ${what} ${has ? 'saqlandi' : 'olib tashlandi'}`);
   }
 
   const allOnPageSelected = cameras.length > 0 && cameras.every((camera) => selected.has(camera.id));
@@ -473,7 +496,14 @@ export default function CamerasZonesPage() {
               <RowAction
                 icon={DoorOpen}
                 label="Eshik"
-                title={hasDoor ? 'Eshik hududi belgilangan — AI yuzni faqat shu yerda qidiradi' : 'Eshik hududi belgilanmagan — AI yuzni faqat shu yerda qidiradi'}
+                // Ilgari ikkala holatda ham "AI yuzni faqat shu yerda
+                // qidiradi" deb yozilardi — hudud belgilanmaganda bu
+                // noto'g'ri: AI butun kadrni tekshiradi.
+                title={
+                  hasDoor
+                    ? 'Eshik hududi belgilangan — AI yuzni faqat shu yerda qidiradi'
+                    : "Eshik hududi belgilanmagan — AI butun kadrni tekshiradi. Hududni belgilash uchun bosing"
+                }
                 tone={hasDoor ? 'success' : 'warning'}
                 onClick={() => setDrawingDoor(c)}
               />
@@ -537,7 +567,22 @@ export default function CamerasZonesPage() {
       ) : (
         <>
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatTile icon={Video} tone="success" label="Ishlatilayotgan kameralar" value={formatNumber(summary?.faol ?? 0)} hint="Tizim ulardan tasvir oladi" loading={!summary} />
+        {/* «Faol» — operator NIYATI, `reachable` esa oxirgi tekshiruvda
+            kamera haqiqatan javob bergani. Ilgari bu yerda faqat niyat
+            ko'rinardi: 40 ta kamera soatlab javob bermayotgan bo'lsa ham
+            katak yashil turib, "hammasi joyida" degan taassurot berardi. */}
+        <StatTile
+          icon={Video}
+          tone={summary && summary.reachable < summary.faol ? 'warning' : 'success'}
+          label="Ishlatilayotgan kameralar"
+          value={formatNumber(summary?.faol ?? 0)}
+          hint={
+            summary && summary.reachable < summary.faol
+              ? `${formatNumber(summary.faol - summary.reachable)} tasi oxirgi tekshiruvda javob bermadi`
+              : 'Tizim ulardan tasvir oladi'
+          }
+          loading={!summary}
+        />
         <StatTile icon={VideoOff} tone="neutral" label="O'chirib qo'yilgan" value={formatNumber(summary?.nofaol ?? 0)} hint="Tizim ularga umuman ulanmaydi" loading={!summary} />
         <StatTile icon={Wrench} tone="warning" label="Ta'mirda turgan" value={formatNumber(summary?.tamirda ?? 0)} hint="Vaqtincha ishlatilmaydi" loading={!summary} />
         <StatTile
@@ -547,11 +592,13 @@ export default function CamerasZonesPage() {
           value={formatNumber(withoutFloor)}
           hint={
             floorFilter === UNASSIGNED_FLOOR
-              ? "Quyidagi ro'yxatda faqat shular ko'rsatilmoqda"
+              ? "Quyidagi ro'yxatda faqat shular ko'rsatilmoqda — filtrni olib tashlash uchun bosing"
               : "Bunday kameralar bino sxemasida ko'rinmaydi. Ro'yxatni ochish uchun bosing"
           }
           loading={!summary}
-          onClick={() => setFloorFilter(UNASSIGNED_FLOOR)}
+          // Bosish filtrni YOQADI VA O'CHIRADI: ilgari uni orqaga qaytarish
+          // uchun filtr panelidan qidirish kerak edi.
+          onClick={() => setFloorFilter(floorFilter === UNASSIGNED_FLOOR ? '' : UNASSIGNED_FLOOR)}
         />
       </div>
 
@@ -580,7 +627,10 @@ export default function CamerasZonesPage() {
         dense
         loading={loading && cameras.length === 0}
         error={error}
-        onRetry={reload}
+        // Keshni ham tozalaydi: aks holda "Qayta urinish" xato paytida
+        // keshda qolgan eski sahifani qaytarib, muammo tuzalganday
+        // ko'rsatishi mumkin edi.
+        onRetry={refreshCameras}
         emptyTitle={activeFilters > 0 ? 'Filtrlarga mos kamera topilmadi' : "Hali kamera qo'shilmagan"}
         emptyDescription={
           activeFilters > 0
@@ -616,11 +666,11 @@ export default function CamerasZonesPage() {
       {/* Tahrirlash tugmasi huquqqa qarab ikki xil oyna ochadi: to'liq
           sozlama (admin) yoki faqat joylashuv (kamera mas'uli). */}
       {canManage ? (
-        <AddCameraModal open={!!editing} camera={editing} onClose={() => setEditing(null)} onSave={afterLocationChange} />
+        <AddCameraModal open={!!editing} camera={editing} onClose={() => setEditing(null)} onSave={handleLocationSaved} />
       ) : (
-        <CameraLocationEditModal camera={editing} onClose={() => setEditing(null)} onSave={afterLocationChange} />
+        <CameraLocationEditModal camera={editing} onClose={() => setEditing(null)} onSave={handleLocationSaved} />
       )}
-      <CameraLocationEditModal camera={locating} onClose={() => setLocating(null)} onSave={afterLocationChange} />
+      <CameraLocationEditModal camera={locating} onClose={() => setLocating(null)} onSave={handleLocationSaved} />
       <CameraImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={afterLocationChange} />
       <CameraRolesImportModal open={rolesOpen} onClose={() => setRolesOpen(false)} onDone={afterLocationChange} />
       <CameraConfigDetailModal
@@ -634,17 +684,30 @@ export default function CamerasZonesPage() {
             : undefined
         }
       />
-      <CameraZoneModal open={!!drawingZone} camera={drawingZone} onClose={() => setDrawingZone(null)} onSave={refreshCameras} />
-      <CameraZoneModal mode="faceRoi" open={!!drawingDoor} camera={drawingDoor} onClose={() => setDrawingDoor(null)} onSave={refreshCameras} />
+      <CameraZoneModal
+        open={!!drawingZone}
+        camera={drawingZone}
+        onClose={() => setDrawingZone(null)}
+        onSave={(saved) => handleZoneSaved(saved, 'zone')}
+      />
+      <CameraZoneModal
+        mode="faceRoi"
+        open={!!drawingDoor}
+        camera={drawingDoor}
+        onClose={() => setDrawingDoor(null)}
+        onSave={(saved) => handleZoneSaved(saved, 'door')}
+      />
       <CameraModulesModal open={!!editingModules} camera={editingModules} onClose={() => setEditingModules(null)} onSave={handleModulesSaved} />
       <CameraLocationModal
         open={locationOpen}
         cameraIds={[...selected]}
         onClose={() => setLocationOpen(false)}
-        onSaved={(updated) => {
+        onSaved={(updated, notFound) => {
           setSelected(new Set());
           afterLocationChange();
-          toast.success(`${updated} ta kameraning joylashuvi yangilandi`);
+          const suffix = notFound > 0 ? ` · ${notFound} tasi topilmadi (o'chirilgan bo'lishi mumkin)` : '';
+          if (notFound > 0) toast.error(`${updated} ta kameraning joylashuvi yangilandi${suffix}`);
+          else toast.success(`${updated} ta kameraning joylashuvi yangilandi`);
         }}
       />
     </Page>
