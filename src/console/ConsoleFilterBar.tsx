@@ -32,8 +32,8 @@ function Chip({
       aria-pressed={active}
       aria-label={label}
       className={cn(
-        'h-7 rounded-[4px] px-2.5 text-[12px] transition-colors',
-        active ? 'bg-primary text-primary-fg' : 'text-muted hover:bg-white/70 hover:text-fg',
+        'h-8 rounded-control px-3 text-[12px] font-semibold transition-all',
+        active ? 'bg-primary text-primary-fg shadow-[0_6px_14px_-8px_rgb(45_83_222/0.7)]' : 'text-muted hover:bg-primary-soft hover:text-primary',
       )}
     >
       {children}
@@ -51,9 +51,9 @@ export default function ConsoleFilterBar({ filter }: { filter: ConsoleFilter }) 
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: EASE, delay: 0.05 }}
-      className="relative z-20 flex shrink-0 flex-wrap items-center gap-2 px-3 pb-2"
+      className="relative z-20 mx-3 mb-2 flex shrink-0 flex-wrap items-center gap-2 rounded-card border border-white/90 bg-white/65 px-2 py-1.5 shadow-card backdrop-blur-xl"
     >
-      <div className="glass flex items-center gap-0.5 rounded-[5px] p-0.5" role="group" aria-label="Sana">
+      <div className="flex items-center gap-0.5 rounded-control bg-surface-2 p-0.5" role="group" aria-label="Sana">
         <Chip active={date === today} onClick={() => setDate(today)}>
           Bugun
         </Chip>
@@ -62,8 +62,8 @@ export default function ConsoleFilterBar({ filter }: { filter: ConsoleFilter }) 
         </Chip>
         <label
           className={cn(
-            'relative flex h-7 items-center gap-1.5 rounded-[4px] px-2.5 text-[12px]',
-            picked ? 'bg-primary text-primary-fg' : 'text-muted hover:bg-white/70 hover:text-fg',
+            'relative flex h-8 items-center gap-1.5 rounded-control px-3 text-[12px] font-semibold',
+            picked ? 'bg-primary text-primary-fg shadow-[0_6px_14px_-8px_rgb(45_83_222/0.7)]' : 'text-muted hover:bg-primary-soft hover:text-primary',
           )}
         >
           <CalendarDays size={13} aria-hidden="true" />
@@ -79,7 +79,7 @@ export default function ConsoleFilterBar({ filter }: { filter: ConsoleFilter }) 
         </label>
       </div>
 
-      <div className="glass flex items-center gap-0.5 rounded-[5px] p-0.5" role="group" aria-label="Kim">
+      <div className="flex items-center gap-0.5 rounded-control bg-surface-2 p-0.5" role="group" aria-label="Kim">
         {SCOPES.map((item) => (
           <Chip key={item} active={scope === item} onClick={() => setScope(item)}>
             {SCOPE_LABEL[item]}
@@ -87,7 +87,7 @@ export default function ConsoleFilterBar({ filter }: { filter: ConsoleFilter }) 
         ))}
       </div>
 
-      <span className="intel-micro ms-auto hidden sm:block">{formatUzDate(date)}</span>
+      <span className="ms-auto hidden pr-2 text-[12px] font-semibold text-muted sm:block">{formatUzDate(date)}</span>
     </motion.div>
   );
 }

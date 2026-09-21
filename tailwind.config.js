@@ -16,7 +16,7 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+        sans: ['Plus Jakarta Sans', 'Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
         // Raqam, kod, sana, birlik va yorliqlar — barchasi shu yuzda
         // (src/index.css: --font-intel). `.intel-code` qo'shimcha ravishda
         // tabular raqamlarni yoqadi.
@@ -62,11 +62,11 @@ export default {
         'glass-amber': 'var(--shadow-card)',
         btn: '0 1px 2px 0 rgb(16 24 40 / 0.06)',
       },
-      // Geometriya — to'rtburchak. Hujjat va asbob: yumaloq burchak yo'q.
-      // Ikkala token ham 2px: sirt ham, boshqaruv ham bir xil qirra.
+      // Yangi tizim: sokin yumaloq qirralar. Bu umumiy tokenlar barcha
+      // sahifani bir xil, yengil mahsulot ko'rinishiga olib keladi.
       borderRadius: {
-        card: '2px',
-        control: '2px',
+        card: '20px',
+        control: '12px',
       },
       keyframes: {
         'ui-fade-in': { from: { opacity: '0' }, to: { opacity: '1' } },

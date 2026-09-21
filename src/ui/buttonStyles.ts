@@ -3,14 +3,13 @@ import { cn, focusRing } from './cn';
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'soft';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
-/** Soya yo'q — sirtlar 1px chiziq bilan ajraladi.
- *  primary = to'q ko'k to'ldirish, secondary = oq + chiziq, ghost = faqat matn. */
+/** Harakatlar aniq ko'rinadi: asosiy amal chuqur rangda, qolganlari yorug' sirtda. */
 const VARIANT: Record<ButtonVariant, string> = {
-  primary: 'border border-primary bg-primary text-primary-fg hover:bg-primary/90 active:bg-primary/85',
-  secondary: 'border border-border bg-surface text-fg hover:border-border-strong hover:bg-surface-2',
-  ghost: 'border border-transparent text-muted hover:bg-surface-2 hover:text-fg',
-  danger: 'border border-danger bg-danger text-danger-fg hover:bg-danger/90 active:bg-danger/85',
-  soft: 'border border-primary/20 bg-primary-soft text-primary hover:border-primary/40 hover:bg-primary/15',
+  primary: 'border border-primary bg-primary text-primary-fg shadow-[0_10px_18px_-10px_rgb(45_83_222/0.7)] hover:-translate-y-px hover:bg-primary/90 active:translate-y-0',
+  secondary: 'border border-white bg-surface text-fg shadow-[0_8px_16px_-14px_rgb(42_72_130/0.35)] hover:-translate-y-px hover:border-primary/20 hover:bg-primary-soft',
+  ghost: 'border border-transparent text-muted hover:bg-primary-soft hover:text-primary',
+  danger: 'border border-danger bg-danger text-danger-fg shadow-[0_10px_18px_-10px_rgb(221_75_91/0.6)] hover:-translate-y-px hover:bg-danger/90 active:translate-y-0',
+  soft: 'border border-primary/10 bg-primary-soft text-primary hover:-translate-y-px hover:border-primary/25 hover:bg-primary/15',
 };
 
 const SIZE: Record<ButtonSize, string> = {
@@ -34,9 +33,7 @@ export function buttonClasses({
   className?: string;
 } = {}): string {
   return cn(
-    // Yorliq monoshriftda, o'rta qalinlikda, gap bosh harfli EMAS — jumla
-    // yozuvi ("Qayta urinish"), chunki bu buyruq, sarlavha emas.
-    'intel-code inline-flex select-none items-center justify-center whitespace-nowrap rounded-control font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50',
+    'inline-flex select-none items-center justify-center whitespace-nowrap rounded-control font-semibold transition-all duration-200 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50',
     focusRing,
     VARIANT[variant],
     SIZE[size],

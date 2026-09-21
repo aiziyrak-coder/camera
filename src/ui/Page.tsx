@@ -77,21 +77,20 @@ export function Page<T extends string = string>({
           {parent.label}
         </Link>
       )}
-      {/* Hujjat blanki: chapda shaxsiy qator (bo'lim + nom), o'ngda
-          hujjat kodi va vaqt tamg'asi, ostida qalin ajratuvchi chiziq. */}
-      <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 border-b-2 border-border-strong pb-2">
+      <header className="relative flex flex-wrap items-start justify-between gap-x-4 gap-y-3 overflow-hidden rounded-card border border-white/90 bg-surface/80 px-4 py-4 shadow-card sm:px-5">
+        <span className="pointer-events-none absolute -right-10 -top-14 h-40 w-40 rounded-full bg-primary/10 blur-3xl" aria-hidden="true" />
         <div className="min-w-0 flex-1 basis-64">
-          <span className="intel-micro">{branding.systemName}</span>
+          <span className="text-[11px] font-semibold text-primary">{branding.systemName}</span>
           <div className="mt-0.5 flex flex-wrap items-center gap-2">
-            <h1 className="truncate text-[19px] font-semibold leading-6 tracking-[-0.01em] text-fg">{title}</h1>
+            <h1 className="truncate text-[24px] font-bold leading-7 tracking-[-0.035em] text-fg sm:text-[28px]">{title}</h1>
             {titleAddon}
           </div>
           {subtitle && <p className="mt-1 text-[13px] leading-5 text-muted">{subtitle}</p>}
         </div>
         {(code || stamp) && (
           <div className="flex shrink-0 flex-col items-end gap-0.5 text-right">
-            {code && <span className="intel-code text-[12px] font-semibold text-fg">{code}</span>}
-            {stamp && <span className="intel-micro">{stamp}</span>}
+            {code && <span className="rounded-full bg-primary-soft px-2.5 py-1 text-[11px] font-semibold text-primary">{code}</span>}
+            {stamp && <span className="text-[11px] font-medium text-muted">{stamp}</span>}
           </div>
         )}
         {actions && <div className="flex flex-wrap items-center justify-end gap-1.5">{actions}</div>}

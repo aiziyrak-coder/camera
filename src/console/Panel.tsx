@@ -55,8 +55,8 @@ export default function Panel({
   // marta so'rov yuborardi.
   const body = (content: ReactNode) => (
     <>
-      <header className="flex shrink-0 items-center gap-2 border-b border-white/70 px-3 py-2">
-        <h2 className="intel-micro !text-fg">{title}</h2>
+      <header className="flex shrink-0 items-center gap-2 px-4 py-3">
+        <h2 className="text-[14px] font-bold tracking-[-0.02em] text-fg">{title}</h2>
         <span className="ms-auto flex items-center gap-2">
           {badge}
           <button
@@ -66,7 +66,7 @@ export default function Panel({
               onExpand(expanded ? null : id);
             }}
             aria-label={expanded ? `${title} — yopish` : `${title} — kattalashtirish`}
-            className="grid h-6 w-6 place-items-center rounded-[3px] text-subtle transition-colors hover:bg-white/70 hover:text-fg"
+            className="grid h-7 w-7 place-items-center rounded-full bg-surface-2 text-subtle transition-colors hover:bg-primary-soft hover:text-primary"
           >
             {expanded ? <X size={14} aria-hidden="true" /> : <Maximize2 size={13} aria-hidden="true" />}
           </button>
@@ -84,7 +84,7 @@ export default function Panel({
         aria-label={title}
         onClick={() => !expanded && onExpand(id)}
         className={cn(
-          'panel-enter glass glass-hover relative flex min-h-0 flex-col overflow-hidden rounded-[6px]',
+          'panel-enter glass glass-hover relative flex min-h-0 flex-col overflow-hidden',
           live && 'scanline',
           !expanded && 'cursor-pointer',
           expanded && 'pointer-events-none opacity-0',
@@ -111,7 +111,7 @@ export default function Panel({
               transition={spring}
               aria-label={title}
               className={cn(
-                'glass fixed inset-3 z-50 flex min-h-0 flex-col overflow-hidden rounded-[8px] sm:inset-6',
+                'glass fixed inset-3 z-50 flex min-h-0 flex-col overflow-hidden sm:inset-6',
                 live && 'scanline',
               )}
             >
@@ -144,7 +144,7 @@ export function BigNumber({
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: EASE }}
-        className={cn('intel-code text-[clamp(28px,4.2vh,52px)] font-semibold leading-none', tone)}
+        className={cn('text-display text-[clamp(28px,4.2vh,52px)] font-bold leading-none', tone)}
       >
         {value}
         {unit && <span className="ms-1 text-[0.4em] font-medium text-muted">{unit}</span>}

@@ -154,13 +154,13 @@ export default function ConsoleShell() {
         initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: EASE }}
-        className="relative z-20 flex shrink-0 items-center gap-3 px-4 py-2.5"
+        className="relative z-20 mx-3 mt-3 flex shrink-0 items-center gap-3 rounded-card border border-white/90 bg-white/72 px-4 py-3 shadow-card backdrop-blur-xl"
       >
         <span className="flex min-w-0 items-center gap-2">
-          <span className="grid h-7 w-7 place-items-center rounded-[4px] bg-primary text-[11px] font-bold text-primary-fg">
+          <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-primary to-[#7265ee] text-[11px] font-extrabold text-primary-fg shadow-[0_10px_20px_-12px_rgb(45_83_222/0.9)]">
             FI
           </span>
-          <span className="intel-micro hidden truncate sm:block">{branding.orgFullName}</span>
+          <span className="hidden min-w-0 flex-col sm:flex"><b className="truncate text-[13px] tracking-[-0.02em] text-fg">{branding.systemName}</b><small className="truncate text-[10px] font-medium text-muted">Jonli boshqaruv markazi</small></span>
         </span>
 
         {/* Qidiruv — palitrani ochadi (Ctrl/⌘+K): bo'linma, shaxs,
@@ -169,22 +169,22 @@ export default function ConsoleShell() {
         <button
           type="button"
           onClick={togglePalette}
-          className="glass glass-hover ms-2 flex h-9 min-w-0 flex-1 items-center gap-2 rounded-[5px] px-3 text-left sm:max-w-md"
+          className="ms-2 flex h-10 min-w-0 flex-1 items-center gap-2 rounded-control bg-surface-2 px-3 text-left transition-colors hover:bg-primary-soft sm:max-w-md"
         >
           <Search size={15} aria-hidden="true" className="shrink-0 text-subtle" />
           <span className="min-w-0 flex-1 truncate text-[13px] text-subtle">Bo‘linma, shaxs yoki kamera</span>
-          <kbd className="intel-code hidden shrink-0 border border-white/80 px-1.5 py-0.5 text-[10px] text-muted sm:inline">Ctrl K</kbd>
+          <kbd className="hidden shrink-0 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-semibold text-muted shadow-sm sm:inline">Ctrl K</kbd>
         </button>
 
         <span className="ms-auto flex items-center gap-3">
-          <span className="intel-code hidden text-[13px] tabular-nums text-fg sm:block">{timeFormat.format(now)}</span>
+          <span className="hidden text-[13px] font-bold tabular-nums text-fg sm:block">{timeFormat.format(now)}</span>
           <span className={cn('flex items-center gap-1.5', live ? 'text-success' : 'text-subtle')}>
             <span className={cn('h-1.5 w-1.5 rounded-full bg-current', live && 'live-dot')} aria-hidden="true" />
-            <span className="intel-micro !text-current">{live ? 'Jonli' : isToday ? 'Aloqa yo‘q' : 'Arxiv'}</span>
+            <span className="text-[11px] font-semibold !text-current">{live ? 'Jonli' : isToday ? 'Aloqa yo‘q' : 'Arxiv'}</span>
           </span>
           <Link
             to="/hisobotlar"
-            className="glass glass-hover flex h-9 items-center gap-1.5 rounded-[5px] px-3 text-[13px]"
+            className="flex h-10 items-center gap-1.5 rounded-control bg-primary-soft px-3 text-[13px] font-semibold text-primary transition-colors hover:bg-primary/15"
           >
             <ChartColumn size={15} aria-hidden="true" />
             <span className="hidden sm:inline">Hisobotlar</span>
@@ -262,10 +262,10 @@ export default function ConsoleShell() {
         />
       </motion.main>
 
-      <footer className="relative z-10 flex shrink-0 items-center gap-3 px-4 pb-2 text-subtle">
-        <span className="intel-micro">{date}</span>
-        {error && <span className="intel-micro !text-danger">Ma’lumot olinmadi</span>}
-        <span className="intel-micro ms-auto">Panelni bosing — kattalashadi · Ctrl+K — qidiruv · Esc — yopadi</span>
+      <footer className="relative z-10 flex shrink-0 items-center gap-3 px-5 pb-2 text-subtle">
+        <span className="text-[10px] font-medium">{date}</span>
+        {error && <span className="text-[10px] font-semibold !text-danger">Ma’lumot olinmadi</span>}
+        <span className="ms-auto text-[10px] font-medium">Panelni bosing — kattalashadi · Ctrl+K — qidiruv · Esc — yopadi</span>
       </footer>
 
       <ConsolePalette

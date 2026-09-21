@@ -173,10 +173,10 @@ export function DataTable<T>({
   /** Ustun matni monoshriftdami: o'ngga tekislangan (raqam) yoki majburlangan. */
   const isMono = (column: DataTableColumn<T>) => column.mono || column.align === 'right';
 
-  // Yopishqoq sarlavhaning pastki qalin chizig'i — jadval "boshi" aniq ajralsin.
+  // Yopishqoq sarlavha: engil fon, tartib aniq, lekin jadval qattiq hujjatdek ko'rinmaydi.
   const headCell = cn(
-    'sticky top-0 z-10 border-b-2 border-border-strong bg-surface-2 transition-shadow',
-    scrolled && 'shadow-[0_6px_10px_-8px_rgb(16_24_40/0.35)]',
+    'sticky top-0 z-10 border-b border-border bg-surface-2/95 backdrop-blur transition-shadow',
+    scrolled && 'shadow-[0_8px_14px_-12px_rgb(42_72_130/0.28)]',
   );
 
   const tableView = (
@@ -263,7 +263,7 @@ export function DataTable<T>({
                   tabIndex={onRowClick ? 0 : undefined}
                   aria-selected={onRowClick ? selected : undefined}
                   className={cn(
-                    'group transition-colors',
+                    'group transition-colors duration-150',
                     // Hover — zaif ko'k tus, fon almashinuvi emas.
                     onRowClick && 'cursor-pointer hover:bg-primary/[0.045] focus-visible:bg-primary/[0.08] focus-visible:outline-none',
                     selected && 'bg-primary-soft hover:bg-primary-soft',
@@ -374,7 +374,7 @@ export function DataTable<T>({
   );
 
   return (
-    <div className={cn('min-w-0 overflow-hidden rounded-card border border-border bg-surface', className)}>
+    <div className={cn('min-w-0 overflow-hidden rounded-card border border-white/90 bg-surface shadow-card', className)}>
       {error ? (
         <ErrorState variant="block" message={error} onRetry={onRetry} />
       ) : (
