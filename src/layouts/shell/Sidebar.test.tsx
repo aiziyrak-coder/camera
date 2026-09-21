@@ -6,11 +6,8 @@ import { Sidebar } from './Sidebar';
 import { NAV_SECTIONS, visibleSections } from './navConfig';
 
 /**
- * QA: yon panel — texnik ko'rsatkich.
- *
- * Muhimi ko'rinish emas, O'QILISHI: har bandning indeks kodi bor,
- * bo'lim sarlavhasida nechta band borligi yozilgan, faol band esa
- * `aria-current="page"` bilan belgilanadi (rangga tayanmaydi).
+ * QA: yon panelda faqat o'qiladigan nomlar qoladi; faol band rangsiz ham
+ * `aria-current="page"` orqali bilinadi.
  */
 
 function renderSidebar(pathname: string, collapsed = false) {
@@ -31,10 +28,11 @@ function renderSidebar(pathname: string, collapsed = false) {
 }
 
 describe('Sidebar', () => {
-  it('shows an index code for every item', () => {
+  it('shows full item labels without internal index codes', () => {
     renderSidebar('/hodisalar');
     for (const item of NAV_SECTIONS.flatMap((section) => section.items)) {
-      expect(screen.getAllByText(item.code).length).toBeGreaterThan(0);
+      expect(screen.getByRole('link', { name: item.label })).toBeInTheDocument();
+      expect(screen.queryByText(item.code)).not.toBeInTheDocument();
     }
   });
 
@@ -57,9 +55,9 @@ describe('Sidebar', () => {
     expect(screen.getByRole('link', { name: 'Hodisalar' })).toHaveAttribute('href', '/hodisalar');
   });
 
-  it('still lists every item when collapsed to the code rail', () => {
+  it('keeps every page reachable when collapsed', () => {
     renderSidebar('/', true);
     expect(screen.getByRole('link', { name: 'Hodisalar' })).toBeInTheDocument();
-    expect(screen.getAllByText('HOD').length).toBeGreaterThan(0);
+    expect(screen.queryByText('HOD')).not.toBeInTheDocument();
   });
 });

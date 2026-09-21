@@ -6,13 +6,8 @@ import type { Role } from '../../lib/auth';
 import { IconButton, cn, focusRing } from '../../ui';
 import { ROLE_LABEL, matchesPath, usesViewDate, type NavItem, type NavSection } from './navConfig';
 
-/**
- * Yon panel — bu iste'mol ilovasining menyusi emas, TEXNIK KO'RSATKICH:
- * oq varaq, bitta ingichka chiziq, dumaloqlanmagan qatorlar, chapda
- * monoshrift indeks kodi. Faol band to'q ko'k yo'l chizig'i bilan
- * belgilanadi — rangli "tabletka" emas. Yig'ilgan holatda faqat
- * kodlar qoladi, shunda ro'yxat baribir o'qiladi.
- */
+/** Yon menyu — faqat belgi va to'liq nom. Ichki qisqartmalar foydalanuvchiga
+ * kerak emas, shuning uchun hech qayerda ko'rsatilmaydi. */
 
 export function BrandMark({ className }: { className?: string }) {
   return (
@@ -205,7 +200,7 @@ function NavRow({ item, pathname, rail, linkSuffix, onNavigate, favorites, onTog
         to={usesViewDate(item.to) ? `${item.to}${linkSuffix}` : item.to}
         end={item.end}
         onClick={onNavigate}
-        title={rail ? `${item.code} · ${item.label}` : undefined}
+        title={rail ? item.label : undefined}
         aria-label={rail ? item.label : undefined}
         aria-current={active ? 'page' : undefined}
         className={cn(
@@ -219,18 +214,9 @@ function NavRow({ item, pathname, rail, linkSuffix, onNavigate, favorites, onTog
       >
         <span className={cn('absolute inset-y-0 left-0 w-[3px]', active ? 'bg-primary' : 'bg-transparent')} aria-hidden="true" />
         {rail ? (
-          <span className="flex flex-col items-center leading-none">
-            <Icon size={15} strokeWidth={active ? 2.2 : 1.8} aria-hidden="true" />
-            <span className="intel-code mt-0.5 text-[8.5px] tracking-[0.06em]" aria-hidden="true">
-              {item.code}
-            </span>
-          </span>
+          <Icon size={17} strokeWidth={active ? 2.2 : 1.8} aria-hidden="true" />
         ) : (
           <>
-            {/* Indeks ustuni — qator raqami kabi qat'iy enli. */}
-            <span className={cn('intel-code w-[26px] shrink-0 text-[10px]', active ? 'text-primary' : 'text-subtle')} aria-hidden="true">
-              {item.code}
-            </span>
             <Icon size={15} strokeWidth={active ? 2.1 : 1.8} className="shrink-0" aria-hidden="true" />
             <span className="truncate">{item.label}</span>
           </>
