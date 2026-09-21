@@ -1,4 +1,4 @@
-/* Situatsion Markaz — service worker (src/lib/pwa.ts ro'yxatdan o'tkazadi).
+/* Nazorat — service worker (src/lib/pwa.ts ro'yxatdan o'tkazadi).
  *
  * Nima qiladi:
  *   - sahifalar (navigatsiya): avval tarmoq, tarmoq bo'lmasa oxirgi
@@ -99,7 +99,7 @@ async function handleNavigation(request) {
     if (cached) return cached;
     return new Response(
       '<!doctype html><html lang="uz"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
-        '<title>Situatsion Markaz</title><body style="font-family:system-ui,sans-serif;background:#E8EDFF;color:#0F172A;' +
+        '<title>Nazorat</title><body style="font-family:system-ui,sans-serif;background:#E8EDFF;color:#0F172A;' +
         'display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;text-align:center">' +
         '<div><h1 style="font-size:20px">Tarmoq bilan aloqa yo\'q</h1>' +
         '<p>Internet yoki institut tarmog\'iga ulanishni tekshirib, sahifani yangilang.</p></div></body></html>',
