@@ -20,7 +20,6 @@ import { FileQuestion } from 'lucide-react';
 const EnrollmentPage = lazyPage(() => import('./pages/public/EnrollmentPage'));
 
 // Yangi sahifalar (2-bosqichda to'ldiriladi).
-const SituationPage = lazyPage(() => import('./pages/situation/SituationPage'));
 const ConsoleShell = lazyPage(() => import('./console/ConsoleShell'));
 const FacultiesPage = lazyPage(() => import('./pages/students/FacultiesPage'));
 const FacultyPage = lazyPage(() => import('./pages/students/FacultyPage'));
@@ -130,7 +129,9 @@ export default function App() {
             </Route>
 
             <Route element={<AppShell />}>
-              <Route path="/holat" element={<SituationPage />} />
+              {/* Eski "Institut holati" sahifasi endi alohida ekran emas:
+                  uning vazifasini bosh ekrandagi boshqaruv markazi bajaradi. */}
+              <Route path="/holat" element={<Navigate to="/" replace />} />
 
               <Route element={<RequirePermission permission="manageAttendance" />}>
                 <Route path="/dars-jadvali" element={<DarsJadvaliPage />} />

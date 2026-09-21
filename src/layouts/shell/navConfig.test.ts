@@ -13,7 +13,7 @@ describe('navConfig', () => {
   it('finds the active item and its section', () => {
     expect(findActive('/talabalar/fakultet/3')?.item.label).toBe('Talabalar');
     expect(findActive('/sozlamalar/kameralar')?.section.label).toBe('Sozlamalar');
-    expect(findActive('/')?.item.label).toBe('Institut holati');
+    expect(findActive('/')?.item.label).toBe('Boshqaruv markazi');
     expect(findActive('/sozlamalar/ui')).toBeNull();
   });
 
