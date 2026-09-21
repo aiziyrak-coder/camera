@@ -24,13 +24,9 @@ yuritiladi va ommaviy import qilingan xodimlarda pasport ma'lumotlari
 umuman yo'q. Pasport yo'li ilgari shu tarzda ro'yxatdan o'tganlar uchun
 saqlanadi.
 
-GURUH KODI (2026-09-20). JSHSHIR — sir emas: u hujjatda yozilgan va
-kadrlar ro'yxatlarida bor. Tiriklik tekshiruvi esa "tirik odam"ni
-isbotlaydi, "AYNAN SHU odam"ni emas. Shuning uchun har bir topshirishda
-odamning GURUHIGA (xodimda — bo'limiga) berilgan 6 belgili kod ham
-so'raladi: u og'zaki aytiladi yoki chop etilgan QR kartada beriladi.
-Kodsiz yoki boshqa guruhning kodi bilan kelgan so'rov rad etiladi va
-javob yozuv bor-yo'qligini oshkor qilmaydi (app/services/enrollment_code.py).
+Ro'yxatdan o'tish hujjatdagi JSHSHIR yoki pasport ma'lumotlari bilan
+amalga oshadi. Yakuniy yuborishda ular yana solishtiriladi, tiriklik va
+boshqa odam yuziga o'xshashlik tekshiriladi.
 
 ROZILIK. /submit biometrik ma'lumotni qayta ishlashga rozilik belgisini
 (`consent=true`) kutadi — settings.consent_required_for_enrollment
@@ -218,16 +214,15 @@ async def lookup_person(
     body: EnrollmentLookupIn,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> EnrollmentLookupOut:
-    """Shaxsni topadi — JSHSHIR/pasport VA guruh kodi bilan birga.
+    """Shaxsni JSHSHIR yoki pasport ma'lumotlari orqali topadi.
 
-    Kod shu yerda ham talab qilinadi. Ilgari bu endpoint bepul so'rov
-    oynasi edi: JSHSHIRni bilgan (yoki taxmin qilgan) har kim odamning
-    ism-sharifini va guruhini bilib olardi. Endi kodsiz so'rov ham,
-    noto'g'ri kodli so'rov ham, mavjud bo'lmagan JSHSHIR ham AYNAN bir
-    xil javob oladi — ya'ni javobdan hech narsa o'rganib bo'lmaydi."""
+    Ochiq ro'yxatdan o'tishda guruh kodi ishlatilmaydi: hujjatdagi
+    identifikatorning o'zi yetarli. So'rov soni cheklangan, yakuniy
+    biometrika topshirishda ham shu identifikator qayta tekshiriladi.
+    """
     record = await _find_person(db, body.pinfl, body.passport_series, body.passport_number)
-    if record is None or not await codes.verify_for_record(db, record, body.code):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, codes.LOOKUP_FAIL_MESSAGE)
+    if record is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Ma'lumot topilmadi. JSHSHIR yoki pasport ma'lumotini tekshiring.")
     return _lookup_out(record)
 
 
@@ -267,11 +262,8 @@ async def register_self(
     endpoint ochiq, ya'ni uni bazani to'ldirish uchun ishlatib bo'lmasligi
     kerak.
 
-    KOD bu yerda ham majburiy. Bunday odamning hali guruhi yo'q, shuning
-    uchun institutda amal qilayotgan ISTALGAN kod qabul qilinadi — kod
-    "menga bu kartani institutda berishdi" degan yagona dalil."""
-    if await codes.find_valid_code(db, body.code) is None:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, codes.WRONG_CODE_MESSAGE)
+    Pasport yoki JSHSHIR tekshiruvi bu oqimning yagona identifikatsiya
+    vositasi; guruh kodi talab qilinmaydi."""
 
     pinfl = _normalize_pinfl(body.pinfl)
     series, number = _normalize(body.passport_series, body.passport_number)
@@ -282,14 +274,6 @@ async def register_self(
         # Aks holda bitta odam uchun ikkita yozuv paydo bo'lardi va
         # davomat ikkiga bo'linib ketardi.
         #
-        # Lekin borini qaytarish — bu ismni va guruhni aytish. Shuning
-        # uchun u faqat kod AYNAN shu odamning guruhiniki bo'lganda
-        # qaytariladi. Aks holda bu yo'l /lookup ni chetlab o'tib
-        # birovning ismini bilib olish usuliga aylanardi: istalgan kod
-        # bilan begona JSHSHIRni yuborib, javobda ismni ko'rish kifoya
-        # bo'lardi.
-        if not await codes.verify_for_record(db, existing, body.code):
-            raise HTTPException(status.HTTP_403_FORBIDDEN, codes.WRONG_CODE_MESSAGE)
         return _lookup_out(existing)
 
     faculty_id = None
@@ -321,8 +305,6 @@ async def register_self(
         existing = await _find_person(db, body.pinfl, body.passport_series, body.passport_number)
         if existing is None:
             raise
-        if not await codes.verify_for_record(db, existing, body.code):
-            raise HTTPException(status.HTTP_403_FORBIDDEN, codes.WRONG_CODE_MESSAGE) from None
         return _lookup_out(existing)
     await db.refresh(record)
     logger.info("self-service registration created", extra={"record_id": str(record.id)})
@@ -442,7 +424,6 @@ async def submit_enrollment(
     passport_series: Annotated[str | None, Form(alias="passportSeries")] = None,
     passport_number: Annotated[str | None, Form(alias="passportNumber")] = None,
     consent: Annotated[bool, Form(alias="consent")] = False,
-    code: Annotated[str | None, Form(alias="code")] = None,
 ) -> EnrollmentSubmitOut:
     # Shaxs ma'lumoti umuman yuborilmagan bo'lsa — bu so'rovning o'z
     # shakli haqidagi xato va u hech narsa oshkor qilmaydi.
@@ -460,14 +441,8 @@ async def submit_enrollment(
         )
         record = result.scalar_one_or_none()
 
-    # GURUH KODI — birinchi darvoza, hamma narsadan oldin.
-    #
-    # Yo'q yozuv ham, noto'g'ri kod ham, kodsiz so'rov ham AYNAN bir xil
-    # javob oladi. Agar "yozuv topilmadi" alohida xabar bo'lsa, kodni
-    # bilmagan odam ham yozuv identifikatorlarini birma-bir sinab, kim
-    # bor-yo'qligini aniqlay olardi.
-    if record is None or not await codes.verify_for_record(db, record, code):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, codes.WRONG_CODE_MESSAGE)
+    if record is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Shaxs yozuvi topilmadi")
 
     # Identifikatsiya /lookup dagi bilan AYNAN bir xil tekshiriladi.
     # Bu ataylab: aks holda /lookup ni chetlab o'tib, to'g'ridan-to'g'ri

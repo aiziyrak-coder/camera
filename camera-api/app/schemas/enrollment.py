@@ -34,11 +34,6 @@ class EnrollmentLookupIn(CamelModel):
     pinfl: str | None = Field(default=None, max_length=32)
     passport_series: str | None = Field(default=None, min_length=2, max_length=4)
     passport_number: str | None = Field(default=None, min_length=5, max_length=10)
-    #: Guruh kodi. Sxemada MAJBURIY emas — usiz kelgan so'rov ham
-    #: "topilmadi" degan AYNAN bir xil javob olishi kerak. Majburiy
-    #: qilsak, kodsiz so'rov 422, noto'g'ri kod esa 404 qaytarardi va
-    #: shu farqning o'zi "kod to'g'ri edi" degan ma'lumotni berardi.
-    code: str | None = Field(default=None, max_length=16)
 
     @field_validator("pinfl", mode="before")
     @classmethod
@@ -89,8 +84,6 @@ class EnrollmentRegisterIn(CamelModel):
     pinfl: str | None = Field(default=None, max_length=32)
     passport_series: str | None = Field(default=None, min_length=2, max_length=4)
     passport_number: str | None = Field(default=None, min_length=5, max_length=10)
-    #: Kod bu yerda ham kerak (qarang: EnrollmentLookupIn.code).
-    code: str | None = Field(default=None, max_length=16)
 
     @field_validator("pinfl", mode="before")
     @classmethod

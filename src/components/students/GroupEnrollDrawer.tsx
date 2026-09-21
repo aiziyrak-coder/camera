@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Copy, ExternalLink, KeyRound, Printer, RefreshCw, UserRoundX, Users } from 'lucide-react';
-import { Avatar, Badge, Button, ButtonLink, ConfirmDialog, Drawer, EmptyState, ErrorState, IconButton, ProgressBar, Skeleton, cn, focusRing, formatNumber, formatPercent, useToast } from '../../ui';
-import { getEnrollmentMissing, regenerateEnrollmentCode, situationPaths, type EnrollMissing } from '../../lib/situationApi';
+import { Copy, ExternalLink, Printer, UserRoundX, Users } from 'lucide-react';
+import { Avatar, Badge, Button, ButtonLink, Drawer, EmptyState, ErrorState, ProgressBar, Skeleton, cn, focusRing, formatNumber, formatPercent, useToast } from '../../ui';
+import { getEnrollmentMissing, situationPaths, type EnrollMissing } from '../../lib/situationApi';
 import { enrollTone } from '../../lib/studentAttendance';
 import { EnrollPrintPortal, EnrollQrCard } from './EnrollQrCard';
 import { useAsyncData } from './useAsyncData';
@@ -22,25 +22,11 @@ export function GroupEnrollDrawer({ target, onClose, withDate }: { target: Enrol
   const donePrint = useCallback(() => setPrinting(false), []);
   const faculty = target?.faculty ?? null;
 
-  // Kod yangilangach server javobini kutib qayta yuklamaymiz — yangi kod
-  // shu yerda saqlanadi, havola esa undan qayta yig'iladi.
-  const [code, setCode] = useState<string | null>(null);
-  const [rotating, setRotating] = useState(false);
-  const [confirmRotate, setConfirmRotate] = useState(false);
-  useEffect(() => {
-    setCode(null);
-    setConfirmRotate(false);
-  }, [name]);
-  const shownCode = code ?? data?.enrollCode ?? '';
-  const enrollUrl = useMemo(() => {
-    if (!data) return '';
-    if (!code) return data.enrollUrl;
-    return data.enrollUrl.replace(/([?&]kod=)[^&]*/, `$1${encodeURIComponent(code)}`);
-  }, [data, code]);
+  const enrollUrl = data?.enrollUrl ?? '';
 
   const printCards = useMemo(
-    () => (printing && data ? [{ group: data.group, url: enrollUrl, code: shownCode, faculty }] : null),
-    [printing, data, enrollUrl, shownCode, faculty],
+    () => (printing && data ? [{ group: data.group, url: enrollUrl, faculty }] : null),
+    [printing, data, enrollUrl, faculty],
   );
 
   const confirmed = data ? data.total - data.missing.length : 0;
@@ -56,33 +42,6 @@ export function GroupEnrollDrawer({ target, onClose, withDate }: { target: Enrol
     }
   }
 
-  async function copyCode() {
-    if (!shownCode) return;
-    try {
-      await navigator.clipboard.writeText(shownCode);
-      toast.success('Kod nusxalandi');
-    } catch {
-      toast.error("Nusxalab bo'lmadi");
-    }
-  }
-
-  /** Kodni yangilash — eski kod shu zahoti ishlamay qoladi, shuning uchun
-   *  faqat tasdiqdan keyin. Ilgari bitta bosish (yoki tasodifiy ikki bosish)
-   *  chop etilgan kartalarni darhol yaroqsiz qilardi. */
-  async function rotate() {
-    if (!name || rotating) return;
-    setRotating(true);
-    try {
-      const next = await regenerateEnrollmentCode('guruh', name);
-      setCode(next.code);
-      setConfirmRotate(false);
-      toast.success("Yangi kod tayyor — eski kod endi ishlamaydi");
-    } catch {
-      toast.error("Kodni yangilab bo'lmadi");
-    } finally {
-      setRotating(false);
-    }
-  }
 
   return (
     <>
@@ -151,24 +110,11 @@ export function GroupEnrollDrawer({ target, onClose, withDate }: { target: Enrol
               )}
             </div>
             <div className="flex flex-col gap-2">
-              <h3 className="flex items-center gap-2 text-sm font-semibold text-fg">
-                <KeyRound size={16} className="text-muted" aria-hidden="true" />
-                Guruh kodi
-              </h3>
-              <p className="text-xs text-muted">
-                Kod guruhga og&apos;zaki aytiladi yoki chop etilgan kartada beriladi — kodsiz hech kim bu guruh nomidan yuz topshira olmaydi.
-              </p>
-              <div className="flex items-center gap-2 rounded-control border border-border bg-surface-2 px-3 py-2.5">
-                <span className="flex-1 select-all font-mono text-2xl font-bold tracking-[0.3em] text-fg">{shownCode || '—'}</span>
-                <IconButton size="sm" icon={Copy} label="Kodni nusxalash" onClick={copyCode} />
-                <IconButton size="sm" icon={RefreshCw} label="Kodni yangilash" loading={rotating} onClick={() => setConfirmRotate(true)} />
-              </div>
               <h3 className="mt-3 text-sm font-semibold text-fg">Guruh uchun QR karta</h3>
               <p className="text-xs text-muted">Chop etib, guruh xonasiga yoki sardorga bering — talabalar telefonidan o&apos;zi topshiradi.</p>
               <EnrollQrCard
                 group={data.group}
                 url={enrollUrl}
-                code={shownCode}
                 faculty={target?.faculty}
                 missing={data.missing.length}
                 className="p-4 [&_.enroll-card-group]:text-2xl [&_ol]:text-xs"
@@ -179,14 +125,6 @@ export function GroupEnrollDrawer({ target, onClose, withDate }: { target: Enrol
       ) : null}
       <EnrollPrintPortal cards={printCards} onDone={donePrint} />
     </Drawer>
-    <ConfirmDialog
-      open={confirmRotate}
-      title="Guruh kodini yangilash"
-      message={`«${name ?? ''}» guruhining ${shownCode || 'joriy'} kodi shu zahoti ishlamay qoladi — chop etilgan kartalar va tarqatilgan havolalar yaroqsiz bo'ladi. Yangi kod bilan kartani qayta chop etish kerak.`}
-      confirmLabel="Yangi kod olish"
-      onCancel={() => setConfirmRotate(false)}
-      onConfirm={rotate}
-    />
     </>
   );
 }

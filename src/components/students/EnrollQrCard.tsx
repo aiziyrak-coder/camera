@@ -27,7 +27,6 @@ export function QrCode({ value, className, title = 'QR-kod' }: { value: string; 
 const STEPS = [
   'Telefon kamerasi bilan QR-kodni skanerlang.',
   'JSHSHIR (pasportdagi 14 raqam) bilan o‘zingizni toping.',
-  'So‘ralsa quyidagi guruh kodini kiriting.',
   'Yuzingizni yorug‘ joyda, ko‘zoynaksiz skanerlang.',
 ];
 
@@ -36,16 +35,12 @@ const STEPS = [
 export function EnrollQrCard({
   group,
   url,
-  code,
   faculty,
   missing,
   className,
 }: {
   group: string;
   url: string;
-  /** Guruh kodi — kodsiz topshirish qabul qilinmaydi, shuning uchun u
-   *  kartada QR bilan birga, o'qiladigan holda chop etiladi. */
-  code?: string;
   faculty?: string | null;
   missing?: number;
   className?: string;
@@ -60,12 +55,6 @@ export function EnrollQrCard({
       <h2 className="enroll-card-group mt-1 text-4xl font-bold tracking-tight">{group}</h2>
       {faculty && <p className="mt-1 text-sm text-muted">{faculty}</p>}
       <QrCode value={url} className="enroll-card-qr mt-5 aspect-square w-56 max-w-full" title={`${group} guruhi uchun ro'yxatdan o'tish havolasi`} />
-      {code && (
-        <div className="enroll-card-code mt-4 w-full max-w-xs rounded-card border border-border bg-surface-2 px-4 py-3">
-          <p className="text-xs font-medium uppercase tracking-wider text-muted">Guruh kodi</p>
-          <p className="mt-1 font-mono text-3xl font-bold tracking-[0.35em]">{code}</p>
-        </div>
-      )}
       <ol className="mt-5 w-full max-w-xs space-y-1.5 text-left text-sm">
         {STEPS.map((s, i) => (
           <li key={s} className="flex gap-2">
@@ -92,7 +81,6 @@ const PRINT_CSS = `
   .enroll-print-root .enroll-card:last-child { page-break-after: auto; }
   .enroll-print-root .enroll-card-group { font-size: 40pt; }
   .enroll-print-root .enroll-card-qr { width: 85mm !important; }
-  .enroll-print-root .enroll-card-code p:last-child { font-size: 26pt; }
   .enroll-print-root .enroll-card-screen-only { display: none !important; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }`;
@@ -102,7 +90,7 @@ export function EnrollPrintPortal({
   cards,
   onDone,
 }: {
-  cards: Array<{ group: string; url: string; code?: string; faculty?: string | null }> | null;
+  cards: Array<{ group: string; url: string; faculty?: string | null }> | null;
   onDone: () => void;
 }) {
   useEffect(() => {
@@ -124,7 +112,7 @@ export function EnrollPrintPortal({
     <div className="enroll-print-root">
       <style>{PRINT_CSS}</style>
       {cards.map((c) => (
-        <EnrollQrCard key={c.group} group={c.group} url={c.url} code={c.code} faculty={c.faculty} />
+        <EnrollQrCard key={c.group} group={c.group} url={c.url} faculty={c.faculty} />
       ))}
     </div>,
     document.body,

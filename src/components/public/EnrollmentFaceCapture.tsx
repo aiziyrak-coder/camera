@@ -73,7 +73,7 @@ const CAMERA_ERRORS: Record<string, string> = {
 
 /** Bosqich tasdiqlanishi uchun ketma-ket necha marta mos kelishi kerak.
  *  Bir lahzalik tasodifiy burilish hisobga olinmasligi uchun. */
-const STABLE_HITS = 2;
+const STABLE_HITS = 3;
 
 /**
  * Kamera orqali tiriklik tekshiruvi bilan yuzni ro‘yxatdan o‘tkazish.
@@ -115,6 +115,7 @@ export default function EnrollmentFaceCapture({
   const [stepIndex, setStepIndex] = useState(0);
   const [hint, setHint] = useState('Kamera ishga tushmoqda...');
   const [matching, setMatching] = useState(false);
+  const [stableHits, setStableHits] = useState(0);
   const [captured, setCaptured] = useState<string[]>([]);
 
   const step = LIVENESS_STEPS[stepIndex];
@@ -157,6 +158,18 @@ export default function EnrollmentFaceCapture({
           return;
         }
         streamRef.current = stream;
+        // Telefon qulflansa, boshqa ilova kamerani olsa yoki USB kamera
+        // uzilsa brauzer har doim ham getUserMedia xatosini bermaydi.
+        // Bunday holatda "kutilmoqda" deb turish o'rniga aniq qayta
+        // ulanish yo'lini beramiz.
+        stream.getVideoTracks().forEach((track) => {
+          track.onended = () => {
+            if (!cancelled && !doneRef.current) {
+              setReady(false);
+              setCameraError('Kamera uzildi. Qayta ulab, yana urinib ko‘ring.');
+            }
+          };
+        });
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play().catch(() => {
@@ -233,16 +246,19 @@ export default function EnrollmentFaceCapture({
 
         if (!result.ok) {
           hitsRef.current = 0;
+          setStableHits(0);
           return;
         }
 
         hitsRef.current += 1;
+        setStableHits(hitsRef.current);
         if (hitsRef.current < STABLE_HITS) return;
 
         // Bosqich tasdiqlandi — endi TO‘LIQ o‘lchamdagi kadr olinadi.
         const full = await grab();
         if (!full || stopped) return;
         hitsRef.current = 0;
+        setStableHits(0);
         framesRef.current = [...framesRef.current, full];
         const url = URL.createObjectURL(full);
         urlsRef.current = [...urlsRef.current, url];
@@ -277,6 +293,7 @@ export default function EnrollmentFaceCapture({
   const reset = useCallback(() => {
     doneRef.current = false;
     hitsRef.current = 0;
+    setStableHits(0);
     framesRef.current = [];
     urlsRef.current.forEach((url) => URL.revokeObjectURL(url));
     urlsRef.current = [];
@@ -367,7 +384,7 @@ export default function EnrollmentFaceCapture({
           {captured.length}/{total}
         </CodeText>
         <span className="ms-auto">
-          <MicroLabel>{finished ? 'Tayyor' : matching ? 'Mos keldi' : 'Yo‘naltirilmoqda'}</MicroLabel>
+          <MicroLabel>{finished ? 'Tayyor' : matching ? `Barqaror ${stableHits}/${STABLE_HITS}` : 'Yo‘naltirilmoqda'}</MicroLabel>
         </span>
       </div>
 

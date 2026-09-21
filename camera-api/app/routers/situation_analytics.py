@@ -35,7 +35,7 @@ from app.schemas.situation import (
     WallOut,
     WallUnitOut,
 )
-from app.services import enrollment_code as enrollment_codes, situation as svc, situation_analytics as an
+from app.services import situation as svc, situation_analytics as an
 from app.services.event_scope import OPERATOR_EVENTS
 from app.services.event_status import OPEN_STATUSES
 from app.timezone import local_now
@@ -181,19 +181,10 @@ async def enrollment_missing(group_name: str, db: DbDep, _: ReadDep) -> EnrollMi
     if not total and group_name not in {name for name, _f, _c in await svc.student_group_rows(db)}:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Guruh topilmadi")
     base = settings.frontend_base_url.rstrip("/")
-    # Kartada QR bilan birga guruh kodi ham chop etiladi: kodsiz
-    # topshirish qabul qilinmaydi (app/routers/enrollment.py). Kodi
-    # bo'lmagan guruhga u shu yerda yaratiladi — aks holda yangi guruh
-    # uchun kartani chop etib bo'lmasdi.
-    code_row = await enrollment_codes.ensure_code(
-        db, enrollment_codes.SCOPE_GROUP, enrollment_codes.unit_key(group_name), " ".join(group_name.split())
-    )
-    code = code_row.code
-    await db.commit()
     return EnrollMissingOut(
         group=group_name, total=total, missing=[EnrollMissingPersonOut(**m) for m in missing],
-        enroll_url=f"{base}/royxatdan-otish?guruh={quote(group_name, safe='')}&kod={quote(code, safe='')}",
-        enroll_code=code,
+        enroll_url=f"{base}/royxatdan-otish?guruh={quote(group_name, safe='')}",
+        enroll_code="",
     )
 
 
@@ -284,4 +275,3 @@ async def _build_wall(db: AsyncSession) -> WallOut:
         enrollment=EnrollmentOut(**await an.cached(("enrollment",), lambda: an.enrollment(db))),
         spotlight=spotlight,
     )
-

@@ -9,7 +9,6 @@ import { Avatar, Button, CodeText, DocumentHeader, Field, Input, IntelPanel, Mic
 import { formNumber } from '../../components/public/formNumber';
 import { ApiError } from '../../lib/apiClient';
 import { branding } from '../../lib/branding';
-import { ENROLL_CODE_LENGTH, isEnrollCodeComplete, normalizeEnrollCode } from '../../lib/enrollCode';
 import {
   type EnrollmentLookupResult,
   type EnrollmentRegisterInput,
@@ -43,11 +42,6 @@ const PROGRESS = ['Aniqlash', 'Tasdiqlash', 'Rozilik', 'Yuz'] as const;
  *  (yorliq, hisoblagich, tekshiruv) va ular bir-biriga zid bo'lib
  *  qolgan edi. */
 const PINFL_LENGTH = 14;
-
-/** Kodda YO'Q, lekin odam adashib yozishi mumkin bo'lgan belgilar.
- *  normalizeEnrollCode ularni jimgina tashlab yuboradi — odam esa
- *  nima uchun terayotgan harfi ekranga chiqmayotganini tushunmaydi. */
-const CONFUSABLE_CODE_CHARS = /[OI01]/i;
 
 function progressIndex(step: Step): number {
   switch (step) {
@@ -129,14 +123,8 @@ export default function EnrollmentPage() {
   const [searchParams] = useSearchParams();
   // QR kartadan kelganda (?guruh=DI-2301) — guruh nomi eslatma sifatida ko'rsatiladi.
   const groupHint = (searchParams.get('guruh') ?? '').trim().slice(0, 60);
-  // QR kartada kod ham bor (?kod=K7M2XR) — telefonda uni qo'lda terish
-  // shart emas. Havolasiz kelgan odam kodni o'zi kiritadi.
-  const codeHint = normalizeEnrollCode(searchParams.get('kod'));
   const [step, setStep] = useState<Step>('identify');
   const [method, setMethod] = useState<Method>('pinfl');
-  const [code, setCode] = useState(codeHint);
-  /** Odam kodga O/I/0/1 terdimi — tushuntirish ko'rsatish uchun. */
-  const [codeConfusable, setCodeConfusable] = useState(false);
   // Topilmadi: yozuvi yo'q odam shu tugma orqali o'zini qo'shadi.
   // Avval bu avtomatik bo'lardi, lekin endi "topilmadi" javobi
   // "kod noto'g'ri" bilan bir xil — ya'ni sababini faqat odamning
@@ -174,7 +162,7 @@ export default function EnrollmentPage() {
     setNotFound(false);
     setLoading(true);
     try {
-      const result = await lookupPerson(identity, code);
+      const result = await lookupPerson(identity);
       setFound(result);
       setStep('confirm');
     } catch (err) {
@@ -198,7 +186,7 @@ export default function EnrollmentPage() {
     setError(null);
     setLoading(true);
     try {
-      const created = await registerSelf(input, code);
+      const created = await registerSelf(input);
       setFound(created);
       setStep('confirm');
     } catch (err) {
@@ -214,7 +202,7 @@ export default function EnrollmentPage() {
     setCaptureError(null);
     setLoading(true);
     try {
-      const result = await submitEnrollment(found.recordId, identity, frames, consent, code);
+      const result = await submitEnrollment(found.recordId, identity, frames, consent);
       setAwaitingApproval(Boolean(result.awaitingApproval));
       setStep('success');
     } catch (err) {
@@ -262,7 +250,7 @@ export default function EnrollmentPage() {
     kind: 'royxat',
     step: Math.min(current + 1, PROGRESS.length),
     of: PROGRESS.length,
-    parts: [method, code, groupHint],
+    parts: [method, groupHint],
   });
 
   // Holat — rang emas, SO'Z.
@@ -299,9 +287,7 @@ export default function EnrollmentPage() {
             <Notice tone="info" title={`Guruh: ${groupHint}`}>
               {step === 'register'
                 ? `«Guruh» maydoniga «${groupHint}» deb yozing.`
-                : codeHint
-                  ? "Bu havola guruhingiz uchun berilgan va guruh kodi ham unga kiritilgan. JSHSHIR bilan o'zingizni toping va yuzingizni skanerlang."
-                  : "Bu havola guruhingiz uchun berilgan. JSHSHIR va guruh kodi bilan o'zingizni toping."}
+                : "Bu havola guruhingiz uchun berilgan. JSHSHIR yoki pasport ma'lumotlari bilan o'zingizni toping."}
             </Notice>
           )}
 
@@ -380,52 +366,13 @@ export default function EnrollmentPage() {
                 </div>
               )}
 
-              <Field
-                label={`Guruh kodi (${ENROLL_CODE_LENGTH} belgi)`}
-                hint={
-                  codeConfusable
-                    ? // Terilgan belgi ekranga chiqmagani — dastur sinmagani
-                      // emas, kod alifbosida O, I, 0, 1 yo'qligi uchun.
-                      // Buni aytmasak odam qayta-qayta tergani bilan
-                      // maydonda 5 ta belgi qolaverardi.
-                      "Kodda «O» va «I» harflari, «0» va «1» raqamlari ishlatilmaydi — shuning uchun ular qabul qilinmadi. Kartadagi belgi «0» ga o'xshasa, u aslida «Q» yoki «D» bo'lishi mumkin."
-                    : `Kiritilgan: ${code.length}/${ENROLL_CODE_LENGTH}. Kod guruh sardorida yoki dekanatda bo'ladi. Unda O, I harflari va 0, 1 raqamlari yo'q.`
-                }
-                required
-              >
-                <Input
-                  value={code}
-                  onChange={(e) => {
-                    const raw = e.target.value;
-                    setCode(normalizeEnrollCode(raw));
-                    setCodeConfusable(CONFUSABLE_CODE_CHARS.test(raw));
-                  }}
-                  placeholder="K7M2XR"
-                  autoComplete="one-time-code"
-                  autoCapitalize="characters"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  // Kodda raqam ham, harf ham bor — telefonda to'liq
-                  // klaviatura kerak, lekin avtomatik tuzatishsiz.
-                  inputMode="text"
-                  // maxLength ATAYLAB qo'yilmagan: "K7M2-XR" ni ko'chirib
-                  // qo'yganda brauzer avval 6 belgigacha kesib tashlaydi
-                  // ("K7M2-X") va chiziqcha tozalangandan keyin kod
-                  // to'liqsiz qolardi. Uzunlikni normalizeEnrollCode
-                  // ortiqcha belgilarni olib tashlagandan KEYIN cheklaydi.
-                  required
-                  size="lg"
-                  className="[&_input]:min-h-11 [&_input]:text-base [&_input]:font-mono [&_input]:uppercase [&_input]:tracking-[0.3em]"
-                />
-              </Field>
-
               <Button
                 type="submit"
                 variant="primary"
                 size="lg"
                 icon={IdCard}
                 loading={loading}
-                disabled={!isEnrollCodeComplete(code)}
+                disabled={method === 'pinfl' ? pinfl.length !== PINFL_LENGTH : !series || !number}
                 fullWidth
               >
                 {loading ? 'Qidirilmoqda...' : 'Davom etish'}
@@ -476,10 +423,6 @@ export default function EnrollmentPage() {
                   <UserCheck size={20} className="shrink-0 text-success" aria-hidden="true" />
                 </div>
                 <div className="grid grid-cols-2 gap-x-4 border-t border-border px-3 py-2">
-                  <span className="flex min-w-0 flex-col gap-0.5">
-                    <MicroLabel>Guruh kodi</MicroLabel>
-                    <CodeText className="truncate text-[13px] font-semibold text-fg">{code}</CodeText>
-                  </span>
                   <span className="flex min-w-0 flex-col gap-0.5">
                     <MicroLabel>Blank</MicroLabel>
                     <CodeText className="truncate text-[13px] font-semibold text-fg">{reference}</CodeText>
@@ -554,14 +497,10 @@ export default function EnrollmentPage() {
                   </p>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-x-4 border-y border-border py-2">
+              <div className="border-y border-border py-2">
                 <span className="flex min-w-0 flex-col gap-0.5">
                   <MicroLabel>Blank</MicroLabel>
                   <CodeText className="truncate text-[13px] font-semibold text-fg">{reference}</CodeText>
-                </span>
-                <span className="flex min-w-0 flex-col gap-0.5">
-                  <MicroLabel>Guruh kodi</MicroLabel>
-                  <CodeText className="truncate text-[13px] font-semibold text-fg">{code}</CodeText>
                 </span>
               </div>
               <p className="text-[13px] leading-relaxed text-muted">

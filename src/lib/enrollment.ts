@@ -1,6 +1,5 @@
 import { api, ApiError } from './apiClient';
 import { config } from './config';
-import { normalizeEnrollCode } from './enrollCode';
 
 export interface EnrollmentLookupResult {
   recordId: string;
@@ -99,16 +98,10 @@ function identityPayload(identity: EnrollmentIdentity) {
 }
 
 /**
- * Shaxsni topadi. Guruh kodi ham yuboriladi: usiz server "topilmadi"
- * deb javob beradi va ataylab aynan shu javobni beradi — kodsiz
- * so'rovdan odamning ismini ham, yozuv borligini ham bilib
- * bo'lmasligi kerak.
+ * Shaxsni hujjat ma'lumotlari orqali topadi.
  */
-export async function lookupPerson(identity: EnrollmentIdentity, code: string): Promise<EnrollmentLookupResult> {
-  return api.post<EnrollmentLookupResult>('/api/public/enrollment/lookup', {
-    ...identityPayload(identity),
-    code: normalizeEnrollCode(code),
-  });
+export async function lookupPerson(identity: EnrollmentIdentity): Promise<EnrollmentLookupResult> {
+  return api.post<EnrollmentLookupResult>('/api/public/enrollment/lookup', identityPayload(identity));
 }
 
 export async function listEnrollmentFaculties(): Promise<EnrollmentFaculty[]> {
@@ -118,11 +111,8 @@ export async function listEnrollmentFaculties(): Promise<EnrollmentFaculty[]> {
 /** Tizimda yozuvi yo'q odam o'zini ro'yxatdan o'tkazadi. Javob lookup
  *  bilan bir xil shaklda — shuning uchun chaqiruvchi keyingi qadamda
  *  ikkisini ajratib o'tirmaydi. */
-export async function registerSelf(input: EnrollmentRegisterInput, code: string): Promise<EnrollmentLookupResult> {
-  return api.post<EnrollmentLookupResult>('/api/public/enrollment/register', {
-    ...input,
-    code: normalizeEnrollCode(code),
-  });
+export async function registerSelf(input: EnrollmentRegisterInput): Promise<EnrollmentLookupResult> {
+  return api.post<EnrollmentLookupResult>('/api/public/enrollment/register', input);
 }
 
 /**
@@ -145,12 +135,8 @@ export async function submitEnrollment(
   identity: EnrollmentIdentity,
   frames: Blob[],
   consent: boolean,
-  code: string,
 ): Promise<EnrollmentSubmitResult> {
   const form = new FormData();
-  // Guruh kodi — topshirishning majburiy sharti. Serverda u odamning
-  // GURUHIGA solishtiriladi: boshqa guruhning kodi ish bermaydi.
-  form.append('code', normalizeEnrollCode(code));
   // Server /lookup dagi bilan AYNAN bir xil tekshiruvni qayta bajaradi —
   // shuning uchun bu yerda ham o'sha ma'lumot yuboriladi.
   Object.entries(identityPayload(identity)).forEach(([key, value]) => {
