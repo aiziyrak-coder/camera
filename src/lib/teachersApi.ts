@@ -47,6 +47,19 @@ export async function searchStaff(search: string, pageSize = 8, opts?: CallOptio
   return res.items;
 }
 
+/** Xodim VA talabalarni birga qidirish — konsolning shaxs qidiruvi uchun.
+ *  `searchStaff` bilan bitta endpoint, farqi shundaki tur bo'yicha
+ *  filtrlamaydi (registerPeople huquqi kerak). */
+export async function searchPeople(search: string, pageSize = 8, opts?: CallOptions): Promise<StudentStaffRecord[]> {
+  const res = await api.post<Page<StudentStaffRecord>>(
+    '/api/students-staff/search',
+    { search, page: 1, pageSize, sort: 'name' },
+    undefined,
+    opts,
+  );
+  return res.items;
+}
+
 /** Davr ichidagi dars monitoring yozuvlari. API sana filtrini bilmaydi,
  *  lekin yozuvlarni sana bo'yicha kamayish tartibida beradi — shuning uchun
  *  `from`dan eski yozuvga yetganda sahifalashni to'xtatamiz. */

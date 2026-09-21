@@ -1,11 +1,17 @@
+import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { Maximize2, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '../ui';
-import { EASE, panelIn, scrim, spring } from './motion';
+import { EASE, scrim, spring } from './motion';
 
 /**
  * Konsol paneli.
+ *
+ * Yoyilgan ko'rinish hujjat ILDIZIGA chiqariladi (portal): aks holda u
+ * `main` ning z-qatlami ichida qolib, yuqoridagi boshqaruv satri ostiga
+ * tushib ketardi. `LayoutGroup` (ConsoleShell) ikki nusxani bog'lab
+ * turadi, shuning uchun siljish animatsiyasi buzilmaydi.
  *
  * Har panel setkada o'z joyini egallaydi va bosilganda BUTUN maydonga
  * yoyiladi — yangi sahifaga o'tilmaydi, shuning uchun kontekst
@@ -43,7 +49,11 @@ export default function Panel({
   full,
   children,
 }: PanelProps) {
-  const body = (
+  // Yoyilganda setkadagi nusxa KO'RINMAYDI (opacity-0), lekin baribir
+  // chiziladi — shuning uchun unga OG'IR mazmun (yoyilgan ko'rinish)
+  // berilmaydi: aks holda ichkaridagi sahifa ikki marta yuklanib, ikki
+  // marta so'rov yuborardi.
+  const body = (content: ReactNode) => (
     <>
       <header className="flex shrink-0 items-center gap-2 border-b border-white/70 px-3 py-2">
         <h2 className="intel-micro !text-fg">{title}</h2>
@@ -62,7 +72,7 @@ export default function Panel({
           </button>
         </span>
       </header>
-      <div className="relative min-h-0 flex-1 overflow-hidden">{expanded && full ? full : children}</div>
+      <div className="relative min-h-0 flex-1 overflow-hidden">{content}</div>
     </>
   );
 
@@ -70,22 +80,22 @@ export default function Panel({
     <>
       <motion.section
         layoutId={`panel-${id}`}
-        variants={panelIn}
         transition={spring}
         aria-label={title}
         onClick={() => !expanded && onExpand(id)}
         className={cn(
-          'glass glass-hover relative flex min-h-0 flex-col overflow-hidden rounded-[6px]',
+          'panel-enter glass glass-hover relative flex min-h-0 flex-col overflow-hidden rounded-[6px]',
           live && 'scanline',
           !expanded && 'cursor-pointer',
           expanded && 'pointer-events-none opacity-0',
           area,
         )}
       >
-        {body}
+        {body(children)}
       </motion.section>
 
-      <AnimatePresence>
+      {createPortal(
+        <AnimatePresence>
         {expanded && (
           <>
             <motion.div
@@ -105,11 +115,13 @@ export default function Panel({
                 live && 'scanline',
               )}
             >
-              {body}
+              {body(full ?? children)}
             </motion.section>
           </>
         )}
-      </AnimatePresence>
+        </AnimatePresence>,
+        document.body,
+      )}
     </>
   );
 }

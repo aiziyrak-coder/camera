@@ -20,14 +20,20 @@ export const stagger: Variants = {
   show: { transition: { staggerChildren: 0.045, delayChildren: 0.06 } },
 };
 
+/** Panel kirishi — FAQAT opacity/transform.
+ *
+ *  Ilgari bu yerda `filter: blur()` ham bor edi. U ikki narsani buzardi:
+ *  blur GPU'da tekin emas (har panel katta shisha sirt), va u WAAPI'da
+ *  ishlamagani uchun animatsiya JS'ga (requestAnimationFrame) tushardi —
+ *  oyna fokusdan chiqqanda brauzer rAF'ni to'xtatib qo'yadi va panel
+ *  yarim ko'rinmas holda QOTIB qoladi (devor ekranida ayniqsa yomon). */
 export const panelIn: Variants = {
-  hidden: { opacity: 0, y: 14, scale: 0.985, filter: 'blur(6px)' },
+  hidden: { opacity: 0, y: 14, scale: 0.985 },
   show: {
     opacity: 1,
     y: 0,
     scale: 1,
-    filter: 'blur(0px)',
-    transition: { duration: 0.42, ease: EASE },
+    transition: { duration: 0.38, ease: EASE },
   },
 };
 
