@@ -45,6 +45,7 @@ from app.services.thread_limits import apply_thread_limits
 from app.storage import check_bucket
 from app.routers import (
     presence,
+    person_locator,
     access_control,
     ai_modules,
     attendance,
@@ -293,6 +294,7 @@ app.include_router(public.router)
 app.include_router(enrollment.router)
 app.include_router(enrollment.codes_router)
 app.include_router(presence.router)
+app.include_router(person_locator.router)
 app.include_router(notifications.router)
 app.include_router(integrations.router)
 app.include_router(access_control.router)

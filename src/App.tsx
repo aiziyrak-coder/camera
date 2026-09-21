@@ -27,6 +27,7 @@ const GroupPage = lazyPage(() => import('./pages/students/GroupPage'));
 const KafedrasPage = lazyPage(() => import('./pages/teachers/KafedrasPage'));
 const KafedraPage = lazyPage(() => import('./pages/teachers/KafedraPage'));
 const PersonPage = lazyPage(() => import('./pages/person/PersonPage'));
+const PersonLocatorPage = lazyPage(() => import('./pages/person/PersonLocatorPage'));
 const WorkHoursPage = lazyPage(() => import('./pages/settings/WorkHoursPage'));
 const SystemPage = lazyPage(() => import('./pages/settings/SystemPage'));
 
@@ -129,8 +130,7 @@ export default function App() {
             </Route>
 
             <Route element={<AppShell />}>
-              {/* Eski "Institut holati" sahifasi endi alohida ekran emas:
-                  uning vazifasini bosh ekrandagi boshqaruv markazi bajaradi. */}
+              {/* Eski institut holati alohida ekran emas. */}
               <Route path="/holat" element={<Navigate to="/" replace />} />
 
               <Route element={<RequirePermission permission="manageAttendance" />}>
@@ -145,6 +145,7 @@ export default function App() {
 
               <Route element={<RequirePermission permission="viewLive" />}>
                 <Route path="/videodevor" element={<VideoWallRoute />} />
+                <Route path="/shaxs-qidirish" element={<PersonLocatorPage />} />
                 {/* Olib tashlangan sahifalar (2026-09-19): bo'sh edi, chalg'itardi. */}
                 <Route path="/xarita" element={<Navigate to="/videodevor" replace />} />
                 <Route path="/darslar" element={<Navigate to="/" replace />} />

@@ -13,6 +13,7 @@ import {
   ServerCog,
   ShieldCheck,
   Siren,
+  Search,
   type LucideIcon,
 } from 'lucide-react';
 import type { Role } from '../../lib/auth';
@@ -41,8 +42,9 @@ export const NAV_SECTIONS: NavSection[] = [
     id: 'monitoring',
     label: 'Monitoring',
     items: [
-      { to: '/', code: 'HOL', label: 'Boshqaruv markazi', icon: LayoutDashboard, end: true },
+      { to: '/', code: 'HOL', label: 'Nazorat', icon: LayoutDashboard, end: true },
       { to: '/videodevor', code: 'KAM', label: 'Jonli kameralar', icon: MonitorPlay, permission: 'viewLive' },
+      { to: '/shaxs-qidirish', code: 'QID', label: 'Shaxs qidirish', icon: Search, permission: 'viewLive' },
       { to: '/hodisalar', code: 'HOD', label: 'Hodisalar', icon: Siren, permission: 'reviewEvents' },
     ],
   },

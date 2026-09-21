@@ -13,7 +13,7 @@ describe('navConfig', () => {
   it('finds the active item and its section', () => {
     expect(findActive('/talabalar/fakultet/3')?.item.label).toBe('Talabalar');
     expect(findActive('/sozlamalar/kameralar')?.section.label).toBe('Sozlamalar');
-    expect(findActive('/')?.item.label).toBe('Boshqaruv markazi');
+    expect(findActive('/')?.item.label).toBe('Nazorat');
     expect(findActive('/sozlamalar/ui')).toBeNull();
   });
 
@@ -32,7 +32,7 @@ describe('navConfig', () => {
   it('filters the menu by permission and drops empty sections', () => {
     const sections = visibleSections((key) => key === 'viewLive', 'admin');
     expect(sections.map((s) => s.id)).toEqual(['monitoring', 'malumotlar']);
-    expect(sections[0].items.map((i) => i.to)).toEqual(['/', '/videodevor']);
+    expect(sections[0].items.map((i) => i.to)).toEqual(['/', '/videodevor', '/shaxs-qidirish']);
   });
 
   it('shows the date picker only on attendance pages', () => {

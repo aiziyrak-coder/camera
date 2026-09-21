@@ -46,7 +46,7 @@ describe('Sidebar', () => {
   it('counts the items in each section header', () => {
     renderSidebar('/');
     const monitoring = screen.getByRole('button', { name: /Monitoring/ });
-    expect(within(monitoring).getByLabelText('3 ta band')).toHaveTextContent('03');
+    expect(within(monitoring).getByLabelText('4 ta band')).toHaveTextContent('04');
   });
 
   it('keeps the selected date on attendance links only', () => {
