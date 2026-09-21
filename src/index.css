@@ -749,10 +749,10 @@ table[data-tabel] [data-today] {
   height: 100dvh;
   overflow: hidden;
   background:
-    radial-gradient(120% 90% at 12% 0%, rgb(var(--c-accent) / 0.07), transparent 60%),
-    radial-gradient(90% 80% at 100% 10%, rgb(var(--c-accent-2) / 0.06), transparent 55%),
-    radial-gradient(100% 100% at 50% 120%, rgb(var(--c-accent) / 0.05), transparent 60%),
-    linear-gradient(180deg, rgb(226 233 243), rgb(214 223 237));
+    radial-gradient(80% 100% at -10% 0%, rgb(98 188 255 / 0.24), transparent 60%),
+    radial-gradient(72% 92% at 110% -15%, rgb(125 116 255 / 0.18), transparent 58%),
+    radial-gradient(62% 70% at 52% 112%, rgb(0 214 192 / 0.12), transparent 62%),
+    linear-gradient(135deg, #edf8ff 0%, #e8eefc 43%, #f6f8ff 100%);
 }
 
 /* Sekin suzuvchi yorug'lik — muhit tirik ekanini bildiradi. */
@@ -774,11 +774,82 @@ table[data-tabel] [data-today] {
   inset: 0;
   pointer-events: none;
   background-image:
-    linear-gradient(to right, rgb(15 23 42 / 0.035) 1px, transparent 1px),
-    linear-gradient(to bottom, rgb(15 23 42 / 0.035) 1px, transparent 1px);
-  background-size: 64px 64px;
-  mask-image: radial-gradient(90% 80% at 50% 45%, #000 45%, transparent 100%);
+    linear-gradient(to right, rgb(53 91 152 / 0.055) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(53 91 152 / 0.055) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(100% 85% at 50% 40%, #000 28%, transparent 100%);
 }
+
+.console-commandbar {
+  border: 1px solid rgb(255 255 255 / 0.86);
+  border-radius: 18px;
+  background: linear-gradient(110deg, rgb(255 255 255 / 0.9), rgb(247 251 255 / 0.7));
+  box-shadow: 0 16px 44px -30px rgb(17 51 98 / 0.56), inset 0 1px 0 rgb(255 255 255 / 0.95);
+  backdrop-filter: blur(22px) saturate(1.3);
+}
+
+.console-hero {
+  min-height: 92px;
+  border: 1px solid rgb(255 255 255 / 0.94);
+  border-radius: 22px;
+  background:
+    linear-gradient(100deg, rgb(255 255 255 / 0.84), rgb(242 249 255 / 0.74) 48%, rgb(236 241 255 / 0.8)),
+    linear-gradient(115deg, #e7f8ff, #eff1ff);
+  box-shadow: 0 24px 55px -38px rgb(25 59 117 / 0.7), inset 0 1px 0 rgb(255 255 255 / 1);
+  backdrop-filter: blur(24px) saturate(1.35);
+}
+
+.console-hero::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(0 122 255 / 0.42), transparent);
+}
+
+.console-orbit {
+  position: absolute;
+  border: 1px solid rgb(46 129 255 / 0.14);
+  border-radius: 999px;
+  pointer-events: none;
+  animation: console-orbit 18s linear infinite;
+}
+
+.console-orbit-a { width: 330px; height: 330px; right: -68px; top: -192px; }
+.console-orbit-b { width: 230px; height: 230px; right: 4px; top: -138px; border-style: dashed; animation-duration: 28s; animation-direction: reverse; }
+.console-hero-noise { position: absolute; inset: 0; pointer-events: none; opacity: .42; background: linear-gradient(102deg, transparent 35%, rgb(255 255 255 / .8) 48%, transparent 62%); transform: translateX(-110%); animation: console-glint 8s ease-in-out infinite; }
+
+.console-score-ring {
+  display: grid;
+  grid-template-columns: auto auto;
+  place-content: center;
+  width: 66px;
+  height: 66px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  box-shadow: 0 0 0 7px rgb(255 255 255 / .55), 0 10px 24px -16px currentColor;
+  background: conic-gradient(from 220deg, currentColor 0 32%, rgb(255 255 255 / .18) 32% 100%);
+  position: relative;
+}
+.console-score-ring::before { content: ""; position: absolute; inset: 5px; border-radius: inherit; background: rgb(248 252 255 / .94); }
+.console-score-value, .console-score-unit { position: relative; z-index: 1; font-family: var(--font-intel), ui-monospace, monospace; line-height: 1; }
+.console-score-value { font-size: 21px; font-weight: 700; letter-spacing: -.08em; }
+.console-score-unit { align-self: end; padding-bottom: 19px; font-size: 10px; }
+.console-eyebrow { display: inline-flex; align-items: center; gap: 5px; color: #41648e; font-size: 9px; font-weight: 700; letter-spacing: .17em; white-space: nowrap; }
+.console-live-label { display: inline-flex; align-items: center; gap: 5px; color: #71809a; font-size: 9px; font-family: var(--font-intel), ui-monospace, monospace; font-weight: 700; letter-spacing: .12em; }
+.console-live-label i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.console-live-label.is-live { color: #008d69; }
+.console-live-label.is-live i { box-shadow: 0 0 0 0 rgb(0 141 105 / .4); animation: console-pulse-dot 2s infinite; }
+.console-hero-title { margin-top: 1px; color: #0f284c; font-size: clamp(22px, 3.4vh, 37px); font-weight: 720; letter-spacing: -.055em; line-height: .98; }
+.console-hero-title em { font-style: normal; color: #2775d8; }
+.console-hero-subtitle { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; color: #63728b; font-size: 11px; }
+.console-hero-action { display: inline-flex; align-items: center; gap: 6px; height: 34px; border: 1px solid rgb(86 118 160 / .2); border-radius: 10px; padding: 0 10px; color: #334a6c; background: rgb(255 255 255 / .56); font-size: 11px; font-weight: 650; transition: transform .22s ease, box-shadow .22s ease, background .22s ease; }
+.console-hero-action:hover { transform: translateY(-1px); background: #fff; box-shadow: 0 9px 18px -14px rgb(24 64 127 / .8); }
+.console-hero-action.is-primary { border-color: #1967ce; color: #fff; background: linear-gradient(135deg, #145cc3, #368eff); box-shadow: 0 9px 20px -13px #145cc3; }
+
+@keyframes console-orbit { to { transform: rotate(360deg); } }
+@keyframes console-glint { 0%, 62% { transform: translateX(-115%); } 82%, 100% { transform: translateX(115%); } }
+@keyframes console-pulse-dot { 70%, 100% { box-shadow: 0 0 0 7px rgb(0 141 105 / 0); } }
 
 @keyframes console-drift {
   from { transform: translate3d(-3%, -2%, 0) scale(1); }
@@ -789,13 +860,13 @@ table[data-tabel] [data-today] {
 /* Panel oq shisha: fon ko'kimtir bo'lgani uchun u YORQIN bo'lib
    ajralib turadi — qirrasi yorug', ostida aniq soya. */
 .glass {
-  background: linear-gradient(180deg, rgb(var(--glass) / 0.94), rgb(var(--glass) / 0.86));
-  backdrop-filter: blur(16px) saturate(1.2);
-  border: 1px solid rgb(255 255 255 / 0.95);
+  background: linear-gradient(145deg, rgb(var(--glass) / 0.93), rgb(244 250 255 / 0.72));
+  backdrop-filter: blur(18px) saturate(1.25);
+  border: 1px solid rgb(255 255 255 / 0.88);
   box-shadow:
     0 1px 0 0 rgb(255 255 255 / 1) inset,
     0 0 0 1px rgb(15 23 42 / 0.05),
-    0 14px 36px -16px rgb(15 23 42 / 0.32),
+    0 18px 38px -22px rgb(17 54 108 / 0.38),
     0 2px 10px -6px rgb(15 23 42 / 0.14);
 }
 
@@ -807,8 +878,8 @@ table[data-tabel] [data-today] {
   transform: translateY(-2px);
   box-shadow:
     0 1px 0 0 rgb(255 255 255 / 0.95) inset,
-    0 0 0 1px rgb(var(--c-accent) / 0.30),
-    0 18px 40px -14px rgb(15 23 42 / 0.26);
+    0 0 0 1px rgb(var(--c-accent) / 0.32),
+    0 22px 42px -18px rgb(20 63 124 / 0.34);
 }
 
 /* Jonli manba: panel ustidan o'tadigan yorug' chiziq. */
@@ -852,6 +923,8 @@ table[data-tabel] [data-today] {
 
 @media (prefers-reduced-motion: reduce) {
   .console-root::before,
+  .console-orbit,
+  .console-hero-noise,
   .scanline::after,
   .live-dot::after {
     animation: none;
@@ -859,6 +932,16 @@ table[data-tabel] [data-today] {
   .glass-hover:hover {
     transform: none;
   }
+}
+
+@media (max-width: 640px) {
+  .console-hero { min-height: 78px; border-radius: 16px; }
+  .console-score-ring { width: 54px; height: 54px; }
+  .console-score-value { font-size: 17px; }
+  .console-score-unit { padding-bottom: 16px; }
+  .console-eyebrow { letter-spacing: .1em; font-size: 8px; }
+  .console-hero-title { font-size: 21px; }
+  .console-hero-subtitle { font-size: 10px; }
 }
 
 /* Panel kirishi — CSS animatsiyasi, JS emas.

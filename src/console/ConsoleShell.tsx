@@ -19,6 +19,7 @@ import VitalsPanel from './panels/VitalsPanel';
 import { visibleControlTabs, type ControlTabId } from './panels/controlTabs';
 import ConsolePalette, { type PaletteTarget } from './ConsolePalette';
 import ConsoleFilterBar from './ConsoleFilterBar';
+import ConsoleHero from './ConsoleHero';
 import { useConsoleFilter } from './consoleFilter';
 import { EASE } from './motion';
 
@@ -154,7 +155,7 @@ export default function ConsoleShell() {
         initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: EASE }}
-        className="relative z-20 flex shrink-0 items-center gap-3 px-4 py-2.5"
+        className="console-commandbar relative z-20 mx-3 mt-3 flex shrink-0 items-center gap-3 px-3 py-2"
       >
         <span className="flex min-w-0 items-center gap-2">
           <span className="grid h-7 w-7 place-items-center rounded-[4px] bg-primary text-[11px] font-bold text-primary-fg">
@@ -191,6 +192,15 @@ export default function ConsoleShell() {
           </Link>
         </span>
       </motion.header>
+
+      <ConsoleHero
+        overview={overview}
+        scope={scope}
+        date={date}
+        live={live}
+        onSearch={() => setPaletteOpen(true)}
+        onOpenCameras={() => setExpanded('cameras')}
+      />
 
       {/* Filtr satri — uchala davomat paneli shu tanlovga bo'ysunadi. */}
       <ConsoleFilterBar filter={filter} />
