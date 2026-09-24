@@ -1,7 +1,7 @@
-import { api, ApiError } from './apiClient';
+import { api, ApiError, type Page } from './apiClient';
 import { config } from './config';
 
-/** Maxfiylik sahifasi (/admin/privacy) va uning API'si —
+/** Maxfiylik sahifasi (/sozlamalar/maxfiylik) va uning API'si —
  *  camera-api/app/routers/privacy.py bilan maydonma-maydon mos. */
 
 export interface RetentionSettings {
@@ -11,6 +11,9 @@ export interface RetentionSettings {
   biometricRetentionDaysAfterInactive: number;
   accessEventRetentionDays: number;
   notificationLogRetentionDays: number;
+  /** Video arxivi — soatda (disk byudjeti bilan o‘lchanadi). */
+  recordingRetentionHours: number;
+  eventClipRetentionDays: number;
 }
 
 export interface PrivacyOverview {
@@ -47,6 +50,20 @@ export interface PrivacyPerson {
   biometricPurgeAt: string | null;
 }
 
+/** GET /api/privacy/people/{id}/biometrics — odam haqida saqlanayotgan biometrika. */
+export interface PrivacyBiometrics {
+  person: PrivacyPerson;
+  photoUrl: string | null;
+  faceTemplateStored: boolean;
+  biometricsConfirmedAt: string | null;
+  gallerySamples: number;
+  linkedSightings: number;
+  recentDays: number;
+  recentVisits: number;
+  recentSightings: number;
+  lastSeenAt: string | null;
+}
+
 export interface ErasureResult {
   person: PrivacyPerson;
   photoDeleted: boolean;
@@ -74,6 +91,23 @@ export const PRIVACY_PEOPLE_SEARCH_PATH = '/api/privacy/people/search';
 
 export function fetchPrivacyOverview(token: string | null, signal?: AbortSignal): Promise<PrivacyOverview> {
   return api.get<PrivacyOverview>('/api/privacy/overview', token, { signal });
+}
+
+export function searchPrivacyPeople(
+  token: string | null,
+  params: { search?: string; filter?: PrivacyFilter | null; page?: number; pageSize?: number },
+  signal?: AbortSignal,
+): Promise<Page<PrivacyPerson>> {
+  return api.post<Page<PrivacyPerson>>(
+    PRIVACY_PEOPLE_SEARCH_PATH,
+    { search: params.search?.trim() || null, filter: params.filter ?? null, page: params.page ?? 1, pageSize: params.pageSize ?? 20 },
+    token,
+    { signal },
+  );
+}
+
+export function fetchPersonBiometrics(token: string | null, personId: string, signal?: AbortSignal): Promise<PrivacyBiometrics> {
+  return api.get<PrivacyBiometrics>(`/api/privacy/people/${personId}/biometrics`, token, { signal });
 }
 
 export function recordConsent(
@@ -135,6 +169,13 @@ export function formatRetentionDays(days: number, zeroLabel = 'Cheklanmagan'): s
   if (!days || days <= 0) return zeroLabel;
   if (days % 365 === 0) return `${days / 365} yil`;
   return `${days} kun`;
+}
+
+/** Video arxivi muddati: "4 soat", 48 → "2 kun"; 0 — "Saqlanmaydi". */
+export function formatRetentionHours(hours: number, zeroLabel = 'Saqlanmaydi'): string {
+  if (!hours || hours <= 0) return zeroLabel;
+  if (hours % 24 === 0) return `${hours / 24} kun`;
+  return `${hours} soat`;
 }
 
 /** "19.09.2026" — Toshkent vaqti bo'yicha. */

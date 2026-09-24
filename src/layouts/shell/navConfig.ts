@@ -9,6 +9,7 @@ import {
   Contact,
   GraduationCap,
   LayoutDashboard,
+  Lock,
   Map as MapIcon,
   MonitorPlay,
   Network,
@@ -87,6 +88,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/sozlamalar/bildirishnomalar', code: 'SBL', label: 'Bildirishnomalar', icon: BellRing, permission: 'manageNotifications' },
       { to: '/sozlamalar/foydalanuvchilar', code: 'SFD', label: 'Foydalanuvchilar', icon: ShieldCheck, permission: 'manageRoles' },
       { to: '/sozlamalar/tizim', code: 'STZ', label: 'Tizim holati', icon: ServerCog, permission: 'systemSettings' },
+      { to: '/sozlamalar/maxfiylik', code: 'SMX', label: 'Maxfiylik', icon: Lock, permission: 'managePrivacy' },
     ],
   },
 ];

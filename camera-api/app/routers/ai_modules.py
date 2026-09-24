@@ -27,10 +27,11 @@ from app.audit import log_action
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.models import AIModuleConfig, Camera, Event, ModuleCameraSuppression, User
-from app.schemas.ai_module import AIModuleOut, AIModuleUpdateIn, ModuleSuppressionOut
+from app.schemas.ai_module import AIModuleOut, AIModuleUpdateIn, ModuleSopIn, ModuleSopOut, ModuleSuppressionOut
 from app.schemas.event import EventOut
 from app.services.camera_module_mapping import camera_counts_by_module
 from app.services.event_bus import event_to_out
+from app.services.sop import default_steps, parse_steps, resolve_steps
 from app.timezone import to_local
 
 router = APIRouter(prefix="/api/ai-modules", tags=["ai-modules"])
@@ -296,3 +297,53 @@ async def update_ai_module(
     await db.refresh(module)
     counts = await camera_counts_by_module(db)
     return _to_out(module, counts.get(module.code, 0), stats.get(module.code, (0, 0, 0, 0)))
+
+
+# ---------------------------------------------------------------------------
+# Operator ko'rsatmasi (SOP) — app/services/sop.py
+# ---------------------------------------------------------------------------
+
+
+async def _module_by_code(db: AsyncSession, code: int) -> AIModuleConfig:
+    module = (await db.execute(select(AIModuleConfig).where(AIModuleConfig.code == code))).scalar_one_or_none()
+    if module is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Modul topilmadi")
+    return module
+
+
+def _sop_out(module: AIModuleConfig) -> ModuleSopOut:
+    return ModuleSopOut(
+        code=module.code,
+        name=module.name,
+        steps=resolve_steps(module.code, module.sop),
+        custom=bool(parse_steps(module.sop)),
+        default_steps=default_steps(module.code),
+    )
+
+
+@router.get("/{code}/sop", response_model=ModuleSopOut)
+async def get_module_sop(code: int, db: Annotated[AsyncSession, Depends(get_db)], _: TrialSampleDep) -> ModuleSopOut:
+    return _sop_out(await _module_by_code(db, code))
+
+
+@router.put("/{code}/sop", response_model=ModuleSopOut)
+async def update_module_sop(
+    code: int,
+    body: ModuleSopIn,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: PermDep,
+) -> ModuleSopOut:
+    """Ko'rsatmani o'zgartirish. Bo'sh ro'yxat — standartga qaytarish
+    (ustun NULL bo'ladi va keyingi standart yaxshilanishlari ham tarqaladi)."""
+    module = await _module_by_code(db, code)
+    steps = parse_steps("\n".join(body.steps or []))
+    module.sop = "\n".join(steps) if steps else None
+    action = (
+        f"Hodisa ko'rsatmasini o'zgartirdi: {module.name} ({len(steps)} qadam)"
+        if steps
+        else f"Hodisa ko'rsatmasini standartga qaytardi: {module.name}"
+    )
+    await log_action(db, request, current_user.id, action, "AI Modullari")
+    await db.commit()
+    return _sop_out(module)

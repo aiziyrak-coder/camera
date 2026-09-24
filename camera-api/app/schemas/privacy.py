@@ -31,6 +31,9 @@ class RetentionSettingsOut(CamelModel):
     biometric_retention_days_after_inactive: int
     access_event_retention_days: int
     notification_log_retention_days: int
+    # Video arxivi soatda (disk byudjeti bilan o'lchanadi), hodisa klipi kunda.
+    recording_retention_hours: int
+    event_clip_retention_days: int
 
 
 class PrivacyOverviewOut(CamelModel):
@@ -90,6 +93,24 @@ class PrivacyPeopleSearchIn(CamelModel):
 class ConsentRecordIn(CamelModel):
     source: Literal["qogoz", "admin"]
     note: str | None = Field(default=None, max_length=500)
+
+
+class PrivacyBiometricsOut(CamelModel):
+    """Bitta odam haqida saqlanayotgan biometrik ma'lumot (o'chirishdan oldin)."""
+
+    person: PrivacyPersonOut
+    # Asosiy yuz rasmi — imzolangan havola, bir soat amal qiladi.
+    photo_url: str | None
+    face_template_stored: bool
+    biometrics_confirmed_at: datetime | None
+    # Kamerada tanilgan kadrlardan olingan qo'shimcha yuz vektorlari.
+    gallery_samples: int
+    # Operator shu odamga biriktirgan notanish yuz kadrlari (rasmi bilan).
+    linked_sightings: int
+    recent_days: int
+    recent_visits: int
+    recent_sightings: int
+    last_seen_at: datetime | None
 
 
 class ErasureOut(CamelModel):

@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from app.config import settings
 from app.jobs import cleanup
 from app.jobs.cleanup import run_cleanup_once
-from app.models import AccessEvent, Event, NotificationLog, StudentStaff
+from app.models import AccessEvent, Event, FaceGalleryEmbedding, NotificationLog, StudentStaff, UnknownSighting
 from app.services.face_matching import load_candidate_matrix_cached
 
 EMBEDDING = json.dumps([0.1] * 512)
@@ -90,6 +90,31 @@ class TestBiometricRetention:
         assert expired.full_name == "Ketgan"
         assert recent.biometric_embedding is not None
         assert active.biometric_embedding is not None
+
+    async def test_purge_also_removes_gallery_samples_and_linked_crops(self, db_session, fake_storage):
+        now = datetime.now(timezone.utc)
+        days = settings.biometric_retention_days_after_inactive
+        person = _person(active=False, deactivated_at=now - timedelta(days=days + 1))
+        db_session.add(person)
+        await db_session.commit()
+        db_session.add_all([
+            FaceGalleryEmbedding(
+                student_staff_id=person.id, embedding=EMBEDDING, anchor_hash="h" * 64, similarity=0.6, face_px=80
+            ),
+            UnknownSighting(
+                day=now.date(), first_seen_at=now, last_seen_at=now, embedding=EMBEDDING,
+                crop_key="unknown/odam.jpg", status="talaba", person_id=person.id,
+            ),
+        ])
+        await db_session.commit()
+
+        await run_cleanup_once(db_session)
+
+        assert sorted(fake_storage["quiet"]) == ["biometrics/odam.jpg", "unknown/odam.jpg"]
+        left = await db_session.execute(select(func.count()).select_from(FaceGalleryEmbedding))
+        assert left.scalar_one() == 0
+        left = await db_session.execute(select(func.count()).select_from(UnknownSighting))
+        assert left.scalar_one() == 0
 
     async def test_inactive_without_timestamp_starts_the_clock(self, db_session, fake_storage):
         person = _person(active=False, deactivated_at=None)

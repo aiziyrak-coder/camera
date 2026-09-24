@@ -5,6 +5,7 @@ import {
   daysUntil,
   exportFilename,
   formatRetentionDays,
+  formatRetentionHours,
   formatUzDate,
   matchesConfirmation,
 } from './privacyApi';
@@ -28,6 +29,14 @@ describe('consentState', () => {
 
   it("biometrikasi yo'q odamga rozilik kerak emas", () => {
     expect(consentState({ hasBiometrics: false, consentGivenAt: null, consentCurrent: false })).toBe('not_needed');
+  });
+});
+
+describe('formatRetentionHours', () => {
+  it('soat, butun kun va 0', () => {
+    expect(formatRetentionHours(4)).toBe('4 soat');
+    expect(formatRetentionHours(48)).toBe('2 kun');
+    expect(formatRetentionHours(0)).toBe('Saqlanmaydi');
   });
 });
 

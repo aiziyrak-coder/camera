@@ -13,9 +13,11 @@ Ikkalasi ham biometrikani AYNAN bir xil yo'l bilan o'chiradi
 "muddat o'tgani uchun o'chirish" vaqt o'tib bir-biridan farqlanib qolardi.
 """
 
+import uuid
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import ColumnElement, and_, func, or_, select
+from sqlalchemy import ColumnElement, and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -25,10 +27,12 @@ from app.models import (
     AttendanceRecord,
     Camera,
     Event,
+    FaceGalleryEmbedding,
     LessonAttendance,
     LessonSession,
     PresenceVisit,
     StudentStaff,
+    UnknownSighting,
 )
 from app.services.face_matching import announce_roster_change
 from app.storage import delete_files_quietly, presigned_url
@@ -83,11 +87,41 @@ def clear_biometrics(person: StudentStaff) -> str | None:
     return photo_key
 
 
-async def finish_erasure(photo_keys: list[str | None]) -> int:
+async def erase_face_samples(db: AsyncSession, person_ids: Sequence[uuid.UUID]) -> list[str]:
+    """Asosiy rasmdan TASHQARI saqlangan yuz namunalarini o'chiradi va
+    ombordagi rasm kalitlarini qaytaradi (commit'dan keyin finish_erasure).
+
+    * face_gallery_embeddings — kamerada tanilgan kadrlardan olingan
+      vektorlar. Bazadagi trigger ularni asosiy vektor o'zgarganda o'zi
+      o'chiradi, lekin trigger faqat migratsiya bilan yaratiladi va vektor
+      allaqachon bo'sh bo'lsa ishlamaydi — o'chirish kafolati bitta
+      joyga (triggerga) bog'lanib qolmasin.
+    * unknown_sightings — operator shu odamga biriktirgan kamera kadrlari:
+      har birida yuz rasmi (crop_key) va vektori bor, ya'ni bu ham shu
+      odamning biometrikasi."""
+    ids = list(person_ids)
+    if not ids:
+        return []
+    await db.execute(delete(FaceGalleryEmbedding).where(FaceGalleryEmbedding.student_staff_id.in_(ids)))
+    crop_keys = (
+        (await db.execute(delete(UnknownSighting).where(UnknownSighting.person_id.in_(ids)).returning(UnknownSighting.crop_key)))
+        .scalars()
+        .all()
+    )
+    return [key for key in crop_keys if key]
+
+
+def unique_keys(keys: Sequence[str | None]) -> list[str]:
+    """Bo'sh va takroriy kalitlarsiz: biriktirilgan kamera kadri odamning
+    asosiy rasmi ham bo'lishi mumkin (unknown_sightings.assign_to_person)."""
+    return list(dict.fromkeys(key for key in keys if key))
+
+
+async def finish_erasure(photo_keys: Sequence[str | None]) -> int:
     """Commit'dan keyin: rasmlarni ombordan o'chiradi va barcha
     jarayonlardagi yuz keshini yangilatadi — o'chirilgan odam keshda
     qolib, yana bir necha daqiqa tanilib yurmasligi uchun."""
-    deleted = await delete_files_quietly(photo_keys)
+    deleted = await delete_files_quietly(unique_keys(photo_keys))
     await announce_roster_change()
     return deleted
 
@@ -255,7 +289,53 @@ async def compute_overview(db: AsyncSession) -> dict:
             "biometric_retention_days_after_inactive": settings.biometric_retention_days_after_inactive,
             "access_event_retention_days": settings.access_event_retention_days,
             "notification_log_retention_days": settings.notification_log_retention_days,
+            "recording_retention_hours": settings.recording_retention_hours,
+            "event_clip_retention_days": settings.event_clip_retention_days,
         },
+    }
+
+
+#: "So'nggi ko'rinishlar" oynasi — maxfiylik sahifasidagi qisqa ko'rsatkich.
+RECENT_SIGHTINGS_DAYS = 30
+
+
+async def biometric_summary(db: AsyncSession, person: StudentStaff) -> dict:
+    """Odam haqida qaysi biometrik ma'lumot saqlanayotgani — o'chirishdan
+    oldin administrator nimani o'chirayotganini ko'rishi uchun."""
+    since = datetime.now(timezone.utc) - timedelta(days=RECENT_SIGHTINGS_DAYS)
+    gallery = (
+        await db.execute(
+            select(func.count()).select_from(FaceGalleryEmbedding).where(FaceGalleryEmbedding.student_staff_id == person.id)
+        )
+    ).scalar_one()
+    linked = (
+        await db.execute(select(func.count()).select_from(UnknownSighting).where(UnknownSighting.person_id == person.id))
+    ).scalar_one()
+    visits, sightings, last_seen = (
+        await db.execute(
+            select(
+                func.count().filter(PresenceVisit.first_seen_at >= since),
+                func.coalesce(func.sum(PresenceVisit.sightings).filter(PresenceVisit.first_seen_at >= since), 0),
+                func.max(PresenceVisit.last_seen_at),
+            ).where(PresenceVisit.student_staff_id == person.id)
+        )
+    ).one()
+    photo_url = None
+    if person.biometric_photo_key:
+        try:
+            photo_url = presigned_url(person.biometric_photo_key)
+        except Exception:
+            photo_url = None
+    return {
+        "photo_url": photo_url,
+        "face_template_stored": person.biometric_embedding is not None,
+        "biometrics_confirmed_at": person.biometrics_confirmed_at,
+        "gallery_samples": gallery,
+        "linked_sightings": linked,
+        "recent_days": RECENT_SIGHTINGS_DAYS,
+        "recent_visits": visits,
+        "recent_sightings": int(sightings or 0),
+        "last_seen_at": last_seen,
     }
 
 

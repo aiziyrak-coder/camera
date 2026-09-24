@@ -18,10 +18,12 @@ from app.models import (
     AttendanceRecord,
     AuditLog,
     Event,
+    FaceGalleryEmbedding,
     LessonAttendance,
     LessonSession,
     PresenceVisit,
     StudentStaff,
+    UnknownSighting,
 )
 from app.routers import enrollment
 from app.services import privacy as privacy_service
@@ -437,3 +439,111 @@ class TestExport:
         assert "0.1, 0.1" not in raw and "0.1,0.1" not in raw
 
         assert any("eksport" in a and person.full_name in a for a in await _audit_actions(db_session))
+
+
+async def _gallery_and_sighting(db_session, person, crop_key: str = "unknown/aziz-1.jpg") -> None:
+    now = datetime.now(timezone.utc)
+    db_session.add_all([
+        FaceGalleryEmbedding(
+            student_staff_id=person.id, embedding=EMBEDDING, anchor_hash="h" * 64, similarity=0.6, face_px=80
+        ),
+        FaceGalleryEmbedding(
+            student_staff_id=person.id, embedding=EMBEDDING, anchor_hash="h" * 64, similarity=0.55, face_px=70
+        ),
+        UnknownSighting(
+            day=now.date(), first_seen_at=now, last_seen_at=now, hits=2, embedding=EMBEDDING,
+            crop_key=crop_key, face_px=60, status="talaba", person_id=person.id,
+        ),
+    ])
+    await db_session.commit()
+
+
+async def _count(db_session, model, column, value) -> int:
+    return len((await db_session.execute(select(model).where(column == value))).scalars().all())
+
+
+@pytest.mark.usefixtures("seeded")
+class TestBiometricSamples:
+    async def test_erase_removes_gallery_samples_and_linked_camera_crops(
+        self, client: AsyncClient, db_session, fake_storage
+    ):
+        person = await _person(db_session)
+        # Biriktirilgan kadr asosiy rasm ham bo'lgan holat — ikki marta o'chirilmasin.
+        await _gallery_and_sighting(db_session, person, crop_key="biometrics/aziz.jpg")
+        other = await _person(db_session, full_name="Boshqa Odam", biometric_photo_key="biometrics/b.jpg")
+        await _gallery_and_sighting(db_session, other, crop_key="unknown/b.jpg")
+
+        resp = await client.post(f"/api/privacy/people/{person.id}/erase-biometrics", headers=await _admin(client))
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["photoDeleted"] is True
+        assert fake_storage == ["biometrics/aziz.jpg"]
+        gallery, sightings = FaceGalleryEmbedding, UnknownSighting
+        assert await _count(db_session, gallery, gallery.student_staff_id, person.id) == 0
+        assert await _count(db_session, sightings, sightings.person_id, person.id) == 0
+        # Boshqa odamning namunalari tegilmaydi.
+        assert await _count(db_session, gallery, gallery.student_staff_id, other.id) == 2
+        assert await _count(db_session, sightings, sightings.person_id, other.id) == 1
+
+    async def test_withdrawing_consent_also_removes_samples(self, client: AsyncClient, db_session, fake_storage):
+        person = await _person(db_session, consent_given_at=datetime.now(timezone.utc), consent_version="v1")
+        await _gallery_and_sighting(db_session, person)
+        resp = await client.delete(f"/api/privacy/people/{person.id}/consent", headers=await _admin(client))
+        assert resp.status_code == 200, resp.text
+        assert sorted(fake_storage) == ["biometrics/aziz.jpg", "unknown/aziz-1.jpg"]
+        gallery = FaceGalleryEmbedding
+        assert await _count(db_session, gallery, gallery.student_staff_id, person.id) == 0
+
+    async def test_partial_storage_failure_is_reported(self, client: AsyncClient, db_session, monkeypatch):
+        async def one_of_two(keys):
+            return 1
+
+        monkeypatch.setattr(privacy_service, "delete_files_quietly", one_of_two)
+        person = await _person(db_session)
+        await _gallery_and_sighting(db_session, person)
+        resp = await client.post(f"/api/privacy/people/{person.id}/erase-biometrics", headers=await _admin(client))
+        assert resp.json()["photoDeleted"] is False
+
+    async def test_biometrics_summary(self, client: AsyncClient, db_session):
+        now = datetime.now(timezone.utc)
+        person = await _person(db_session, biometrics_confirmed_at=now)
+        await _gallery_and_sighting(db_session, person)
+        db_session.add_all([
+            PresenceVisit(
+                student_staff_id=person.id, first_seen_at=now - timedelta(hours=2),
+                last_seen_at=now - timedelta(hours=1), sightings=4,
+            ),
+            PresenceVisit(
+                student_staff_id=person.id, first_seen_at=now - timedelta(days=1),
+                last_seen_at=now - timedelta(days=1), sightings=2,
+            ),
+            # 30 kunlik oynadan tashqarida — sanoqqa kirmaydi.
+            PresenceVisit(
+                student_staff_id=person.id, first_seen_at=now - timedelta(days=90),
+                last_seen_at=now - timedelta(days=90), sightings=9,
+            ),
+        ])
+        await db_session.commit()
+
+        resp = await client.get(f"/api/privacy/people/{person.id}/biometrics", headers=await _admin(client))
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["person"]["id"] == str(person.id)
+        assert body["photoUrl"] == "https://storage.test/biometrics/aziz.jpg"
+        assert body["faceTemplateStored"] is True
+        assert body["gallerySamples"] == 2
+        assert body["linkedSightings"] == 1
+        assert body["recentVisits"] == 2
+        assert body["recentSightings"] == 6
+        assert body["lastSeenAt"] is not None
+        assert any("ko'rildi" in a for a in await _audit_actions(db_session))
+
+    async def test_biometrics_summary_requires_login(self, client: AsyncClient, db_session):
+        person = await _person(db_session)
+        resp = await client.get(f"/api/privacy/people/{person.id}/biometrics")
+        assert resp.status_code == 401
+
+    async def test_overview_lists_video_retention(self, client: AsyncClient):
+        resp = await client.get("/api/privacy/overview", headers=await _admin(client))
+        retention = resp.json()["retention"]
+        assert retention["recordingRetentionHours"] == settings.recording_retention_hours
+        assert retention["eventClipRetentionDays"] == settings.event_clip_retention_days
