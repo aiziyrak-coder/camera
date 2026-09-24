@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
 from app.database import SessionLocal
+from app.jobs.attendance_ai import is_watched
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import (
     camera_allows_module,
@@ -285,10 +286,15 @@ async def run_unified_face_sweep_once(
             # o'chirilgan kameralar HAM qatnashadi — ular aynan yuzi
             # kiritilmagan talabalar ko'p ko'rinadigan joylar, ro'yxat esa
             # hech kimni bezovta qilmaydi va qamrovni o'stirish manbai.
+            # Davomat kuzatuvchisi bu kamerani allaqachon tahlil qilsa, u
+            # notanish yuzlarni o'zi yozadi (attendance_ai._review_unknown_faces)
+            # — bu yerda o'sha kamerani ikkinchi marta tahlil qilish AI
+            # vaqtini behuda yeydi.
             "review": flags["unauthorized"]
             and settings.unknown_review_enabled
             and not alert_time
-            and eligible,
+            and eligible
+            and not (settings.unknown_review_all_cameras and is_watched(camera_id)),
             "sleep": flags["sleep"]
             and role_allows(camera, SLEEP_MODULE_CODE)
             and (lesson_cameras is None or camera_id in lesson_cameras)

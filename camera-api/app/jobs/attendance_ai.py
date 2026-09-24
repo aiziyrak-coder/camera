@@ -47,6 +47,7 @@ from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import camera_allows_module, is_module_active
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot, entrance_exit_sweep_slot
+from app.services.camera_pacing import CameraPacer
 from app.models import AttendanceRecord, AuditLog, Camera, StudentStaff
 from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, find_best_match as _vectorized_find_best_match, load_candidate_matrix_for_sweep
@@ -669,6 +670,14 @@ async def process_camera_frame(
     if static_pass:
         _note_static_faces(camera, camera_key, faces, matched_boxes)
 
+    if camera is not None:
+        try:
+            await _review_unknown_faces(db, camera, frame_bytes, usable, graded, candidates)
+        except Exception:
+            # Ro'yxat — qo'shimcha. Uning xatosi davomatni buzmasligi kerak.
+            await db.rollback()
+            logger.warning("unknown-face review failed", exc_info=True)
+
     if allow_zoom:
         # Zoom — ODATDAGI tekshiruvga qo'shimcha. Uning har qanday xatosi
         # (4K oqim ulanmadi, detektor yiqildi) shu kadrda ALLAQACHON
@@ -693,6 +702,55 @@ async def process_camera_frame(
         except Exception:
             logger.warning("zoom pass failed; keeping the substream result", exc_info=True)
     return records
+
+
+_review_module_cache: dict[str, tuple[float, bool]] = {}
+
+
+async def _review_module_on(db: AsyncSession) -> bool:
+    """Begona shaxs moduli yoqilganmi — har kadrda bazaga bormaslik uchun 60 s kesh."""
+    import time as _time
+
+    from app.jobs.module_status import is_module_active
+
+    now = _time.monotonic()
+    cached = _review_module_cache.get("on")
+    if cached is not None and now - cached[0] < 60:
+        return cached[1]
+    value = await is_module_active(db, 1)
+    _review_module_cache["on"] = (now, value)
+    return value
+
+
+async def _review_unknown_faces(db, camera: Camera, frame_bytes: bytes, usable: list, graded: list, candidates) -> None:
+    """Kunduzi: davomat skaneri tanimagan, lekin ANIQ ko'ringan yuzlarni
+    notanishlar ro'yxatiga yozadi (app/services/unknown_sightings.py).
+
+    Faqat sifatli yuz: yetarlicha yirik, oldidan ko'ringan (face_quality_ok),
+    va yumshoq moslik kutayotgan emas (u ehtimol tanish odam). Devordagi
+    rasmlar bu yerga yetib kelmaydi — static_faces ularni oldinroq chiqaradi."""
+    if not (settings.unknown_review_enabled and settings.unknown_review_all_cameras):
+        return
+    from app.jobs.module_status import is_unauthorized_alert_time
+
+    if is_unauthorized_alert_time():
+        return  # kechasi — signal rejimi, ro'yxat emas
+    unknown = [
+        face
+        for face, match in zip(usable, graded, strict=True)
+        if match.person_id is None
+        and recognition_stats.face_height_px(face) >= settings.unknown_review_min_face_px
+        and face_quality_ok(face)
+    ]
+    if not unknown or not await _review_module_on(db):
+        return
+    from app.services.unknown_sightings import record_unknown_faces
+
+    closest = None
+    if not candidates.is_empty:
+        _idx, best_sim, _second = candidates.top_two(np.stack([face.embedding for face in unknown]))
+        closest = [round(max(0.0, float(value)), 3) for value in best_sim]
+    await record_unknown_faces(db, camera, frame_bytes, unknown, closest)
 
 
 def _note_static_faces(camera: Camera | None, camera_key: str | None, faces: list, matched_boxes: list) -> None:
@@ -1203,6 +1261,7 @@ async def _watch_entrance_camera(camera: Camera, watcher: _EntranceWatcher) -> N
     gate = MotionGate()
     roi = face_roi_box(camera)
     tracked: tuple = ()
+    pacer = CameraPacer(exempt=bool(camera.is_entrance or camera.is_exit))
     if not (camera.is_entrance or camera.is_exit or camera.is_perimeter):
         # Xona kameralari kirish eshiklaridan keyin (config izohi:
         # room_watcher_start_delay_seconds). Kutish paytida ham "tirik" —
@@ -1239,6 +1298,7 @@ async def _watch_entrance_camera(camera: Camera, watcher: _EntranceWatcher) -> N
                 tracked = ()  # eshik bo'sh — kuzatuv uziladi
                 continue
             identified: list = []
+            useful_before = _useful_face_total(key)
             watcher.matched += await _analyse_entrance_frame(
                 camera, frame, context, skip_boxes=tracked, identified_boxes=identified
             )
@@ -1248,11 +1308,30 @@ async def _watch_entrance_camera(camera: Camera, watcher: _EntranceWatcher) -> N
                 key, total_seconds=now - previous_analysis, grab_seconds=grab_seconds, stream=stream_label(camera)
             )
             previous_analysis = now
+            # Yaroqli yuz bermagan kamera navbatni boshqalarga bo'shatadi
+            # (app/services/camera_pacing.py). Kutish paytida ham "tirik".
+            idle = pacer.note(_useful_face_total(key) - useful_before)
+            if idle > 0:
+                recognition_stats.record_idle(key, idle)
+                deadline = monotonic() + idle
+                while monotonic() < deadline:
+                    watcher.last_progress = monotonic()
+                    await asyncio.sleep(min(5.0, max(0.0, deadline - monotonic())))
+                last_seq = None  # kutishdan keyin eng yangi kadr olinadi
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("entrance/exit watcher failed on a frame", extra={"camera_id": key})
             await asyncio.sleep(ENTRANCE_ERROR_PAUSE_SECONDS)
+
+
+def _useful_face_total(camera_key: str) -> int:
+    """Bugun shu kamerada tahlilga yaroqli bo'lgan yuzlar soni: yetarlicha
+    yirik yuzlar va zoom (4K) orqali olinganlari."""
+    stats = recognition_stats.snapshot(camera_key)
+    if stats is None:
+        return 0
+    return (stats.faces - stats.small_faces) + stats.zoom_faces
 
 
 def _reconcile_entrance_watchers(cameras: list[Camera], start=_watch_entrance_camera) -> int:
@@ -1323,6 +1402,12 @@ async def run_entrance_exit_attendance_dispatch_once(
         off_hours_active=off_hours_active,
     )
     return _reconcile_entrance_watchers([] if candidates.is_empty else cameras)
+
+
+def is_watched(camera_id: str) -> bool:
+    """Shu kamerani davomat kuzatuvchisi tahlil qilyaptimi."""
+    watcher = _entrance_watchers.get(camera_id)
+    return watcher is not None and watcher.task is not None and not watcher.task.done()
 
 
 def entrance_watcher_count() -> int:

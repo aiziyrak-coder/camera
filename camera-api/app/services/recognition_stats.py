@@ -68,6 +68,10 @@ class CameraRecognitionStats:
     # va allaqachon tanilgan odam sifatida qayta hisoblanmagan yuzlar (tracking).
     motion_skipped: int = 0
     tracked_faces: int = 0
+    # Yaroqli yuz bermagani uchun navbatni bo'shatib kutgan marta va
+    # soniyalar (app/services/camera_pacing.py).
+    idle_waits: int = 0
+    idle_seconds: float = 0.0
     # Asosiy oqimdan yaqinlashtirib tanish (app/services/face_zoom.py):
     # nechta 4K kadr olindi, unda nechta yuz topildi, nechtasi davomatga
     # yozildi va o'sha yuzlar necha piksel edi. Aynan shu to'rt raqam
@@ -208,6 +212,14 @@ def record_motion_skip(camera_id: str | None) -> None:
     _camera_stats(camera_id).motion_skipped += 1
 
 
+def record_idle(camera_id: str | None, seconds: float) -> None:
+    if camera_id is None or seconds <= 0:
+        return
+    stats = _camera_stats(camera_id)
+    stats.idle_waits += 1
+    stats.idle_seconds += seconds
+
+
 def record_tracked(camera_id: str | None, count: int) -> None:
     if camera_id is None or count <= 0:
         return
@@ -304,6 +316,8 @@ class RecognitionView:
     stream: str | None = None
     motion_skipped: int = 0
     tracked_faces: int = 0
+    idle_waits: int = 0
+    idle_seconds: float = 0.0
     zoom_attempts: int = 0
     zoom_faces: int = 0
     zoom_matches: int = 0
@@ -349,6 +363,8 @@ def export_snapshot() -> dict[str, dict]:
             "stream": s.stream,
             "motion_skipped": s.motion_skipped,
             "tracked_faces": s.tracked_faces,
+            "idle_waits": s.idle_waits,
+            "idle_seconds": round(s.idle_seconds, 1),
             "zoom_attempts": s.zoom_attempts,
             "zoom_faces": s.zoom_faces,
             "zoom_matches": s.zoom_matches,
@@ -391,6 +407,8 @@ def view_from_dict(row: dict) -> RecognitionView | None:
         stream=row.get("stream"),
         motion_skipped=int(row.get("motion_skipped", 0)),
         tracked_faces=int(row.get("tracked_faces", 0)),
+        idle_waits=int(row.get("idle_waits", 0)),
+        idle_seconds=float(row.get("idle_seconds", 0.0)),
         zoom_attempts=int(row.get("zoom_attempts", 0)),
         zoom_faces=int(row.get("zoom_faces", 0)),
         zoom_matches=int(row.get("zoom_matches", 0)),

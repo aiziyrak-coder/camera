@@ -557,6 +557,20 @@ class Settings(BaseSettings):
     # deydi. Sabab: talabalarning ko'pchiligining yuzi hali tizimda yo'q,
     # kunduzgi signal ularni "begona" deb chalardi.
     unknown_review_enabled: bool = True
+    # Sinf va boshqa ichki kameralar ham ro'yxatga yozadi — davomat
+    # skaneri ALLAQACHON topgan yuzlardan (qo'shimcha kadr/tahlil yo'q).
+    unknown_review_all_cameras: bool = True
+    # Ro'yxatga faqat tanib olsa bo'ladigan yuz tushadi: operator mayda
+    # yoki pastga qaragan yuzni baribir taniy olmaydi, ro'yxat esa
+    # axlatga to'lib, foydasi yo'qoladi.
+    unknown_review_min_face_px: int = 40
+    # Kamera kuzatuvchilarining sur'ati (app/services/camera_pacing.py):
+    # yaroqli yuz ko'rmagan kamera kutadi, bo'shagan AI vaqti yuz
+    # ko'rayotgan kameralarga o'tadi. Kirish/chiqish kameralari kutmaydi.
+    pacing_enabled: bool = True
+    pacing_idle_after: int = 3
+    pacing_idle_base_seconds: float = 20.0
+    pacing_idle_max_seconds: float = 150.0  # entrance_watcher_stall_seconds dan kichik
     # Operator kuzatayotgan kameraning yuz belgilari asosiy (4K) oqimdan
     # olinadi. O'lchov (2026-09-24, "2-xona", ~20 talaba): kichik oqimda
     # 10 yuzdan faqat 3 tasi tahlilga yaradi (10-20 px), 4K da — 10 tasi

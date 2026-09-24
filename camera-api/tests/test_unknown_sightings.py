@@ -232,3 +232,54 @@ async def test_api_stranger_raises_event(client: AsyncClient, db_session, camera
 async def test_api_requires_review_permission(client: AsyncClient):
     res = await client.get("/api/notanishlar")
     assert res.status_code in (401, 403)
+
+
+# ─────────────── Sinf kameralari: davomat skaneri topgan yuzlardan
+
+class _Match:
+    def __init__(self, person_id=None):
+        self.person_id = person_id
+
+
+class _Cands:
+    is_empty = False
+
+    def top_two(self, embeddings):
+        return None, np.array([0.18] * len(embeddings)), np.zeros(len(embeddings))
+
+
+async def _review(db_session, camera, monkeypatch, faces, matches, *, night=False, module_on=True, quality=True):
+    from app.jobs import attendance_ai, module_status
+
+    monkeypatch.setattr(module_status, "is_unauthorized_alert_time", lambda: night)
+    monkeypatch.setattr(attendance_ai, "face_quality_ok", lambda face: quality)
+
+    async def fake_active(db, code):
+        return module_on
+
+    monkeypatch.setattr(module_status, "is_module_active", fake_active)
+    attendance_ai._review_module_cache.clear()
+    await attendance_ai._review_unknown_faces(db_session, camera, _frame(), faces, matches, _Cands())
+    return (await db_session.execute(select(UnknownSighting))).scalars().all()
+
+
+async def test_classroom_unknown_face_goes_to_review(db_session, camera, monkeypatch):
+    rows = await _review(db_session, camera, monkeypatch, [_face(_vec(90), height=80)], [_Match()])
+    assert len(rows) == 1
+    assert rows[0].closest_similarity == 0.18
+
+
+async def test_recognised_face_is_not_listed(db_session, camera, monkeypatch):
+    rows = await _review(db_session, camera, monkeypatch, [_face(_vec(91), height=80)], [_Match("someone")])
+    assert rows == []
+
+
+async def test_small_or_blurry_face_is_not_listed(db_session, camera, monkeypatch):
+    """Operator mayda yoki pastga qaragan yuzni baribir taniy olmaydi."""
+    assert await _review(db_session, camera, monkeypatch, [_face(_vec(92), height=20)], [_Match()]) == []
+    assert await _review(db_session, camera, monkeypatch, [_face(_vec(93), height=80)], [_Match()], quality=False) == []
+
+
+async def test_night_and_disabled_module_do_not_list(db_session, camera, monkeypatch):
+    assert await _review(db_session, camera, monkeypatch, [_face(_vec(94), height=80)], [_Match()], night=True) == []
+    assert await _review(db_session, camera, monkeypatch, [_face(_vec(95), height=80)], [_Match()], module_on=False) == []
