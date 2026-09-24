@@ -159,7 +159,9 @@ export default function LiveVideoPlayer({
   unavailableRef.current = onStreamUnavailable;
   const hlsRetriesRef = useRef(0); // HLS.js's own in-attempt network/media recovery count
   const attemptRef = useRef(0); // how many whole attach cycles have been tried, for backoff + the error threshold
-  const detection = useLiveDetection(cameraId, showDetections && !error);
+  // Video qaysi yo'l bilan ulangan — skaner so'roviga qo'shiladi.
+  const playerModeRef = useRef<'webrtc' | 'hls' | null>(null);
+  const detection = useLiveDetection(cameraId, showDetections && !error, () => playerModeRef.current);
   const onDetectionRef = useRef(onDetection);
   onDetectionRef.current = onDetection;
   useEffect(() => {
@@ -299,6 +301,7 @@ export default function LiveVideoPlayer({
           return true;
         }
         webrtc = session;
+        playerModeRef.current = 'webrtc';
         noteWebrtcResult(true);
         session.onFailure(() => {
           if (!cancelled) scheduleRetry();
@@ -335,6 +338,7 @@ export default function LiveVideoPlayer({
       }, LOAD_TIMEOUT_MS);
       if (await attachWebrtc()) return;
       if (cancelled) return;
+      playerModeRef.current = 'hls';
       const isHls = streamUrl!.endsWith('.m3u8');
 
       // HLS uchun HAR DOIM avval hls.js sinaladi; brauzerning o'z HLS
@@ -369,6 +373,13 @@ export default function LiveVideoPlayer({
           // Avval bu yerda 3 turardi va aynan shu sababli server 0.6
           // soniyalik kechikish taklif qilib turganda pleyer jonli
           // chekkadan 11 soniya orqada qotib qolgan edi.
+          // HLS endi faqat WebRTC ishlamagan joyda (LAN tashqarisi). MediaMTX
+          // fmp4 variantida LL-HLS qismlari yo'q, ya'ni PART-HOLD-BACK ham
+          // yo'q va hls.js standart 3 x segment (~6 s) orqada turardi.
+          // Bo'laklar 1-2 s — 3 s zaxira pleylistning bitta kechikishiga
+          // ham chidaydi, 7 s dan orqada qolsa jonli chekkaga sakraydi.
+          liveSyncDuration: 3,
+          liveMaxLatencyDuration: 7,
           maxLiveSyncPlaybackRate: 1.5,
           backBufferLength: 0,
           // Oldinga buferni kichik ushlaymiz: katta bufer sekin tarmoqda

@@ -274,7 +274,7 @@ class TestWhichStreamIsInUse:
     def test_labels_follow_the_fallback(self):
         from app.services import frame_grabber
 
-        entrance, room = _camera("e"), _camera("r", is_entrance=False, is_exit=False)
+        entrance, room = _camera("e"), _camera("r", name="2-xona", is_entrance=False, is_exit=False)
         assert frame_grabber.stream_label(entrance) == "asosiy"
         assert frame_grabber.stream_label(room) == "substream"
 
@@ -397,7 +397,7 @@ class TestRealTime:
     async def test_a_watched_camera_never_waits_and_feeds_the_scanner(self, monkeypatch):
         from app.services import live_focus
 
-        room = _camera("room-1", is_entrance=False, is_exit=False)
+        room = _camera("room-1", name="1-xona", is_entrance=False, is_exit=False)
         await live_focus.mark_focus("room-1")
         monkeypatch.setattr(attendance_ai, "jpeg_dimensions", lambda _frame: (1280, 720))
 
@@ -411,7 +411,7 @@ class TestRealTime:
         assert payload["faces"][0]["status"] == "notanish"
 
     async def test_motion_wakes_an_idle_camera(self, monkeypatch):
-        room = _camera("room-2", is_entrance=False, is_exit=False)
+        room = _camera("room-2", name="2-xona", is_entrance=False, is_exit=False)
         monkeypatch.setattr(attendance_ai, "_useful_face_total", lambda key: 1)  # kamera "hosildor"
         monkeypatch.setattr(attendance_ai, "camera_video_source", lambda camera: "src")
         monkeypatch.setattr(attendance_ai, "peek_cached_frame", lambda source: b"peek")

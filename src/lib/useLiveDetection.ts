@@ -19,13 +19,22 @@ const POLL_INTERVAL_MS = 1000;
  * admin CameraConfigDetailModal calls it the same way. Polling only while a
  * camera is actually being watched (`enabled`) still matters: each call keeps
  * that camera in the AI's real-time focus. */
-export function useLiveDetection(cameraId: string | undefined, enabled: boolean) {
+export function useLiveDetection(
+  cameraId: string | undefined,
+  enabled: boolean,
+  /** Video qaysi yo'l bilan kelyapti — server faqat HLS uchun vaqt farqini o'lchaydi. */
+  getPlayer?: () => 'webrtc' | 'hls' | null,
+) {
   const [result, setResult] = useState<LiveDetectionResult | null>(null);
   const [slotDenied, setSlotDenied] = useState(false);
   const inFlight = useRef(false);
   const hasSlot = useRef(false);
   const abort = useRef<AbortController | null>(null);
   const [polling, setPolling] = useState(false);
+
+  // Ref orqali: har renderda yangi funksiya kelsa ham so'rov tsikli qayta tuzilmaydi.
+  const getPlayerRef = useRef(getPlayer);
+  getPlayerRef.current = getPlayer;
 
   const poll = useCallback(async () => {
     if (!cameraId || inFlight.current) return;
@@ -34,7 +43,9 @@ export function useLiveDetection(cameraId: string | undefined, enabled: boolean)
     abort.current = controller;
     try {
       const sentAt = Date.now();
-      const res = await api.get<LiveDetectionResult>(`/api/public/cameras/${cameraId}/live-detection`, undefined, {
+      const player = getPlayerRef.current?.();
+      const query = player ? `?player=${player}` : '';
+      const res = await api.get<LiveDetectionResult>(`/api/public/cameras/${cameraId}/live-detection${query}`, undefined, {
         signal: controller.signal,
       });
       noteServerTime(res.serverTime, sentAt, Date.now());

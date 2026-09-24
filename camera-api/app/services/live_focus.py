@@ -30,6 +30,9 @@ from app.config import settings
 logger = logging.getLogger("app.live_focus")
 
 _FOCUS_KEY = "camera:focus"  # zset: camera_id -> amal qilish muddati (epoch)
+# Shu kameralarni operator HLS orqali ko'ryapti (WebRTC ishlamagan) — faqat
+# ularda video soati farqi o'lchanadi (app/services/live_clock.py).
+_HLS_KEY = "camera:focus:hls"
 _RESULT_PREFIX = "camera:live:"
 _HISTORY_SUFFIX = ":h"
 # Brauzer ramkalarni ikki natija orasida silliq siljitadi (interpolatsiya) —
@@ -37,6 +40,8 @@ _HISTORY_SUFFIX = ":h"
 HISTORY_LENGTH = 10
 
 _focus_local: dict[str, float] = {}
+_hls_local: dict[str, float] = {}
+_hls_snapshot: tuple[float, frozenset[str]] = (0.0, frozenset())
 _results_local: dict[str, dict] = {}
 _history_local: dict[str, deque] = {}
 # ai-worker har kadrda Redis'ga murojaat qilmasin: ro'yxat qisqa muddat eslanadi.
@@ -65,17 +70,23 @@ async def _get_redis():
     return _redis
 
 
-async def mark_focus(camera_id: str) -> None:
-    """Operator shu kamerani ko'ryapti — keyingi live_focus_ttl_seconds davomida."""
+async def mark_focus(camera_id: str, *, hls: bool = False) -> None:
+    """Operator shu kamerani ko'ryapti — keyingi live_focus_ttl_seconds davomida.
+    `hls` — video HLS orqali (vaqt belgisi farqini o'lchash kerak)."""
     until = time.time() + settings.live_focus_ttl_seconds
     client = await _get_redis()
     if client is None:
         _focus_local[camera_id] = until
+        if hls:
+            _hls_local[camera_id] = until
         return
     try:
         async with client.pipeline(transaction=False) as pipe:
             pipe.zadd(_FOCUS_KEY, {camera_id: until})
             pipe.zremrangebyscore(_FOCUS_KEY, "-inf", time.time())
+            if hls:
+                pipe.zadd(_HLS_KEY, {camera_id: until})
+            pipe.zremrangebyscore(_HLS_KEY, "-inf", time.time())
             await pipe.execute()
     except Exception:
         logger.warning("live focus: mark failed", exc_info=True)
@@ -104,6 +115,24 @@ async def focused_cameras() -> frozenset[str]:
 
 async def is_focused(camera_id: str) -> bool:
     return camera_id in await focused_cameras()
+
+
+async def watched_over_hls(camera_id: str) -> bool:
+    """Operator bu kamerani HLS orqali ko'ryaptimi (qisqa muddat eslanadi)."""
+    global _hls_snapshot
+    now = time.time()
+    fetched_at, cameras = _hls_snapshot
+    if now - fetched_at >= settings.live_focus_poll_seconds:
+        client = await _get_redis()
+        if client is None:
+            cameras = frozenset(cid for cid, until in _hls_local.items() if until > now)
+        else:
+            try:
+                cameras = frozenset(await client.zrangebyscore(_HLS_KEY, now, "+inf"))
+            except Exception:
+                logger.warning("live focus: hls read failed", exc_info=True)
+        _hls_snapshot = (now, cameras)
+    return camera_id in cameras
 
 
 async def publish_result(camera_id: str, payload: dict) -> None:
@@ -165,7 +194,9 @@ async def latest_result(camera_id: str, *, max_age_seconds: float) -> dict | Non
 
 
 def reset_for_tests() -> None:
-    global _focus_snapshot, _redis, _redis_tried
+    global _focus_snapshot, _hls_snapshot, _redis, _redis_tried
+    _hls_local.clear()
+    _hls_snapshot = (0.0, frozenset())
     _focus_local.clear()
     _results_local.clear()
     _history_local.clear()

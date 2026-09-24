@@ -1661,9 +1661,9 @@ async def _watch_entrance_camera(camera: Camera, watcher: _EntranceWatcher) -> N
                 previous_overlay = overlay
                 frame_time = captured_at(last_seq)
                 payload = _overlay_payload(frame, overlay, source=label, captured_at=frame_time)
-                if live:
-                    # Brauzer videosi bilan vaqt farqi — harakatli kadrda o'lchanadi
-                    # (app/services/live_clock.py).
+                if live and await live_focus.watched_over_hls(key):
+                    # Brauzer HLS videosi bilan vaqt farqi — harakatli kadrda
+                    # o'lchanadi (app/services/live_clock.py). WebRTC'da kerak emas.
                     hls_url = public_hls_to_internal(camera.stream_url) if getattr(camera, "stream_url", None) else None
                     live_clock.calibrator.maybe_measure(key, hls_url, frame, frame_time)
                     offset = live_clock.calibrator.offset_ms(key)

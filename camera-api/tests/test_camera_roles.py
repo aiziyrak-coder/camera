@@ -178,3 +178,19 @@ class TestRolesCsv:
             await client.patch(f"/api/cameras/{camera.id}/location", headers=headers, json={"clearRoomType": True})
         ).json()
         assert (out["roomType"], out["effectiveRoomType"]) == (None, "kirish")
+
+
+def test_entrance_is_recognised_by_name():
+    from types import SimpleNamespace
+
+    from app.services.camera_roles import is_door_camera
+
+    def cam(name, room_type=None):
+        return SimpleNamespace(name=name, room_type=room_type, is_entrance=False, is_exit=False)
+
+    assert is_door_camera(cam("Asosiy kirish"))
+    assert is_door_camera(cam("2-KIRISH"))
+    assert not is_door_camera(cam("1-xona koridori"))
+    assert not is_door_camera(cam("Kirish koridori"))  # yo'lak, eshik emas
+    assert not is_door_camera(cam("Asosiy kirish", room_type="auditoriya"))  # tur aniq berilgan
+    assert not is_door_camera(cam("IPC-T280HA-LUF/SL (192.168.0.12)"))

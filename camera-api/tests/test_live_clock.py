@@ -49,3 +49,13 @@ async def test_calibrator_smooths_and_ignores_empty_measurements(monkeypatch):
     # 1000 -> (bo'sh o'lchov e'tiborsiz) -> 0.6*1000 + 0.4*2000
     assert calibrator.offset_ms("cam") == 1400
     assert calibrator.offset_ms("other") is None
+
+
+async def test_clock_is_measured_only_for_hls_viewers():
+    from app.services import live_focus
+
+    await live_focus.mark_focus("webrtc-cam")
+    await live_focus.mark_focus("hls-cam", hls=True)
+    assert await live_focus.is_focused("webrtc-cam") and await live_focus.is_focused("hls-cam")
+    assert not await live_focus.watched_over_hls("webrtc-cam")
+    assert await live_focus.watched_over_hls("hls-cam")

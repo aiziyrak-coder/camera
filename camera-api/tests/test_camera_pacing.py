@@ -86,14 +86,14 @@ class TestWatcherPacing:
         return sleeps, recognition_stats.export_snapshot().get(str(camera.id), {})
 
     async def test_room_without_faces_yields_its_turn(self, monkeypatch):
-        room = _camera("xona-1", is_entrance=False, is_exit=False)
+        room = _camera("xona-1", name="1-xona", is_entrance=False, is_exit=False)
         sleeps, stats = await self._run(monkeypatch, room, [0, 0, 0, 0])
         # 3- va 4-bo'sh kadrdan keyin kutadi (20 s, 40 s — 5 s lik bo'laklarda).
         assert sum(sleeps) == pytest.approx(60.0)
         assert stats["idle_waits"] == 2 and stats["idle_seconds"] == 60.0
 
     async def test_busy_room_never_waits(self, monkeypatch):
-        room = _camera("xona-2", is_entrance=False, is_exit=False)
+        room = _camera("xona-2", name="2-xona", is_entrance=False, is_exit=False)
         sleeps, stats = await self._run(monkeypatch, room, [2, 1, 3, 1])
         assert sleeps == []
         assert stats["idle_waits"] == 0

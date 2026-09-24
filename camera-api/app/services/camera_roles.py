@@ -80,13 +80,31 @@ def effective_room_type(camera) -> str | None:
     return None
 
 
+# Kamera NOMIDAN eshik kamerasini tanish: "Asosiy kirish", "2-kirish",
+# "Entrance", "Вход". Productionda (2026-09-24) 107 kameradan birortasi ham
+# kirish deb belgilanmagan, "Asosiy kirish" esa oddiy xona kamerasi kabi
+# navbat kutib, substreamda tahlil qilinardi. "koridor" so'zi bo'lsa — bu
+# yo'lak kamerasi, eshik emas.
+_DOOR_NAME = re.compile(r"(?<![a-z])(kirish|entrance|vxod|вход)(?![a-z])", re.IGNORECASE)
+_NOT_DOOR_NAME = re.compile(r"koridor|yo'lak", re.IGNORECASE)
+
+
+def door_by_name(name: str | None) -> bool:
+    return bool(name) and bool(_DOOR_NAME.search(name)) and not _NOT_DOOR_NAME.search(name)
+
+
 def is_door_camera(camera) -> bool:
-    """Eshik kamerasi: kirish/chiqish bayrog'i YOKI "kirish" turi. Bunday
-    kamera asosiy (4K) oqimda, navbatsiz tahlil qilinadi — odam eshikdan
-    2-3 s da o'tadi va yuzi faqat shu yerda oldidan ko'rinadi."""
+    """Eshik kamerasi: kirish/chiqish bayrog'i, "kirish" turi yoki nomida
+    "kirish" (tur aniq boshqa deb belgilanmagan bo'lsa). Bunday kamera asosiy
+    (4K) oqimda, navbatsiz tahlil qilinadi — odam eshikdan 2-3 s da o'tadi va
+    yuzi faqat shu yerda oldidan ko'rinadi."""
     if getattr(camera, "is_entrance", False) is True or getattr(camera, "is_exit", False) is True:
         return True
-    return getattr(camera, "room_type", None) == "kirish"
+    room_type = getattr(camera, "room_type", None)
+    if room_type == "kirish":
+        return True
+    name = getattr(camera, "name", None)
+    return room_type in (None, "") and isinstance(name, str) and door_by_name(name)
 
 
 ATTENDANCE_MODULE_CODES = frozenset({6, 7})

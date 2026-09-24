@@ -317,7 +317,11 @@ async def _await_watcher_result(camera_id: str) -> dict | None:
 # Natija keshdan o'qiladi (arzon) — skaner har ~1.5 s da so'raydi.
 @limiter.limit("90/minute")
 async def get_live_detection(
-    request: Request, camera_id: str, db: Annotated[AsyncSession, Depends(get_db)], viewer: Viewer
+    request: Request,
+    camera_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    viewer: Viewer,
+    player: Annotated[str | None, Query(max_length=10)] = None,
 ) -> LiveDetectionOut:
     """A one-shot snapshot of what the AI currently sees on this camera —
     grabs a fresh frame and runs the same detection/matching InsightFace
@@ -343,7 +347,7 @@ async def get_live_detection(
     # tahlil qiladi va natijani yozib boradi (app/services/live_focus.py).
     # So'rov o'sha natijani o'qiydi — o'zi kadr olmaydi va tahlil qilmaydi.
     key = str(camera.id)
-    await live_focus.mark_focus(key)
+    await live_focus.mark_focus(key, hls=player == "hls")
     payload = await _await_watcher_result(key)
     if payload is not None:
         history = await live_focus.recent_results(key, max_age_seconds=_HISTORY_MAX_AGE_SECONDS)
