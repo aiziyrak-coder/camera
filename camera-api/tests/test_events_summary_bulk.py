@@ -30,7 +30,7 @@ async def cameras(db_session, seeded):
     return entrance, corridor
 
 
-def make(camera, *, when=None, severity="past", status="yangi", code=17, building="1-bino", person=None, reviewed_at=None):
+def make(camera, *, when=None, severity="past", status="yangi", code=20, building="1-bino", person=None, reviewed_at=None):
     return Event(
         occurred_at=when or datetime.now(timezone.utc), camera_id=camera.id, camera_name=camera.name,
         building=building, module_code=code, module_name=f"Modul {code}", group="D", confidence=60,
@@ -45,9 +45,9 @@ class TestSummary:
         now = datetime.now(timezone.utc)
         occurred = now - timedelta(hours=2)
         db_session.add_all([
-            make(entrance, severity="yuqori", code=14),
-            make(entrance, when=now - timedelta(hours=30), severity="o'rta", code=15),
-            make(corridor, when=occurred, status="tasdiqlangan", code=17, building="2-bino",
+            make(entrance, severity="yuqori", code=21),
+            make(entrance, when=now - timedelta(hours=30), severity="o'rta", code=19),
+            make(corridor, when=occurred, status="tasdiqlangan", code=20, building="2-bino",
                  reviewed_at=occurred + timedelta(minutes=20)),
         ])
         await db_session.commit()
@@ -62,7 +62,7 @@ class TestSummary:
         assert body["avgReviewMinutes"] == pytest.approx(20.0, abs=0.2)
         assert body["recentPrecision"] is None  # bitta ko'rib chiqilgan — foiz emas
         modules = {m["value"]: m for m in body["modules"]}
-        assert modules["14"]["label"] == "Modul 14" and modules["14"]["count"] == 1
+        assert modules["21"]["label"] == "Modul 21" and modules["21"]["count"] == 1
         buildings = {b["value"]: b["count"] for b in body["buildings"]}
         assert buildings == {"1-bino": 2, "2-bino": 1}
 
@@ -133,11 +133,11 @@ class TestFilters:
     async def test_modules_building_search_dates_and_severity_sort(self, client: AsyncClient, db_session, cameras):
         entrance, corridor = cameras
         db_session.add_all([
-            make(entrance, when=local_moment(DAY, 1, 0), severity="past", code=14),
-            make(entrance, when=local_moment(DAY, 12, 0), severity="yuqori", code=15),
-            make(corridor, when=local_moment(DAY, 13, 0), severity="o'rta", code=17, building="2-bino",
+            make(entrance, when=local_moment(DAY, 1, 0), severity="past", code=21),
+            make(entrance, when=local_moment(DAY, 12, 0), severity="yuqori", code=19),
+            make(corridor, when=local_moment(DAY, 13, 0), severity="o'rta", code=20, building="2-bino",
                  person="Soxtaov Xodim"),
-            make(entrance, when=local_moment(DAY - timedelta(days=1), 23, 30), code=14),
+            make(entrance, when=local_moment(DAY - timedelta(days=1), 23, 30), code=21),
         ])
         await db_session.commit()
         headers = await auth_headers(client, "admin", "admin123")
@@ -149,7 +149,7 @@ class TestFilters:
 
         day = DAY.isoformat()
         assert len(await ids_for(**{"from": day, "to": day})) == 3  # oldingi kun 23:30 kirmaydi
-        assert len(await ids_for(moduleCodes="14,15")) == 3
+        assert len(await ids_for(moduleCodes="21,19")) == 3
         assert [e["building"] for e in await ids_for(building="2-bino")] == ["2-bino"]
         assert [e["cameraName"] for e in await ids_for(search="Koridor")] == ["Koridor-B"]
         assert [e["personName"] for e in await ids_for(search="Soxtaov")] == ["Soxtaov Xodim"]

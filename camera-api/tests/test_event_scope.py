@@ -26,16 +26,16 @@ async def world(db_session, seeded):
                    resolution="1080p", status="faol")
     db_session.add_all([noisy, quiet])
     await db_session.commit()
-    db_session.add(ModuleCameraSuppression(camera_id=noisy.id, module_code=14, reason="aniqlik past"))
+    db_session.add(ModuleCameraSuppression(camera_id=noisy.id, module_code=21, reason="aniqlik past"))
 
     def event(camera, code, **extra):
         return Event(camera_id=camera.id, camera_name=camera.name, building=building.name, module_code=code,
                      module_name=f"#{code}", group="D", confidence=80, severity="yuqori", **extra)
 
     db_session.add_all([
-        event(noisy, 14),  # o'chirilgan juftlik
+        event(noisy, 21),  # o'chirilgan juftlik
         event(noisy, 1),  # shu kamera, boshqa modul — ko'rinadi
-        event(quiet, 14),  # boshqa kamera, shu modul — ko'rinadi
+        event(quiet, 21),  # boshqa kamera, shu modul — ko'rinadi
         event(quiet, RETIRED_MODULE),  # olib tashlangan kriteriya
         event(quiet, 17, is_trial=True),  # sinov signali
     ])
@@ -54,9 +54,9 @@ class TestWallAlarms:
         wall = await client.get("/api/events", headers=headers, params={"severity": "yuqori", "excludeSuppressed": "true"})
         journal = await client.get("/api/events", headers=headers, params={"severity": "yuqori"})
 
-        assert _pairs(wall.json()) == {("Shovqinli kamera", 1), ("Tinch kamera", 14)}
+        assert _pairs(wall.json()) == {("Shovqinli kamera", 1), ("Tinch kamera", 21)}
         # Hodisalar jurnalida tarix to'liq qoladi.
-        assert _pairs(journal.json()) == {("Shovqinli kamera", 14), ("Shovqinli kamera", 1), ("Tinch kamera", 14)}
+        assert _pairs(journal.json()) == {("Shovqinli kamera", 21), ("Shovqinli kamera", 1), ("Tinch kamera", 21)}
 
     async def test_a_restored_pair_shows_again(self, client: AsyncClient, db_session, world):
         suppression = (await db_session.execute(select(ModuleCameraSuppression))).scalar_one()
@@ -66,7 +66,7 @@ class TestWallAlarms:
 
         wall = await client.get("/api/events", headers=headers, params={"severity": "yuqori", "excludeSuppressed": "true"})
 
-        assert ("Shovqinli kamera", 14) in _pairs(wall.json())
+        assert ("Shovqinli kamera", 21) in _pairs(wall.json())
 
     async def test_retired_criteria_never_reach_the_queue(self, client: AsyncClient, world):
         headers = await auth_headers(client, "admin", "admin123")

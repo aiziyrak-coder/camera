@@ -49,8 +49,8 @@ async def _fire(db_session, camera, confidence: int):
     return await raise_event(
         db_session,
         camera=camera,
-        module_code=17,
-        module_name="Tartib-intizom buzilishi",
+        module_code=20,
+        module_name="Talabaning uxlab qolishi",
         group="D",
         confidence=confidence,
         severity="past",
@@ -64,19 +64,19 @@ async def _event_count(db_session) -> int:
 @pytest.mark.usefixtures("seeded")
 class TestModuleThresholdGatesEvents:
     async def test_detection_below_threshold_is_dropped(self, db_session, camera):
-        await _set_threshold(db_session, 17, 65)
+        await _set_threshold(db_session, 20, 65)
         assert await _fire(db_session, camera, 55) is None
         assert await _event_count(db_session) == 0
 
     async def test_detection_at_threshold_is_kept(self, db_session, camera):
         """Boundary matters: an operator who sets 70 and gets a 70 back
         expects to see it. The comparison is `<`, not `<=`."""
-        await _set_threshold(db_session, 17, 70)
+        await _set_threshold(db_session, 20, 70)
         assert await _fire(db_session, camera, 70) is not None
         assert await _event_count(db_session) == 1
 
     async def test_detection_above_threshold_is_kept(self, db_session, camera):
-        await _set_threshold(db_session, 17, 50)
+        await _set_threshold(db_session, 20, 50)
         assert await _fire(db_session, camera, 55) is not None
         assert await _event_count(db_session) == 1
 
@@ -87,9 +87,9 @@ class TestModuleThresholdGatesEvents:
         whole-frame motion heuristic). For those the threshold is an
         on/off switch, not a dial, and that is exactly how an operator
         drowning in one module's noise will use it."""
-        await _set_threshold(db_session, 17, 50)
+        await _set_threshold(db_session, 20, 50)
         assert await _fire(db_session, camera, 55) is not None
-        await _set_threshold(db_session, 17, 56)
+        await _set_threshold(db_session, 20, 56)
         assert await _fire(db_session, camera, 55) is None
         assert await _event_count(db_session) == 1
 

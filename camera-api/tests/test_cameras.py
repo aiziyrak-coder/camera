@@ -486,7 +486,8 @@ class TestCameraExcludedModules:
         # 2026-09-07: yettita kriteriya olib tashlandi (#4, #5, #11, #16,
         # #18, #24, #25), bittasi qo'shildi (#26) -> 25 - 7 + 1 = 19.
         # 2026-09-15: #12 (beyjik) ham olib tashlandi -> 18.
-        assert len(body) == 18
+        # 2026-09-24: ishonchsiz evristikalar (#10, #13, #14, #15, #17, #23) -> 12.
+        assert len(body) == 12
         assert all("code" in row and "name" in row and "hasDetector" in row for row in body)
         assert 25 not in {row["code"] for row in body}
         assert 12 not in {row["code"] for row in body}
@@ -511,15 +512,15 @@ class TestCameraExcludedModules:
             },
         )
 
-        listed = await client.get("/api/cameras/by-module/17/assignments", headers=headers)
+        listed = await client.get("/api/cameras/by-module/19/assignments", headers=headers)
         assert listed.status_code == 200
         body = listed.json()
-        assert body["moduleCode"] == 17
+        assert body["moduleCode"] == 19
         row = next(c for c in body["cameras"] if c["cameraId"] == created["id"])
         assert row["enabled"] is True
 
         patched = await client.patch(
-            "/api/cameras/by-module/17/assignments",
+            "/api/cameras/by-module/19/assignments",
             headers=headers,
             json={"assignments": [{"cameraId": created["id"], "enabled": False}]},
         )
@@ -530,4 +531,4 @@ class TestCameraExcludedModules:
         fetched = (
             await client.get("/api/cameras", headers=headers, params={"zone": "Hovli"})
         ).json()["items"][0]
-        assert 17 in fetched["excludedModuleCodes"]
+        assert 19 in fetched["excludedModuleCodes"]

@@ -15,7 +15,7 @@ from app.services.event_bus import raise_event
 from app.timezone import local_now
 from tests.conftest import auth_headers
 
-TRIAL_CODE = 23  # yong'in — seed'da sinov rejimi, chegara 15
+TRIAL_CODE = 2  # taqiqlangan zona — seed'da sinov rejimi, chegara 65
 WORKING_CODE = 1  # begona shaxs — ishchi rejim, chegara 70
 
 
@@ -69,7 +69,7 @@ async def _module(db_session, code) -> AIModuleConfig:
 
 class TestTrialMode:
     async def test_seeded_modes(self, db_session, seeded):
-        assert (await _module(db_session, 17)).mode == "sinov"
+        assert (await _module(db_session, 19)).mode == "sinov"
         assert (await _module(db_session, TRIAL_CODE)).mode == "sinov"
         assert (await _module(db_session, WORKING_CODE)).mode == "ishchi"
 

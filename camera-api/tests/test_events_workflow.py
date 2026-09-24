@@ -71,7 +71,7 @@ async def make_event(db_session, camera, **overrides) -> uuid.UUID:
         camera_id=camera.id,
         camera_name=camera.name,
         building="1-bino",
-        module_code=17,
+        module_code=20,
         module_name="Tartib-intizom buzilishi",
         group="D",
         confidence=60,
