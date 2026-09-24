@@ -138,6 +138,17 @@ class AccessEventOut(CamelModel):
     granted: bool
 
 
+class AccessSummaryOut(CamelModel):
+    date: str
+    total: int
+    entries: int
+    exits: int
+    denied: int
+    unmatched: int
+    # Turniketdan o'tgan tanilgan (biriktirilgan) odamlar soni.
+    people: int
+
+
 class UnmatchedCredentialOut(CamelModel):
     card_number: str | None = None
     employee_no: str | None = None

@@ -398,6 +398,7 @@ async def test_device_api_permissions(client, seeded):
         ("get", "/api/access/devices"),
         ("get", "/api/access/events"),
         ("get", "/api/access/unmatched"),
+        ("get", "/api/access/summary"),
     ):
         assert (await getattr(client, method)(path, headers=operator)).status_code == 403
         assert (await getattr(client, method)(path)).status_code == 401
@@ -550,3 +551,40 @@ async def test_webhook_rejects_non_push_device(client, seeded, db_session):
     device = await _device(db_session, kind="hikvision", ip="1.2.3.4", api_key_hash=access_control.hash_api_key("ak_x"))
     resp = await client.post(f"/api/access/webhook/{device.id}", json={"events": []}, headers={"X-Api-Key": "ak_x"})
     assert resp.status_code == 401
+
+
+async def test_events_direction_filter_and_summary(client, seeded, db_session):
+    admin = await auth_headers(client, "admin", "admin123")
+    device = await _device(db_session)
+    other = await _device(db_session, name="Ikkinchi")
+    person = await _person(db_session, card="C-1")
+    today = datetime.now(INSTITUTE_TZ).date()
+    rows = [
+        ("e1", device.id, _local(8, 0), "kirish", True, person.id),
+        ("e2", device.id, _local(17, 0), "chiqish", True, person.id),
+        ("e3", device.id, _local(9, 0), "kirish", False, None),
+        ("e4", other.id, _local(10, 0), "kirish", True, None),
+        ("e5", device.id, _local(8, 0, today - timedelta(days=1)), "kirish", True, person.id),
+    ]
+    for ext, dev, when, direction, granted, pid in rows:
+        db_session.add(
+            AccessEvent(
+                external_id=ext, device_id=dev, occurred_at=when, direction=direction, granted=granted,
+                student_staff_id=pid, card_number="C-1" if pid else "X",
+            )
+        )
+    await db_session.commit()
+
+    day = today.isoformat()
+    exits = (await client.get(f"/api/access/events?direction=chiqish&from={day}&to={day}", headers=admin)).json()
+    assert [e["id"] for e in exits["items"]] and exits["total"] == 1
+    entries = await client.get(f"/api/access/events?direction=kirish&from={day}&to={day}", headers=admin)
+    assert entries.json()["total"] == 3
+    assert (await client.get("/api/access/events?direction=boshqa", headers=admin)).status_code == 422
+
+    summary = (await client.get("/api/access/summary", headers=admin)).json()
+    assert summary == {
+        "date": day, "total": 4, "entries": 3, "exits": 1, "denied": 1, "unmatched": 2, "people": 1,
+    }
+    by_device = (await client.get(f"/api/access/summary?deviceId={other.id}&date={day}", headers=admin)).json()
+    assert by_device["total"] == 1 and by_device["people"] == 0

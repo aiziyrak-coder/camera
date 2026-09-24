@@ -158,7 +158,20 @@ export const integrationsApi = {
     api.post<DeviceTestResult>(`/api/access/devices/${id}/test`, {}, token),
   unmatched: (days: number, token: string | null) =>
     api.get<UnmatchedCredential[]>(`/api/access/unmatched${buildQuery({ days })}`, token),
+  summary: (date: string, deviceId: string | undefined, token: string | null, opts?: CallOptions) =>
+    api.get<AccessSummary>(`/api/access/summary${buildQuery({ date, deviceId })}`, token, opts),
 };
+
+/** Bir kunlik o'tishlar sanog'i (GET /api/access/summary). */
+export interface AccessSummary {
+  date: string;
+  total: number;
+  entries: number;
+  exits: number;
+  denied: number;
+  unmatched: number;
+  people: number;
+}
 
 /* ── Sof yordamchilar (integrationsApi.test.ts) ── */
 
