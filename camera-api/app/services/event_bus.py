@@ -100,6 +100,7 @@ def event_to_out(
         person_name=event.person_name,
         reviewed_by=event.reviewed_by,
         snapshot_url=presigned_url(event.snapshot_key) if event.snapshot_key else None,
+        clip_url=presigned_url(event.clip_key) if getattr(event, "clip_key", None) else None,
         occurred_at=to_local(event.occurred_at).isoformat(timespec="seconds"),
         reviewed_at=to_local(event.reviewed_at).strftime("%Y-%m-%d %H:%M") if event.reviewed_at else None,
         is_trial=bool(event.is_trial),

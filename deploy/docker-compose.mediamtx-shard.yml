@@ -20,10 +20,16 @@ services:
     image: camera-mediamtx-ffmpeg:latest
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
+      # Video arxiv (app/services/recording.py): rec-<kamera> yo'llari shu
+      # yerga fMP4 bo'laklarida yoziladi, eskisi recordDeleteAfter bo'yicha
+      # o'chadi. Playback server (:9996) faqat ichki tarmoqda — tashqi port yo'q.
+      - ../recordings:/recordings
     restart: unless-stopped
     environment:
       MTX_API: "yes"
       MTX_APIADDRESS: ":9997"
+      MTX_PLAYBACK: "yes"
+      MTX_PLAYBACKADDRESS: ":9996"
     ports:
       - "127.0.0.1:8554:8554"
       - "127.0.0.1:8888:8888"
@@ -36,10 +42,16 @@ services:
     image: camera-mediamtx-ffmpeg:latest
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
+      # Video arxiv (app/services/recording.py): rec-<kamera> yo'llari shu
+      # yerga fMP4 bo'laklarida yoziladi, eskisi recordDeleteAfter bo'yicha
+      # o'chadi. Playback server (:9996) faqat ichki tarmoqda — tashqi port yo'q.
+      - ../recordings:/recordings
     restart: unless-stopped
     environment:
       MTX_API: "yes"
       MTX_APIADDRESS: ":9997"
+      MTX_PLAYBACK: "yes"
+      MTX_PLAYBACKADDRESS: ":9996"
     ports:
       - "127.0.0.1:8555:8554"
       - "127.0.0.1:8889:8888"
@@ -52,10 +64,16 @@ services:
     image: camera-mediamtx-ffmpeg:latest
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
+      # Video arxiv (app/services/recording.py): rec-<kamera> yo'llari shu
+      # yerga fMP4 bo'laklarida yoziladi, eskisi recordDeleteAfter bo'yicha
+      # o'chadi. Playback server (:9996) faqat ichki tarmoqda — tashqi port yo'q.
+      - ../recordings:/recordings
     restart: unless-stopped
     environment:
       MTX_API: "yes"
       MTX_APIADDRESS: ":9997"
+      MTX_PLAYBACK: "yes"
+      MTX_PLAYBACKADDRESS: ":9996"
     ports:
       - "127.0.0.1:8556:8554"
       - "127.0.0.1:8890:8888"

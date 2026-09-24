@@ -30,7 +30,22 @@ def _rtsp_url_for(camera: Camera, *, substream: bool = True) -> str:
 
 
 async def _register_faol_stream(camera: Camera) -> str:
-    return await register_camera_stream(str(camera.id), _rtsp_url_for(camera))
+    url = await register_camera_stream(str(camera.id), _rtsp_url_for(camera))
+    await _sync_recording(camera)
+    return url
+
+
+async def _sync_recording(camera: Camera) -> None:
+    """Arxiv yozuvi yo'li — jonli yo'ldan mustaqil; xatosi jonli oqimni buzmaydi."""
+    from app.services import recording
+
+    try:
+        if settings.recording_enabled and camera.status == "faol":
+            await recording.register_recording(str(camera.id), _rtsp_url_for(camera))
+        else:
+            await recording.unregister_recording(str(camera.id))
+    except Exception:
+        logger.exception("recording sync failed", extra={"camera_id": str(camera.id)})
 
 
 async def sync_camera_stream(db: AsyncSession, camera: Camera) -> None:
@@ -39,6 +54,7 @@ async def sync_camera_stream(db: AsyncSession, camera: Camera) -> None:
         camera.stream_url = await _register_faol_stream(camera)
     elif camera.stream_url is not None:
         await unregister_camera_stream(str(camera.id))
+        await _sync_recording(camera)
         camera.stream_url = None
     await db.commit()
     await db.refresh(camera, attribute_names=["building"])

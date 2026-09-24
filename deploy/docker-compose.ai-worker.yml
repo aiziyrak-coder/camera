@@ -15,6 +15,9 @@ services:
   api:
     environment:
       AI_ROLE: api
+      # Video arxiv — 100 GB byudjet: barcha kameralar oxirgi 4 soat (2026-09-24).
+      RECORDING_ENABLED: "true"
+      RECORDING_RETENTION_HOURS: "4"
     # HTTP + miniatyura/jonli video uchun ffmpeg. AI endi bu yerda emas.
     cpus: 10
     mem_limit: 24g
@@ -27,6 +30,11 @@ services:
       - .env
     environment:
       AI_ROLE: worker
+      RECORDING_ENABLED: "true"
+      RECORDING_RETENTION_HOURS: "4"
+    # Disk nazorati (app/jobs/event_clips.py) arxiv papkasini faqat o'qiydi.
+    volumes:
+      - ../recordings:/recordings:ro
       # Bitta jarayon: AI baribir bitta leader'da ishlaydi, ikkinchi
       # jarayon faqat xotira (modellar ~2-3 GB) sarflardi.
       WEB_CONCURRENCY: "1"

@@ -30,6 +30,8 @@ class EventOut(CamelModel):
     # app/services/event_bus.py. Null when no frame was captured (or the
     # upload failed) for this particular event.
     snapshot_url: str | None = None
+    # Arxivdan kesilgan hodisa videosi (app/jobs/event_clips.py) — presigned.
+    clip_url: str | None = None
     # ISO vaqt institut mintaqasi bilan — frontend "12 daq oldin" hisoblaydi.
     occurred_at: str | None = None
     # Operator qaror qilgan payt ("2026-09-15 14:20", institut vaqti).

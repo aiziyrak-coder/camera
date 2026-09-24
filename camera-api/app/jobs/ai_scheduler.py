@@ -32,6 +32,7 @@ from typing import Any, Literal
 from app.config import settings
 from app.database import SessionLocal
 from app.jobs.absence_marker import run_absence_marking_once
+from app.jobs.event_clips import run_event_clips_once
 from app.jobs.attendance_ai import run_attendance_ai_sweep_once, run_entrance_exit_attendance_dispatch_once
 from app.jobs.disorder_ai import run_disorder_ai_sweep_once
 from app.jobs.dress_code_ai import run_dress_code_ai_sweep_once
@@ -135,6 +136,8 @@ def _build_registry() -> list[_SweepEntry]:
         # Kamera talab qilmaydi (faqat DB); o'zi ish kuni tugaguncha hech
         # narsa qilmaydi (app/jobs/absence_marker.py).
         ("absence_marking", settings.attendance_absence_marking_interval_seconds, run_absence_marking_once, "standard"),
+        # Arxivdan hodisa klipi va umumiy disk nazorati (app/jobs/event_clips.py).
+        ("event_clips", 30, run_event_clips_once, "standard"),
         # Faqat DB: operatorlar ko'p rad etgan kamera×modul juftliklarini o'chiradi.
         ("module_suppression", settings.suppression_interval_seconds, run_module_suppression_once, "standard"),
     ]
@@ -191,7 +194,7 @@ async def _sweep_loop(entry: _SweepEntry, initial_delay: float) -> None:
 
 
 # O'z alohida sikli (app/main.py dagi *_loop) bo'lmagan sweeplar.
-_STANDALONE_SWEEPS = {"entrance_exit_attendance", "absence_marking", "module_suppression"}
+_STANDALONE_SWEEPS = {"entrance_exit_attendance", "absence_marking", "module_suppression", "event_clips"}
 
 
 def standalone_sweep_loops() -> list:

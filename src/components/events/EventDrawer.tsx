@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, ExternalLink, FlaskConical, ImageOff, Lightbulb, MonitorPlay, Trash2, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, ExternalLink, FlaskConical, History, ImageOff, Lightbulb, MonitorPlay, Trash2, X } from 'lucide-react';
 import { Badge, Button, ButtonLink, Drawer, IconButton, KeyValue, StatusBadge, topDialogPanel, type KeyValueItem } from '../../ui';
 import EventActivity from './EventActivity';
 import { cameraLabel } from './ReviewCard';
@@ -161,11 +161,31 @@ export default function EventDrawer({
             )}
           </div>
 
+          {event.clipUrl && (
+            // Hodisa videosi: 15 s oldin — 25 s keyin (app/jobs/event_clips.py).
+            <video src={event.clipUrl} controls muted playsInline preload="metadata" className="aspect-video w-full rounded-card bg-black" />
+          )}
+
           {canLive && event.cameraId && (
-            // Kadr — bir lahza. Operator vaziyatni hozir ko'rishi kerak.
-            <ButtonLink to={`/videodevor?kamera=${encodeURIComponent(event.cameraId)}`} icon={MonitorPlay} size="sm">
-              Kamerani jonli ko‘rish
-            </ButtonLink>
+            <div className="flex flex-wrap gap-2">
+              {/* Kadr — bir lahza. Operator vaziyatni hozir ko'rishi kerak. */}
+              <ButtonLink to={`/videodevor?kamera=${encodeURIComponent(event.cameraId)}`} icon={MonitorPlay} size="sm">
+                Kamerani jonli ko‘rish
+              </ButtonLink>
+              {event.occurredAt && (
+                <ButtonLink
+                  to={`/arxiv?${new URLSearchParams({
+                    kamera: event.cameraId,
+                    sana: event.occurredAt.slice(0, 10),
+                    t: new Date(Date.parse(event.occurredAt) - 15_000).toISOString(),
+                  }).toString()}`}
+                  icon={History}
+                  size="sm"
+                >
+                  Arxivda ko‘rish
+                </ButtonLink>
+              )}
+            </div>
           )}
 
           <div className="flex flex-wrap items-center gap-2">

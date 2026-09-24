@@ -4,6 +4,7 @@ import {
   CalendarRange,
   Clock,
   Cctv,
+  History,
   ChartColumn,
   Contact,
   GraduationCap,
@@ -44,6 +45,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: '/', code: 'HOL', label: 'Nazorat', icon: LayoutDashboard, end: true },
       { to: '/videodevor', code: 'KAM', label: 'Jonli kameralar', icon: MonitorPlay, permission: 'viewLive' },
+      { to: '/arxiv', code: 'ARX', label: 'Video arxiv', icon: History, permission: 'viewLive' },
       { to: '/shaxs-qidirish', code: 'QID', label: 'Shaxs qidirish', icon: Search, permission: 'viewLive' },
       { to: '/hodisalar', code: 'HOD', label: 'Hodisalar', icon: Siren, permission: 'reviewEvents' },
     ],

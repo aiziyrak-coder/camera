@@ -572,6 +572,24 @@ class Settings(BaseSettings):
     # Kamera kuzatuvchilarining sur'ati (app/services/camera_pacing.py):
     # yaroqli yuz ko'rmagan kamera kutadi, bo'shagan AI vaqti yuz
     # ko'rayotgan kameralarga o'tadi. Kirish/chiqish kameralari kutmaydi.
+    # Video arxivi (app/services/recording.py). ~52 Mbit/s barcha
+    # substreamlar uchun — soatiga ~23,5 GB; 4 soat ≈ 100 GB (2026-09-24
+    # kelishilgan byudjet). Disk bo'sh joyi `recording_min_free_percent`
+    # dan kamaysa yozuv avtomatik to'xtatiladi (app/jobs/event_clips.py).
+    recording_enabled: bool = False
+    recording_retention_hours: int = 4
+    recording_segment_minutes: int = 5
+    recording_min_free_percent: float = 12.0
+    recordings_dir: str = "/recordings"
+    mediamtx_playback_port: int = 9996
+    # Hodisa klipi: hodisadan oldin/keyin necha soniya, MinIO'da necha kun.
+    event_clip_enabled: bool = True
+    event_clip_before_seconds: int = 15
+    event_clip_after_seconds: int = 25
+    event_clip_retention_days: int = 30
+    event_clip_max_bytes: int = 40_000_000
+    # Arxiv videosi havolasining amal qilish muddati (imzolangan URL).
+    archive_link_ttl_seconds: int = 3600
     pacing_enabled: bool = True
     pacing_idle_after: int = 3
     pacing_idle_base_seconds: float = 20.0

@@ -757,6 +757,8 @@ export interface AIEvent {
   /** Aniqlanish paytida olingan kadr — app/services/event_bus.py.
    * Kadr saqlanmagan/yuklab bo'lmagan hodisalarda null. */
   snapshotUrl?: string | null;
+  /** Arxivdan kesilgan hodisa videosi (hodisadan 15 s oldin — 25 s keyin). */
+  clipUrl?: string | null;
   /** ISO vaqt institut mintaqasi bilan — "12 daq oldin" uchun. */
   occurredAt?: string | null;
   /** Operator qaror qilgan payt ("2026-09-15 14:20"). */

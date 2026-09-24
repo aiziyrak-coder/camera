@@ -59,6 +59,11 @@ class Event(Base):
     # itself failed; a human reviewing "Hodisalar jurnali" should see what
     # the AI actually saw, not a live feed of whatever's on camera now.
     snapshot_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Arxivdan kesilgan hodisa klipi (app/jobs/event_clips.py): MinIO kaliti,
+    # holat ("ok" / "none" — yozuv topilmadi) va saqlangan payt.
+    clip_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    clip_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    clip_saved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Sinov rejimidagi modul signali (app/services/event_bus.py). Operator
     # navbati, ogohlantirishlar va hisobotlar faqat is_trial = false ni ko'radi.
     is_trial: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
