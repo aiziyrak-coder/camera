@@ -19,7 +19,12 @@ services:
       dockerfile: deploy/Dockerfile.mediamtx
     image: camera-mediamtx-ffmpeg:latest
     volumes:
-      - ./mediamtx.yml:/mediamtx.yml:ro
+      # To'g'ridan-to'g'ri deploy/ dagi fayl. Ilgari ./mediamtx.yml edi —
+      # compose uni camera-api/ ga nisbatan ochadi, u yerda esa gitdagi
+      # STANDART konfiguratsiya turadi (hlsCDNSecret yo'q -> ?cookieCheck=1
+      # ga imzosiz 302 -> nginx 403). 2026-09-24 da shardlar qayta
+      # yaratilganda hamma jonli video shu sababli to'xtagan.
+      - ../deploy/mediamtx.yml:/mediamtx.yml:ro
       # Video arxiv (app/services/recording.py): rec-<kamera> yo'llari shu
       # yerga fMP4 bo'laklarida yoziladi, eskisi recordDeleteAfter bo'yicha
       # o'chadi. Playback server (:9996) faqat ichki tarmoqda — tashqi port yo'q.
@@ -41,7 +46,7 @@ services:
       dockerfile: deploy/Dockerfile.mediamtx
     image: camera-mediamtx-ffmpeg:latest
     volumes:
-      - ./mediamtx.yml:/mediamtx.yml:ro
+      - ../deploy/mediamtx.yml:/mediamtx.yml:ro
       # Video arxiv (app/services/recording.py): rec-<kamera> yo'llari shu
       # yerga fMP4 bo'laklarida yoziladi, eskisi recordDeleteAfter bo'yicha
       # o'chadi. Playback server (:9996) faqat ichki tarmoqda — tashqi port yo'q.
@@ -63,7 +68,7 @@ services:
       dockerfile: deploy/Dockerfile.mediamtx
     image: camera-mediamtx-ffmpeg:latest
     volumes:
-      - ./mediamtx.yml:/mediamtx.yml:ro
+      - ../deploy/mediamtx.yml:/mediamtx.yml:ro
       # Video arxiv (app/services/recording.py): rec-<kamera> yo'llari shu
       # yerga fMP4 bo'laklarida yoziladi, eskisi recordDeleteAfter bo'yicha
       # o'chadi. Playback server (:9996) faqat ichki tarmoqda — tashqi port yo'q.
