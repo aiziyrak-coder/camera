@@ -29,6 +29,7 @@ const KafedraPage = lazyPage(() => import('./pages/teachers/KafedraPage'));
 const PersonPage = lazyPage(() => import('./pages/person/PersonPage'));
 const PersonLocatorPage = lazyPage(() => import('./pages/person/PersonLocatorPage'));
 const ArchivePage = lazyPage(() => import('./pages/archive/ArchivePage'));
+const MapPage = lazyPage(() => import('./pages/map/MapPage'));
 const WorkHoursPage = lazyPage(() => import('./pages/settings/WorkHoursPage'));
 const SystemPage = lazyPage(() => import('./pages/settings/SystemPage'));
 
@@ -148,8 +149,8 @@ export default function App() {
                 <Route path="/videodevor" element={<VideoWallRoute />} />
                 <Route path="/shaxs-qidirish" element={<PersonLocatorPage />} />
                 <Route path="/arxiv" element={<ArchivePage />} />
-                {/* Olib tashlangan sahifalar (2026-09-19): bo'sh edi, chalg'itardi. */}
-                <Route path="/xarita" element={<Navigate to="/videodevor" replace />} />
+                <Route path="/xarita" element={<MapPage />} />
+                {/* Olib tashlangan sahifa (2026-09-19): bo'sh edi, chalg'itardi. */}
                 <Route path="/darslar" element={<Navigate to="/" replace />} />
               </Route>
               <Route element={<RequirePermission permission="reviewEvents" />}>

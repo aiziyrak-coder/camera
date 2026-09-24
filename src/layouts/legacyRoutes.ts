@@ -17,8 +17,8 @@ const LEGACY_MAP: Record<string, string> = {
   '/admin/users-roles': '/sozlamalar/foydalanuvchilar',
   '/admin/system-log': '/sozlamalar/tizim?tab=jurnal',
   '/admin/video-wall': '/videodevor',
-  // Qavat rejalari olib tashlangan (2026-09-19) — videodevorga.
-  '/admin/floor-plans': '/videodevor',
+  // Qavat rejalari endi xaritada.
+  '/admin/floor-plans': '/xarita',
   '/admin/notifications': '/sozlamalar/bildirishnomalar',
   '/admin/integrations': '/sozlamalar/integratsiyalar',
   '/admin/privacy': '/sozlamalar/maxfiylik',
