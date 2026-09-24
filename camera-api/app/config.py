@@ -604,6 +604,17 @@ class Settings(BaseSettings):
     # mumkin (galereyaga begona yuz qo'shilsa, kamera uni o'sha odam deb
     # tanib qoladi).
     unknown_assign_min_similarity: float = 0.25
+    # ── Yuz tekshiruvi navbati (app/services/face_review.py) ────────────
+    # Qat'iy chegaradan (attendance_ai_match_threshold) past, lekin shundan
+    # yuqori moslik — "kulrang zona": 2026-09 o'lchovida haqiqiy mosliklar
+    # ko'pincha 0.42-0.50 da qolardi. Ular operatorga ko'rsatiladi.
+    face_review_enabled: bool = True
+    face_review_min_similarity: float = 0.42
+    # Eng yaqin nomzod ikkinchisidan shuncha uzoq bo'lmasa — kimligi noaniq,
+    # operatorga "shumi?" deb ko'rsatishning ma'nosi yo'q.
+    face_review_min_margin: float = 0.05
+    # Kunlik yangi qator chegarasi — navbat odam ko'ra oladigan hajmda qolsin.
+    face_review_daily_cap: int = 800
 
     # YOLOv8 object detection (app/services/object_detection.py) — TT
     # kriteriya 19 (dars diqqati) telefon signali uchun ishlatiladi. See

@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   Siren,
   Search,
+  UserCheck,
   type LucideIcon,
 } from 'lucide-react';
 import type { Role } from '../../lib/auth';
@@ -50,6 +51,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/xarita', code: 'XAR', label: 'Xarita', icon: MapIcon, permission: 'viewLive' },
       { to: '/shaxs-qidirish', code: 'QID', label: 'Shaxs qidirish', icon: Search, permission: 'viewLive' },
       { to: '/hodisalar', code: 'HOD', label: 'Hodisalar', icon: Siren, permission: 'reviewEvents' },
+      { to: '/tekshiruv', code: 'TEK', label: 'Tekshiruv', icon: UserCheck, permission: 'reviewEvents' },
     ],
   },
   {

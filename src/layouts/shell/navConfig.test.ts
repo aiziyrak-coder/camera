@@ -24,6 +24,7 @@ describe('navConfig', () => {
     expect(isPathAllowedForRole('kamera-masuli', '/')).toBe(false);
     expect(isPathAllowedForRole('kamera-masuli', '/hodisalar')).toBe(false);
     expect(isPathAllowedForRole('admin', '/hodisalar')).toBe(true);
+    expect(isPathAllowedForRole('kamera-masuli', '/tekshiruv')).toBe(false);
 
     const sections = visibleSections(() => true, 'kamera-masuli');
     expect(sections.flatMap((s) => s.items.map((i) => i.to))).toEqual(['/tuzilma', '/sozlamalar/kameralar']);
