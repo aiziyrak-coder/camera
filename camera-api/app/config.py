@@ -126,6 +126,19 @@ class Settings(BaseSettings):
     # har bir yuz to'liq R50 chaqiruvini olardi —
     # app/services/face_recognition.py _detect_faces_sync izohiga qarang.
     face_analysis_min_px: int = 20
+    # Doimiy kuzatuvchi (davomat) uchun alohida, yuqoriroq chegara. 20-32 px
+    # yuzning ArcFace vektori deyarli tasodifiy: 2026-09-20 o'lchovida median
+    # 22 px lik 8884 yuzdan birortasi ham mos kelmagan, har biri esa ~0.42 s
+    # R50 chaqiruvini olardi. Bunday yuzlarni 4K zoom (face_zoom_max_px=45)
+    # baribir asosiy oqimdan qayta ko'radi.
+    attendance_watch_min_face_px: int = 32
+    # Aniq notanish yuz (sifatli, eng yaqin o'xshashlik yumshoq chegaradan
+    # unknown_track_margin pastda) har kadrda qayta tahlil qilinmaydi —
+    # kadrdan kadrga kuzatiladi va shuncha soniyada bir qayta tekshiriladi.
+    # Bazada yuzi yo'q odamlar (2026-09-24: 73%) kamerada turgan bo'yi har
+    # kadrda ArcFace olardi.
+    unknown_recheck_seconds: float = 2.5
+    unknown_track_margin: float = 0.05
     # ── Kichik yuzni asosiy oqimdan yaqinlashtirib tanish ───────────────
     # (app/services/face_zoom.py). 2026-09-20 o'lchovi: bir kunda 112433
     # kadr, 8884 yuz, ulardan 8079 tasi tanish chegarasidan kichik, yuz
@@ -625,7 +638,18 @@ class Settings(BaseSettings):
     unknown_merge_similarity: float = 0.5
     # Kunlik qator chegarasi — noto'g'ri sozlangan kamera ro'yxatni
     # ko'mib tashlamasin.
-    unknown_daily_cap: int = 600
+    # 2026-09-24: 600 lik chegara kun o'rtasida to'lib, keyingi yuzlar tashlab
+    # yuborildi. Takroriy notanishlar (app/services/unknown_clusters.py)
+    # butun kunni ko'rishi kerak.
+    unknown_daily_cap: int = 1500
+    # Takroriy notanishlar: bir odam deb guruhlash chegarasi (ArcFace'da bir
+    # odamning ikki kamera kadri odatda 0.45-0.70), guruhlashga olinadigan
+    # eng kichik yuz, "bu X emasmi?" ishorasi chegarasi va biriktirishda
+    # galereyaga qo'shiladigan qo'shimcha namunalar soni.
+    unknown_cluster_similarity: float = 0.48
+    unknown_cluster_min_px: int = 40
+    unknown_hint_similarity: float = 0.30
+    unknown_cluster_gallery_samples: int = 8
     # Kesilgan rasmga yuz atrofidan qo'shiladigan hoshiya (yuz o'lchamiga
     # nisbatan) — operator odamni tanishi uchun soch/kiyim ham ko'rinsin.
     unknown_crop_margin: float = 0.6

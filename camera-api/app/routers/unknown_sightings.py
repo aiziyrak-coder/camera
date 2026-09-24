@@ -18,6 +18,7 @@ from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.models import Camera, StudentStaff, UnknownSighting
 from app.schemas.base import CamelModel
+from app.services.unknown_clusters import assign_group, dismiss_group, lookalikes, recurring_clusters
 from app.services.unknown_sightings import ResolveError, assign_to_person, dismiss, mark_stranger
 from app.timezone import local_now
 
@@ -146,6 +147,175 @@ async def list_sightings(
         pending=pending,
         day=day.isoformat(),
     )
+
+
+class ClusterHintOut(CamelModel):
+    person_id: str
+    full_name: str
+    group_or_position: str
+    similarity: float
+
+
+class ClusterOut(CamelModel):
+    key: str
+    sighting_ids: list[str]
+    days: int
+    hits: int
+    cameras: list[str]
+    first_seen_at: str
+    last_seen_at: str
+    face_px: int
+    crop_urls: list[str]
+    hints: list[ClusterHintOut]
+
+
+class ClusterListOut(CamelModel):
+    items: list[ClusterOut]
+    pending: int
+
+
+class ClusterAssignIn(CamelModel):
+    sighting_ids: list[str]
+    person_id: str
+
+
+class ClusterDismissIn(CamelModel):
+    sighting_ids: list[str]
+
+
+class ClusterActionOut(CamelModel):
+    message: str
+    count: int
+
+
+def _crop_urls(rows: list[UnknownSighting], limit: int = 6) -> list[str]:
+    """Eng yirik yuzlar, iloji boricha turli kunlardan (turli burchak/kiyim)."""
+    from app.storage import presigned_url
+
+    ordered = sorted(rows, key=lambda row: (row.face_px or 0), reverse=True)
+    picked: list[UnknownSighting] = []
+    seen_days: set = set()
+    for row in ordered:
+        if row.crop_key and row.day not in seen_days:
+            picked.append(row)
+            seen_days.add(row.day)
+    for row in ordered:
+        if len(picked) >= limit:
+            break
+        if row.crop_key and row not in picked:
+            picked.append(row)
+    urls = []
+    for row in picked[:limit]:
+        try:
+            urls.append(presigned_url(row.crop_key))
+        except Exception:
+            continue
+    return urls
+
+
+@router.get("/takroriy", response_model=ClusterListOut)
+async def list_recurring(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: ReviewDep,
+    kun: Annotated[int, Query(ge=1, le=30)] = 14,
+    min_kun: Annotated[int, Query(ge=1, le=30)] = 1,
+    limit: Annotated[int, Query(ge=1, le=100)] = 40,
+) -> ClusterListOut:
+    """Takroriy notanishlar — bir odam bo'yicha guruhlangan, eng ko'p KUN
+    ko'ringani birinchi (app/services/unknown_clusters.py)."""
+    clusters = await recurring_clusters(db, days=kun, min_days=min_kun, limit=limit)
+    camera_ids = {row.camera_id for cluster in clusters for row in cluster.rows if row.camera_id}
+    names = {}
+    if camera_ids:
+        names = dict((await db.execute(select(Camera.id, Camera.name).where(Camera.id.in_(camera_ids)))).all())
+    items = []
+    for cluster in clusters:
+        hints = await lookalikes(db, cluster.centroid) if cluster.centroid is not None else []
+        cameras = sorted({names.get(row.camera_id) for row in cluster.rows if names.get(row.camera_id)})
+        items.append(
+            ClusterOut(
+                key=str(cluster.best.id),
+                sighting_ids=[str(row.id) for row in cluster.rows],
+                days=cluster.days,
+                hits=cluster.hits,
+                cameras=cameras[:6],
+                first_seen_at=min(row.first_seen_at for row in cluster.rows).isoformat(),
+                last_seen_at=max(row.last_seen_at for row in cluster.rows).isoformat(),
+                face_px=int(cluster.best.face_px or 0),
+                crop_urls=_crop_urls(cluster.rows),
+                hints=[
+                    ClusterHintOut(
+                        person_id=str(person.id),
+                        full_name=person.full_name,
+                        group_or_position=person.group_or_position or "",
+                        similarity=round(similarity, 3),
+                    )
+                    for person, similarity in hints
+                ],
+            )
+        )
+    pending = int(
+        (
+            await db.execute(
+                select(func.count()).select_from(UnknownSighting).where(UnknownSighting.status == "kutilmoqda")
+            )
+        ).scalar_one()
+    )
+    return ClusterListOut(items=items, pending=pending)
+
+
+@router.post("/takroriy/biriktirish", response_model=ClusterActionOut)
+async def assign_recurring(
+    body: ClusterAssignIn,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: ReviewDep,
+) -> ClusterActionOut:
+    """Butun guruhni odamga biriktiradi: eng yirik yuz — asosiy rasm (yuzi
+    bo'lmasa) yoki galereya namunasi, qolganlari galereyaga."""
+    if not body.sighting_ids or len(body.sighting_ids) > 500:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Guruh bo'sh yoki juda katta")
+    try:
+        person = await db.get(StudentStaff, uuid.UUID(body.person_id))
+    except ValueError:
+        person = None
+    if person is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Odam topilmadi")
+    try:
+        kind, added = await assign_group(db, body.sighting_ids, person, current_user.id)
+    except ResolveError as error:
+        await db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, str(error))
+    await log_action(
+        db,
+        request,
+        current_user.id,
+        f"Takroriy notanish ({len(body.sighting_ids)} yuz) {person.full_name} ga biriktirildi ({kind}, +{added})",
+        "Xavfsizlik",
+    )
+    await db.commit()
+    first = "yuzi tizimga kiritildi" if kind == "asosiy" else "yangi yuz namunasi qo'shildi"
+    extra = f", yana {added} ta burchak galereyaga" if added else ""
+    return ClusterActionOut(
+        message=f"{person.full_name}: {first}{extra} — endi kamera uni taniydi", count=len(body.sighting_ids)
+    )
+
+
+@router.post("/takroriy/otkazish", response_model=ClusterActionOut)
+async def dismiss_recurring(
+    body: ClusterDismissIn,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: ReviewDep,
+) -> ClusterActionOut:
+    if not body.sighting_ids or len(body.sighting_ids) > 500:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Guruh bo'sh yoki juda katta")
+    try:
+        count = await dismiss_group(db, body.sighting_ids, current_user.id)
+    except ResolveError as error:
+        await db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, str(error))
+    await db.commit()
+    return ClusterActionOut(message="O'tkazib yuborildi", count=count)
 
 
 async def _load(db: AsyncSession, sighting_id: str) -> UnknownSighting:

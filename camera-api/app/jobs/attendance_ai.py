@@ -509,6 +509,9 @@ async def process_camera_frame(
     landmarks: bool = True,
     overlay_out: list | None = None,
     zoom_session_factory: async_sessionmaker[AsyncSession] | None = None,
+    min_face_px: int | None = None,
+    unknown_skip: tuple = (),
+    unknown_out: list | None = None,
 ) -> list[AttendanceRecord]:
     """Checks EVERY face in the frame — not just the largest — and writes
     an attendance record for each one that matches an enrolled person.
@@ -556,7 +559,13 @@ async def process_camera_frame(
     har yuzga ~0.16 s tejaladi). `overlay_out` berilsa, har bir yuz uchun
     jonli skaner yozuvi qo'shiladi (app/services/live_focus.py).
     `zoom_session_factory` berilsa, zoom passi kuzatuvchini to'xtatmasdan
-    FONDA o'z sessiyasi bilan ishlaydi (4K ulanish 8 s gacha kutishi mumkin)."""
+    FONDA o'z sessiyasi bilan ishlaydi (4K ulanish 8 s gacha kutishi mumkin).
+
+    `unknown_skip` — (ramka, muddat) juftliklari: yaqinda tahlil qilingan aniq
+    notanish yuzlar, muddati tugaguncha qayta tahlil qilinmaydi.
+    `unknown_out` berilsa, shu kadrdan keyin kuzatilishi kerak bo'lgan notanish
+    yuzlar (ramka, muddat) unga qo'shiladi. `min_face_px` — tahlil chegarasi
+    (None: settings.face_analysis_min_px)."""
     camera_key = str(camera.id) if camera is not None else None
     # Devordagi rasmlar (app/services/static_faces.py). Faqat ODATDAGI
     # tekshiruvda: zoom kadri 4K, ya'ni uning koordinatalari boshqa
@@ -570,8 +579,9 @@ async def process_camera_frame(
             priority=inference_priority,
             roi=roi,
             # Statik ramkadagi yuz shu yerda embedding olmaydi — eng arzon joyi shu.
-            skip_boxes=tuple(skip_boxes) + static_boxes,
+            skip_boxes=tuple(skip_boxes) + tuple(box for box, _until in unknown_skip) + static_boxes,
             landmarks=landmarks,
+            min_face_px=min_face_px,
         )
     if static_pass:
         faces, skipped_static = static_faces.static_face_store.split(camera_key, faces)
@@ -580,11 +590,16 @@ async def process_camera_frame(
             skipped=len(skipped_static),
             heights=static_faces.static_face_store.static_heights(camera_key),
         )
+    if unknown_skip:
+        _mark_tracked_unknown(faces, skip_boxes, unknown_skip, unknown_out)
     camera_key_tracked = sum(1 for face in faces if getattr(face, "tracked", False))
     recognition_stats.record_tracked(camera_key, camera_key_tracked)
     if identified_boxes is not None:
-        # Tanilgan odam keyingi kadrda ham tanilgan bo'lib qoladi (kuzatuv).
-        identified_boxes.extend(face.bbox for face in faces if getattr(face, "tracked", False))
+        identified_boxes.extend(
+            face.bbox
+            for face in faces
+            if getattr(face, "tracked", False) and not getattr(face, "tracked_unknown", False)
+        )
     if not faces:
         # Yuzsiz kadr ham "tekshirilgan" — aks holda tashxis 1000 marta
         # tekshirilgan kamerani "hali tekshirilmadi" deb ko'rsatardi.
@@ -618,6 +633,14 @@ async def process_camera_frame(
         if settings.face_track_fusion_enabled and camera_key is not None:
             graded = await asyncio.to_thread(_fuse_tracks, camera_key, usable, graded, candidates)
     recognition_stats.record_frame(camera_key, faces, graded)
+    if unknown_out is not None and graded:
+        clear_below = _relaxed_threshold() - settings.unknown_track_margin
+        until = monotonic() + settings.unknown_recheck_seconds
+        unknown_out.extend(
+            (face.bbox, until)
+            for face, match in zip(usable, graded, strict=True)
+            if match.person_id is None and match.similarity < clear_below and face_quality_ok(face)
+        )
 
     matched_ids: set[str] = set()
     matched_boxes: list = []
@@ -765,6 +788,8 @@ def _overlay_entries(faces: list, usable: list, graded: list, accepted: dict[int
         key = id(face)
         if key in accepted:
             status = "tanildi"
+        elif getattr(face, "tracked_unknown", False):
+            status = "notanish"
         elif getattr(face, "tracked", False):
             status = "kuzatuvda"
         elif getattr(face, "embedding", None) is not None:
@@ -782,6 +807,24 @@ def _overlay_entries(faces: list, usable: list, graded: list, accepted: dict[int
             }
         )
     return entries
+
+
+def _mark_tracked_unknown(faces: list, known_boxes, unknown_skip: tuple, unknown_out: list | None) -> None:
+    """Kuzatilgan (tahlil qilinmagan) yuz notanishnikimi yoki tanilganniki —
+    qaysi ro'yxatdagi ramka bilan ko'proq ustma-ust tushsa. Notanishlar
+    yangi o'rni bilan, lekin ESKI muddati bilan davom ettiriladi: muddat
+    tugaganda yuz albatta qayta tahlil qilinadi (odam burilgan yoki
+    yaqinlashgan bo'lishi mumkin)."""
+    for face in faces:
+        if not getattr(face, "tracked", False):
+            continue
+        best = max(unknown_skip, key=lambda item: _iou(face.bbox, item[0]))
+        unknown_iou = _iou(face.bbox, best[0])
+        known_iou = max((_iou(face.bbox, box) for box in known_boxes), default=0.0)
+        if unknown_iou >= TRACK_IOU and unknown_iou > known_iou:
+            face.tracked_unknown = True
+            if unknown_out is not None:
+                unknown_out.append((face.bbox, best[1]))
 
 
 # Fondagi zoom: kamera bo'yicha bir vaqtda bittadan ortiq emas.
@@ -1370,6 +1413,8 @@ async def _analyse_entrance_frame(
     live: bool = False,
     main_stream: bool = False,
     overlay_out: list | None = None,
+    unknown_skip: tuple = (),
+    unknown_out: list | None = None,
 ) -> int:
     """`live` — operator shu kamerani ko'ryapti: eng yuqori navbat va 3D
     belgilar (skanerdagi "uxlayapti" belgisi uchun). `main_stream` — kadr
@@ -1397,6 +1442,9 @@ async def _analyse_entrance_frame(
                 landmarks=live,
                 overlay_out=overlay_out,
                 zoom_session_factory=context.session_factory,
+                min_face_px=settings.attendance_watch_min_face_px,
+                unknown_skip=unknown_skip,
+                unknown_out=unknown_out,
             )
             if overlay_out:
                 await _name_overlay(db, overlay_out)
@@ -1557,6 +1605,8 @@ async def _watch_entrance_camera(camera: Camera, watcher: _EntranceWatcher) -> N
     camera_roi = face_roi_box(camera)
     tracked: tuple = ()
     previous_overlay: list[dict] = []
+    # (ramka, muddat) — yaqinda tahlil qilingan aniq notanish yuzlar.
+    unknown_tracked: list[tuple] = []
     track_ids = itertools.count(1)
     main_reader: str | None = None
     pacer = CameraPacer(exempt=is_door_camera(camera))
@@ -1623,13 +1673,14 @@ async def _watch_entrance_camera(camera: Camera, watcher: _EntranceWatcher) -> N
                 frame, last_seq = latest
                 if stream != last_stream:
                     # Boshqa oqim — boshqa o'lcham: kuzatuv va harakat tayanchi yangidan.
-                    tracked, previous_overlay, gate = (), [], MotionGate()
+                    tracked, previous_overlay, gate, unknown_tracked = (), [], MotionGate(), []
                     last_stream = stream
                 # Skanerdagi belgi: kamera o'zi asosiy oqimda bo'lsa ham "asosiy".
                 label = "asosiy" if stream == "asosiy" or not ai_prefers_substream(camera) else "kichik"
                 if not await asyncio.to_thread(gate.should_analyse, frame, camera_roi):
                     recognition_stats.record_motion_skip(key)
                     tracked = ()  # eshik bo'sh — kuzatuv uziladi
+                    unknown_tracked = []
                     if live:
                         # Kadr o'zgarmadi — skaner oxirgi natijani ko'rsataveradi.
                         await live_focus.publish_result(
@@ -1639,6 +1690,8 @@ async def _watch_entrance_camera(camera: Camera, watcher: _EntranceWatcher) -> N
                     continue
                 identified: list = []
                 overlay: list[dict] = []
+                now_unknown: list[tuple] = []
+                active_unknown = tuple(item for item in unknown_tracked if item[1] > monotonic())
                 useful_before = _useful_face_total(key)
                 watcher.matched += await _analyse_entrance_frame(
                     camera,
@@ -1650,8 +1703,11 @@ async def _watch_entrance_camera(camera: Camera, watcher: _EntranceWatcher) -> N
                     live=live,
                     main_stream=stream == "asosiy",
                     overlay_out=overlay,
+                    unknown_skip=active_unknown,
+                    unknown_out=now_unknown,
                 )
                 tracked = tuple(identified)
+                unknown_tracked = now_unknown
                 region = compose_roi(camera_roi, gate.region) if gate.region is not None else None
                 if region is not None:
                     # Faqat harakat hududi tahlil qilindi — tashqaridagilar

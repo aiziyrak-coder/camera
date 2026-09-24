@@ -40,6 +40,52 @@ export function getSightings(
   return api.get<SightingList>(`/api/notanishlar${buildQuery(params)}`, undefined, opts);
 }
 
+/** Takroriy notanish — bir odamning bir necha kundagi yuzlari
+ *  (camera-api/app/services/unknown_clusters.py). */
+export interface RecurringHint {
+  personId: string;
+  fullName: string;
+  groupOrPosition: string;
+  similarity: number;
+}
+
+export interface RecurringUnknown {
+  key: string;
+  sightingIds: string[];
+  /** Necha xil kunda ko'ringan — ko'p bo'lsa, bu yerning odami (talaba/xodim). */
+  days: number;
+  hits: number;
+  cameras: string[];
+  firstSeenAt: string;
+  lastSeenAt: string;
+  facePx: number;
+  cropUrls: string[];
+  /** Ro'yxatdagi o'xshash odamlar — "bu X emasmi?" ishorasi. */
+  hints: RecurringHint[];
+}
+
+export interface RecurringList {
+  items: RecurringUnknown[];
+  pending: number;
+}
+
+export interface GroupActionResult {
+  message: string;
+  count: number;
+}
+
+export function getRecurringUnknowns(params: { kun?: number; min_kun?: number; limit?: number } = {}, opts: CallOptions = {}): Promise<RecurringList> {
+  return api.get<RecurringList>(`/api/notanishlar/takroriy${buildQuery(params)}`, undefined, opts);
+}
+
+export function assignRecurring(sightingIds: string[], personId: string): Promise<GroupActionResult> {
+  return api.post<GroupActionResult>('/api/notanishlar/takroriy/biriktirish', { sightingIds, personId });
+}
+
+export function dismissRecurring(sightingIds: string[]): Promise<GroupActionResult> {
+  return api.post<GroupActionResult>('/api/notanishlar/takroriy/otkazish', { sightingIds });
+}
+
 export function assignSighting(id: string, personId: string): Promise<ResolveResult> {
   return api.post<ResolveResult>(`/api/notanishlar/${encodeURIComponent(id)}/talaba`, { personId });
 }

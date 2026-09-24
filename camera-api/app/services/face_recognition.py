@@ -339,6 +339,9 @@ class DetectedFace:
     bbox: np.ndarray  # (4,) — [x1, y1, x2, y2] in the source image's pixel coordinates
     # True — oldingi kadrda tanilgan odam (skip_boxes), ataylab tahlil qilinmagan.
     tracked: bool = False
+    # True — kuzatilayotgan yuz yaqinda tahlil qilingan ANIQ NOTANISH odamniki
+    # (app/jobs/attendance_ai.py, unknown_skip).
+    tracked_unknown: bool = False
     # Sifat o'lchovlari (faqat tahlil qilingan yuzlar uchun; aks holda None) —
     # face_quality_ok() ga qarang.
     det_score: float | None = None

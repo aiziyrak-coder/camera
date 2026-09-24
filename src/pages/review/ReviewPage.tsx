@@ -17,6 +17,7 @@ import {
   type ReviewItem,
 } from '../../lib/tekshiruvApi';
 import { useApiResource } from '../../lib/useApiResource';
+import RecurringUnknowns from '../../components/review/RecurringUnknowns';
 import {
   Button,
   Card,
@@ -44,21 +45,29 @@ import {
  * galereyaga qo'shadi — tizim o'sha odamni keyingi safar o'zi taniydi.
  */
 
-type TabId = 'navbat' | 'aniqlik';
+type TabId = 'navbat' | 'takroriy' | 'aniqlik';
 
 const DAYS = 30;
 
 export default function ReviewPage() {
   const [pending, setPending] = useState<number | null>(null);
+  const [recurring, setRecurring] = useState<number | null>(null);
   const tabs: TabItem<TabId>[] = [
     { id: 'navbat', label: 'Navbat', count: pending },
+    { id: 'takroriy', label: 'Takroriy yuzlar', count: recurring },
     { id: 'aniqlik', label: 'Aniqlik' },
   ];
   const [tab] = useUrlTab(tabs, { defaultTab: 'navbat' });
 
   return (
     <Page title="Tekshiruv" breadcrumbs={[{ label: 'Monitoring' }, { label: 'Tekshiruv' }]} tabs={tabs} defaultTab="navbat">
-      {tab === 'navbat' ? <QueueTab onPending={setPending} /> : <AccuracyTab />}
+      {tab === 'navbat' ? (
+        <QueueTab onPending={setPending} />
+      ) : tab === 'takroriy' ? (
+        <RecurringUnknowns onPending={setRecurring} />
+      ) : (
+        <AccuracyTab />
+      )}
     </Page>
   );
 }
