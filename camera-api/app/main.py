@@ -53,6 +53,7 @@ from app.routers import (
     attendance,
     audit_log,
     auth,
+    camera_health,
     cameras,
     enrollment,
     events,
@@ -287,6 +288,7 @@ app.include_router(students_staff.router)
 app.include_router(org_structure.router)
 app.include_router(audit_log.router)
 app.include_router(cameras.router)
+app.include_router(camera_health.router)
 app.include_router(events.router)
 app.include_router(face.router)
 app.include_router(ai_modules.router)

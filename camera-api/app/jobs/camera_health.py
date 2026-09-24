@@ -13,6 +13,9 @@ app/routers/cameras.py and app/routers/public.py actually expose.
 When a camera stays unreachable longer than camera_offline_alert_minutes,
 an AuditLog alert is written once (deduplicated per outage) so admins
 can spot chronic network failures without watching the monitoring page.
+
+Har bir uzilish camera_outages jadvaliga ham yoziladi (_sync_outages) —
+tizim sahifasidagi "Kameralar" bo'limi uptime foizini shundan hisoblaydi.
 """
 
 import asyncio
@@ -30,7 +33,7 @@ from app.jobs.camera_health_metrics import (
     record_camera_health_sweep,
 )
 from app.jobs.sweep_guard import SweepGuard
-from app.models import AuditLog, Camera
+from app.models import AuditLog, Camera, CameraOutage
 from app.services.frame_grabber import camera_video_source
 from app.services.notifications import notify_camera_status
 from app.services.stream_cache import peek_cached_frame
@@ -137,6 +140,55 @@ def reset_camera_health_state_for_tests() -> None:
     _alerted.clear()
 
 
+async def _sync_outages(
+    db: AsyncSession,
+    cameras: list[Camera],
+    failures: dict[str, str],
+    now: datetime,
+) -> None:
+    """camera_outages jadvalini shu tekshiruv natijasiga moslaydi.
+
+    Uzilish faqat kamera haqiqatan "oflayn" bo'lganda ochiladi — ya'ni
+    is_reachable() ham False qaytarganda. Bitta yo'qolgan TCP javob
+    (tarmoqdagi bir lahzalik tebranish) sahifada kamerani oflayn
+    ko'rsatmaydi, demak uzilish sifatida ham hisoblanmasligi kerak —
+    aks holda uptime foizi ko'rinib turgan holatga zid bo'lardi.
+
+    Idempotent: ochiq uzilish bor bo'lsa, yangisi ochilmaydi. Shu sabab
+    API qayta ishga tushganda ham to'g'ri ishlaydi — xotiradagi holat
+    yo'qolsa ham, baza "ochiq uzilish bormi" degan savolga javob beradi.
+
+    `failures` — camera_id -> sabab ("tarmoq" | "xato"); unda yo'q faol
+    kamera — javob bergan kamera."""
+    rows = (await db.execute(select(CameraOutage).where(CameraOutage.ended_at.is_(None)))).scalars().all()
+    open_by_camera: dict[str, list[CameraOutage]] = {}
+    for outage in rows:
+        open_by_camera.setdefault(str(outage.camera_id), []).append(outage)
+
+    checked: set[str] = set()
+    for camera in cameras:
+        camera_id = str(camera.id)
+        checked.add(camera_id)
+        open_rows = open_by_camera.get(camera_id, [])
+        reason = failures.get(camera_id)
+        if reason is None:
+            for outage in open_rows:
+                outage.ended_at = now
+        elif not open_rows and not is_reachable(camera.last_seen_at):
+            # Boshlanish — kamera oxirgi marta ko'rilgan payt: tekshiruv
+            # oralig'i 30s, ya'ni aniqlik shu darajada. Hech ko'rilmagan
+            # bo'lsa — hozir.
+            started = camera.last_seen_at or now
+            db.add(CameraOutage(camera_id=camera.id, started_at=min(started, now), reason=reason))
+
+    # Faol bo'lmay qolgan (nofaol/tamirda) yoki o'chirilgan kameralar
+    # endi tekshirilmaydi — ularning uzilishi abadiy "davom etmasin".
+    for camera_id, open_rows in open_by_camera.items():
+        if camera_id not in checked:
+            for outage in open_rows:
+                outage.ended_at = now
+
+
 def _latest_frame_moment(camera: Camera, seen_at: dict[str, float], now: datetime) -> datetime | None:
     """Kameradan oxirgi yaroqli kadr qachon kelgan — bilsak.
 
@@ -167,9 +219,11 @@ async def run_camera_health_sweep_once(db: AsyncSession) -> int:
 
     reachable_count = 0
     frames_count = 0
+    failures: dict[str, str] = {}
     for camera, outcome in zip(cameras, results, strict=True):
         if isinstance(outcome, BaseException):
             logger.exception("camera health check failed", extra={"camera_id": str(camera.id)}, exc_info=outcome)
+            failures[str(camera.id)] = "xato"
             offline_since = _track_offline_camera(camera, now)
             await _maybe_raise_offline_alert(db, camera, offline_since)
             continue
@@ -190,8 +244,17 @@ async def run_camera_health_sweep_once(db: AsyncSession) -> int:
             if is_video_flowing(camera.last_frame_at):
                 frames_count += 1
         else:
+            failures[str(camera.id)] = "tarmoq"
             offline_since = _track_offline_camera(camera, now)
             await _maybe_raise_offline_alert(db, camera, offline_since)
+    try:
+        # Savepoint: yiqilsa faqat uzilishlar qismi bekor bo'ladi.
+        async with db.begin_nested():
+            await _sync_outages(db, list(cameras), failures, now)
+    except Exception:
+        # Uzilishlar tarixi — qo'shimcha ma'lumot; u yiqilsa ham
+        # last_seen_at yozilishi (asosiy vazifa) to'xtamasligi kerak.
+        logger.exception("camera outage bookkeeping failed")
     await db.commit()
     record_camera_health_sweep(
         duration_seconds=time.monotonic() - started,

@@ -4,6 +4,7 @@ from app.models.attendance import AttendanceRecord
 from app.models.attendance_policy import AttendancePolicy
 from app.models.audit_log import AuditLog
 from app.models.camera import Camera
+from app.models.camera_outage import CameraOutage
 from app.models.enrollment_code import EnrollmentCode
 from app.models.event import Event
 from app.models.face_gallery import FaceGalleryEmbedding
@@ -41,6 +42,7 @@ __all__ = [
     "StudentStaff",
     "AuditLog",
     "Camera",
+    "CameraOutage",
     "EnrollmentCode",
     "Event",
     "FaceGalleryEmbedding",
