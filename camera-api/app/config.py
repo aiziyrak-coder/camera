@@ -557,6 +557,13 @@ class Settings(BaseSettings):
     # deydi. Sabab: talabalarning ko'pchiligining yuzi hali tizimda yo'q,
     # kunduzgi signal ularni "begona" deb chalardi.
     unknown_review_enabled: bool = True
+    # Operator kuzatayotgan kameraning yuz belgilari asosiy (4K) oqimdan
+    # olinadi. O'lchov (2026-09-24, "2-xona", ~20 talaba): kichik oqimda
+    # 10 yuzdan faqat 3 tasi tahlilga yaradi (10-20 px), 4K da — 10 tasi
+    # ham (37-125 px). Faqat BITTA kuzatilayotgan kamera uchun, va
+    # o'quvchi stream_cache_idle_timeout o'tgach o'zi yopiladi.
+    live_detection_main_stream: bool = True
+    live_detection_main_wait_seconds: float = 6.0
     # Bir kunda shu o'xshashlikdan yuqori yuzlar bitta qatorga yig'iladi.
     # ArcFace'da bir odamning ikki kamera kadri odatda 0.45-0.70.
     unknown_merge_similarity: float = 0.5

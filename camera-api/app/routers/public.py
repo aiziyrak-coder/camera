@@ -41,7 +41,7 @@ from app.services.event_scope import NOT_SUPPRESSED, OPERATOR_EVENTS
 from app.services.face_matching import load_candidate_matrix_cached
 from app.services.face_recognition import detect_faces
 from app.services.inference_gate import PRIORITY_LIVE
-from app.services.frame_grabber import frame_wait_seconds_for_camera, grab_frame_for_camera
+from app.services.frame_grabber import frame_wait_seconds_for_camera, grab_frame_for_camera, grab_live_main_frame
 from app.services.image_size import jpeg_dimensions
 from app.services.sleep_detection import is_asleep, is_face_measurable
 from app.services.stream_links import signed_stream_url
@@ -297,9 +297,16 @@ async def get_live_detection(
     camera = await _load_camera(db, camera_id)
 
     try:
-        frame_bytes = await grab_frame_for_camera(
-            camera, wait_seconds=frame_wait_seconds_for_camera(camera)
-        )
+        # Mayda yuzlar (sinf xonasi, shiftdagi kamera) faqat asosiy
+        # oqimda tahlilga yaraydi — settings.live_detection_main_stream.
+        source = "kichik"
+        frame_bytes = None
+        if settings.live_detection_main_stream:
+            frame_bytes = await grab_live_main_frame(camera, wait_seconds=settings.live_detection_main_wait_seconds)
+            if frame_bytes is not None:
+                source = "asosiy"
+        if frame_bytes is None:
+            frame_bytes = await grab_frame_for_camera(camera, wait_seconds=frame_wait_seconds_for_camera(camera))
         if frame_bytes is None:
             return LiveDetectionOut(frame_width=0, frame_height=0, faces=[])
 
@@ -312,13 +319,18 @@ async def get_live_detection(
 
         faces = await detect_faces(frame_bytes, priority=PRIORITY_LIVE)
         candidates = await load_candidate_matrix_cached(db)
+        threshold = settings.attendance_ai_match_threshold
 
         faces_out = []
         for face in faces:
             # Juda kichik yuz tahlil qilinmagan: ramkasi chiziladi, ismi va
             # uyqu holati yo'q (baribir ishonchli aniqlab bo'lmasdi).
             analysed = face.embedding is not None
-            match = candidates.best_match(face.embedding, settings.attendance_ai_match_threshold) if analysed else None
+            match = candidates.best_match(face.embedding, threshold) if analysed else None
+            similarity = None
+            if analysed and not candidates.is_empty:
+                _idx, best_sim, _second = candidates.top_two(face.embedding.reshape(1, -1))
+                similarity = round(max(0.0, float(best_sim[0])), 3)
             person_name = None
             if match is not None:
                 person = await db.get(StudentStaff, match[0])
@@ -328,10 +340,12 @@ async def get_live_detection(
                     bbox=[float(x) for x in face.bbox],
                     person_name=person_name,
                     asleep=analysed and is_face_measurable(face.bbox) and is_asleep(face.landmarks_68),
+                    status="tanildi" if person_name else ("notanish" if analysed else "kichik"),
+                    similarity=similarity,
                 )
             )
 
-        return LiveDetectionOut(frame_width=frame_width, frame_height=frame_height, faces=faces_out)
+        return LiveDetectionOut(frame_width=frame_width, frame_height=frame_height, faces=faces_out, source=source)
     except Exception:
         logger.exception("live-detection failed", extra={"camera_id": camera_id})
         return LiveDetectionOut(frame_width=0, frame_height=0, faces=[])

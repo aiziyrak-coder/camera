@@ -66,16 +66,24 @@ export interface Campus {
 /** Backenddagi GET /api/public/cameras/{id}/live-detection javobiga mos —
  * kadrda hozir topilgan bitta yuz haqida ma'lumot (chegara chizig'i,
  * agar tanilsa ismi, ko'z holati). */
+/** tanildi — ro'yxatdagi odam; notanish — tahlil qilindi, hech kimga
+ *  o'xshamadi; kichik — yuz juda mayda, tahlil qilinmadi. */
+export type DetectedFaceStatus = 'tanildi' | 'notanish' | 'kichik';
+
 export interface DetectedFace {
   bbox: [number, number, number, number];
   personName?: string | null;
   asleep: boolean;
+  status?: DetectedFaceStatus;
+  similarity?: number | null;
 }
 
 export interface LiveDetectionResult {
   frameWidth: number;
   frameHeight: number;
   faces: DetectedFace[];
+  /** Kadr manbai: asosiy (4K) yoki kichik oqim. */
+  source?: 'asosiy' | 'kichik';
 }
 
 /** GET /api/public/cameras/{id}/analysis-status — oxirgi fon AI sweep. */

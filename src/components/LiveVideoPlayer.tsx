@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type Hls from 'hls.js';
 import { Loader2, VideoOff } from 'lucide-react';
 import FaceDetectionOverlay from './FaceDetectionOverlay';
+import type { LiveDetectionResult } from '../types';
 import ZoneOverlay from './ZoneOverlay';
 import { useLiveDetection } from '../lib/useLiveDetection';
 import { acquireStreamSlot, releaseStreamSlot } from '../lib/streamLoadQueue';
@@ -40,6 +41,8 @@ interface LiveVideoPlayerProps {
    * yoqiladi (showDetections), doim emas. */
   cameraId?: string;
   showDetections?: boolean;
+  /** Har yangi yuz tahlili natijasi — ota komponent hisoblagich ko'rsatishi uchun. */
+  onDetection?: (result: LiveDetectionResult | null) => void;
   /** Berilsa, video ustiga bosish orqali taqiqlangan zona ko'pburchagini
    * chizish rejimi yoqiladi (CameraZoneModal.tsx) — koordinatalar
    * app/models/camera.py's restricted_zone_polygon bilan bir xil formatda
@@ -129,6 +132,7 @@ export default function LiveVideoPlayer({
   priority = false,
   cameraId,
   showDetections = false,
+  onDetection,
   zoneEditing = false,
   zonePoints = [],
   onZonePointAdd,
@@ -150,6 +154,11 @@ export default function LiveVideoPlayer({
   const hlsRetriesRef = useRef(0); // HLS.js's own in-attempt network/media recovery count
   const attemptRef = useRef(0); // how many whole attach cycles have been tried, for backoff + the error threshold
   const detection = useLiveDetection(cameraId, showDetections && !error);
+  const onDetectionRef = useRef(onDetection);
+  onDetectionRef.current = onDetection;
+  useEffect(() => {
+    onDetectionRef.current?.(detection.result);
+  }, [detection.result]);
   // `startDelayMs` — faqat BIRINCHI ulanishni siljitish uchun (panjarada
   // hamma pleyer bir vaqtda ulanmasin). Uni effekt bog'liqligiga qo'yish
   // mumkin emas: panjaradagi bitta kamera oflayn bo'lishi yoki bitta

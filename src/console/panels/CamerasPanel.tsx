@@ -4,6 +4,7 @@ import { Search, X } from 'lucide-react';
 import { cn } from '../../ui';
 import { CodeText, MicroLabel } from '../../ui/intel';
 import LiveVideoPlayer from '../../components/LiveVideoPlayer';
+import type { LiveDetectionResult } from '../../types';
 import CameraThumbnail from '../../components/videowall/CameraThumbnail';
 import PtzControls from '../../components/ptz/PtzControls';
 import { usePtzAvailability } from '../../components/ptz/usePtzAvailability';
@@ -348,6 +349,11 @@ function FocusedCamera({
   const live = playing && isStreaming(camera);
   const flow = useVideoFlow(holder, live);
   const place = cameraPlaceCode(camera);
+  // Yuz skaneri — faqat shu BITTA kattalashtirilgan kamerada: har so'rov
+  // serverda haqiqiy kadr olish va yuz tahlili, gridning 16 katagida
+  // yoqilsa server bo'g'ilardi.
+  const [scan, setScan] = useState<LiveDetectionResult | null>(null);
+  const counts = scanCounts(scan);
 
   return (
     <motion.div
@@ -361,6 +367,8 @@ function FocusedCamera({
             priority
             fit="contain"
             cameraId={camera.id}
+            showDetections
+            onDetection={setScan}
             onStreamUnavailable={onStreamUnavailable}
           />
         ) : (
@@ -368,6 +376,7 @@ function FocusedCamera({
         )}
         <DegradedLayer show={live && flow === 'stalled'} />
         {!live && <StateLayer camera={camera} />}
+        {live && <ScanBadge counts={counts} />}
       </div>
 
       <div className="flex shrink-0 items-center gap-2 bg-black/70 px-3 py-2 text-white">
@@ -473,6 +482,41 @@ function CameraTile({
         <CodeText className="text-[10px] text-white/60">{code}</CodeText>
       </div>
     </motion.div>
+  );
+}
+
+/** Skaner natijasi: nechta yuz, nechtasi tanildi, nechtasi notanish. */
+export function scanCounts(scan: LiveDetectionResult | null) {
+  if (!scan) return null;
+  let known = 0;
+  let unknown = 0;
+  let small = 0;
+  for (const face of scan.faces) {
+    const status = face.status ?? (face.personName ? 'tanildi' : 'notanish');
+    if (status === 'tanildi') known += 1;
+    else if (status === 'notanish') unknown += 1;
+    else small += 1;
+  }
+  return { total: scan.faces.length, known, unknown, small, hd: scan.source === 'asosiy' };
+}
+
+/** Video ustidagi skaner holati — AI hozir nimani ko'rayotgani. */
+function ScanBadge({ counts }: { counts: ReturnType<typeof scanCounts> }) {
+  return (
+    <div className="pointer-events-none absolute left-3 top-3 z-[3] flex items-center gap-2 rounded-full bg-black/65 px-3 py-1.5 text-[12px] font-semibold text-white backdrop-blur">
+      <span className={cn('h-2 w-2 rounded-full', counts ? 'live-dot bg-sky-400 text-sky-400' : 'bg-white/40')} aria-hidden="true" />
+      {counts ? (
+        <>
+          <span>Yuz {counts.total}</span>
+          <span className="text-emerald-300">Tanildi {counts.known}</span>
+          <span className="text-rose-300">Notanish {counts.unknown}</span>
+          {counts.small > 0 && <span className="text-white/60">Kichik {counts.small}</span>}
+          {counts.hd && <span className="rounded bg-white/15 px-1 text-[10px]">4K</span>}
+        </>
+      ) : (
+        <span>Skanerlanmoqda…</span>
+      )}
+    </div>
   );
 }
 

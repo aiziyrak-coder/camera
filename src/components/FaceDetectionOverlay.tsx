@@ -1,5 +1,5 @@
 import { useEffect, useState, type RefObject } from 'react';
-import type { LiveDetectionResult } from '../types';
+import type { DetectedFaceStatus, LiveDetectionResult } from '../types';
 
 interface FaceDetectionOverlayProps {
   videoRef: RefObject<HTMLVideoElement | null>;
@@ -18,6 +18,7 @@ interface BoxStyle {
   label: string;
   asleep: boolean;
   identified: boolean;
+  status: DetectedFaceStatus;
 }
 
 /** Draws a box + label over each detected face on top of a <video>.
@@ -49,18 +50,33 @@ function computeBoxes(
 
   return faces.map((face, i) => {
     const [x1, y1, x2, y2] = face.bbox;
+    const status: DetectedFaceStatus = face.status ?? (face.personName ? 'tanildi' : 'notanish');
     return {
       key: `${i}-${x1}-${y1}`,
       left: offsetX + x1 * scale,
       top: offsetY + y1 * scale,
       width: (x2 - x1) * scale,
       height: (y2 - y1) * scale,
-      label: face.asleep ? `${face.personName ?? "Noma'lum"} — uxlab qolgan` : face.personName ?? "Noma'lum",
+      label: faceLabel(status, face.personName ?? null, face.asleep),
       asleep: face.asleep,
       identified: !!face.personName,
+      status,
     };
   });
 }
+
+/** Ramka ustidagi yozuv. Kichik yuzga yozuv yo'q — u tahlil qilinmagan,
+ *  "notanish" deyish yolg'on bo'lardi. */
+export function faceLabel(status: DetectedFaceStatus, name: string | null, asleep: boolean): string {
+  const base = status === 'tanildi' ? name ?? 'Tanildi' : status === 'notanish' ? 'Notanish' : '';
+  return asleep && base ? `${base} — uxlab qolgan` : base;
+}
+
+const BOX_TONE: Record<DetectedFaceStatus, { border: string; chip: string }> = {
+  tanildi: { border: 'border-emerald-400', chip: 'bg-emerald-500' },
+  notanish: { border: 'border-rose-500', chip: 'bg-rose-600' },
+  kichik: { border: 'border-white/50 border-dashed', chip: 'bg-slate-500' },
+};
 
 export default function FaceDetectionOverlay({ videoRef, detection, fit = 'cover' }: FaceDetectionOverlayProps) {
   const [boxes, setBoxes] = useState<BoxStyle[]>([]);
@@ -89,16 +105,18 @@ export default function FaceDetectionOverlay({ videoRef, detection, fit = 'cover
       {boxes.map((box) => (
         <div
           key={box.key}
-          className={`absolute rounded-md border-2 ${box.asleep ? 'border-amber-400' : box.identified ? 'border-emerald-400' : 'border-slate-300'}`}
+          className={`absolute rounded-md border-2 ${box.asleep ? 'border-amber-400' : BOX_TONE[box.status].border}`}
           style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
         >
-          <span
-            className={`absolute -top-6 left-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-semibold text-white ${
-              box.asleep ? 'bg-amber-500' : box.identified ? 'bg-emerald-500' : 'bg-slate-500'
-            }`}
-          >
-            {box.label}
-          </span>
+          {box.label && (
+            <span
+              className={`absolute -top-6 left-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-semibold text-white ${
+                box.asleep ? 'bg-amber-500' : BOX_TONE[box.status].chip
+              }`}
+            >
+              {box.label}
+            </span>
+          )}
         </div>
       ))}
     </div>

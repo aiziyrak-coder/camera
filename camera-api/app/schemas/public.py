@@ -66,12 +66,22 @@ class DetectedFaceOut(CamelModel):
     bbox: list[float]  # [x1, y1, x2, y2], pixel coordinates in the source frame
     person_name: str | None = None
     asleep: bool = False
+    # "tanildi" — ro'yxatdagi odam; "notanish" — tahlil qilindi, lekin
+    # hech kimga o'xshamadi; "kichik" — yuz juda mayda, tahlil qilinmadi.
+    # Ilgari oxirgi ikkisi bir xil ("Noma'lum") chiqardi va operator
+    # "tanimadimi yoki ko'rmadimi" degan savolga javob ololmasdi.
+    status: str = "kichik"
+    # Ro'yxatdagi eng yaqin odamga o'xshashlik (tahlil qilingan yuzlar uchun).
+    similarity: float | None = None
 
 
 class LiveDetectionOut(CamelModel):
     frame_width: int
     frame_height: int
     faces: list[DetectedFaceOut]
+    # Kadr qaysi oqimdan: "asosiy" (4K) yoki "kichik" — mayda yuzlar
+    # faqat asosiy oqimda tahlil qilinadi.
+    source: str = "kichik"
 
 
 class CameraAnalysisStatusOut(CamelModel):

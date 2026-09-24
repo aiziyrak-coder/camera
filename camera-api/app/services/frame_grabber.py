@@ -263,6 +263,35 @@ async def grab_main_stream_frame_once(camera: Camera, *, wait_seconds: float | N
         await stop_stream_reader(source)
 
 
+async def grab_live_main_frame(camera: Camera, *, wait_seconds: float) -> bytes | None:
+    """Operator KUZATAYOTGAN kamera uchun asosiy (4K) oqimdan kadr.
+
+    grab_main_stream_frame_once() dan farqi: o'quvchi yopilmaydi. Yuz
+    belgilari har bir necha soniyada so'raladi — har safar 4K ulanishni
+    qaytadan ochish ~5 s kutish degani edi. O'quvchi keshda qoladi va
+    operator ketgach stream_cache_idle_timeout_seconds o'tib o'zi
+    to'xtaydi, ya'ni narxi faqat kuzatilgan vaqt davomida to'lanadi.
+
+    None — asosiy oqim o'chirilgan, "jazo muddati"da yoki kadr bermadi;
+    chaqiruvchi kichik oqimga qaytadi."""
+    if not settings.ai_use_direct_rtsp or _main_stream_blocked(camera):
+        return None
+    source = rtsp_url_for_camera(camera, substream=False)
+    if not source:
+        return None
+    deadline = time.monotonic() + wait_seconds
+    while time.monotonic() < deadline:
+        latest = await get_cached_frame_with_seq(source)
+        if latest is not None:
+            _note_main_stream_result(camera, ok=True)
+            return latest[0]
+        if is_stream_known_broken(source):
+            break
+        await asyncio.sleep(_POLL_SECONDS)
+    _note_main_stream_result(camera, ok=False)
+    return None
+
+
 def _spaced(history: list[tuple[bytes, int, float]], count: int, gap_seconds: float) -> list[bytes] | None:
     """Tarixdan (eng yangisidan) kamida `gap_seconds` oraliqli `count` ta kadr,
     eskisidan yangisiga tartibda. Yetmasa None."""

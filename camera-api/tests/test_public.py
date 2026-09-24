@@ -285,3 +285,85 @@ class TestPublicEndpoints:
         resp = await client.get("/api/public/top-students")
         names = [s["name"] for s in resp.json()]
         assert "Yozuvsiz Talaba" not in names
+
+
+# ─────────────────────── Yuz belgilari: holat va 4K manba (2026-09-24)
+
+@pytest.mark.usefixtures("seeded", "monitoring_open")
+class TestLiveDetectionFaceStatus:
+    """Operator kamerani kuzatganda har yuz aniq belgilanishi kerak:
+    tanildi / notanish / kichik. Ilgari oxirgi ikkisi bir xil
+    ("Noma'lum") edi — skaner tanimadimi yoki umuman ko'rmadimi, bilib
+    bo'lmasdi."""
+
+    async def _call(self, client, a_camera, monkeypatch, *, main_frame, faces, match_ids=()):
+        import numpy as np
+        from types import SimpleNamespace
+
+        from app.routers import public as public_router
+
+        async def fake_main(camera, *, wait_seconds):
+            return main_frame
+
+        async def fake_sub(camera, *, wait_seconds=None):
+            return b"sub-frame"
+
+        async def fake_detect(frame, priority=None):
+            return faces
+
+        class FakeCandidates:
+            is_empty = False
+
+            def best_match(self, embedding, threshold):
+                return (match_ids[0], 0.7) if match_ids and float(embedding[0]) > 0.5 else None
+
+            def top_two(self, embeddings):
+                return None, np.array([0.71 if float(embeddings[0][0]) > 0.5 else 0.12]), np.array([0.0])
+
+        async def fake_candidates(db):
+            return FakeCandidates()
+
+        monkeypatch.setattr(public_router, "grab_live_main_frame", fake_main)
+        monkeypatch.setattr(public_router, "grab_frame_for_camera", fake_sub)
+        monkeypatch.setattr(public_router, "detect_faces", fake_detect)
+        monkeypatch.setattr(public_router, "load_candidate_matrix_cached", fake_candidates)
+        monkeypatch.setattr(public_router, "jpeg_dimensions", lambda _b: (3840, 2160))
+        resp = await client.get(f"/api/public/cameras/{a_camera.id}/live-detection")
+        assert resp.status_code == 200, resp.text
+        return resp.json()
+
+    @staticmethod
+    def _face(first: float | None):
+        import numpy as np
+        from types import SimpleNamespace
+
+        emb = None if first is None else np.array([first] + [0.0] * 511)
+        return SimpleNamespace(bbox=np.array([10.0, 10.0, 60.0, 70.0]), embedding=emb, landmarks_68=None)
+
+    async def test_each_face_gets_its_own_status(self, client, a_camera, monkeypatch, db_session):
+        from app.models import StudentStaff
+
+        person = StudentStaff(full_name="Aliyev Anvar", type="talaba", group_or_position="DI-2301")
+        db_session.add(person)
+        await db_session.commit()
+
+        body = await self._call(
+            client, a_camera, monkeypatch,
+            main_frame=b"main-frame",
+            faces=[self._face(0.9), self._face(0.1), self._face(None)],
+            match_ids=(person.id,),
+        )
+        statuses = [f["status"] for f in body["faces"]]
+        assert statuses == ["tanildi", "notanish", "kichik"]
+        assert body["faces"][0]["personName"] == "Aliyev Anvar"
+        assert body["faces"][1]["similarity"] == 0.12
+        # Kichik yuzga o'xshashlik o'ylab topilmaydi.
+        assert body["faces"][2]["similarity"] is None
+
+    async def test_main_stream_is_used_when_available(self, client, a_camera, monkeypatch):
+        body = await self._call(client, a_camera, monkeypatch, main_frame=b"main-frame", faces=[])
+        assert body["source"] == "asosiy"
+
+    async def test_falls_back_to_substream(self, client, a_camera, monkeypatch):
+        body = await self._call(client, a_camera, monkeypatch, main_frame=None, faces=[])
+        assert body["source"] == "kichik"
