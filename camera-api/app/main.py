@@ -44,6 +44,7 @@ from app.services.stream_cache import shutdown_stream_cache, stream_cache_reaper
 from app.services.thread_limits import apply_thread_limits
 from app.storage import check_bucket
 from app.routers import (
+    unknown_sightings,
     presence,
     person_locator,
     access_control,
@@ -278,6 +279,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(unknown_sightings.router)
 app.include_router(users.router)
 app.include_router(students_staff.router)
 app.include_router(org_structure.router)

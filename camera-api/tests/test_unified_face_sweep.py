@@ -240,3 +240,46 @@ class TestProcessCameraConcurrentFaceDetection:
 
         # 2 distinct objects, 2 calls.
         assert call_count["n"] == 2
+
+
+# ─────────────────────────── Kunduzgi ko'rib chiqish rejimi (begona shaxs)
+
+@pytest.mark.usefixtures("seeded")
+class TestDaytimeReviewMode:
+    """Kunduzi notanish yuz signal emas — ro'yxatga tushadi. Kechasi esa
+    oldingidek signal. Bir xil kadr juftligi, faqat natija boshqacha."""
+
+    async def _run(self, a_camera, monkeypatch, flags):
+        pair = (_frame("pair_a"), _frame("pair_b"))
+        seen: dict[str, object] = {}
+
+        async def fake_grab_frame_pair_for_camera(camera):
+            return pair
+
+        async def fake_detect_faces(frame: bytes):
+            return ["yuz"]
+
+        async def fake_unauthorized(frame_a, frame_b, db, camera, **kwargs):
+            seen["review"] = kwargs.get("review")
+            return True
+
+        monkeypatch.setattr(unified_face_sweep, "grab_frame_pair_for_camera", fake_grab_frame_pair_for_camera)
+        monkeypatch.setattr(unified_face_sweep, "detect_faces", fake_detect_faces)
+        monkeypatch.setattr(unified_face_sweep, "process_camera_frame_pair_for_unauthorized", fake_unauthorized)
+
+        from tests.conftest import TestSessionLocal
+
+        await _process_camera(a_camera, flags, candidates=None, session_factory=TestSessionLocal)
+        return seen
+
+    async def test_daytime_runs_in_review_mode(self, db_session, a_camera, monkeypatch):
+        seen = await self._run(a_camera, monkeypatch, {"unauthorized": False, "sleep": False, "review": True})
+        assert seen["review"] is True
+
+    async def test_night_raises_alarms_not_review(self, db_session, a_camera, monkeypatch):
+        seen = await self._run(a_camera, monkeypatch, {"unauthorized": True, "sleep": False, "review": False})
+        assert seen["review"] is False
+
+    async def test_nothing_runs_when_both_off(self, db_session, a_camera, monkeypatch):
+        seen = await self._run(a_camera, monkeypatch, {"unauthorized": False, "sleep": False, "review": False})
+        assert seen == {}

@@ -12,6 +12,7 @@ import PeoplePanel from './panels/PeoplePanel';
 import UnitsPanel from './panels/UnitsPanel';
 import VerdictPanel from './panels/VerdictPanel';
 import VitalsPanel from './panels/VitalsPanel';
+import UnknownPanel from './panels/UnknownPanel';
 import ConsolePalette, { type PaletteTarget } from './ConsolePalette';
 import ConsoleFilterBar from './ConsoleFilterBar';
 import { useConsoleFilter } from './consoleFilter';
@@ -233,6 +234,15 @@ export default function ConsoleShell() {
 
         {/* Tizim o'lchovlari — yoyilganda tizim holati kartalari. */}
         <VitalsPanel expanded={expanded === 'vitals'} onExpand={setExpanded} area="lg:col-span-1" />
+
+        {/* Begona shaxs — kunduzgi notanish yuzlar (signal emas, ro'yxat). */}
+        <UnknownPanel
+          date={date}
+          pulse={pulse}
+          expanded={expanded === 'unknown'}
+          onExpand={setExpanded}
+          area="lg:col-span-1"
+        />
 
       </motion.main>
 

@@ -104,7 +104,10 @@ async def _process_camera(
 ) -> dict[str, int]:
     counts = {"unauthorized": 0, "sleep": 0}
 
-    needs_unauthorized = flags["unauthorized"] and _allows(camera, UNAUTHORIZED_MODULE_CODE)
+    # Kunduzgi ko'rib chiqish ham xuddi shu kadr juftligini ishlatadi —
+    # farqi faqat natijada (hodisa emas, ro'yxatga yozuv).
+    review = flags.get("review", False)
+    needs_unauthorized = (flags["unauthorized"] or review) and _allows(camera, UNAUTHORIZED_MODULE_CODE)
     needs_sleep = flags["sleep"] and _allows(camera, SLEEP_MODULE_CODE)
 
     if not any((needs_unauthorized, needs_sleep)):
@@ -169,6 +172,7 @@ async def _process_camera(
                     candidates=candidates,
                     faces_a=faces_by_frame_id[id(frame_a)],
                     faces_b=faces_by_frame_id[id(frame_b)],
+                    review=review and not flags["unauthorized"],
                 ):
                     counts["unauthorized"] = 1
 
@@ -271,12 +275,20 @@ async def run_unified_face_sweep_once(
 
     def camera_flags(camera: Camera) -> dict[str, bool]:
         camera_id = str(camera.id)
+        eligible = camera_can_report_unauthorized(camera) and role_allows(camera, UNAUTHORIZED_MODULE_CODE)
         return {
             "unauthorized": flags["unauthorized"]
             and alert_time
-            and camera_can_report_unauthorized(camera)
-            and role_allows(camera, UNAUTHORIZED_MODULE_CODE)
+            and eligible
             and (camera_id, UNAUTHORIZED_MODULE_CODE) not in suppressed,
+            # Kunduzi: signal emas, notanishlar ro'yxati. Avtomatik
+            # o'chirilgan kameralar HAM qatnashadi — ular aynan yuzi
+            # kiritilmagan talabalar ko'p ko'rinadigan joylar, ro'yxat esa
+            # hech kimni bezovta qilmaydi va qamrovni o'stirish manbai.
+            "review": flags["unauthorized"]
+            and settings.unknown_review_enabled
+            and not alert_time
+            and eligible,
             "sleep": flags["sleep"]
             and role_allows(camera, SLEEP_MODULE_CODE)
             and (lesson_cameras is None or camera_id in lesson_cameras)

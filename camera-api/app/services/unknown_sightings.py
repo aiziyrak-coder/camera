@@ -1,0 +1,310 @@
+"""Kunduzgi notanish yuzlar — yozish, birlashtirish, hal qilish.
+
+Model va nega kerakligi: app/models/unknown_sighting.py.
+
+Oqim:
+  unified_face_sweep (kunduzi) -> record_unknown_faces()   yuz qatorga yoziladi
+  operator                      -> assign_to_person()       "talaba"
+                                -> mark_stranger()          "begona" (hodisa #1)
+                                -> dismiss()                "o'tkazildi"
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import uuid
+from datetime import datetime, timezone
+
+import numpy as np
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
+from app.models import Camera, FaceGalleryEmbedding, StudentStaff, UnknownSighting
+from app.services.face_matching import anchor_hash
+from app.timezone import INSTITUTE_TZ, local_now
+
+logger = logging.getLogger("app.unknown_sightings")
+
+UNKNOWN_MODULE_CODE = 1
+UNKNOWN_MODULE_NAME = "Notanish/begona shaxsni aniqlash"
+
+
+class ResolveError(Exception):
+    """Operator harakati bajarilmadi — sababi foydalanuvchiga ko'rsatiladi."""
+
+
+def _unit(vector) -> np.ndarray | None:
+    arr = np.asarray(vector, dtype=np.float64)
+    norm = float(np.linalg.norm(arr))
+    return arr / norm if norm > 0 else None
+
+
+def _face_px(face) -> int:
+    bbox = getattr(face, "bbox", None)
+    if bbox is None:
+        return 0
+    return int(float(bbox[3]) - float(bbox[1]))
+
+
+def crop_face(frame_bytes: bytes, bbox, margin: float) -> bytes | None:
+    """Yuzni atrofi bilan kesib JPEG qaytaradi. Kesib bo'lmasa None.
+
+    Hoshiya yuz o'lchamiga nisbatan: operator odamni yuzidan tashqari
+    sochi va kiyimidan ham taniydi."""
+    import cv2
+
+    image = cv2.imdecode(np.frombuffer(frame_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if image is None:
+        return None
+    height, width = image.shape[:2]
+    x1, y1, x2, y2 = (float(v) for v in bbox[:4])
+    pad_x = (x2 - x1) * margin
+    pad_y = (y2 - y1) * margin
+    left = max(0, int(x1 - pad_x))
+    top = max(0, int(y1 - pad_y))
+    right = min(width, int(x2 + pad_x))
+    bottom = min(height, int(y2 + pad_y * 1.4))  # pastga ko'proq — yelka/kiyim
+    if right - left < 8 or bottom - top < 8:
+        return None
+    ok, encoded = cv2.imencode(".jpg", image[top:bottom, left:right], [cv2.IMWRITE_JPEG_QUALITY, 88])
+    return encoded.tobytes() if ok else None
+
+
+async def _upload_crop(data: bytes) -> str | None:
+    from app.storage import upload_file
+
+    try:
+        _file_id, key = await asyncio.to_thread(upload_file, data, "yuz.jpg", "image/jpeg", "notanishlar")
+    except Exception:
+        # Rasmsiz yozuv ham foydali (qachon/qayerda) — saqlash xatosi
+        # butun kadrni yo'qotmasin.
+        logger.exception("unknown sighting crop upload failed")
+        return None
+    return key
+
+
+async def record_unknown_faces(
+    db: AsyncSession,
+    camera: Camera,
+    frame_bytes: bytes,
+    faces: list,
+    closest: list[float | None] | None = None,
+    *,
+    now: datetime | None = None,
+) -> int:
+    """Notanish yuzlarni bugungi ro'yxatga yozadi. Qaytaradi: nechta YANGI qator.
+
+    O'xshash yuz (settings.unknown_merge_similarity) bugun allaqachon
+    yozilgan bo'lsa — yangi qator emas: `hits` oshadi, rasm yirikrog'i
+    bilan almashadi. Commit — shu yerda (sweep har kamerada o'z
+    sessiyasini ochadi)."""
+    if not faces:
+        return 0
+    moment = now or datetime.now(timezone.utc)
+    day = local_now().date() if now is None else moment.astimezone(INSTITUTE_TZ).date()
+
+    rows = list(
+        (await db.execute(select(UnknownSighting).where(UnknownSighting.day == day))).scalars().all()
+    )
+    vectors = []
+    for row in rows:
+        try:
+            vectors.append(_unit(json.loads(row.embedding)))
+        except (ValueError, TypeError):
+            vectors.append(None)
+
+    created = 0
+    for index, face in enumerate(faces):
+        vector = _unit(getattr(face, "embedding", None)) if getattr(face, "embedding", None) is not None else None
+        if vector is None:
+            continue
+        px = _face_px(face)
+
+        best_row, best_sim = None, -1.0
+        for row, stored in zip(rows, vectors, strict=True):
+            if stored is None:
+                continue
+            sim = float(stored @ vector)
+            if sim > best_sim:
+                best_row, best_sim = row, sim
+
+        if best_row is not None and best_sim >= settings.unknown_merge_similarity:
+            best_row.hits += 1
+            best_row.last_seen_at = moment
+            # Yirikroq yuz — aniqroq rasm va ishonchliroq vektor.
+            if px > best_row.face_px:
+                crop = crop_face(frame_bytes, face.bbox, settings.unknown_crop_margin)
+                key = await _upload_crop(crop) if crop else None
+                if key:
+                    best_row.crop_key = key
+                    best_row.face_px = px
+                    best_row.embedding = json.dumps([round(float(v), 6) for v in vector])
+                    vectors[rows.index(best_row)] = vector
+            continue
+
+        if len(rows) >= settings.unknown_daily_cap:
+            logger.warning("unknown sightings daily cap reached", extra={"cap": settings.unknown_daily_cap})
+            break
+
+        crop = crop_face(frame_bytes, face.bbox, settings.unknown_crop_margin)
+        key = await _upload_crop(crop) if crop else None
+        row = UnknownSighting(
+            day=day,
+            camera_id=camera.id,
+            first_seen_at=moment,
+            last_seen_at=moment,
+            hits=1,
+            embedding=json.dumps([round(float(v), 6) for v in vector]),
+            crop_key=key,
+            face_px=px,
+            closest_similarity=(closest[index] if closest and index < len(closest) else None),
+            status="kutilmoqda",
+        )
+        db.add(row)
+        rows.append(row)
+        vectors.append(vector)
+        created += 1
+
+    await db.commit()
+    return created
+
+
+async def _other_lookalike(db: AsyncSession, vector: np.ndarray, exclude: uuid.UUID) -> tuple[str, float] | None:
+    """Tanlangan odamdan BOSHQA tasdiqlangan odamga juda o'xshaydimi."""
+    rows = (
+        await db.execute(
+            select(StudentStaff.id, StudentStaff.full_name, StudentStaff.biometric_embedding).where(
+                StudentStaff.biometrics_status == "tasdiqlangan",
+                StudentStaff.biometric_embedding.is_not(None),
+                StudentStaff.id != exclude,
+            )
+        )
+    ).all()
+    best: tuple[str, float] | None = None
+    for _pid, name, raw in rows:
+        try:
+            stored = _unit(json.loads(raw))
+        except (ValueError, TypeError):
+            continue
+        if stored is None:
+            continue
+        sim = float(stored @ vector)
+        if sim >= settings.self_enrollment_duplicate_threshold and (best is None or sim > best[1]):
+            best = (name, sim)
+    return best
+
+
+async def assign_to_person(
+    db: AsyncSession, sighting: UnknownSighting, person: StudentStaff, user_id: uuid.UUID | None
+) -> str:
+    """Yuzni odamga biriktiradi. Qaytaradi: "galereya" yoki "asosiy".
+
+    * Odamning yuzi bor — kamera namunasi galereyaga qo'shiladi (asl
+      rasmga yetarli o'xshashi sharti bilan: operator xato odamni
+      tanlagan bo'lsa, begona yuz o'sha odamning nomidan tanilib qolardi).
+    * Odamning yuzi yo'q — shu kamera rasmi uning ASOSIY yuzi bo'ladi
+      (boshqa tasdiqlangan odamga juda o'xshamasa). Bu qamrovni o'stiradi:
+      ertaga kamera uni o'zi taniydi.
+    """
+    if sighting.status != "kutilmoqda":
+        raise ResolveError("Bu yozuv allaqachon ko'rib chiqilgan")
+    vector = _unit(json.loads(sighting.embedding))
+    if vector is None:
+        raise ResolveError("Yuz ma'lumoti buzilgan")
+
+    hit = await _other_lookalike(db, vector, person.id)
+    if hit:
+        raise ResolveError(f"Bu yuz {hit[0]} ga juda o'xshaydi ({hit[1]:.2f}) — boshqa odamni tanlagan bo'lishingiz mumkin")
+
+    kind: str
+    if person.biometric_embedding:
+        anchor = _unit(json.loads(person.biometric_embedding))
+        similarity = float(anchor @ vector) if anchor is not None else 0.0
+        if similarity < settings.unknown_assign_min_similarity:
+            raise ResolveError(
+                f"Bu yuz {person.full_name} ning asl rasmiga o'xshamaydi ({similarity:.2f}) — boshqa odam bo'lishi mumkin"
+            )
+        db.add(
+            FaceGalleryEmbedding(
+                student_staff_id=person.id,
+                embedding=sighting.embedding,
+                anchor_hash=anchor_hash(person.biometric_embedding),
+                similarity=similarity,
+                face_px=sighting.face_px,
+                camera_id=sighting.camera_id,
+            )
+        )
+        kind = "galereya"
+    else:
+        person.biometric_embedding = sighting.embedding
+        person.biometrics_status = "tasdiqlangan"
+        if sighting.crop_key and not person.biometric_photo_key:
+            person.biometric_photo_key = sighting.crop_key
+        kind = "asosiy"
+
+    sighting.status = "talaba"
+    sighting.person_id = person.id
+    sighting.resolved_by = user_id
+    sighting.resolved_at = datetime.now(timezone.utc)
+    return kind
+
+
+async def mark_stranger(db: AsyncSession, sighting: UnknownSighting, user_id: uuid.UUID | None):
+    """Haqiqiy begona — odatdagi #1 hodisa yaratiladi (rasmi bilan)."""
+    from app.services.event_bus import raise_event
+    from app.storage import read_file
+
+    if sighting.status != "kutilmoqda":
+        raise ResolveError("Bu yozuv allaqachon ko'rib chiqilgan")
+    camera = await db.get(Camera, sighting.camera_id) if sighting.camera_id else None
+    if camera is None:
+        raise ResolveError("Kamera topilmadi — hodisa yaratib bo'lmaydi")
+    frame: bytes | None = None
+    if sighting.crop_key:
+        try:
+            frame = await asyncio.to_thread(read_file, sighting.crop_key)
+        except Exception:
+            logger.exception("unknown sighting crop read failed")
+    event = await raise_event(
+        db,
+        camera=camera,
+        module_code=UNKNOWN_MODULE_CODE,
+        module_name=UNKNOWN_MODULE_NAME,
+        group="A",
+        # Operator o'z ko'zi bilan tasdiqlagan — modul chegarasidan o'tishi shart.
+        confidence=100,
+        severity="yuqori",
+        frame_bytes=frame,
+        details={
+            "reason": f"Operator tasdiqladi: begona shaxs ({sighting.hits} marta ko'ringan)",
+            "metrics": {"hits": sighting.hits, "closest": sighting.closest_similarity},
+        },
+    )
+    sighting.status = "begona"
+    sighting.event_id = event.id if event is not None else None
+    sighting.resolved_by = user_id
+    sighting.resolved_at = datetime.now(timezone.utc)
+    return event
+
+
+def dismiss(sighting: UnknownSighting, user_id: uuid.UUID | None) -> None:
+    if sighting.status != "kutilmoqda":
+        raise ResolveError("Bu yozuv allaqachon ko'rib chiqilgan")
+    sighting.status = "otkazildi"
+    sighting.resolved_by = user_id
+    sighting.resolved_at = datetime.now(timezone.utc)
+
+
+async def pending_count(db: AsyncSession, day) -> int:
+    return int(
+        (
+            await db.execute(
+                select(func.count())
+                .select_from(UnknownSighting)
+                .where(UnknownSighting.day == day, UnknownSighting.status == "kutilmoqda")
+            )
+        ).scalar_one()
+    )

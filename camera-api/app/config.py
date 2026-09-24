@@ -551,6 +551,27 @@ class Settings(BaseSettings):
     # for attendance elsewhere, where a false match just costs nothing).
     unauthorized_min_face_height_fraction: float = 0.08
 
+    # Kunduzgi ko'rib chiqish rejimi (app/services/unknown_sightings.py).
+    # Ogohlantirish oynasidan TASHQARIDA notanish yuz signal emas —
+    # rasmi bilan ro'yxatga tushadi; operator "talaba" yoki "begona"
+    # deydi. Sabab: talabalarning ko'pchiligining yuzi hali tizimda yo'q,
+    # kunduzgi signal ularni "begona" deb chalardi.
+    unknown_review_enabled: bool = True
+    # Bir kunda shu o'xshashlikdan yuqori yuzlar bitta qatorga yig'iladi.
+    # ArcFace'da bir odamning ikki kamera kadri odatda 0.45-0.70.
+    unknown_merge_similarity: float = 0.5
+    # Kunlik qator chegarasi — noto'g'ri sozlangan kamera ro'yxatni
+    # ko'mib tashlamasin.
+    unknown_daily_cap: int = 600
+    # Kesilgan rasmga yuz atrofidan qo'shiladigan hoshiya (yuz o'lchamiga
+    # nisbatan) — operator odamni tanishi uchun soch/kiyim ham ko'rinsin.
+    unknown_crop_margin: float = 0.6
+    # "Talaba" deb belgilangan yuz odamning asl rasmiga shundan kam
+    # o'xshasa biriktirilmaydi: operator xato odamni tanlagan bo'lishi
+    # mumkin (galereyaga begona yuz qo'shilsa, kamera uni o'sha odam deb
+    # tanib qoladi).
+    unknown_assign_min_similarity: float = 0.25
+
     # TT kriteriya 17 ("Tartib-intizom buzilishi") —
     # app/jobs/disorder_ai.py. min_absolute_magnitude/spike_multiplier are
     # calibrated against real Farneback optical-flow numbers (see the

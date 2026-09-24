@@ -154,6 +154,14 @@ def _unmatched_faces(faces, candidates: CandidateMatrix) -> list:
     return [face for face, match in zip(faces, matches, strict=True) if match is None]
 
 
+def _closest_per_face(faces, candidates: CandidateMatrix) -> list[float | None]:
+    """Har yuzning ro'yxatdagi eng yaqin odamga o'xshashligi (tartib saqlanadi)."""
+    if not faces or candidates.is_empty:
+        return [None] * len(faces or [])
+    _idx, best_sim, _second = candidates.top_two(np.stack([face.embedding for face in faces]))
+    return [round(max(0.0, float(value)), 3) for value in best_sim]
+
+
 def _closest_similarity(faces, candidates: CandidateMatrix) -> float | None:
     """Tanilmagan yuzlarning bazadagi eng yaqin odamga o'xshashligi (eng kattasi)."""
     usable = [face for face in faces or [] if getattr(face, "embedding", None) is not None]
@@ -172,9 +180,16 @@ async def process_camera_frame_pair_for_unauthorized(
     candidates: CandidateMatrix | None = None,
     faces_a: list | None = None,
     faces_b: list | None = None,
+    *,
+    review: bool = False,
 ) -> bool:
     """Returns True if a (deduped) unauthorized-person Event was raised —
-    see the module docstring for the two-frame confirmation rationale."""
+    see the module docstring for the two-frame confirmation rationale.
+
+    `review=True` — kunduzgi ko'rib chiqish rejimi: ikki kadrlik
+    tasdiqlash xuddi shunday, lekin natija HODISA emas, notanishlar
+    ro'yxatiga yozuv (app/services/unknown_sightings.py). True — kamida
+    bitta yangi yozuv qo'shildi."""
     # Ro'yxat tekshiruvi ENG BOSHIDA va aynan shu yerda — chunki bu
     # funksiya ikkita mustaqil chaqiruvchiga ega
     # (run_unauthorized_person_ai_sweep_once va unified_face_sweep.py).
@@ -207,6 +222,12 @@ async def process_camera_frame_pair_for_unauthorized(
     faces_a = _filter_faces_by_size(faces_a, frame_a)
     if not _has_unmatched_face(faces_a, candidates):
         return False  # frame_a had no unmatched face — frame_b's miss looks like a one-off angle/lighting glitch
+
+    if review:
+        from app.services.unknown_sightings import record_unknown_faces
+
+        unmatched = _unmatched_faces(faces_b, candidates)
+        return await record_unknown_faces(db, camera, frame_b, unmatched, _closest_per_face(unmatched, candidates)) > 0
 
     if await _recently_flagged(db, camera.id):
         return False
