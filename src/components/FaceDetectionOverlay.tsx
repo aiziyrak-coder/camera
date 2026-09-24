@@ -1,68 +1,15 @@
-import { useEffect, useState, type RefObject } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
+import { TrackTimeline, type TrackBox } from '../lib/liveTracks';
 import type { DetectedFaceStatus, LiveDetectionResult } from '../types';
 
 interface FaceDetectionOverlayProps {
   videoRef: RefObject<HTMLVideoElement | null>;
+  /** Hozir ko'rinayotgan kadrning server soatidagi payti (ms) yoki null. */
+  videoClockRef?: RefObject<() => number | null>;
   detection: LiveDetectionResult | null;
-  /** Video elementning object-fit rejimi. Ramkalar aynan shu matematika
-      bo'yicha joylashtiriladi — computeBoxes izohiga qarang. */
+  /** Video elementning object-fit rejimi — ramkalar aynan shu matematika
+      bo'yicha joylashtiriladi (pictureRect izohiga qarang). */
   fit?: 'cover' | 'contain';
-}
-
-interface BoxStyle {
-  key: string;
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-  label: string;
-  asleep: boolean;
-  identified: boolean;
-  status: DetectedFaceStatus;
-}
-
-/** Draws a box + label over each detected face on top of a <video>.
- *
- * A face's [x1,y1,x2,y2] is in the SOURCE frame's pixel coordinates, so
- * it has to go through exactly the same fit-and-scale math the browser
- * applied to the video itself — a plain width-ratio scale makes the
- * boxes drift off the faces the moment the video's aspect ratio differs
- * from its container's.
- *
- * Which math depends on object-fit, and getting it backwards is worse
- * than useless: `cover` scales to the LARGER ratio and crops the
- * overflow, `contain` scales to the SMALLER one and letterboxes. Using
- * cover's math on a contained video puts every box outside the picture. */
-function computeBoxes(
-  video: HTMLVideoElement,
-  detection: LiveDetectionResult,
-  fit: 'cover' | 'contain',
-): BoxStyle[] {
-  const containerW = video.clientWidth;
-  const containerH = video.clientHeight;
-  const { frameWidth, frameHeight, faces } = detection;
-  if (!containerW || !containerH || !frameWidth || !frameHeight) return [];
-
-  const ratios = [containerW / frameWidth, containerH / frameHeight];
-  const scale = fit === 'contain' ? Math.min(...ratios) : Math.max(...ratios);
-  const offsetX = (containerW - frameWidth * scale) / 2;
-  const offsetY = (containerH - frameHeight * scale) / 2;
-
-  return faces.map((face, i) => {
-    const [x1, y1, x2, y2] = face.bbox;
-    const status: DetectedFaceStatus = face.status ?? (face.personName ? 'tanildi' : 'notanish');
-    return {
-      key: `${i}-${x1}-${y1}`,
-      left: offsetX + x1 * scale,
-      top: offsetY + y1 * scale,
-      width: (x2 - x1) * scale,
-      height: (y2 - y1) * scale,
-      label: faceLabel(status, face.personName ?? null, face.asleep),
-      asleep: face.asleep,
-      identified: !!face.personName,
-      status,
-    };
-  });
 }
 
 /** Ramka ustidagi yozuv. Kichik yuzga yozuv yo'q — u tahlil qilinmagan,
@@ -72,53 +19,121 @@ export function faceLabel(status: DetectedFaceStatus, name: string | null, aslee
   return asleep && base ? `${base} — uxlab qolgan` : base;
 }
 
-const BOX_TONE: Record<DetectedFaceStatus, { border: string; chip: string }> = {
-  tanildi: { border: 'border-emerald-400', chip: 'bg-emerald-500' },
-  notanish: { border: 'border-rose-500', chip: 'bg-rose-600' },
-  kichik: { border: 'border-white/50 border-dashed', chip: 'bg-slate-500' },
+const TONE: Record<DetectedFaceStatus, string> = {
+  tanildi: '#34d399',
+  notanish: '#f43f5e',
+  kichik: 'rgba(255,255,255,0.55)',
 };
+const ASLEEP = '#f59e0b';
 
-export default function FaceDetectionOverlay({ videoRef, detection, fit = 'cover' }: FaceDetectionOverlayProps) {
-  const [boxes, setBoxes] = useState<BoxStyle[]>([]);
+/** Video tasviri konteyner ichida qayerda turadi (piksel).
+ *
+ * `cover` kattaroq nisbat bo'yicha kattalashtirib ortig'ini kesadi,
+ * `contain` kichikrog'i bo'yicha sig'dirib chetida bo'sh joy qoldiradi.
+ * Teskarisini ishlatish ramkalarni butunlay tasvirdan tashqariga chiqaradi. */
+export function pictureRect(
+  containerW: number,
+  containerH: number,
+  videoW: number,
+  videoH: number,
+  fit: 'cover' | 'contain',
+): { x: number; y: number; w: number; h: number } | null {
+  if (!containerW || !containerH || !videoW || !videoH) return null;
+  const ratios = [containerW / videoW, containerH / videoH];
+  const scale = fit === 'contain' ? Math.min(...ratios) : Math.max(...ratios);
+  const w = videoW * scale;
+  const h = videoH * scale;
+  return { x: (containerW - w) / 2, y: (containerH - h) / 2, w, h };
+}
+
+/** Qaysi paytning ramkalari chiziladi. Video soati yo'q yoki natijalardan
+ *  juda uzoq (soat farqi) bo'lsa — eng so'nggi natija, avvalgidek. */
+export function overlayTime(clock: number | null, newestAt: number | null, offsetMs: number): number | null {
+  if (newestAt == null) return null;
+  if (clock == null) return newestAt;
+  const t = clock - offsetMs;
+  return Math.abs(newestAt - t) > 20_000 ? newestAt : t;
+}
+
+/** Yuz ramkalari video ustida: har kadrda qayta chiziladi va videoning
+ *  AYNAN o'sha paytiga mos keladi (lib/liveTracks.ts). */
+export default function FaceDetectionOverlay({ videoRef, videoClockRef, detection, fit = 'cover' }: FaceDetectionOverlayProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const timelineRef = useRef(new TrackTimeline());
+  const offsetRef = useRef(0);
 
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !detection) {
-      setBoxes([]);
+    if (!detection) {
+      timelineRef.current.clear();
       return;
     }
+    offsetRef.current = detection.clockOffsetMs ?? 0;
+    timelineRef.current.add([...(detection.history ?? []), detection]);
+  }, [detection]);
 
-    function recompute() {
-      if (video && detection) setBoxes(computeBoxes(video, detection, fit));
-    }
+  const active = detection !== null;
 
-    recompute();
-    const observer = new ResizeObserver(recompute);
-    observer.observe(video);
-    return () => observer.disconnect();
-  }, [videoRef, detection, fit]);
+  useEffect(() => {
+    if (!active) return;
+    let frame = 0;
+    const draw = () => {
+      frame = requestAnimationFrame(draw);
+      const canvas = canvasRef.current;
+      const video = videoRef.current;
+      if (!canvas || !video) return;
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      const dpr = window.devicePixelRatio || 1;
+      if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
+        canvas.width = Math.round(width * dpr);
+        canvas.height = Math.round(height * dpr);
+      }
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      const rect = pictureRect(width, height, video.videoWidth || 16, video.videoHeight || 9, fit);
+      const timeline = timelineRef.current;
+      const t = overlayTime(videoClockRef?.current?.() ?? null, timeline.newestAt, offsetRef.current);
+      if (!rect || t == null) return;
+      for (const box of timeline.boxesAt(t)) drawBox(ctx, box, rect);
+    };
+    frame = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(frame);
+  }, [active, videoRef, videoClockRef, fit]);
 
-  if (boxes.length === 0) return null;
+  if (!active) return null;
+  return <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden="true" />;
+}
 
-  return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      {boxes.map((box) => (
-        <div
-          key={box.key}
-          className={`absolute rounded-md border-2 ${box.asleep ? 'border-amber-400' : BOX_TONE[box.status].border}`}
-          style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
-        >
-          {box.label && (
-            <span
-              className={`absolute -top-6 left-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-semibold text-white ${
-                box.asleep ? 'bg-amber-500' : BOX_TONE[box.status].chip
-              }`}
-            >
-              {box.label}
-            </span>
-          )}
-        </div>
-      ))}
-    </div>
-  );
+function drawBox(ctx: CanvasRenderingContext2D, box: TrackBox, rect: { x: number; y: number; w: number; h: number }) {
+  const [x1, y1, x2, y2] = box.box;
+  const left = rect.x + x1 * rect.w;
+  const top = rect.y + y1 * rect.h;
+  const w = (x2 - x1) * rect.w;
+  const h = (y2 - y1) * rect.h;
+  const color = box.asleep ? ASLEEP : TONE[box.status];
+  ctx.globalAlpha = box.opacity;
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = color;
+  ctx.setLineDash(box.status === 'kichik' ? [4, 3] : []);
+  ctx.beginPath();
+  ctx.roundRect(left, top, w, h, 5);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  const label = faceLabel(box.status, box.name, box.asleep);
+  if (label) {
+    ctx.font = '600 11px system-ui, -apple-system, "Segoe UI", sans-serif';
+    const textW = ctx.measureText(label).width;
+    const chipH = 18;
+    const chipY = top - chipH - 3 < rect.y ? top + h + 3 : top - chipH - 3;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.roundRect(left, chipY, textW + 10, chipH, 4);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, left + 5, chipY + chipH / 2 + 0.5);
+  }
+  ctx.globalAlpha = 1;
 }

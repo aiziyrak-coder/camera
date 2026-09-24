@@ -4,13 +4,13 @@ import { useVisibleInterval } from './useVisibleInterval';
 import { tryAcquireLiveDetection, releaseLiveDetection } from './liveDetectionGate';
 import type { LiveDetectionResult } from '../types';
 
-// 1.5 s: javob endi ai-worker kuzatuvchisi yozib turgan natijadan o'qiladi
+// 1 s: javob endi ai-worker kuzatuvchisi yozib turgan natijadan o'qiladi
 // (camera-api/app/services/live_focus.py) — so'rov kadr olmaydi va tahlil
 // qilmaydi, ya'ni tez-tez so'rash serverni yuklamaydi. So'rovning o'zi
 // kamerani "operator ko'ryapti" deb belgilaydi: kuzatuvchi uni kutishsiz,
 // eng yuqori navbat bilan tahlil qiladi. Ilgari (6 s, har so'rov — yangi
 // kadr + tahlil) natija 5-12 s kechikardi.
-const POLL_INTERVAL_MS = 1500;
+const POLL_INTERVAL_MS = 1000;
 
 /** Polls GET /api/public/cameras/{id}/live-detection while `enabled` — the
  * face-box overlay's data source. No auth needed (it's the same public,

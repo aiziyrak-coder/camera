@@ -288,6 +288,7 @@ async def list_top_students(db: Annotated[AsyncSession, Depends(get_db)]) -> lis
 # behuda kutmasin.
 _no_watcher_until: dict[str, float] = {}
 _NO_WATCHER_BACKOFF_SECONDS = 60.0
+_HISTORY_MAX_AGE_SECONDS = 10.0
 
 
 async def _await_watcher_result(camera_id: str) -> dict | None:
@@ -343,7 +344,15 @@ async def get_live_detection(
     await live_focus.mark_focus(key)
     payload = await _await_watcher_result(key)
     if payload is not None:
-        return LiveDetectionOut.model_validate(payload)
+        history = await live_focus.recent_results(key, max_age_seconds=_HISTORY_MAX_AGE_SECONDS)
+        return LiveDetectionOut.model_validate(
+            {
+                **payload,
+                "history": history,
+                # Kuzatuvchi o'lchagan farq; hali o'lchanmagan bo'lsa — sozlama.
+                "clock_offset_ms": payload.get("clock_offset_ms", settings.live_overlay_clock_offset_ms),
+            }
+        )
 
     try:
         # Mayda yuzlar (sinf xonasi, shiftdagi kamera) faqat asosiy
@@ -363,6 +372,7 @@ async def get_live_detection(
         # and polled repeatedly while an operator watches a camera, so a
         # synchronous full-resolution decode here blocked the event loop on
         # every poll — for two integers. See app/services/image_size.py.
+        captured = time.time()
         dims = jpeg_dimensions(frame_bytes)
         frame_width, frame_height = dims if dims else (0, 0)
 
@@ -394,7 +404,9 @@ async def get_live_detection(
                 )
             )
 
-        return LiveDetectionOut(frame_width=frame_width, frame_height=frame_height, faces=faces_out, source=source)
+        return LiveDetectionOut(
+            frame_width=frame_width, frame_height=frame_height, faces=faces_out, source=source, captured_at=captured
+        )
     except Exception:
         logger.exception("live-detection failed", extra={"camera_id": camera_id})
         return LiveDetectionOut(frame_width=0, frame_height=0, faces=[])

@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections import deque
 
 from app.config import settings
 
@@ -30,9 +31,14 @@ logger = logging.getLogger("app.live_focus")
 
 _FOCUS_KEY = "camera:focus"  # zset: camera_id -> amal qilish muddati (epoch)
 _RESULT_PREFIX = "camera:live:"
+_HISTORY_SUFFIX = ":h"
+# Brauzer ramkalarni ikki natija orasida silliq siljitadi (interpolatsiya) —
+# buning uchun oxirgi bir necha natija kerak (~1 s oraliqda, ~10 s).
+HISTORY_LENGTH = 10
 
 _focus_local: dict[str, float] = {}
 _results_local: dict[str, dict] = {}
+_history_local: dict[str, deque] = {}
 # ai-worker har kadrda Redis'ga murojaat qilmasin: ro'yxat qisqa muddat eslanadi.
 _focus_snapshot: tuple[float, frozenset[str]] = (0.0, frozenset())
 _redis = None
@@ -103,14 +109,40 @@ async def is_focused(camera_id: str) -> bool:
 async def publish_result(camera_id: str, payload: dict) -> None:
     """Kuzatuvchining oxirgi kadr natijasi (LiveDetectionOut shaklida)."""
     payload = {**payload, "analysed_at": time.time()}
+    payload.setdefault("captured_at", payload["analysed_at"])
     client = await _get_redis()
     if client is None:
         _results_local[camera_id] = payload
+        _history_local.setdefault(camera_id, deque(maxlen=HISTORY_LENGTH)).append(payload)
         return
+    encoded = json.dumps(payload)
+    history_key = _RESULT_PREFIX + camera_id + _HISTORY_SUFFIX
     try:
-        await client.set(_RESULT_PREFIX + camera_id, json.dumps(payload), ex=settings.live_result_ttl_seconds)
+        async with client.pipeline(transaction=False) as pipe:
+            pipe.set(_RESULT_PREFIX + camera_id, encoded, ex=settings.live_result_ttl_seconds)
+            pipe.lpush(history_key, encoded)
+            pipe.ltrim(history_key, 0, HISTORY_LENGTH - 1)
+            pipe.expire(history_key, settings.live_result_ttl_seconds)
+            await pipe.execute()
     except Exception:
         logger.warning("live focus: publish failed", exc_info=True)
+
+
+async def recent_results(camera_id: str, *, max_age_seconds: float) -> list[dict]:
+    """Oxirgi natijalar, eskisidan yangisiga (captured_at bo'yicha)."""
+    client = await _get_redis()
+    if client is None:
+        items = list(_history_local.get(camera_id, ()))
+    else:
+        try:
+            raw = await client.lrange(_RESULT_PREFIX + camera_id + _HISTORY_SUFFIX, 0, HISTORY_LENGTH - 1)
+        except Exception:
+            logger.warning("live focus: history read failed", exc_info=True)
+            return []
+        items = [json.loads(item) for item in raw]
+    now = time.time()
+    fresh = [item for item in items if now - float(item.get("analysed_at") or 0) <= max_age_seconds]
+    return sorted(fresh, key=lambda item: float(item.get("captured_at") or 0))
 
 
 async def latest_result(camera_id: str, *, max_age_seconds: float) -> dict | None:
@@ -136,6 +168,7 @@ def reset_for_tests() -> None:
     global _focus_snapshot, _redis, _redis_tried
     _focus_local.clear()
     _results_local.clear()
+    _history_local.clear()
     _focus_snapshot = (0.0, frozenset())
     _redis = None
     _redis_tried = False

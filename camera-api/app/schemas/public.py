@@ -73,15 +73,30 @@ class DetectedFaceOut(CamelModel):
     status: str = "kichik"
     # Ro'yxatdagi eng yaqin odamga o'xshashlik (tahlil qilingan yuzlar uchun).
     similarity: float | None = None
+    # Izning raqami: bitta odam kadrda yurgan bo'yi o'zgarmaydi — brauzer
+    # ramkani ikki natija orasida shu raqam bo'yicha siljitadi.
+    track_id: int | None = None
 
 
-class LiveDetectionOut(CamelModel):
+class LiveDetectionFrameOut(CamelModel):
     frame_width: int
     frame_height: int
     faces: list[DetectedFaceOut]
     # Kadr qaysi oqimdan: "asosiy" (4K) yoki "kichik" — mayda yuzlar
     # faqat asosiy oqimda tahlil qilinadi.
     source: str = "kichik"
+    # Kadr serverda dekodlangan payt (epoch, soniya). Brauzer ramkani
+    # videoning aynan shu paytdagi kadriga qo'yadi (HLS PROGRAM-DATE-TIME).
+    captured_at: float | None = None
+
+
+class LiveDetectionOut(LiveDetectionFrameOut):
+    # Oxirgi ~10 s natijalari (eskisidan yangisiga) — ramkalar ular orasida
+    # silliq siljitiladi. Bo'sh — eski yo'l (API kadrni o'zi tahlil qildi).
+    history: list[LiveDetectionFrameOut] = []
+    # Brauzer video soatidan ayiradigan tuzatish (ms) —
+    # settings.live_overlay_clock_offset_ms izohiga qarang.
+    clock_offset_ms: int = 0
 
 
 class CameraAnalysisStatusOut(CamelModel):

@@ -608,6 +608,11 @@ class Settings(BaseSettings):
     # Birinchi so'rovda kuzatuvchi natijasini shuncha kutadi; kelmasa API
     # kadrni o'zi tahlil qiladi (ai-worker o'chiq yoki kamera kuzatilmaydi).
     live_result_first_wait_seconds: float = 4.0
+    # Brauzerdagi HLS kadrining vaqt belgisi (EXT-X-PROGRAM-DATE-TIME) AI
+    # o'qigan kadrnikidan qancha KEYIN qo'yiladi (ms): video MediaMTX'da
+    # brauzer uchun qayta kodlanadi (runOnDemand ffmpeg), AI esa kameradan
+    # to'g'ridan-to'g'ri o'qiydi. Ramka shu farqqa tuzatiladi.
+    live_overlay_clock_offset_ms: int = 0
     # Operator kuzatayotgan kameraning yuz belgilari asosiy (4K) oqimdan
     # olinadi. O'lchov (2026-09-24, "2-xona", ~20 talaba): kichik oqimda
     # 10 yuzdan faqat 3 tasi tahlilga yaradi (10-20 px), 4K da — 10 tasi

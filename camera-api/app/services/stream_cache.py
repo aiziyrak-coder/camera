@@ -47,6 +47,17 @@ _STDERR_TAIL_LINES = 20  # enough to see the actual RTSP failure reason without 
 # boshlanmaydi. Ikki kadrli tasdiq aynan shunga tayanadi: "ikkinchi kadr"
 # birinchisidan keyin dekodlangan bo'lishi shart (frame_grabber.py).
 _frame_seq = itertools.count(1)
+# Kadr tartib raqami -> dekodlangan payt (epoch, soniya). Jonli skaner
+# (app/services/live_focus.py) ramkani brauzerdagi videoning AYNAN shu
+# paytdagi kadriga qo'yadi: HLS pleylistidagi EXT-X-PROGRAM-DATE-TIME ham
+# shu xostning soati bilan yoziladi.
+_seq_wall_times: dict[int, float] = {}
+_SEQ_WALL_LIMIT = 4096
+
+
+def captured_at(seq: int | None) -> float | None:
+    """Kadr qachon dekodlangani (epoch) yoki None — noma'lum/eskirgan raqam."""
+    return _seq_wall_times.get(seq) if seq is not None else None
 
 
 def _redact(text: str) -> str:
@@ -181,6 +192,11 @@ class _StreamReader:
             return
         self._latest_frame = frame
         self._latest_seq = next(_frame_seq)
+        _seq_wall_times[self._latest_seq] = time.time()
+        if len(_seq_wall_times) > _SEQ_WALL_LIMIT + 512:
+            # Eng eskilari (dict kiritish tartibini saqlaydi) — bo'laklab.
+            for stale in list(_seq_wall_times)[:512]:
+                _seq_wall_times.pop(stale, None)
         self._history.append((self._latest_seq, self._latest_frame_at, frame))
 
     def get_frame(self) -> bytes | None:

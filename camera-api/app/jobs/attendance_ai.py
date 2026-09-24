@@ -31,6 +31,7 @@ originally structured to allow either.
 
 import asyncio
 import logging
+import itertools
 import random
 import uuid
 from dataclasses import dataclass, field
@@ -71,9 +72,10 @@ from app.services.frame_grabber import (
     main_stream_source,
     stream_label,
 )
-from app.services import live_focus
+from app.services import live_clock, live_focus
+from app.services.video_gateway import public_hls_to_internal
 from app.services.sleep_detection import is_asleep, is_face_measurable
-from app.services.stream_cache import peek_cached_frame, stop_stream_reader
+from app.services.stream_cache import captured_at, peek_cached_frame, stop_stream_reader
 from app.services import face_zoom
 from app.services import static_faces
 from app.services.image_size import jpeg_dimensions
@@ -1416,25 +1418,87 @@ async def _name_overlay(db: AsyncSession, entries: list[dict]) -> None:
             entry["person_name"] = names.get(str(entry["person_id"]))
 
 
-def _carry_tracked_names(entries: list[dict], previous: list[dict]) -> None:
-    """Kuzatuvdagi (qayta hisoblanmagan) yuzga oldingi kadrdagi ismini beradi."""
-    for entry in entries:
-        if entry["status"] != "kuzatuvda":
+# Skaner izining ismi shu vaqtgacha "yopishib" turadi: odam yuzini burib
+# o'tsa ham (bu kadrda tanilmadi) ismi o'chib-yonib turmaydi.
+STICKY_NAME_SECONDS = 8.0
+
+
+def _center(box) -> tuple[float, float]:
+    return (float(box[0]) + float(box[2])) / 2, (float(box[1]) + float(box[3])) / 2
+
+
+def _link_tracks(entries: list[dict], previous: list[dict], next_id, *, now: float) -> None:
+    """Har yuzga iz raqami (track_id) beradi va izning ismini saqlaydi.
+
+    Brauzer ramkani ikki natija orasida shu raqam bo'yicha siljitadi
+    (interpolatsiya) — ya'ni raqam odam kadrda yurgan bo'yi o'zgarmasligi
+    kerak. Moslash: avval eng yaqin markaz, yuz o'lchamiga nisbatan
+    (1 s da odam yuzining ~1.2 kengligicha siljiydi, IoU esa bunda 0 ga
+    tushib qoladi), ochko'z tartibda — bitta eski iz ikkita yangi yuzga
+    berilmaydi.
+
+    Ism: shu kadrda tanilgan yuz — o'z ismi; tanilmagan (burilgan, xira)
+    yoki kuzatuvdagi yuz — izning oxirgi ismi, agar u STICKY_NAME_SECONDS
+    dan eski bo'lmasa. Boshqa odam deb tanilgan yuz izni "tortib olmaydi":
+    ism faqat o'sha iz uchun yangilanadi."""
+    pairs = []
+    for i, entry in enumerate(entries):
+        cx, cy = _center(entry["bbox"])
+        width = max(1.0, float(entry["bbox"][2]) - float(entry["bbox"][0]))
+        for j, old in enumerate(previous):
+            ox, oy = _center(old["bbox"])
+            old_width = max(1.0, float(old["bbox"][2]) - float(old["bbox"][0]))
+            distance = ((cx - ox) ** 2 + (cy - oy) ** 2) ** 0.5
+            if distance <= 1.2 * max(width, old_width) and 0.5 <= width / old_width <= 2.0:
+                pairs.append((distance / max(width, old_width), i, j))
+    pairs.sort()
+    used_new: set[int] = set()
+    used_old: set[int] = set()
+    for _score, i, j in pairs:
+        if i in used_new or j in used_old:
             continue
-        entry["status"] = "tanildi"  # oldingi kadrda tanilgan (tracked)
-        best = max(
-            (old for old in previous if old.get("person_name")),
-            key=lambda old: _iou(entry["bbox"], old["bbox"]),
-            default=None,
-        )
-        if best is not None and _iou(entry["bbox"], best["bbox"]) >= TRACK_IOU:
-            entry["person_id"] = best.get("person_id")
-            entry["person_name"] = best.get("person_name")
-            entry["similarity"] = best.get("similarity")
+        old = previous[j]
+        entry = entries[i]
+        if entry.get("person_id") and old.get("person_id") and entry["person_id"] != old["person_id"]:
+            continue  # boshqa odam deb tanildi — bu iz emas
+        used_new.add(i)
+        used_old.add(j)
+        entry["track_id"] = old.get("track_id")
+        if entry["status"] == "tanildi" and entry.get("person_id"):
+            entry["named_at"] = now
+        elif old.get("person_name") and now - float(old.get("named_at") or 0) <= STICKY_NAME_SECONDS:
+            entry["status"] = "tanildi"
+            entry["person_id"] = old.get("person_id")
+            entry["person_name"] = old.get("person_name")
+            entry["similarity"] = old.get("similarity")
+            entry["named_at"] = old.get("named_at")
+    for i, entry in enumerate(entries):
+        if entry.get("track_id") is None:
+            entry["track_id"] = next_id()
+        if entry["status"] == "tanildi" and entry.get("person_id") and "named_at" not in entry:
+            entry["named_at"] = now
+        if entry["status"] == "kuzatuvda":
+            entry["status"] = "tanildi"  # oldingi kadrda tanilgan, ismi yo'qolgan
 
 
-def _overlay_payload(frame: bytes, entries: list[dict], *, source: str) -> dict:
-    """Skaner javobi — LiveDetectionOut shaklida (app/schemas/public.py)."""
+def _outside_region(entries: list[dict], region: Box, size: tuple[int, int] | None) -> list[dict]:
+    """`region` (normallashgan) tashqarisida markazi turgan yozuvlar nusxasi."""
+    if not size or not size[0] or not size[1]:
+        return []
+    width, height = size
+    kept = []
+    for entry in entries:
+        cx, cy = _center(entry["bbox"])
+        if region[0] * width <= cx <= region[2] * width and region[1] * height <= cy <= region[3] * height:
+            continue
+        kept.append(dict(entry))
+    return kept
+
+
+def _overlay_payload(frame: bytes, entries: list[dict], *, source: str, captured_at: float | None) -> dict:
+    """Skaner javobi — LiveDetectionOut shaklida (app/schemas/public.py).
+    `captured_at` — kadr dekodlangan payt (epoch): brauzer ramkani videoning
+    aynan shu paytdagi kadriga qo'yadi."""
     width, height = jpeg_dimensions(frame) or (0, 0)
     faces = []
     for entry in entries:
@@ -1447,9 +1511,13 @@ def _overlay_payload(frame: bytes, entries: list[dict], *, source: str) -> dict:
                 "asleep": asleep,
                 "status": entry["status"],
                 "similarity": entry.get("similarity"),
+                "track_id": entry.get("track_id"),
             }
         )
-    return {"frame_width": width, "frame_height": height, "faces": faces, "source": source}
+    payload = {"frame_width": width, "frame_height": height, "faces": faces, "source": source}
+    if captured_at is not None:
+        payload["captured_at"] = captured_at
+    return payload
 
 
 async def _pause(watcher: _EntranceWatcher, seconds: float, *, wake=None) -> None:
@@ -1489,6 +1557,7 @@ async def _watch_entrance_camera(camera: Camera, watcher: _EntranceWatcher) -> N
     camera_roi = face_roi_box(camera)
     tracked: tuple = ()
     previous_overlay: list[dict] = []
+    track_ids = itertools.count(1)
     main_reader: str | None = None
     pacer = CameraPacer(exempt=is_door_camera(camera))
 
@@ -1563,7 +1632,10 @@ async def _watch_entrance_camera(camera: Camera, watcher: _EntranceWatcher) -> N
                     tracked = ()  # eshik bo'sh — kuzatuv uziladi
                     if live:
                         # Kadr o'zgarmadi — skaner oxirgi natijani ko'rsataveradi.
-                        await live_focus.publish_result(key, _overlay_payload(frame, previous_overlay, source=label))
+                        await live_focus.publish_result(
+                            key,
+                            _overlay_payload(frame, previous_overlay, source=label, captured_at=captured_at(last_seq)),
+                        )
                     continue
                 identified: list = []
                 overlay: list[dict] = []
@@ -1580,9 +1652,24 @@ async def _watch_entrance_camera(camera: Camera, watcher: _EntranceWatcher) -> N
                     overlay_out=overlay,
                 )
                 tracked = tuple(identified)
-                _carry_tracked_names(overlay, previous_overlay)
+                region = compose_roi(camera_roi, gate.region) if gate.region is not None else None
+                if region is not None:
+                    # Faqat harakat hududi tahlil qilindi — tashqaridagilar
+                    # qimirlamagan, ya'ni oldingi ramkasi hamon to'g'ri.
+                    overlay.extend(_outside_region(previous_overlay, region, jpeg_dimensions(frame)))
+                _link_tracks(overlay, previous_overlay, lambda: next(track_ids), now=monotonic())
                 previous_overlay = overlay
-                await live_focus.publish_result(key, _overlay_payload(frame, overlay, source=label))
+                frame_time = captured_at(last_seq)
+                payload = _overlay_payload(frame, overlay, source=label, captured_at=frame_time)
+                if live:
+                    # Brauzer videosi bilan vaqt farqi — harakatli kadrda o'lchanadi
+                    # (app/services/live_clock.py).
+                    hls_url = public_hls_to_internal(camera.stream_url) if getattr(camera, "stream_url", None) else None
+                    live_clock.calibrator.maybe_measure(key, hls_url, frame, frame_time)
+                    offset = live_clock.calibrator.offset_ms(key)
+                    if offset is not None:
+                        payload["clock_offset_ms"] = offset
+                await live_focus.publish_result(key, payload)
                 now = monotonic()
                 recognition_stats.record_cycle(
                     key, total_seconds=now - previous_analysis, grab_seconds=grab_seconds, stream=stream_label(camera)

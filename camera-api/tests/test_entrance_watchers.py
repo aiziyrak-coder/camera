@@ -422,15 +422,53 @@ class TestRealTime:
         assert analysed == [b"a", b"b"]
 
 
+def _ids():
+    import itertools
+
+    counter = itertools.count(100)  # oldingi izlar raqamidan keyin (kuzatuvchida bitta hisoblagich)
+    return lambda: next(counter)
+
+
 def test_tracked_faces_keep_their_name_on_the_scanner():
-    previous = [{"bbox": [10.0, 10.0, 50.0, 60.0], "status": "tanildi", "person_id": "p1", "person_name": "Ali", "similarity": 0.6}]
+    previous = [{"bbox": [10.0, 10.0, 50.0, 60.0], "status": "tanildi", "person_id": "p1", "person_name": "Ali", "similarity": 0.6, "track_id": 7, "named_at": 100.0}]
     entries = [
         {"bbox": [11.0, 11.0, 51.0, 61.0], "status": "kuzatuvda"},
         {"bbox": [200.0, 10.0, 240.0, 60.0], "status": "notanish", "similarity": 0.2},
     ]
-    attendance_ai._carry_tracked_names(entries, previous)
-    assert entries[0]["status"] == "tanildi" and entries[0]["person_name"] == "Ali"
-    assert entries[1]["status"] == "notanish"
+    attendance_ai._link_tracks(entries, previous, _ids(), now=101.0)
+    assert entries[0]["status"] == "tanildi" and entries[0]["person_name"] == "Ali" and entries[0]["track_id"] == 7
+    assert entries[1]["status"] == "notanish" and entries[1]["track_id"] not in (None, 7)
+
+
+def test_a_walking_person_keeps_the_same_track_even_without_overlap():
+    """1 s da odam yuzining kengligicha siljiydi — IoU 0, lekin iz o'sha."""
+    previous = [{"bbox": [100.0, 100.0, 140.0, 150.0], "status": "notanish", "track_id": 3}]
+    entries = [{"bbox": [140.0, 102.0, 180.0, 152.0], "status": "notanish"}]
+    attendance_ai._link_tracks(entries, previous, _ids(), now=1.0)
+    assert entries[0]["track_id"] == 3
+
+
+def test_a_turned_face_keeps_its_name_only_for_a_while():
+    previous = [{"bbox": [0.0, 0.0, 40.0, 50.0], "status": "tanildi", "person_id": "p1", "person_name": "Ali", "track_id": 1, "named_at": 100.0}]
+    soon = [{"bbox": [2.0, 0.0, 42.0, 50.0], "status": "notanish"}]
+    attendance_ai._link_tracks(soon, previous, _ids(), now=104.0)
+    assert soon[0]["person_name"] == "Ali"
+    late = [{"bbox": [2.0, 0.0, 42.0, 50.0], "status": "notanish"}]
+    attendance_ai._link_tracks(late, previous, _ids(), now=100.0 + attendance_ai.STICKY_NAME_SECONDS + 1)
+    assert late[0]["status"] == "notanish" and late[0].get("person_name") is None
+
+
+def test_someone_else_recognised_does_not_inherit_the_track():
+    previous = [{"bbox": [0.0, 0.0, 40.0, 50.0], "status": "tanildi", "person_id": "p1", "person_name": "Ali", "track_id": 1, "named_at": 100.0}]
+    entries = [{"bbox": [5.0, 0.0, 45.0, 50.0], "status": "tanildi", "person_id": "p2", "person_name": "Vali"}]
+    attendance_ai._link_tracks(entries, previous, _ids(), now=101.0)
+    assert entries[0]["track_id"] != 1 and entries[0]["person_name"] == "Vali"
+
+
+def test_boxes_outside_the_motion_region_are_kept():
+    previous = [{"bbox": [10.0, 10.0, 50.0, 60.0], "track_id": 1}, {"bbox": [900.0, 10.0, 950.0, 60.0], "track_id": 2}]
+    kept = attendance_ai._outside_region(previous, (0.5, 0.0, 1.0, 1.0), (1280, 720))
+    assert [entry["track_id"] for entry in kept] == [1]
 
 
 def test_overlay_marks_only_accepted_matches_as_known():

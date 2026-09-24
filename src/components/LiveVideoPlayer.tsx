@@ -141,6 +141,10 @@ export default function LiveVideoPlayer({
   onStreamUnavailable,
 }: LiveVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  // Hozir ko'rinayotgan kadrning server soatidagi payti (ms) — HLS
+  // EXT-X-PROGRAM-DATE-TIME. Yuz ramkalari aynan shu kadrga qo'yiladi
+  // (lib/liveTracks.ts); null — pleylistda vaqt belgisi yo'q.
+  const videoClockRef = useRef<() => number | null>(() => null);
   const [error, setError] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -181,6 +185,13 @@ export default function LiveVideoPlayer({
 
     let cancelled = false;
     let hlsInstance: Hls | null = null;
+    videoClockRef.current = () => {
+      const playing = hlsInstance?.playingDate?.getTime();
+      if (playing && Number.isFinite(playing)) return playing;
+      // Safari/iOS'ning o'z HLS pleyeri: pleylist boshining payti + joriy o'rin.
+      const start = (video as (HTMLVideoElement & { getStartDate?: () => Date }) | null)?.getStartDate?.()?.getTime();
+      return start && Number.isFinite(start) && video ? start + video.currentTime * 1000 : null;
+    };
     let loadTimer: ReturnType<typeof setTimeout> | null = null;
     let startTimer: ReturnType<typeof setTimeout> | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -532,7 +543,9 @@ export default function LiveVideoPlayer({
         autoPlay
         className={`absolute inset-0 h-full w-full ${fit === 'contain' ? 'object-contain' : 'object-cover'} ${className}`}
       />
-      {showDetections && <FaceDetectionOverlay videoRef={videoRef} detection={detection.result} fit={fit} />}
+      {showDetections && (
+        <FaceDetectionOverlay videoRef={videoRef} videoClockRef={videoClockRef} detection={detection.result} fit={fit} />
+      )}
       {showDetections && detection.slotDenied && (
         <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1 text-center text-[10px] font-medium text-amber-200">
           Boshqa kamerada AI ko&apos;rsatkich yoqilgan — navbatda

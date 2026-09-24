@@ -76,14 +76,26 @@ export interface DetectedFace {
   asleep: boolean;
   status?: DetectedFaceStatus;
   similarity?: number | null;
+  /** Iz raqami — bitta odam kadrda yurgan bo'yi o'zgarmaydi (lib/liveTracks.ts). */
+  trackId?: number | null;
 }
 
-export interface LiveDetectionResult {
+export interface LiveDetectionFrame {
   frameWidth: number;
   frameHeight: number;
   faces: DetectedFace[];
   /** Kadr manbai: asosiy (4K) yoki kichik oqim. */
   source?: 'asosiy' | 'kichik';
+  /** Kadr serverda olingan payt (epoch, soniya) — video vaqtiga moslash uchun. */
+  capturedAt?: number | null;
+}
+
+export interface LiveDetectionResult extends LiveDetectionFrame {
+  /** Oxirgi ~10 s natijalari, eskisidan yangisiga. */
+  history?: LiveDetectionFrame[];
+  /** Video soatidan ayiriladigan tuzatish (ms): HLS kadrining vaqt belgisi
+   *  AI kadrinikidan shuncha keyin qo'yiladi (transkod kechikishi). */
+  clockOffsetMs?: number;
 }
 
 /** GET /api/public/cameras/{id}/analysis-status — oxirgi fon AI sweep. */
