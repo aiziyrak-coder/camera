@@ -35,10 +35,15 @@ services:
       MTX_APIADDRESS: ":9997"
       MTX_PLAYBACK: "yes"
       MTX_PLAYBACKADDRESS: ":9996"
+      # WebRTC media porti — ichkarida ham xostda ham bir xil raqam (brauzerga
+      # aynan shu port e'lon qilinadi). Faqat LAN manzilida.
+      MTX_WEBRTCLOCALUDPADDRESS: ":8189"
+      MTX_WEBRTCADDITIONALHOSTS: "192.168.0.101"
     ports:
       - "127.0.0.1:8554:8554"
       - "127.0.0.1:8888:8888"
       - "127.0.0.1:9997:9997"
+      - "192.168.0.101:8189:8189/udp"
 
   mediamtx-1:
     build:
@@ -57,10 +62,15 @@ services:
       MTX_APIADDRESS: ":9997"
       MTX_PLAYBACK: "yes"
       MTX_PLAYBACKADDRESS: ":9996"
+      # WebRTC media porti — ichkarida ham xostda ham bir xil raqam (brauzerga
+      # aynan shu port e'lon qilinadi). Faqat LAN manzilida.
+      MTX_WEBRTCLOCALUDPADDRESS: ":8190"
+      MTX_WEBRTCADDITIONALHOSTS: "192.168.0.101"
     ports:
       - "127.0.0.1:8555:8554"
       - "127.0.0.1:8889:8888"
       - "127.0.0.1:9998:9997"
+      - "192.168.0.101:8190:8190/udp"
 
   mediamtx-2:
     build:
@@ -79,10 +89,15 @@ services:
       MTX_APIADDRESS: ":9997"
       MTX_PLAYBACK: "yes"
       MTX_PLAYBACKADDRESS: ":9996"
+      # WebRTC media porti — ichkarida ham xostda ham bir xil raqam (brauzerga
+      # aynan shu port e'lon qilinadi). Faqat LAN manzilida.
+      MTX_WEBRTCLOCALUDPADDRESS: ":8191"
+      MTX_WEBRTCADDITIONALHOSTS: "192.168.0.101"
     ports:
       - "127.0.0.1:8556:8554"
       - "127.0.0.1:8890:8888"
       - "127.0.0.1:9999:9997"
+      - "192.168.0.101:8191:8191/udp"
 
   api:
     depends_on: !override

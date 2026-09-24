@@ -421,3 +421,45 @@ class TestLiveDetectionFromWatcher:
         assert resp.status_code == 200 and calls == [1]
         # Kuzatuvchi javob bermagan kamera uchun keyingi so'rov kutmaydi.
         assert str(a_camera.id) in public_router._no_watcher_until
+
+
+# ─────────────────────── WebRTC (WHEP) (2026-09-24)
+
+@pytest.mark.usefixtures("seeded", "monitoring_open")
+class TestWhepProxy:
+    """Brauzer SDP taklifi API orqali MediaMTX'ga uzatiladi."""
+
+    async def test_offer_is_forwarded_to_the_cameras_shard(self, client, a_camera, db_session, monkeypatch):
+        import httpx as real_httpx
+
+        from app.routers import public as public_router
+
+        a_camera.stream_url = "/s1/cam-" + str(a_camera.id) + "/index.m3u8"
+        db_session.add(a_camera)
+        await db_session.commit()
+        seen = {}
+
+        def handler(request: real_httpx.Request) -> real_httpx.Response:
+            seen["url"] = str(request.url)
+            seen["body"] = request.content
+            return real_httpx.Response(201, content=b"v=0\r\nanswer", headers={"Content-Type": "application/sdp"})
+
+        transport = real_httpx.MockTransport(handler)
+        original = real_httpx.AsyncClient
+        monkeypatch.setattr(public_router.httpx, "AsyncClient", lambda **kw: original(transport=transport, **kw))
+        monkeypatch.setattr(settings, "mediamtx_shard_hls_base_urls", "/s0,/s1")
+        monkeypatch.setattr(settings, "mediamtx_shard_hls_internal_base_urls", "http://mediamtx-0:8888,http://mediamtx-1:8888")
+        resp = await client.post(
+            f"/api/public/cameras/{a_camera.id}/whep", content=b"v=0\r\noffer", headers={"Content-Type": "application/sdp"}
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.content == b"v=0\r\nanswer"
+        assert seen["url"] == f"http://mediamtx-1:8889/cam-{a_camera.id}/whep"
+        assert seen["body"] == b"v=0\r\noffer"
+
+    async def test_garbage_and_disabled_are_refused(self, client, a_camera, monkeypatch):
+        bad = await client.post(f"/api/public/cameras/{a_camera.id}/whep", content=b"hello")
+        assert bad.status_code in (400, 404)
+        monkeypatch.setattr(settings, "webrtc_enabled", False)
+        off = await client.post(f"/api/public/cameras/{a_camera.id}/whep", content=b"v=0\r\n")
+        assert off.status_code == 404

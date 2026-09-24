@@ -14,6 +14,7 @@ import time
 import uuid
 from typing import Annotated
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import and_, case, extract, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,6 +46,7 @@ from app.services.face_recognition import detect_faces
 from app.services.inference_gate import PRIORITY_LIVE
 from app.services.frame_grabber import frame_wait_seconds_for_camera, grab_frame_for_camera, grab_live_main_frame
 from app.services.image_size import jpeg_dimensions
+from app.services.video_gateway import internal_whep_url
 from app.services import live_focus
 from app.services.sleep_detection import is_asleep, is_face_measurable
 from app.services.stream_links import signed_stream_url
@@ -351,6 +353,7 @@ async def get_live_detection(
                 "history": history,
                 # Kuzatuvchi o'lchagan farq; hali o'lchanmagan bo'lsa — sozlama.
                 "clock_offset_ms": payload.get("clock_offset_ms", settings.live_overlay_clock_offset_ms),
+                "server_time": time.time(),
             }
         )
 
@@ -405,11 +408,52 @@ async def get_live_detection(
             )
 
         return LiveDetectionOut(
-            frame_width=frame_width, frame_height=frame_height, faces=faces_out, source=source, captured_at=captured
+            frame_width=frame_width,
+            frame_height=frame_height,
+            faces=faces_out,
+            source=source,
+            captured_at=captured,
+            server_time=time.time(),
         )
     except Exception:
         logger.exception("live-detection failed", extra={"camera_id": camera_id})
         return LiveDetectionOut(frame_width=0, frame_height=0, faces=[])
+
+
+_WHEP_MAX_OFFER_BYTES = 64_000
+
+
+@router.post("/cameras/{camera_id}/whep")
+@limiter.limit("60/minute")
+async def post_whep_offer(
+    request: Request, camera_id: str, db: Annotated[AsyncSession, Depends(get_db)], viewer: Viewer
+) -> Response:
+    """Jonli video WebRTC orqali (~0.3-0.5 s kechikish; HLS'da 4-8 s edi).
+
+    Brauzer SDP taklifini (application/sdp) yuboradi, bu yerdan u kamera
+    turgan MediaMTX shard'ining WHEP manziliga uzatiladi va javob SDP
+    qaytariladi. Ruxsat — jonli HLS bilan bir xil (monitoring ruxsati va
+    bino doirasi, _load_camera). MediaMTX'ning o'zi brauzerga ochilmaydi:
+    unga faqat shu API murojaat qiladi; media esa UDP'da to'g'ridan-to'g'ri.
+
+    404 — WebRTC o'chirilgan yoki kameraning oqimi yo'q: brauzer HLS'ga qaytadi."""
+    camera = await _load_camera(db, camera_id, viewer)
+    target = internal_whep_url(camera.stream_url) if settings.webrtc_enabled else None
+    if target is None:
+        raise HTTPException(status_code=404, detail="WebRTC mavjud emas")
+    offer = await request.body()
+    if not offer or len(offer) > _WHEP_MAX_OFFER_BYTES or not offer.lstrip().startswith(b"v=0"):
+        raise HTTPException(status_code=400, detail="SDP taklifi noto'g'ri")
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            upstream = await client.post(target, content=offer, headers={"Content-Type": "application/sdp"})
+    except httpx.HTTPError:
+        logger.warning("whep upstream unreachable", extra={"camera_id": camera_id}, exc_info=True)
+        raise HTTPException(status_code=502, detail="Video server javob bermadi") from None
+    if upstream.status_code not in (200, 201):
+        logger.info("whep upstream refused", extra={"camera_id": camera_id, "status": upstream.status_code})
+        raise HTTPException(status_code=502, detail="Video server WebRTC'ni rad etdi")
+    return Response(content=upstream.content, status_code=201, media_type="application/sdp")
 
 
 @router.get("/cameras/{camera_id}/analysis-status", response_model=CameraAnalysisStatusOut)

@@ -1034,6 +1034,13 @@ class Settings(BaseSettings):
     # Parallel to mediamtx_shard_hls_base_urls — docker-internal HLS bases for ffmpeg
     # (e.g. http://mediamtx-0:8888,http://mediamtx-1:8888,http://mediamtx-2:8888).
     mediamtx_shard_hls_internal_base_urls: str = ""
+    # Jonli video WebRTC orqali (app/routers/public.py, /whep): brauzer SDP
+    # taklifini API'ga yuboradi, API uni MediaMTX'ning WHEP manziliga
+    # uzatadi. Media esa to'g'ridan-to'g'ri UDP'da (shard'ning
+    # webrtcLocalUDPAddress porti). HLS'da tasvir 4-8 s orqada edi, WebRTC'da
+    # ~0.3-0.5 s. O'chirilsa brauzer darhol HLS'ga qaytadi.
+    webrtc_enabled: bool = True
+    mediamtx_webrtc_port: int = 8889
 
     # Browser HLS: substream (102) is usually H.264 — relay without ffmpeg transcode
     # cuts latency from ~30s to ~3-5s. Set false to force H.264 transcode/scale.

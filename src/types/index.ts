@@ -96,6 +96,8 @@ export interface LiveDetectionResult extends LiveDetectionFrame {
   /** Video soatidan ayiriladigan tuzatish (ms): HLS kadrining vaqt belgisi
    *  AI kadrinikidan shuncha keyin qo'yiladi (transkod kechikishi). */
   clockOffsetMs?: number;
+  /** Javob payti (server soati, epoch soniya) — lib/serverClock.ts. */
+  serverTime?: number | null;
 }
 
 /** GET /api/public/cameras/{id}/analysis-status — oxirgi fon AI sweep. */

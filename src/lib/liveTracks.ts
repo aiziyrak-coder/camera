@@ -40,10 +40,12 @@ interface Frame {
 
 /** Ikki natija bundan uzoq bo'lsa, oralig'ida siljitilmaydi (odam yo'qolgan). */
 const MAX_GAP_MS = 3500;
-/** Oxirgi natijadan keyin ramka shuncha vaqt oldinga davom ettiriladi. */
-const EXTRAPOLATE_MS = 800;
+/** Oxirgi natijadan keyin ramka shuncha vaqt oldinga davom ettiriladi.
+ *  WebRTC videoda (real vaqt) tahlil natijasi doim ~1 s orqada keladi —
+ *  ramka shu oraliqni harakat yo'nalishida bosib o'tadi. */
+const EXTRAPOLATE_MS = 1500;
 /** Oxirgi natijadan keyin ramka shuncha vaqtdan so'ng o'chadi. */
-const STALE_MS = 2500;
+const STALE_MS = 3000;
 const KEEP_MS = 15_000;
 
 export class TrackTimeline {

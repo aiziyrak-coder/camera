@@ -6,6 +6,7 @@ sharding via MEDIAMTX_SHARD_API_URLS + MEDIAMTX_SHARD_HLS_BASE_URLS
 import hashlib
 import logging
 import shlex
+from urllib.parse import urlsplit
 from dataclasses import dataclass
 
 import httpx
@@ -273,6 +274,21 @@ def public_hls_to_internal(public_url: str) -> str:
     elif internal_base != public_base and public_url.startswith(public_base):
         return internal_base + public_url[len(public_base) :]
     return public_url
+
+
+def internal_whep_url(public_url: str | None) -> str | None:
+    """Kameraning brauzer HLS manzilidan (imzoli yoki imzosiz) MediaMTX'ning
+    ichki WHEP manzili: http://mediamtx-N:8889/cam-<id>/whep."""
+    if not public_url:
+        return None
+    # Bazadagi Camera.stream_url imzosiz (imzo faqat API javobiga qo'shiladi).
+    internal = public_hls_to_internal(public_url)
+    parts = urlsplit(internal)
+    segments = [s for s in parts.path.split("/") if s]
+    path = next((s for s in segments if s.startswith("cam-")), None)
+    if not parts.hostname or path is None:
+        return None
+    return f"http://{parts.hostname}:{settings.mediamtx_webrtc_port}/{path}/whep"
 
 
 async def register_camera_stream(camera_id: str, rtsp_url: str) -> str:

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, isAbortError } from './apiClient';
 import { useVisibleInterval } from './useVisibleInterval';
 import { tryAcquireLiveDetection, releaseLiveDetection } from './liveDetectionGate';
+import { noteServerTime } from './serverClock';
 import type { LiveDetectionResult } from '../types';
 
 // 1 s: javob endi ai-worker kuzatuvchisi yozib turgan natijadan o'qiladi
@@ -32,9 +33,11 @@ export function useLiveDetection(cameraId: string | undefined, enabled: boolean)
     const controller = new AbortController();
     abort.current = controller;
     try {
+      const sentAt = Date.now();
       const res = await api.get<LiveDetectionResult>(`/api/public/cameras/${cameraId}/live-detection`, undefined, {
         signal: controller.signal,
       });
+      noteServerTime(res.serverTime, sentAt, Date.now());
       if (!controller.signal.aborted) setResult(res);
     } catch (err) {
       if (!isAbortError(err)) {

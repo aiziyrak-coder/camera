@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type Hls from 'hls.js';
 import { Loader2, VideoOff } from 'lucide-react';
 import FaceDetectionOverlay from './FaceDetectionOverlay';
+import { cameraIdFromStreamUrl, noteWebrtcResult, startWebrtc, webrtcAllowed, type WebrtcSession } from '../lib/webrtcStream';
+import { serverNow } from '../lib/serverClock';
 import type { LiveDetectionResult } from '../types';
 import ZoneOverlay from './ZoneOverlay';
 import { useLiveDetection } from '../lib/useLiveDetection';
@@ -185,7 +187,12 @@ export default function LiveVideoPlayer({
 
     let cancelled = false;
     let hlsInstance: Hls | null = null;
+    let webrtc: WebrtcSession | null = null;
+    let webrtcAbort: AbortController | null = null;
     videoClockRef.current = () => {
+      // WebRTC: tasvir deyarli real vaqtda — server soati (brauzer soatiga
+      // nisbatan farqi skaner javobidan olinadi, lib/serverClock.ts).
+      if (webrtc) return serverNow();
       const playing = hlsInstance?.playingDate?.getTime();
       if (playing && Number.isFinite(playing)) return playing;
       // Safari/iOS'ning o'z HLS pleyeri: pleylist boshining payti + joriy o'rin.
@@ -218,6 +225,10 @@ export default function LiveVideoPlayer({
     function teardownPlayback() {
       detachMediaListeners?.();
       detachMediaListeners = null;
+      webrtcAbort?.abort();
+      webrtcAbort = null;
+      webrtc?.close();
+      webrtc = null;
       hlsInstance?.destroy();
       hlsInstance = null;
       video!.removeAttribute('src');
@@ -275,15 +286,56 @@ export default function LiveVideoPlayer({
       scheduleRetry();
     }
 
+    /** WebRTC (~0.5 s kechikish) — muvaffaqiyatli bo'lsa true. Aks holda
+     *  chaqiruvchi HLS'ga o'tadi (lib/webrtcStream.ts izohiga qarang). */
+    async function attachWebrtc(): Promise<boolean> {
+      const id = cameraIdFromStreamUrl(streamUrl);
+      if (!video || !id || !webrtcAllowed()) return false;
+      webrtcAbort = new AbortController();
+      try {
+        const session = await startWebrtc(id, video, webrtcAbort.signal);
+        if (cancelled) {
+          session.close();
+          return true;
+        }
+        webrtc = session;
+        noteWebrtcResult(true);
+        session.onFailure(() => {
+          if (!cancelled) scheduleRetry();
+        });
+        const onPlaying = () => {
+          if (video.videoWidth > 0) markReady();
+        };
+        video.addEventListener('playing', onPlaying);
+        video.addEventListener('loadeddata', onPlaying);
+        detachMediaListeners = () => {
+          video.removeEventListener('playing', onPlaying);
+          video.removeEventListener('loadeddata', onPlaying);
+        };
+        try {
+          await video.play();
+        } catch {
+          // Avtomatik ijro bloklangan bo'lishi mumkin (video muted — odatda o'tadi)
+        }
+        return true;
+      } catch {
+        webrtcAbort = null;
+        if (cancelled) return true;
+        noteWebrtcResult(false);
+        return false;
+      }
+    }
+
     async function attach() {
       if (!video) return;
       hlsRetriesRef.current = 0;
-      const isHls = streamUrl!.endsWith('.m3u8');
-
       loadTimer = setTimeout(() => {
         if (cancelled) return;
         if (video.videoWidth === 0) markFailed();
       }, LOAD_TIMEOUT_MS);
+      if (await attachWebrtc()) return;
+      if (cancelled) return;
+      const isHls = streamUrl!.endsWith('.m3u8');
 
       // HLS uchun HAR DOIM avval hls.js sinaladi; brauzerning o'z HLS
       // qo'llab-quvvatlashiga faqat hls.js ishlamaydigan joyda

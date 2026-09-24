@@ -89,6 +89,16 @@ export function setAuthTokenGetter(getter: TokenGetter | null): void {
   getAuthToken = getter;
 }
 
+/** Joriy login tokeni — JSON bo'lmagan so'rovlar uchun (masalan WebRTC SDP). */
+export function getAccessToken(): string | null {
+  return getAuthToken?.() ?? null;
+}
+
+/** API manzilining boshi (dev'da boshqa port bo'lishi mumkin). */
+export function apiUrl(path: string): string {
+  return `${config.apiBaseUrl}${path}`;
+}
+
 /**
  * So'rov qancha kutishi mumkin.
  *

@@ -94,7 +94,10 @@ export default function FaceDetectionOverlay({ videoRef, videoClockRef, detectio
       ctx.clearRect(0, 0, width, height);
       const rect = pictureRect(width, height, video.videoWidth || 16, video.videoHeight || 9, fit);
       const timeline = timelineRef.current;
-      const t = overlayTime(videoClockRef?.current?.() ?? null, timeline.newestAt, offsetRef.current);
+      // HLS vaqt belgisi tuzatishi faqat HLS videoga tegishli; WebRTC
+      // (srcObject) tasviri real vaqtda — tuzatish kerak emas.
+      const offset = video.srcObject ? 0 : offsetRef.current;
+      const t = overlayTime(videoClockRef?.current?.() ?? null, timeline.newestAt, offset);
       if (!rect || t == null) return;
       for (const box of timeline.boxesAt(t)) drawBox(ctx, box, rect);
     };

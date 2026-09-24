@@ -97,6 +97,9 @@ class LiveDetectionOut(LiveDetectionFrameOut):
     # Brauzer video soatidan ayiradigan tuzatish (ms) —
     # settings.live_overlay_clock_offset_ms izohiga qarang.
     clock_offset_ms: int = 0
+    # Javob berilgan payt (server soati, epoch s). WebRTC videoda vaqt belgisi
+    # yo'q — brauzer o'z soati bilan server soati farqini shundan topadi.
+    server_time: float | None = None
 
 
 class CameraAnalysisStatusOut(CamelModel):
