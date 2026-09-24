@@ -802,25 +802,6 @@ table[data-tabel] [data-today] {
   box-shadow: var(--shadow-hover);
 }
 
-/* Jonli manba: panel ustidan o'tadigan yorug' chiziq. */
-.scanline::after {
-  content: "";
-  position: absolute;
-  inset-inline: 0;
-  top: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, rgb(var(--c-accent-2) / 0.75), transparent);
-  animation: console-scan 3.6s linear infinite;
-  pointer-events: none;
-}
-
-@keyframes console-scan {
-  0% { transform: translateY(0); opacity: 0; }
-  10% { opacity: 1; }
-  90% { opacity: 1; }
-  100% { transform: translateY(var(--scan-height, 260px)); opacity: 0; }
-}
-
 /* Nafas oluvchi nuqta — jonli ulanish. */
 .live-dot {
   position: relative;
@@ -843,7 +824,6 @@ table[data-tabel] [data-today] {
 
 @media (prefers-reduced-motion: reduce) {
   .console-root::before,
-  .scanline::after,
   .live-dot::after {
     animation: none;
   }

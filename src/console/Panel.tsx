@@ -27,7 +27,7 @@ export interface PanelProps {
   title: string;
   /** O'ng yuqoridagi qisqa qiymat (son, holat). */
   badge?: ReactNode;
-  /** Jonli manba — panel ustidan yorug' chiziq o'tadi. */
+  /** Jonli manba — sarlavhada nuqta bilan belgilanadi. */
   live?: boolean;
   /** Setkadagi joyi: Tailwind `col-span-*` / `row-span-*`. */
   area?: string;
@@ -56,7 +56,12 @@ export default function Panel({
   const body = (content: ReactNode) => (
     <>
       <header className="flex shrink-0 items-center gap-2 px-4 py-3">
-        <h2 className="text-[14px] font-bold tracking-[-0.02em] text-fg">{title}</h2>
+        <h2 className="flex items-center gap-1.5 text-[14px] font-bold tracking-[-0.02em] text-fg">
+          {/* Jonli manba — kichik nuqta. Ilgari panel ustidan pastga
+              yuguradigan ko'k chiziq bor edi: u ko'zni charchatardi. */}
+          {live && <span aria-hidden="true" className="live-dot h-1.5 w-1.5 shrink-0 rounded-full bg-success" />}
+          {title}
+        </h2>
         <span className="ms-auto flex items-center gap-2">
           {badge}
           <button
@@ -85,7 +90,6 @@ export default function Panel({
         onClick={() => !expanded && onExpand(id)}
         className={cn(
           'panel-enter glass glass-hover relative flex min-h-0 flex-col overflow-hidden',
-          live && 'scanline',
           !expanded && 'cursor-pointer',
           expanded && 'pointer-events-none opacity-0',
           area,
@@ -112,8 +116,7 @@ export default function Panel({
               aria-label={title}
               className={cn(
                 'glass fixed inset-3 z-50 flex min-h-0 flex-col overflow-hidden sm:inset-6',
-                live && 'scanline',
-              )}
+                    )}
             >
               {body(full ?? children)}
             </motion.section>
