@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, BellOff, LayoutGrid, LogOut, MonitorSmartphone, Volume2, VolumeX } from 'lucide-react';
+import { Bell, BellOff, LayoutGrid, LogOut, MonitorSmartphone, ShieldCheck, Volume2, VolumeX } from 'lucide-react';
+import TwoFactorModal from '../components/admin/TwoFactorModal';
+import { isBackendConfigured } from '../lib/config';
 import {
   alarmSoundEnabled,
   desktopNotificationsState,
@@ -68,6 +70,7 @@ export function ConsoleUserMenu() {
 
   const [sound, setSound] = useState(alarmSoundEnabled);
   const [desktop, setDesktop] = useState(desktopNotificationsState);
+  const [twoFactorOpen, setTwoFactorOpen] = useState(false);
 
   const items: MenuEntry[] = [
     {
@@ -95,6 +98,10 @@ export function ConsoleUserMenu() {
             onSelect: () => void requestDesktopNotifications().then(setDesktop),
           } satisfies MenuEntry,
         ]),
+    // Demo rejimda (backendsiz) 2FA ma'nosiz — server yo'q.
+    ...(isBackendConfigured
+      ? [{ label: 'Ikki bosqichli kirish', icon: ShieldCheck, onSelect: () => setTwoFactorOpen(true) } satisfies MenuEntry]
+      : []),
     'separator',
     {
       label: 'Chiqish',
@@ -108,27 +115,30 @@ export function ConsoleUserMenu() {
   ];
 
   return (
-    <Menu
-      items={items}
-      header={
-        <span className="flex flex-col">
-          <b className="truncate text-[13px] text-fg">{userName ?? 'Foydalanuvchi'}</b>
-          {role && <small className="text-[11px] text-muted">{ROLE_LABEL[role]}</small>}
-        </span>
-      }
-      trigger={(props) => (
-        <button
-          type="button"
-          {...props}
-          aria-label="Foydalanuvchi menyusi"
-          className={cn(
-            'grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary-soft text-[12px] font-bold text-primary transition-colors hover:bg-primary/15',
-            focusRing,
-          )}
-        >
-          {initials || '?'}
-        </button>
-      )}
-    />
+    <>
+      <Menu
+        items={items}
+        header={
+          <span className="flex flex-col">
+            <b className="truncate text-[13px] text-fg">{userName ?? 'Foydalanuvchi'}</b>
+            {role && <small className="text-[11px] text-muted">{ROLE_LABEL[role]}</small>}
+          </span>
+        }
+        trigger={(props) => (
+          <button
+            type="button"
+            {...props}
+            aria-label="Foydalanuvchi menyusi"
+            className={cn(
+              'grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary-soft text-[12px] font-bold text-primary transition-colors hover:bg-primary/15',
+              focusRing,
+            )}
+          >
+            {initials || '?'}
+          </button>
+        )}
+      />
+      {twoFactorOpen && <TwoFactorModal open onClose={() => setTwoFactorOpen(false)} />}
+    </>
   );
 }

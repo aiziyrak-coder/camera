@@ -20,7 +20,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.database import get_db
-from app.dependencies import require_monitoring_access
+from app.dependencies import CurrentUser, require_monitoring_access
 from app.jobs.camera_health import is_reachable, is_video_flowing
 from app.models import AttendanceRecord, Building, Camera, Department, Event, LessonSession, StudentStaff
 from app.pagination import Page, PageParams, build_page, paginate
@@ -37,6 +37,7 @@ from app.schemas.public import (
     PublicStatsOut,
     PublicTopStudentOut,
 )
+from app.services.access_scope import allowed_buildings, camera_filter, ensure_camera_allowed, is_restricted
 from app.services.event_scope import NOT_SUPPRESSED, OPERATOR_EVENTS
 from app.services.face_matching import load_candidate_matrix_cached
 from app.services.face_recognition import detect_faces
@@ -60,8 +61,15 @@ router = APIRouter(
     dependencies=[Depends(require_monitoring_access)],
 )
 
+# Kamera bilan ishlaydigan endpointlar foydalanuvchini ham oladi — bino
+# doirasi uchun (app/services/access_scope.py). FastAPI bog'liqlikni bitta
+# so'rovda keshlaydi, ya'ni router darajasidagi tekshiruv qayta ishlamaydi.
+# None — himoya o'chirilgan rejimdagi anonim devor: u hamma kamerani
+# ko'radi (public_monitoring_requires_auth izohiga qarang).
+Viewer = Annotated[CurrentUser | None, Depends(require_monitoring_access)]
 
-async def _load_camera(db: AsyncSession, camera_id: str) -> Camera:
+
+async def _load_camera(db: AsyncSession, camera_id: str, viewer: CurrentUser | None = None) -> Camera:
     """Kamerani identifikator bo'yicha oladi; noto'g'ri shaklda — 404.
 
     Xom satrni so'rovga qo'yish Postgres darajasida "invalid input
@@ -75,7 +83,7 @@ async def _load_camera(db: AsyncSession, camera_id: str) -> Camera:
     camera = (await db.execute(select(Camera).where(Camera.id == key))).scalar_one_or_none()
     if camera is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
-    return camera
+    return ensure_camera_allowed(viewer, camera)
 
 
 def _is_live_expr():
@@ -114,6 +122,7 @@ def _to_public_camera(camera: Camera) -> PublicCameraOut:
 async def list_public_cameras(
     db: Annotated[AsyncSession, Depends(get_db)],
     params: Annotated[PageParams, Depends()],
+    viewer: Viewer,
     search: str | None = None,
     building: str | None = None,
     building_id: Annotated[str | None, Query(alias="buildingId")] = None,
@@ -128,6 +137,7 @@ async def list_public_cameras(
     stmt = (
         select(Camera)
         .options(selectinload(Camera.building), selectinload(Camera.department))
+        .where(camera_filter(viewer))
         .order_by(Camera.name)
     )
     if search:
@@ -274,7 +284,7 @@ async def list_top_students(db: Annotated[AsyncSession, Depends(get_db)]) -> lis
 @router.get("/cameras/{camera_id}/live-detection", response_model=LiveDetectionOut)
 @limiter.limit("20/minute")
 async def get_live_detection(
-    request: Request, camera_id: str, db: Annotated[AsyncSession, Depends(get_db)]
+    request: Request, camera_id: str, db: Annotated[AsyncSession, Depends(get_db)], viewer: Viewer
 ) -> LiveDetectionOut:
     """A one-shot snapshot of what the AI currently sees on this camera —
     grabs a fresh frame and runs the same detection/matching InsightFace
@@ -294,7 +304,7 @@ async def get_live_detection(
     runs a real inference pass — cheap enough for a human watching one
     camera, not something to leave wide open on a no-auth endpoint.
     """
-    camera = await _load_camera(db, camera_id)
+    camera = await _load_camera(db, camera_id, viewer)
 
     try:
         # Mayda yuzlar (sinf xonasi, shiftdagi kamera) faqat asosiy
@@ -357,9 +367,10 @@ async def get_camera_analysis_status(
     request: Request,
     camera_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
+    viewer: Viewer,
 ) -> CameraAnalysisStatusOut:
     """Oxirgi fon AI sweep vaqti va natijasi — monitoring modal badge."""
-    await _load_camera(db, camera_id)
+    await _load_camera(db, camera_id, viewer)
 
     snap = await get_camera_sweep(camera_id)
     if snap is None:
@@ -401,7 +412,7 @@ def _floor_sort_key(item) -> tuple[int, int]:
 
 
 @router.get("/campus", response_model=CampusOut)
-async def get_campus(db: Annotated[AsyncSession, Depends(get_db)]) -> CampusOut:
+async def get_campus(db: Annotated[AsyncSession, Depends(get_db)], viewer: Viewer) -> CampusOut:
     """Bino -> qavat kesimi: har qavatda nechta kamera bor, nechtasi jonli,
     nechtasida tasvir yo'q va bugun nechta signal bo'lgan.
 
@@ -415,8 +426,13 @@ async def get_campus(db: Annotated[AsyncSession, Depends(get_db)]) -> CampusOut:
     biriktirilmagan bino ham kesimda ko'rinishi uchun."""
     global _campus_cache
     now = time.monotonic()
+    # Kesh faqat cheklovsiz ko'rinish uchun: bino doirasi bor
+    # foydalanuvchiga umumiy keshdan javob berilsa, boshqa binolar
+    # sanoqlari ham ko'rinib qolardi (va aksincha, uning toraytirilgan
+    # javobi hammaga tarqalardi).
+    restricted = is_restricted(viewer)
     cached = _campus_cache
-    if cached is not None and now - cached[0] < _CAMPUS_CACHE_SECONDS:
+    if not restricted and cached is not None and now - cached[0] < _CAMPUS_CACHE_SECONDS:
         return cached[1]
 
     live = _is_live_expr()
@@ -429,7 +445,9 @@ async def get_campus(db: Annotated[AsyncSession, Depends(get_db)]) -> CampusOut:
                 func.count(),
                 func.count().filter(live),
                 func.count().filter(and_(live, ~has_video)),
-            ).group_by(Camera.building_id, Camera.floor)
+            )
+            .where(camera_filter(viewer))
+            .group_by(Camera.building_id, Camera.floor)
         )
     ).all()
 
@@ -441,13 +459,15 @@ async def get_campus(db: Annotated[AsyncSession, Depends(get_db)]) -> CampusOut:
             .join(Camera, Camera.id == Event.camera_id)
             .where(Event.is_trial.is_(False))
             .where(Event.occurred_at >= start_of_today)
+            .where(camera_filter(viewer))
             .group_by(Camera.building_id, Camera.floor)
         )
     ).all()
 
-    buildings = (
-        await db.execute(select(Building).order_by(Building.sort_order, Building.name))
-    ).scalars().all()
+    building_stmt = select(Building).order_by(Building.sort_order, Building.name)
+    if restricted:
+        building_stmt = building_stmt.where(Building.id.in_(allowed_buildings(viewer) or set()))
+    buildings = (await db.execute(building_stmt)).scalars().all()
 
     # (bino_id, qavat) -> [jami, jonli, tasvirsiz, bugungi signallar]
     counts: dict[tuple[str, int | None], list[int]] = {}
@@ -508,7 +528,8 @@ async def get_campus(db: Annotated[AsyncSession, Depends(get_db)]) -> CampusOut:
         events_today=sum(b.events_today for b in out_buildings),
         generated_at=datetime.now(timezone.utc).isoformat(),
     )
-    _campus_cache = (now, campus)
+    if not restricted:
+        _campus_cache = (now, campus)
     return campus
 
 
@@ -520,7 +541,7 @@ def reset_campus_cache_for_tests() -> None:
 @router.get("/cameras/{camera_id}/thumbnail", response_class=Response)
 @limiter.limit("600/minute")
 async def get_camera_thumbnail(
-    request: Request, camera_id: str, db: Annotated[AsyncSession, Depends(get_db)]
+    request: Request, camera_id: str, db: Annotated[AsyncSession, Depends(get_db)], viewer: Viewer
 ) -> Response:
     """Qavat grididagi bitta kadr (JPEG).
 
@@ -537,6 +558,7 @@ async def get_camera_thumbnail(
     camera = result.scalar_one_or_none()
     if camera is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
+    ensure_camera_allowed(viewer, camera)
 
     thumbnail = await ensure_thumbnail(camera)
     if thumbnail is None:

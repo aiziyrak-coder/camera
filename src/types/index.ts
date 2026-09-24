@@ -717,6 +717,10 @@ export interface AdminUser {
   phone?: string | null;
   /** Foydalanuvchi Telegram botga bog'langan — faqat o'qiladi. */
   telegramLinked?: boolean;
+  /** Ikki bosqichli kirish (TOTP) yoqilgan. */
+  twoFactorEnabled?: boolean;
+  /** Bino doirasi: bo'sh — barcha binolar. */
+  allowedBuildingIds?: string[];
 }
 
 export interface AuditLogEntry {

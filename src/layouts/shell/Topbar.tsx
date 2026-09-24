@@ -1,6 +1,9 @@
-import { LogOut, Menu as MenuIcon, Minimize2, MonitorUp, PanelLeftClose, PanelLeftOpen, Presentation, Search } from 'lucide-react';
+import { useState } from 'react';
+import { LogOut, Menu as MenuIcon, Minimize2, MonitorUp, PanelLeftClose, PanelLeftOpen, Presentation, Search, ShieldCheck } from 'lucide-react';
+import TwoFactorModal from '../../components/admin/TwoFactorModal';
 import { branding } from '../../lib/branding';
 import type { Role } from '../../lib/auth';
+import { isBackendConfigured } from '../../lib/config';
 import type { LiveStatus } from '../../lib/realtime';
 import { useViewDate } from '../../lib/viewDate';
 import { Avatar, Button, DatePicker, IconButton, Menu, cn, focusRing, formatUzDate, type Crumb } from '../../ui';
@@ -73,6 +76,7 @@ function ViewDateControl({ compact }: { compact?: boolean }) {
 }
 
 export function Topbar({ crumbs, showDate, onOpenMobileNav, mobileNavOpen, sidebarCollapsed, onToggleSidebar, presentation, bell, userName, role, onLogout, onOpenSearch, wallScreen, live = 'off' }: TopbarProps) {
+  const [twoFactorOpen, setTwoFactorOpen] = useState(false);
 
   if (presentation.active) {
     return <PresentationBar crumbs={crumbs} showDate={showDate} onExit={presentation.exit} bell={bell} live={live} />;
@@ -149,6 +153,8 @@ export function Topbar({ crumbs, showDate, onOpenMobileNav, mobileNavOpen, sideb
           items={[
             { label: 'Taqdimot rejimi', icon: Presentation, onSelect: presentation.toggle },
             ...(wallScreen ? [{ label: 'Katta ekran (devor)', icon: MonitorUp, onSelect: openWallScreen }] : []),
+            // Demo rejimda (backendsiz) 2FA ma'nosiz — server yo'q.
+            ...(isBackendConfigured ? [{ label: 'Ikki bosqichli kirish', icon: ShieldCheck, onSelect: () => setTwoFactorOpen(true) }] : []),
             'separator',
             { label: 'Tizimdan chiqish', icon: LogOut, danger: true, onSelect: onLogout },
           ]}
@@ -159,6 +165,7 @@ export function Topbar({ crumbs, showDate, onOpenMobileNav, mobileNavOpen, sideb
           )}
         />
       )}
+      {twoFactorOpen && <TwoFactorModal open onClose={() => setTwoFactorOpen(false)} />}
     </header>
   );
 }

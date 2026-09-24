@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, Integer, String, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Integer, String, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -35,6 +35,24 @@ class User(Base):
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
     telegram_chat_id: Mapped[str | None] = mapped_column(String, nullable=True)
     telegram_link_code: Mapped[str | None] = mapped_column(String(32), nullable=True, unique=True)
+
+    # Ikki bosqichli kirish (TOTP, app/services/totp.py). Sir Fernet bilan
+    # shifrlangan (app/crypto.py): baza nusxasi (backup) sizib chiqsa ham
+    # undan kodlarni yasab bo'lmasin. totp_secret bor-u totp_enabled=False —
+    # yoqish boshlangan, lekin hali kod bilan tasdiqlanmagan holat.
+    totp_secret: Mapped[str | None] = mapped_column(String, nullable=True)
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false", default=False)
+    totp_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Oxirgi qabul qilingan 30 soniyalik qadam: bitta kodni (ekrandan
+    # ko'rib olingan yoki tarmoqda ushlangan) oynaning qolgan ~90 soniyasida
+    # ikkinchi marta ishlatib bo'lmasin.
+    totp_last_step: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+    # Bino doirasi (app/services/access_scope.py): NULL yoki bo'sh ro'yxat —
+    # barcha binolar. Aks holda foydalanuvchi faqat shu binolardagi
+    # kameralar, ularning hodisalari va arxivini ko'radi. Super Admin'ga
+    # qo'llanmaydi.
+    allowed_building_ids: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
 
 # Rol qiymati <-> ekranda ko'rinadigan nomi. src/layouts/AdminLayout.tsx

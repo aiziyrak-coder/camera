@@ -13,13 +13,18 @@ interface AuthState {
 
 interface AuthContextValue extends AuthState {
   authenticate: (role: Role, login: string, password: string) => Promise<AuthResult>;
+  /** Ikkinchi qadam: parol bilan olingan chaqiruv + ilovadagi 6 xonali kod. */
+  verifyTwoFactor: (challenge: string, code: string) => Promise<AuthResult>;
   login: (role: Role, userName: string, token?: string | null) => void;
   logout: () => void;
 }
 
 export type AuthResult =
   | { ok: true; userName: string; role: Role; token: string | null }
-  | { ok: false; error: string };
+  | { ok: false; error: string }
+  /** Parol to'g'ri, lekin hisobda ikki bosqichli kirish yoqilgan — hali
+   *  sessiya YO'Q, faqat 5 daqiqalik bir martalik chaqiruv. */
+  | { ok: false; twoFactor: true; challenge: string };
 
 export const STORAGE_KEY = 'camera-auth';
 
@@ -83,9 +88,22 @@ function sameSession(a: AuthState, b: AuthState): boolean {
 }
 
 interface LoginResponse {
-  token: string;
-  role: Role;
-  userName: string;
+  token: string | null;
+  role: Role | null;
+  userName: string | null;
+  twoFactorRequired?: boolean;
+  challenge?: string | null;
+}
+
+function loginResult(res: LoginResponse): AuthResult {
+  if (res.twoFactorRequired && res.challenge) return { ok: false, twoFactor: true, challenge: res.challenge };
+  if (!res.token || !isRole(res.role)) return { ok: false, error: 'Serverdan kutilmagan javob keldi' };
+  return { ok: true, userName: res.userName ?? '', role: res.role, token: res.token };
+}
+
+function authError(err: unknown): AuthResult {
+  if (err instanceof ApiError) return { ok: false, error: err.message };
+  return { ok: false, error: "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi" };
 }
 
 /**
@@ -100,10 +118,9 @@ async function authenticate(role: Role, login: string, password: string): Promis
   if (isBackendConfigured) {
     try {
       const res = await api.post<LoginResponse>('/api/auth/login', { login: login.trim(), password: password.trim() });
-      return { ok: true, userName: res.userName, role: res.role, token: res.token };
+      return loginResult(res);
     } catch (err) {
-      if (err instanceof ApiError) return { ok: false, error: err.message };
-      return { ok: false, error: "Tarmoq xatosi — backend bilan bog'lanib bo'lmadi" };
+      return authError(err);
     }
   }
 
@@ -115,6 +132,15 @@ async function authenticate(role: Role, login: string, password: string): Promis
     return { ok: true, userName: login.trim(), role, token: null };
   }
   return { ok: false, error: "Login yoki parol noto'g'ri" };
+}
+
+async function verifyTwoFactor(challenge: string, code: string): Promise<AuthResult> {
+  try {
+    const res = await api.post<LoginResponse>('/api/auth/2fa/kirish', { challenge, code: code.replace(/[\s-]+/g, '') });
+    return loginResult(res);
+  } catch (err) {
+    return authError(err);
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -265,7 +291,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ ...state, authenticate, login, logout }}>
+    <AuthContext.Provider value={{ ...state, authenticate, verifyTwoFactor, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

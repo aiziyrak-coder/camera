@@ -13,7 +13,7 @@ import { MemoryRouter } from 'react-router-dom';
  */
 
 const USERS = [
-  { id: 'u1', name: 'Men O‘zim', login: 'men', role: 'Admin', lastLogin: '2026-01-01 10:00', email: null, phone: null, telegramLinked: false },
+  { id: 'u1', name: 'Men O‘zim', login: 'men', role: 'Admin', lastLogin: '2026-01-01 10:00', email: null, phone: null, telegramLinked: false, twoFactorEnabled: true, allowedBuildingIds: ['b1', 'b2'] },
   { id: 'u2', name: 'Bosh Admin', login: 'bosh', role: 'Super Admin', lastLogin: '2026-01-01 10:00', email: null, phone: null, telegramLinked: false },
   { id: 'u3', name: 'Oddiy Xodim', login: 'xodim', role: "Kamera mas'uli", lastLogin: '2026-01-01 10:00', email: null, phone: null, telegramLinked: false },
 ];
@@ -91,5 +91,21 @@ describe('UsersRolesPage — huquqlar matritsasi', () => {
     // Qulf sababi qisqardi, lekin hamon ko'rinadigan va e'lon qilinadigan matn.
     expect(marks[0].getAttribute('aria-label')).toContain("Super Admin huquqlari o'zgarmaydi");
     expect(marks[0].getAttribute('title')).toContain("Super Admin huquqlari o'zgarmaydi");
+  });
+});
+
+describe('UsersRolesPage — kirish himoyasi', () => {
+  it('2FA holati va bino doirasi ko‘rinadi, bekor qilish faqat 2FA yoqilganda', () => {
+    renderPage();
+    expect(screen.getAllByText('2FA').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('2 ta bino').length).toBeGreaterThan(0);
+    expect(screen.getAllByLabelText('Men O‘zim — ikki bosqichli kirishni bekor qilish').length).toBeGreaterThan(0);
+    expect(screen.queryAllByLabelText('Oddiy Xodim — ikki bosqichli kirishni bekor qilish')).toHaveLength(0);
+  });
+
+  it('Super Admin uchun bino doirasi tugmasi yo‘q', () => {
+    renderPage();
+    expect(screen.queryAllByLabelText('Bosh Admin — bino doirasi')).toHaveLength(0);
+    expect(screen.getAllByLabelText('Oddiy Xodim — bino doirasi').length).toBeGreaterThan(0);
   });
 });

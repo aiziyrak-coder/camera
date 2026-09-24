@@ -17,6 +17,10 @@ class AdminUserOut(CamelModel):
     # Shaxsiy bildirishnomalar uchun (Telegram bog'lanmagan bo'lsa SMS).
     phone: str | None = None
     telegram_linked: bool = False
+    # Ikki bosqichli kirish yoqilganmi (sirning o'zi hech qachon qaytarilmaydi).
+    two_factor_enabled: bool = False
+    # Bino doirasi: bo'sh ro'yxat — barcha binolar.
+    allowed_building_ids: list[str] = []
 
 
 class UserCreateIn(CamelModel):
@@ -45,3 +49,9 @@ class UserUpdateIn(CamelModel):
 
 class ResetUserPasswordIn(CamelModel):
     new_password: str = Field(min_length=8)
+
+
+class UserBuildingScopeIn(CamelModel):
+    """Bo'sh ro'yxat — cheklov yo'q (barcha binolar)."""
+
+    building_ids: list[str] = Field(default_factory=list, max_length=200)

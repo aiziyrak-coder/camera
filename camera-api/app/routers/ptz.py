@@ -32,6 +32,7 @@ from app.schemas.ptz import (
     PtzStatusOut,
 )
 from app.services import ptz as ptz_service
+from app.services.access_scope import ensure_camera_allowed
 
 router = APIRouter(prefix="/api/cameras", tags=["ptz"])
 
@@ -55,11 +56,12 @@ def _camera_uuid(camera_id: str) -> uuid.UUID:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi") from None
 
 
-async def _get_camera(db: AsyncSession, camera_id: str) -> Camera:
+async def _get_camera(db: AsyncSession, camera_id: str, user: CurrentUser) -> Camera:
     camera = await db.get(Camera, _camera_uuid(camera_id))
     if camera is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
-    return camera
+    # Boshqa bino kamerasini burish ham, uning holatini ko'rish ham — yo'q.
+    return ensure_camera_allowed(user, camera)
 
 
 def _decrypt_or_empty(value: str | None) -> str:
@@ -92,8 +94,10 @@ def _target(
     )
 
 
-async def _enabled_target(db: AsyncSession, camera_id: str) -> tuple[Camera, ptz_service.PtzTarget]:
-    camera = await _get_camera(db, camera_id)
+async def _enabled_target(
+    db: AsyncSession, camera_id: str, user: CurrentUser
+) -> tuple[Camera, ptz_service.PtzTarget]:
+    camera = await _get_camera(db, camera_id, user)
     if not camera.ptz_enabled:
         raise HTTPException(status.HTTP_409_CONFLICT, "Bu kamerada PTZ boshqaruvi yoqilmagan")
     if camera.ptz_protocol not in ptz_service.PROTOCOLS:
@@ -149,9 +153,9 @@ async def probe_unsaved_camera(request: Request, body: PtzAdhocProbeIn, _: Adhoc
 async def get_ptz_status(
     camera_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: PtzDep,
+    current_user: PtzDep,
 ) -> PtzStatusOut:
-    camera = await _get_camera(db, camera_id)
+    camera = await _get_camera(db, camera_id, current_user)
     return PtzStatusOut(
         camera_id=str(camera.id),
         enabled=camera.ptz_enabled,
@@ -166,12 +170,12 @@ async def probe_camera(
     request: Request,
     camera_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: ProbeDep,
+    current_user: ProbeDep,
     body: PtzProbeIn | None = None,
 ) -> PtzProbeOut:
     """Ulanish, login/parol va PTZ imkoniyatlarini tekshiradi. ptz_enabled
     shart EMAS — aynan yoqishdan oldin tekshirish uchun."""
-    camera = await _get_camera(db, camera_id)
+    camera = await _get_camera(db, camera_id, current_user)
     body = body or PtzProbeIn()
     target = _target(
         camera,
@@ -193,12 +197,12 @@ async def move_camera(
     camera_id: str,
     body: PtzMoveIn,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: PtzDep,
+    current_user: PtzDep,
 ) -> Response:
     """Tugma bosib turilganda panel har ~1 soniyada qayta yuboradi, shuning
     uchun chegara (300/daqiqa) bir nechta operatorga bemalol yetadi, lekin
     kamerani so'rovlar bilan "ko'mib" tashlashga yo'l qo'ymaydi."""
-    _, target = await _enabled_target(db, camera_id)
+    _, target = await _enabled_target(db, camera_id, current_user)
     try:
         await ptz_service.move(target, body.pan, body.tilt, body.zoom, body.duration_ms)
     except ptz_service.PtzError as exc:
@@ -212,9 +216,9 @@ async def stop_camera(
     request: Request,
     camera_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: PtzDep,
+    current_user: PtzDep,
 ) -> Response:
-    _, target = await _enabled_target(db, camera_id)
+    _, target = await _enabled_target(db, camera_id, current_user)
     try:
         await ptz_service.stop(target)
     except ptz_service.PtzError as exc:
@@ -226,9 +230,9 @@ async def stop_camera(
 async def list_presets(
     camera_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: PtzDep,
+    current_user: PtzDep,
 ) -> list[PtzPresetOut]:
-    _, target = await _enabled_target(db, camera_id)
+    _, target = await _enabled_target(db, camera_id, current_user)
     try:
         presets = await ptz_service.get_presets(target)
     except ptz_service.PtzError as exc:
@@ -243,11 +247,11 @@ async def goto_preset(
     camera_id: str,
     preset_token: str,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: PtzDep,
+    current_user: PtzDep,
 ) -> Response:
     if not preset_token or len(preset_token) > 64:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Preset identifikatori noto'g'ri")
-    _, target = await _enabled_target(db, camera_id)
+    _, target = await _enabled_target(db, camera_id, current_user)
     try:
         await ptz_service.goto_preset(target, preset_token)
     except ptz_service.PtzError as exc:
@@ -265,7 +269,7 @@ async def save_preset(
     current_user: PtzDep,
 ) -> PtzPresetOut:
     """Kameraning HOZIRGI holatini yangi nomli preset sifatida saqlaydi."""
-    camera, target = await _enabled_target(db, camera_id)
+    camera, target = await _enabled_target(db, camera_id, current_user)
     name = body.name.strip()
     if not name:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Preset nomini kiriting")

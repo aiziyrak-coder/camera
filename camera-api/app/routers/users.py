@@ -1,3 +1,4 @@
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -7,13 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit import log_action
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_user, require_permission
-from app.models import Permission, User
+from app.models import Building, Permission, User
 from app.models.user import role_display_label, role_from_display_label
 from app.pagination import Page, PageParams, build_page, paginate
 from app.rate_limit import limiter
+from app.routers.auth import clear_two_factor
 from app.schemas.permission import PermissionEntryOut, PermissionToggleIn
-from app.schemas.user import AdminUserOut, ResetUserPasswordIn, UserCreateIn, UserUpdateIn
+from app.schemas.user import AdminUserOut, ResetUserPasswordIn, UserBuildingScopeIn, UserCreateIn, UserUpdateIn
 from app.security import hash_password
+from app.services.access_scope import allowed_buildings, is_restricted
 from app.services.notifications.sms import normalize_phone
 from app.services.security_checks import forget_default_password_check
 from app.timezone import to_local
@@ -39,6 +42,8 @@ def _to_admin_user_out(user: User) -> AdminUserOut:
         email=user.email,
         phone=user.phone,
         telegram_linked=bool(user.telegram_chat_id),
+        two_factor_enabled=bool(user.totp_enabled),
+        allowed_building_ids=[str(b) for b in (user.allowed_building_ids or [])],
     )
 
 
@@ -67,6 +72,24 @@ def _guard_super_admin_target(user: User, current_user: CurrentUser) -> None:
     if user.role == "super-admin" and current_user.role != "super-admin":
         raise HTTPException(
             status.HTTP_403_FORBIDDEN, "Super Admin hisobini faqat Super Admin o'zgartira oladi"
+        )
+    _guard_scope_target(user, current_user)
+
+
+def _guard_scope_target(user: User, current_user: CurrentUser) -> None:
+    """Bino doirasi cheklangan boshqaruvchi faqat O'Z doirasi ichidagi
+    hisoblarga tegadi.
+
+    Aks holda bitta binoga cheklangan admin cheklanmagan hamkasbining
+    parolini tiklab (yoki 2FA'sini olib tashlab) uning nomidan kirib,
+    butun kampusni ko'rib olardi — doira qog'ozda qolardi."""
+    mine = allowed_buildings(current_user)
+    if mine is None:
+        return
+    theirs = allowed_buildings(user)
+    if theirs is None or not theirs <= mine:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Bu hisob sizning bino doirangizdan kengroq — uni o'zgartira olmaysiz"
         )
 
 
@@ -123,6 +146,16 @@ async def create_user(
         role=_resolve_role(body.role, current_user),
         email=body.email,
         phone=_clean_phone(body.phone),
+        # Cheklangan boshqaruvchi yaratgan hisob uning doirasini meros
+        # oladi: aks holda yangi (cheklovsiz) hisob ochib, o'sha bilan
+        # kirish doirani aylanib o'tish yo'li bo'lardi.
+        # (Bo'sh to'plam — "hech narsa": bo'sh ro'yxat esa "hammasi" degani
+        # bo'lardi, shuning uchun hech bir binoga mos kelmaydigan nil UUID.)
+        allowed_building_ids=(
+            (sorted(str(b) for b in scope) or [str(uuid.UUID(int=0))])
+            if (scope := allowed_buildings(current_user)) is not None
+            else None
+        ),
     )
     db.add(user)
     await log_action(db, request, current_user.id, f"Yangi foydalanuvchi qo'shdi: {body.login}", "Foydalanuvchilar")
@@ -197,6 +230,94 @@ async def reset_user_password(
         db, request, current_user.id, f"Foydalanuvchi parolini tikladi: {user.login}", "Foydalanuvchilar"
     )
     await db.commit()
+
+
+async def _get_user(db: AsyncSession, user_id: str) -> User:
+    try:
+        key = uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Foydalanuvchi topilmadi") from None
+    user = await db.get(User, key)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Foydalanuvchi topilmadi")
+    return user
+
+
+@router.post("/api/users/{user_id}/2fa/bekor", response_model=AdminUserOut)
+@limiter.limit("10/minute")
+async def reset_user_two_factor(
+    user_id: str,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[CurrentUser, Depends(require_permission("manageRoles"))],
+) -> AdminUserOut:
+    """Telefonini yo'qotgan xodim uchun: 2FA butunlay olib tashlanadi,
+    keyingi kirish faqat parol bilan, so'ng u qaytadan yoqadi.
+
+    Super Admin hisobiga faqat Super Admin tegadi (parol tiklash bilan bir
+    xil qoida) — aks holda manageRoles berilgan admin Super Admin'ning
+    ikkinchi himoya qatlamini olib tashlab, uni egallashga bir qadam
+    yaqinlashardi. token_version oshiriladi: agar telefon o'g'irlangan
+    bo'lsa, shu paytgacha ochilgan sessiyalar ham yopiladi."""
+    user = await _get_user(db, user_id)
+    _guard_super_admin_target(user, current_user)
+    clear_two_factor(user)
+    user.token_version += 1
+    await log_action(
+        db, request, current_user.id, f"Ikki bosqichli kirishni bekor qildi: {user.login}", "Foydalanuvchilar"
+    )
+    await db.commit()
+    await db.refresh(user)
+    return _to_admin_user_out(user)
+
+
+@router.put("/api/users/{user_id}/binolar", response_model=AdminUserOut)
+async def set_user_building_scope(
+    user_id: str,
+    body: UserBuildingScopeIn,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[CurrentUser, Depends(require_permission("manageRoles"))],
+) -> AdminUserOut:
+    """Foydalanuvchi qaysi binolar kameralarini ko'rishini belgilaydi
+    (app/services/access_scope.py). Bo'sh ro'yxat — barcha binolar.
+
+    Doirani faqat O'ZI cheklanmagan foydalanuvchi o'zgartira oladi: aks
+    holda bitta binoga cheklangan (lekin manageRoles'i bor) admin o'z
+    cheklovini olib tashlab, butun kampusni ko'rib olardi."""
+    if is_restricted(current_user):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Bino doirasini faqat barcha binolarni ko'ra oladigan foydalanuvchi o'zgartiradi"
+        )
+    user = await _get_user(db, user_id)
+    _guard_super_admin_target(user, current_user)
+    if user.role == "super-admin" and body.building_ids:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Super Admin doim barcha binolarni ko'radi")
+
+    ids: list[uuid.UUID] = []
+    for raw in dict.fromkeys(body.building_ids):
+        try:
+            ids.append(uuid.UUID(raw))
+        except ValueError:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Noto'g'ri bino identifikatori") from None
+    if ids:
+        found = set((await db.execute(select(Building.id).where(Building.id.in_(ids)))).scalars().all())
+        if len(found) != len(ids):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Bunday bino topilmadi")
+
+    user.allowed_building_ids = [str(i) for i in ids] or None
+    names = (
+        (await db.execute(select(Building.name).where(Building.id.in_(ids)).order_by(Building.name))).scalars().all()
+        if ids
+        else []
+    )
+    scope_text = ", ".join(names) if names else "barcha binolar"
+    await log_action(
+        db, request, current_user.id, f"Bino doirasini o'zgartirdi: {user.login} — {scope_text}", "Foydalanuvchilar"
+    )
+    await db.commit()
+    await db.refresh(user)
+    return _to_admin_user_out(user)
 
 
 @router.delete("/api/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
