@@ -1,9 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Camera, Clock3, MapPin, Search } from 'lucide-react';
-import { Avatar, Card, EmptyState, ErrorState, Input, Page, Skeleton } from '../../ui';
+import { Camera, Clock3, ImageIcon, MapPin, Route, Search } from 'lucide-react';
+import { Avatar, Button, Card, EmptyState, ErrorState, Input, Page, Skeleton, useUrlTab, type TabItem } from '../../ui';
 import { isAbortError } from '../../lib/apiClient';
-import { locationText, searchPersonLocation, type PersonLocation } from '../../lib/personLocatorApi';
+import { liveLink, locationText, searchPersonLocation, type PersonLocation } from '../../lib/personLocatorApi';
+import { PersonRouteDrawer, type RouteTarget } from './PersonRouteDrawer';
+import { PhotoSearchPanel } from './PhotoSearchPanel';
+
+type TabId = 'ism' | 'rasm';
+const TABS: readonly TabItem<TabId>[] = [
+  { id: 'ism', label: 'Ism bo‘yicha', icon: Search },
+  { id: 'rasm', label: 'Rasm bo‘yicha', icon: ImageIcon },
+];
 
 function seenAt(value: string | null): string | null {
   if (!value) return null;
@@ -14,11 +22,9 @@ function seenAt(value: string | null): string | null {
   }).format(date);
 }
 
-function PersonResult({ person }: { person: PersonLocation }) {
+function PersonResult({ person, onRoute }: { person: PersonLocation; onRoute: (target: RouteTarget) => void }) {
   const location = locationText(person);
-  const wall = person.cameraId
-    ? `/videodevor?${new URLSearchParams({ kamera: person.cameraId, ...(person.building ? { bino: person.building } : {}), ...(person.floor != null ? { qavat: String(person.floor) } : {}) }).toString()}`
-    : null;
+  const wall = person.cameraId ? liveLink(person.cameraId) : null;
   return (
     <Card padding="md" className="flex min-w-0 items-center gap-3">
       <Avatar name={person.fullName} size="md" />
@@ -37,13 +43,16 @@ function PersonResult({ person }: { person: PersonLocation }) {
       </div>
       <div className="flex shrink-0 flex-col items-end gap-2">
         {person.lastSeenAt && <span className="flex items-center gap-1 text-[11px] font-medium text-muted"><Clock3 size={12} aria-hidden="true" />{seenAt(person.lastSeenAt)}</span>}
-        {wall && <Link to={wall} className="inline-flex h-8 items-center gap-1.5 rounded-control bg-primary-soft px-2.5 text-[12px] font-semibold text-primary hover:bg-primary/15"><Camera size={13} aria-hidden="true" />Kamera</Link>}
+        <div className="flex gap-1.5">
+          {person.lastSeenAt && <Button size="sm" variant="soft" icon={Route} onClick={() => onRoute(person)}>Yo‘li</Button>}
+          {wall && <Link to={wall} className="inline-flex h-8 items-center gap-1.5 rounded-control bg-primary-soft px-2.5 text-[12px] font-semibold text-primary hover:bg-primary/15"><Camera size={13} aria-hidden="true" />Kamera</Link>}
+        </div>
       </div>
     </Card>
   );
 }
 
-export default function PersonLocatorPage() {
+function NameSearch({ onRoute }: { onRoute: (target: RouteTarget) => void }) {
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<PersonLocation[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -65,15 +74,32 @@ export default function PersonLocatorPage() {
   }, [trimmed, attempt]);
 
   return (
-    <Page title="Shaxs qidirish" subtitle="Oxirgi kamera aniqlagan joyi va vaqti" breadcrumbs={[{ label: 'Nazorat', to: '/' }, { label: 'Shaxs qidirish' }]}>
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-3">
-        <Input value={query} onChange={(event) => setQuery(event.target.value)} autoFocus placeholder="Ism yoki familiyani kiriting" autoComplete="off" icon={Search} />
-        {trimmed.length < 2 && <EmptyState icon={Search} title="Shaxsni qidiring" description="Kamida 2 harf kiriting" compact />}
-        {loading && <div className="space-y-2"><Skeleton className="h-20" /><Skeleton className="h-20" /></div>}
-        {error && <ErrorState message={error} onRetry={() => setAttempt((n) => n + 1)} />}
-        {!loading && !error && items?.length === 0 && <EmptyState icon={Search} title="Topilmadi" description="Ism yoki familiyani tekshirib ko‘ring" compact />}
-        {!loading && !error && items && items.length > 0 && <div className="space-y-2">{items.map((person) => <PersonResult key={person.id} person={person} />)}</div>}
+    <div className="flex flex-col gap-3">
+      <Input value={query} onChange={(event) => setQuery(event.target.value)} autoFocus placeholder="Ism yoki familiyani kiriting" autoComplete="off" icon={Search} />
+      {trimmed.length < 2 && <EmptyState icon={Search} title="Shaxsni qidiring" description="Kamida 2 harf kiriting" compact />}
+      {loading && <div className="space-y-2"><Skeleton className="h-20" /><Skeleton className="h-20" /></div>}
+      {error && <ErrorState message={error} onRetry={() => setAttempt((n) => n + 1)} />}
+      {!loading && !error && items?.length === 0 && <EmptyState icon={Search} title="Topilmadi" description="Ism yoki familiyani tekshirib ko‘ring" compact />}
+      {!loading && !error && items && items.length > 0 && <div className="space-y-2">{items.map((person) => <PersonResult key={person.id} person={person} onRoute={onRoute} />)}</div>}
+    </div>
+  );
+}
+
+export default function PersonLocatorPage() {
+  const [tab] = useUrlTab(TABS);
+  const [routeTarget, setRouteTarget] = useState<RouteTarget | null>(null);
+
+  return (
+    <Page
+      title="Shaxs qidirish"
+      subtitle="Ism yoki rasm bo‘yicha: qayerda va qachon ko‘rilgan"
+      breadcrumbs={[{ label: 'Nazorat', to: '/' }, { label: 'Shaxs qidirish' }]}
+      tabs={TABS}
+    >
+      <div className="mx-auto w-full max-w-4xl">
+        {tab === 'rasm' ? <PhotoSearchPanel onRoute={setRouteTarget} /> : <NameSearch onRoute={setRouteTarget} />}
       </div>
+      <PersonRouteDrawer target={routeTarget} onClose={() => setRouteTarget(null)} />
     </Page>
   );
 }
