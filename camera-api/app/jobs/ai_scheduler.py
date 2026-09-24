@@ -61,8 +61,15 @@ MIN_PAUSE_SECONDS = 1.0
 PAUSE_RECHECK_SECONDS = 30.0
 
 
+# Hayot xavfsizligi: sozlamada yozilgan bo'lsa ham hech qachon pauzaga
+# qo'yilmaydi. Productionda (2026-09-24) yong'in tekshiruvi tirband
+# soatlarda — kuniga 4 soat — o'chib turardi.
+NEVER_PAUSED_SWEEPS = frozenset({"fire"})
+
+
 def attendance_priority_sweeps() -> set[str]:
-    return {name.strip() for name in settings.attendance_priority_paused_sweeps.split(",") if name.strip()}
+    names = {name.strip() for name in settings.attendance_priority_paused_sweeps.split(",") if name.strip()}
+    return names - NEVER_PAUSED_SWEEPS
 
 
 def is_paused_for_attendance(name: str) -> bool:

@@ -48,6 +48,7 @@ from app.jobs.module_status import camera_allows_module, is_module_active
 from app.jobs.sweep_guard import SweepGuard
 from app.jobs.sweep_concurrency import camera_sweep_slot, entrance_exit_sweep_slot
 from app.services.camera_pacing import CameraPacer
+from app.services.camera_roles import is_door_camera
 from app.models import AttendanceRecord, AuditLog, Camera, StudentStaff
 from app.services.event_bus import raise_event
 from app.services.face_matching import CandidateMatrix, find_best_match as _vectorized_find_best_match, load_candidate_matrix_for_sweep
@@ -1261,8 +1262,8 @@ async def _watch_entrance_camera(camera: Camera, watcher: _EntranceWatcher) -> N
     gate = MotionGate()
     roi = face_roi_box(camera)
     tracked: tuple = ()
-    pacer = CameraPacer(exempt=bool(camera.is_entrance or camera.is_exit))
-    if not (camera.is_entrance or camera.is_exit or camera.is_perimeter):
+    pacer = CameraPacer(exempt=is_door_camera(camera))
+    if not (is_door_camera(camera) or camera.is_perimeter):
         # Xona kameralari kirish eshiklaridan keyin (config izohi:
         # room_watcher_start_delay_seconds). Kutish paytida ham "tirik" —
         # qotib qolgan kuzatuvchi sifatida qayta ishga tushirilmaydi.

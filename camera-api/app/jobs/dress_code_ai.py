@@ -31,6 +31,7 @@ markazini eng yaqin pozaning burun landmarkiga solishtirib bog'lanadi
 bir xil). Tizimdagi har bir boshqa kriteriya kabi ikki-kadrli
 tasdiqlash bilan."""
 
+from contextvars import ContextVar
 import asyncio
 import logging
 import math
@@ -105,7 +106,9 @@ def _closest_pose_to_point(poses: list[PoseLandmarks], point: tuple[float, float
 # Oxirgi _staff_missing_coat() chaqiruvi topgan oq rang ulushi (ishonch
 # hisoblash uchun). Funksiya bool qaytarishda davom etadi — testlar va
 # ikki-kadrli oqim shunga tayanadi.
-_last_white_fraction: float | None = None
+# ContextVar: asyncio.gather qilgan har kamera vazifasi o'z nusxasini ko'radi
+# (oddiy global boshqa kameraning qiymati bilan almashib qolardi).
+_last_white_fraction: ContextVar[float | None] = ContextVar("_last_white_fraction", default=None)
 
 
 def _torso_white_fraction(image, points) -> float | None:
@@ -119,8 +122,7 @@ async def _staff_missing_coat(
     """True if ANY recognized staff member in this frame reads as being
     without a white coat. False when no staff member is recognized here —
     nothing to evaluate, which is not the same as a compliance pass."""
-    global _last_white_fraction
-    _last_white_fraction = None
+    _last_white_fraction.set(None)
     if candidates.is_empty or not staff_ids:
         return False
 
@@ -155,7 +157,7 @@ async def _staff_missing_coat(
             # Tanasi kadrda ko'rinmaydi — o'lchab bo'lmaydi, bu qoidabuzarlik emas.
             continue
         if fraction < settings.coat_white_fraction_threshold:
-            _last_white_fraction = fraction
+            _last_white_fraction.set(fraction)
             return True
 
     return False
@@ -180,10 +182,10 @@ async def process_camera_frame_pair_for_dress_code(
     # kadr boshiga bitta tahlil.
     if not await _staff_missing_coat(frame_b, candidates, staff_ids):
         return False
-    fraction_b = _last_white_fraction
+    fraction_b = _last_white_fraction.get()
     if not await _staff_missing_coat(frame_a, candidates, staff_ids):
         return False
-    fraction_a = _last_white_fraction
+    fraction_a = _last_white_fraction.get()
     if await _recently_flagged(db, camera.id):
         return False
 

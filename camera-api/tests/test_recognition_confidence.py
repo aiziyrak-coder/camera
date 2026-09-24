@@ -183,7 +183,8 @@ class TestDetectorConfidencesAreComputed:
 
         enrolled = _unit(1, 0, 0)
         candidates = CandidateMatrix(ids=["p1"], matrix=np.array([enrolled]))
-        threshold = settings.attendance_ai_match_threshold
+        # "Tanish" chegarasi — undan yuqori yuz begona emas (unauthorized_known_similarity).
+        threshold = settings.unauthorized_known_similarity
         stranger = SimpleNamespace(embedding=_unit(0, 0, 1))
         # Chegaraga yaqin, lekin undan past: ishonch chegaraga NISBATAN
         # hisoblanadi (70 + 25 * (chegara - o'xshashlik) / chegara),

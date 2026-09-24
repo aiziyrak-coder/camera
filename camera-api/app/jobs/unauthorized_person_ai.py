@@ -115,13 +115,33 @@ def _filter_faces_by_size(faces: list, image_bytes: bytes) -> list:
     return [face for face in faces if (face.bbox[3] - face.bbox[1]) >= min_height]
 
 
+def _known_threshold() -> float:
+    """Shu o'xshashlikdan yuqori yuz "begona" emas. Davomatning qat'iy
+    chegarasidan (0.50) past: ro'yxatdagi odam yomon burchakdan 0.42-0.50
+    beradi — uni davomatga yozib bo'lmaydi, lekin begona deb signal berish
+    ham xato (config: unauthorized_known_similarity)."""
+    return settings.unauthorized_known_similarity
+
+
+def _same_person_pairs(faces_a: list, faces_b: list) -> list:
+    """faces_b dagi, faces_a dagi biror yuz bilan AYNAN bir odam bo'lgan
+    yuzlar. Ikki kadrlik tasdiqlash shunday bo'lishi kerak: olomonda ikki
+    xil notanish odam bir-birini "tasdiqlab" qo'ymasin."""
+    if not faces_a or not faces_b:
+        return []
+    a = np.stack([face.embedding for face in faces_a])
+    b = np.stack([face.embedding for face in faces_b])
+    similarity = b @ a.T
+    return [face for face, row in zip(faces_b, similarity, strict=True) if float(row.max()) >= settings.unauthorized_pair_same_person]
+
+
 def _has_unmatched_face(faces, candidates: CandidateMatrix) -> bool:
     if not faces:
         return False
     if candidates.is_empty:
         return True  # nobody enrolled at all -> every face is, by definition, unmatched
     embeddings = np.stack([face.embedding for face in faces])
-    matches = candidates.best_matches(embeddings, settings.attendance_ai_match_threshold)
+    matches = candidates.best_matches(embeddings, _known_threshold())
     return any(match is None for match in matches)
 
 
@@ -134,7 +154,7 @@ def _unmatched_confidence(faces, candidates: CandidateMatrix) -> int | None:
     usable = [face for face in faces or [] if getattr(face, "embedding", None) is not None]
     if not usable or candidates.is_empty:
         return None
-    threshold = settings.attendance_ai_match_threshold
+    threshold = _known_threshold()
     embeddings = np.stack([face.embedding for face in usable])
     _idx, best_sim, _second = candidates.top_two(embeddings)
     unmatched = [max(0.0, float(s)) for s in best_sim if float(s) < threshold]
@@ -150,7 +170,7 @@ def _unmatched_faces(faces, candidates: CandidateMatrix) -> list:
     if candidates.is_empty:
         return list(faces)
     embeddings = np.stack([face.embedding for face in faces])
-    matches = candidates.best_matches(embeddings, settings.attendance_ai_match_threshold)
+    matches = candidates.best_matches(embeddings, _known_threshold())
     return [face for face, match in zip(faces, matches, strict=True) if match is None]
 
 
@@ -168,7 +188,7 @@ def _closest_similarity(faces, candidates: CandidateMatrix) -> float | None:
     if not usable or candidates.is_empty:
         return None
     _idx, best_sim, _second = candidates.top_two(np.stack([face.embedding for face in usable]))
-    unmatched = [float(s) for s in best_sim if float(s) < settings.attendance_ai_match_threshold]
+    unmatched = [float(s) for s in best_sim if float(s) < _known_threshold()]
     return max(unmatched) if unmatched else None
 
 
@@ -223,16 +243,19 @@ async def process_camera_frame_pair_for_unauthorized(
     if not _has_unmatched_face(faces_a, candidates):
         return False  # frame_a had no unmatched face — frame_b's miss looks like a one-off angle/lighting glitch
 
+    # Faqat IKKALA kadrda ham ko'ringan o'sha bir notanish yuz.
+    unmatched_b = _same_person_pairs(_unmatched_faces(faces_a, candidates), _unmatched_faces(faces_b, candidates))
+    if not unmatched_b:
+        return False
+
     if review:
         from app.services.unknown_sightings import record_unknown_faces
 
-        unmatched = _unmatched_faces(faces_b, candidates)
-        return await record_unknown_faces(db, camera, frame_b, unmatched, _closest_per_face(unmatched, candidates)) > 0
+        return await record_unknown_faces(db, camera, frame_b, unmatched_b, _closest_per_face(unmatched_b, candidates)) > 0
 
     if await _recently_flagged(db, camera.id):
         return False
 
-    unmatched_b = _unmatched_faces(faces_b, candidates)
     closest = _closest_similarity(faces_b, candidates)
     await raise_event(
         db,
@@ -251,7 +274,7 @@ async def process_camera_frame_pair_for_unauthorized(
             "reason": (
                 f"{len(unmatched_b)} ta yuz bazadagi hech kimga o'xshamadi — ikki kadrda ham"
                 + (
-                    f"; eng yaqin o'xshashlik {closest:.2f} (tanish chegarasi {settings.attendance_ai_match_threshold:.2f})"
+                    f"; eng yaqin o'xshashlik {closest:.2f} (tanish chegarasi {_known_threshold():.2f})"
                     if closest is not None
                     else ""
                 )
@@ -259,7 +282,7 @@ async def process_camera_frame_pair_for_unauthorized(
             "metrics": {
                 "unmatched": len(unmatched_b),
                 "closest": round(closest, 3) if closest is not None else None,
-                "threshold": settings.attendance_ai_match_threshold,
+                "threshold": _known_threshold(),
             },
         },
         annotations=[face_box(face, "notanish") for face in unmatched_b if getattr(face, "bbox", None) is not None],

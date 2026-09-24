@@ -28,6 +28,7 @@ from app.services.stream_cache import (
     is_stream_known_broken,
     stop_stream_reader,
 )
+from app.services.camera_roles import is_door_camera
 from app.services.thumbnail_cache import remember_frame
 from app.services.video_gateway import public_hls_to_internal
 
@@ -41,7 +42,7 @@ _POLL_SECONDS = 0.25
 def _is_security_camera(camera: Camera) -> bool:
     """Asosiy oqim o'qiladigan kameralar. ATTENDANCE_ALL_CAMERAS da har
     kamera davomat uchun yuz taniydi — substream'da yuz tanib bo'lmas darajada kichik."""
-    if camera.is_entrance or (camera.is_perimeter and settings.ai_perimeter_main_stream):
+    if is_door_camera(camera) or (camera.is_perimeter and settings.ai_perimeter_main_stream):
         return True
     if camera.is_perimeter:
         return False

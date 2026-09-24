@@ -550,6 +550,11 @@ class Settings(BaseSettings):
     # for unauthorized-person purposes (still detected/matched normally
     # for attendance elsewhere, where a false match just costs nothing).
     unauthorized_min_face_height_fraction: float = 0.08
+    # Bazadagi eng yaqin odamga shundan ko'p o'xshagan yuz begona emas
+    # (yumshoq davomat chegarasi bilan bir xil) va ikki kadrdagi yuz shu
+    # o'xshashlikdan boshlab "o'sha odam" hisoblanadi.
+    unauthorized_known_similarity: float = 0.42
+    unauthorized_pair_same_person: float = 0.40
 
     # Kunduzgi ko'rib chiqish rejimi (app/services/unknown_sightings.py).
     # Ogohlantirish oynasidan TASHQARIDA notanish yuz signal emas —
@@ -971,7 +976,7 @@ class Settings(BaseSettings):
     # davomatga beriladi. Kun davomida hammasi odatdagidek ishlaydi.
     attendance_priority_enabled: bool = True
     attendance_priority_windows: str = "07:30-09:30,16:00-18:00"
-    attendance_priority_paused_sweeps: str = "fire,fight,disorder,dress_code,ppe"
+    attendance_priority_paused_sweeps: str = "fight,disorder,dress_code,ppe"
 
     # GPU batch inference caps — detect_faces_batch / detect_objects_batch chunk size.
     face_recognition_batch_size: int = 4

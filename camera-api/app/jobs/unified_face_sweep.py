@@ -142,7 +142,23 @@ async def _process_camera(
     if not sleep_frames and pair is None:
         return counts
 
+    pre_detected: dict[int, list] = {}
     async with camera_sweep_slot():
+        if needs_sleep and len(sleep_frames) >= 2:
+            # Uyqu faqat yirik yuzda o'lchanadi (sleep_min_face_height_px).
+            # Birinchi kadrda bunday yuz bo'lmasa, qolgan 3 kadrni tahlil
+            # qilish befoyda — productionda (2026-09-24) yuzlarning 97% i
+            # 40 px dan kichik edi, ya'ni har dars kamerasi har 30 s da 4
+            # ta behuda tahlil olardi. Natija inference_cache'da qoladi:
+            # quyida o'sha kadr qayta hisoblanmaydi.
+            first = await detect_faces(sleep_frames[0])
+            pre_detected[id(sleep_frames[0])] = first
+            if not any(
+                float(face.bbox[3] - face.bbox[1]) >= settings.sleep_min_face_height_px for face in first
+            ):
+                needs_sleep = False
+                if not needs_unauthorized:
+                    return counts
         # Every frame (the unauthorized pair, the sleep burst) needs its own
         # detect_faces() call, but they're independent inference calls on
         # independent frames — gathered concurrently, deduplicated by object
@@ -159,8 +175,10 @@ async def _process_camera(
         if not frames_needing_faces:
             return counts
 
-        detected = await asyncio.gather(*(detect_faces(frame) for frame in frames_needing_faces))
-        faces_by_frame_id = {id(frame): faces for frame, faces in zip(frames_needing_faces, detected, strict=True)}
+        remaining = [frame for frame in frames_needing_faces if id(frame) not in pre_detected]
+        detected = await asyncio.gather(*(detect_faces(frame) for frame in remaining))
+        faces_by_frame_id = dict(pre_detected)
+        faces_by_frame_id.update({id(frame): faces for frame, faces in zip(remaining, detected, strict=True)})
 
         async with session_factory() as db:
             if needs_unauthorized and pair is not None:

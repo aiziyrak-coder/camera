@@ -55,9 +55,10 @@ class TestWhichSweepsPause:
         self._inside(monkeypatch)
         monkeypatch.setattr(settings, "attendance_priority_enabled", True)
         monkeypatch.setattr(settings, "attendance_priority_paused_sweeps", "fire,fight,disorder,dress_code,ppe")
-        for name in ("fire", "fight", "disorder", "dress_code", "ppe"):
+        for name in ("fight", "disorder", "dress_code", "ppe"):
             assert is_paused_for_attendance(name) is True
-        for name in ("entrance_exit_attendance", "unified_face", "zone_entry", "absence_marking"):
+        # Yong'in — hayot xavfsizligi: sozlamada yozilgan bo'lsa ham to'xtamaydi.
+        for name in ("fire", "entrance_exit_attendance", "unified_face", "zone_entry", "absence_marking"):
             assert is_paused_for_attendance(name) is False
 
     def test_disabled_setting_pauses_nothing(self, monkeypatch):

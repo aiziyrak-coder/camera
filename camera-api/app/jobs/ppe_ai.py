@@ -1,5 +1,6 @@
 """TT kriteriya 13 — SIZ (niqob) yo'qligi sanitariya zonalarida."""
 
+from contextvars import ContextVar
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
@@ -60,7 +61,6 @@ async def _frame_missing_ppe(frame_bytes: bytes) -> bool:
     image = await run_cpu(_decode, frame_bytes)
     if image is None:
         return False
-    global _last_mask_fraction
     fractions: list[float] = []
     for face in faces:
         x1, y1, x2, y2 = face.bbox
@@ -71,13 +71,15 @@ async def _frame_missing_ppe(frame_bytes: bytes) -> bool:
             fraction = mask_fraction(image, bbox)
             if fraction is not None:
                 fractions.append(fraction)
-    _last_mask_fraction = max(fractions) if fractions else None
+    _last_mask_fraction.set(max(fractions) if fractions else None)
     return True
 
 
 # Oxirgi _frame_missing_ppe() dagi eng katta "niqobga o'xshash" ulush —
 # ishonch uchun (YOLO modeli bo'lsa None: model "yo'q" deydi, ulush bermaydi).
-_last_mask_fraction: float | None = None
+# ContextVar: asyncio.gather qilgan har kamera vazifasi o'z nusxasini ko'radi
+# (oddiy global boshqa kameraning qiymati bilan almashib qolardi).
+_last_mask_fraction: ContextVar[float | None] = ContextVar("_last_mask_fraction", default=None)
 
 
 async def process_camera_frame_pair_for_ppe(
@@ -85,10 +87,10 @@ async def process_camera_frame_pair_for_ppe(
 ) -> bool:
     if not await _frame_missing_ppe(frame_b):
         return False
-    fraction_b = _last_mask_fraction
+    fraction_b = _last_mask_fraction.get()
     if not await _frame_missing_ppe(frame_a):
         return False
-    fraction_a = _last_mask_fraction
+    fraction_a = _last_mask_fraction.get()
     if await _recently_flagged(db, camera.id):
         return False
 

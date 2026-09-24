@@ -87,6 +87,15 @@ def effective_room_type(camera) -> str | None:
     return None
 
 
+def is_door_camera(camera) -> bool:
+    """Eshik kamerasi: kirish/chiqish bayrog'i YOKI "kirish" turi. Bunday
+    kamera asosiy (4K) oqimda, navbatsiz tahlil qilinadi — odam eshikdan
+    2-3 s da o'tadi va yuzi faqat shu yerda oldidan ko'rinadi."""
+    if getattr(camera, "is_entrance", False) is True or getattr(camera, "is_exit", False) is True:
+        return True
+    return getattr(camera, "room_type", None) == "kirish"
+
+
 ATTENDANCE_MODULE_CODES = frozenset({6, 7})
 
 

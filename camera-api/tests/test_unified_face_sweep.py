@@ -10,6 +10,7 @@ concurrently via asyncio.gather, with each module still receiving the
 exact same faces list it always did."""
 
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import select
@@ -46,6 +47,13 @@ def _frame(tag: str) -> bytes:
 
 
 @pytest.mark.usefixtures("seeded")
+class _FakeFace(str):
+    """Yuz o'rnidagi belgi: satr sifatida solishtiriladi, lekin uyqu
+    tekshiruvi uchun yetarlicha yirik ramkaga ega."""
+
+    bbox = (0.0, 0.0, 120.0, 140.0)
+
+
 class TestProcessCameraConcurrentFaceDetection:
     async def test_detect_faces_called_once_per_distinct_frame_concurrently(
         self, db_session, a_camera, monkeypatch
@@ -71,7 +79,7 @@ class TestProcessCameraConcurrentFaceDetection:
             await asyncio.sleep(0.02)  # long enough for concurrent calls to overlap
             async with lock:
                 in_flight["n"] -= 1
-            return [f"face-for-{frame!r}"]
+            return [_FakeFace(f"face-for-{frame!r}")]
 
         received: dict[str, object] = {}
 
@@ -143,7 +151,7 @@ class TestProcessCameraConcurrentFaceDetection:
 
         async def fake_detect_faces(frame: bytes):
             detected.append(frame)
-            return [f"face-for-{frame!r}"]
+            return [_FakeFace(f"face-for-{frame!r}")]
 
         received: dict[str, object] = {}
 
@@ -194,7 +202,7 @@ class TestProcessCameraConcurrentFaceDetection:
             return pair
 
         async def fake_detect_faces(frame: bytes):
-            return [f"face-for-{frame!r}"]
+            return [_FakeFace(f"face-for-{frame!r}")]
 
         async def fake_noop(*args, **kwargs):
             return False
@@ -224,7 +232,7 @@ class TestProcessCameraConcurrentFaceDetection:
 
         async def fake_detect_faces(frame: bytes):
             call_count["n"] += 1
-            return [f"face-for-{frame!r}"]
+            return [_FakeFace(f"face-for-{frame!r}")]
 
         async def fake_noop(*args, **kwargs):
             return False
@@ -283,3 +291,30 @@ class TestDaytimeReviewMode:
     async def test_nothing_runs_when_both_off(self, db_session, a_camera, monkeypatch):
         seen = await self._run(a_camera, monkeypatch, {"unauthorized": False, "sleep": False, "review": False})
         assert seen == {}
+
+
+class TestSleepBurstSkip:
+    async def test_small_faces_skip_the_rest_of_the_burst(self, db_session, a_camera, monkeypatch):
+        """Birinchi kadrda uyqu o'lchanadigan yirik yuz yo'q — qolgan 3 kadr tahlil qilinmaydi."""
+        frames = [_frame("q0"), _frame("q1"), _frame("q2"), _frame("q3")]
+        detected: list[bytes] = []
+
+        async def fake_burst(camera, count, gap_seconds):
+            return frames
+
+        async def fake_detect(frame: bytes):
+            detected.append(frame)
+            return [SimpleNamespace(bbox=(0.0, 0.0, 20.0, 24.0))]
+
+        async def fake_sleep(*args, **kwargs):
+            raise AssertionError("uyqu tekshiruvi chaqirilmasligi kerak")
+
+        monkeypatch.setattr(unified_face_sweep, "grab_frame_burst_for_camera", fake_burst)
+        monkeypatch.setattr(unified_face_sweep, "detect_faces", fake_detect)
+        monkeypatch.setattr(unified_face_sweep, "process_camera_frame_for_sleep", fake_sleep)
+        from tests.conftest import TestSessionLocal
+
+        flags = {"unauthorized": False, "review": False, "sleep": True}
+        counts = await _process_camera(a_camera, flags, candidates=None, session_factory=TestSessionLocal)
+        assert detected == [frames[0]]
+        assert counts["sleep"] == 0
