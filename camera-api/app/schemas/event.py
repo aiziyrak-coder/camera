@@ -54,6 +54,8 @@ class EventOut(CamelModel):
     resolution_note: str | None = None
     # Ro'yxatda hisoblanadi; WebSocket xabarida null bo'lishi mumkin.
     comments_count: int | None = None
+    # Operator ko'rsatmasi (SOP) qadamlari — app/services/sop.py.
+    sop: list[str] = Field(default_factory=list)
 
 
 class EventCreateIn(CamelModel):

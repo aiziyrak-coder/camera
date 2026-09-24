@@ -4,6 +4,7 @@ import { Badge, Button, ButtonLink, Drawer, IconButton, KeyValue, StatusBadge, t
 import EventActivity from './EventActivity';
 import { cameraLabel } from './ReviewCard';
 import EventWorkflowPanel from './EventWorkflowPanel';
+import EventSopChecklist from './EventSopChecklist';
 import { detailMetrics } from '../../lib/eventDetails';
 import { relativeTime } from '../../lib/uzDate';
 import type { AIEvent } from '../../types';
@@ -198,6 +199,9 @@ export default function EventDrawer({
               </Badge>
             )}
           </div>
+
+          {/* Ko‘rsatma qaror panelidan OLDIN: operator avval qadamlarni ko‘radi. */}
+          {!event.isTrial && event.sop && event.sop.length > 0 && <EventSopChecklist key={event.id} steps={event.sop} />}
 
           {onChanged && !event.isTrial && <EventWorkflowPanel key={event.id} event={event} onChanged={onChanged} />}
 

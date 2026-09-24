@@ -1,4 +1,6 @@
-from typing import Literal
+from typing import Annotated, Literal
+
+from pydantic import Field
 
 from app.schemas.base import CamelModel
 
@@ -63,3 +65,19 @@ class ModuleSuppressionOut(CamelModel):
     precision: float | None = None
     reason: str
     created_at: str  # "2026-09-16 10:05", institut vaqti
+
+
+class ModuleSopOut(CamelModel):
+    """Modul uchun operator ko'rsatmasi (app/services/sop.py)."""
+
+    code: int
+    name: str
+    steps: list[str]
+    # True — administrator o'zgartirgan; False — standart matn.
+    custom: bool
+    default_steps: list[str]
+
+
+class ModuleSopIn(CamelModel):
+    # null yoki bo'sh ro'yxat — standart ko'rsatmaga qaytarish.
+    steps: list[Annotated[str, Field(max_length=200)]] | None = Field(default=None, max_length=10)

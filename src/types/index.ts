@@ -781,6 +781,8 @@ export interface AIEvent {
   resolutionNote?: string | null;
   /** Ro'yxatda hisoblanadi; WebSocket xabarida null bo'lishi mumkin. */
   commentsCount?: number | null;
+  /** Operator ko‘rsatmasi (SOP) — modul bo‘yicha qadamlar (app/services/sop.py). */
+  sop?: string[];
   /** WebSocket: mavjud hodisa o'zgardi (tayinlash, holat, izoh, muddat). */
   kind?: 'event_updated';
 }

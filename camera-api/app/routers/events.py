@@ -39,6 +39,7 @@ from app.schemas.event import (
     EventTimelineItemOut,
 )
 from app.services.event_bus import event_to_out, sla_due_at
+from app.services.sop import load_sops
 from app.services.event_scope import NOT_SUPPRESSED, OPERATOR_EVENTS, REGISTERED_MODULE
 from app.services.event_status import (
     ACTIVE_STATUSES,
@@ -74,8 +75,14 @@ WS_CLOSE_UNAUTHORIZED = 4401
 WS_CLOSE_FORBIDDEN = 4403
 
 
-def _to_out(event: Event, *, assignee_name: str | None = None, comments_count: int | None = None) -> EventOut:
-    return event_to_out(event, assignee_name=assignee_name, comments_count=comments_count)
+def _to_out(
+    event: Event,
+    *,
+    assignee_name: str | None = None,
+    comments_count: int | None = None,
+    sop: list[str] | None = None,
+) -> EventOut:
+    return event_to_out(event, assignee_name=assignee_name, comments_count=comments_count, sop=sop)
 
 
 def _local_day_start(day: date) -> datetime:
@@ -132,11 +139,14 @@ async def _outs(db: AsyncSession, events: list[Event]) -> list[EventOut]:
     """Ro'yxat uchun: tayinlanganlar ismlari va izohlar soni ikkita so'rovda."""
     names = await _user_names(db, {e.assigned_to_id for e in events if e.assigned_to_id})
     counts = await _comment_counts(db, [e.id for e in events])
+    # Administrator o'zgartirgan ko'rsatmalar — modul kodi bo'yicha bitta so'rov.
+    sops = await load_sops(db, {e.module_code for e in events})
     return [
         _to_out(
             e,
             assignee_name=names.get(e.assigned_to_id) if e.assigned_to_id else None,
             comments_count=counts.get(e.id, 0),
+            sop=sops.get(e.module_code),
         )
         for e in events
     ]

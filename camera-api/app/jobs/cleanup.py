@@ -35,7 +35,7 @@ from app.config import settings
 from app.database import SessionLocal
 from app.models import AccessEvent, AuditLog, Event, NotificationLog, PasswordResetToken, RevokedToken, StudentStaff
 from app.services.face_matching import announce_roster_change
-from app.services.privacy import clear_biometrics, has_biometrics_clause
+from app.services.privacy import clear_biometrics, erase_face_samples, has_biometrics_clause, unique_keys
 from app.storage import delete_file, delete_files_quietly
 
 logger = logging.getLogger("app.cleanup")
@@ -100,6 +100,9 @@ async def _purge_inactive_biometrics(db: AsyncSession, now: datetime) -> int:
         if not people:
             break
         keys = [clear_biometrics(person) for person in people]
+        # Galereya namunalari va biriktirilgan kamera kadrlari ham — faqat
+        # asosiy rasm o'chib, qolgan yuz vektorlari qolib ketmasin.
+        keys = unique_keys([*keys, *await erase_face_samples(db, [person.id for person in people])])
         await db.commit()
         # Commit'dan keyin: vektor bazadan ketgan, ombordagi xato buni
         # orqaga qaytarmaydi (app/services/privacy.py, finish_erasure).

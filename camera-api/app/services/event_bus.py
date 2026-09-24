@@ -36,6 +36,7 @@ from app.schemas.event import EventOut
 from app.services.event_status import OPEN_STATUSES
 from app.services.evidence import Shape, annotate_snapshot
 from app.services.notifications import notify_event
+from app.services.sop import default_steps, resolve_steps
 from app.storage import presigned_url, upload_file
 from app.timezone import to_local
 from app.ws import manager
@@ -77,12 +78,15 @@ def event_to_out(
     assignee_name: str | None = None,
     comments_count: int | None = None,
     now: datetime | None = None,
+    sop: list[str] | None = None,
 ) -> EventOut:
     """Event → API javobi. Routerlar va sweeplar bitta shakldan foydalanadi.
 
     Tayinlangan foydalanuvchi ismi va izohlar soni boshqa jadvallarda —
     chaqiruvchi ularni (ro'yxat uchun bitta so'rovda) o'zi olib beradi.
-    "overdue" — muddat o'tgan va hali qaror qilinmagan (yangi/jarayonda)."""
+    "overdue" — muddat o'tgan va hali qaror qilinmagan (yangi/jarayonda).
+    `sop` berilmasa (bazaga murojaat qilmaydigan chaqiruvchilar) — modulning
+    standart ko'rsatmasi."""
     now = now or datetime.now(timezone.utc)
     overdue = bool(event.due_at and event.status in OPEN_STATUSES and event.due_at < now)
     return EventOut(
@@ -115,6 +119,7 @@ def event_to_out(
         resolved_by=event.resolved_by,
         resolution_note=event.resolution_note,
         comments_count=comments_count,
+        sop=sop if sop is not None else default_steps(event.module_code),
     )
 
 
@@ -213,10 +218,13 @@ async def raise_event(
     """
     config = (
         await db.execute(
-            select(AIModuleConfig.threshold, AIModuleConfig.mode).where(AIModuleConfig.code == module_code)
+            select(AIModuleConfig.threshold, AIModuleConfig.mode, AIModuleConfig.sop).where(
+                AIModuleConfig.code == module_code
+            )
         )
     ).one_or_none()
     threshold, mode = (config.threshold, config.mode) if config is not None else (None, "ishchi")
+    sop_steps = resolve_steps(module_code, config.sop if config is not None else None)
     if threshold is not None and confidence < threshold:
         logger.info(
             "event suppressed by module threshold",
@@ -260,7 +268,7 @@ async def raise_event(
     )
     db.add(event)
     await db.flush()
-    event_out = event_to_out(event)
+    event_out = event_to_out(event, sop=sop_steps)
     await db.commit()
     # Sinov signali operatorlarga yuborilmaydi: monitoring devori, signal
     # paneli va Hodisalar navbati uni ko'rsatmasligi kerak.

@@ -31,6 +31,7 @@ const PersonLocatorPage = lazyPage(() => import('./pages/person/PersonLocatorPag
 const ArchivePage = lazyPage(() => import('./pages/archive/ArchivePage'));
 const WorkHoursPage = lazyPage(() => import('./pages/settings/WorkHoursPage'));
 const SystemPage = lazyPage(() => import('./pages/settings/SystemPage'));
+const PrivacyPage = lazyPage(() => import('./pages/settings/PrivacyPage'));
 
 // Mavjud sahifalar — yangi manzillarda, 2-bosqichda dizayn tizimiga ko'chiriladi.
 const EventsPage = lazyPage(() => import('./pages/admin/EventsPage'));
@@ -180,10 +181,12 @@ export default function App() {
                   Eski havola va xatcho'plar bo'sh ekranga tushmasin. */}
               <Route path="/sozlamalar/ai" element={<Navigate to="/sozlamalar/tizim" replace />} />
               <Route path="/sozlamalar/integratsiyalar" element={<Navigate to="/sozlamalar/tizim" replace />} />
-              <Route path="/sozlamalar/maxfiylik" element={<Navigate to="/reestr" replace />} />
               <Route path="/sozlamalar/ui" element={<Navigate to="/sozlamalar/tizim" replace />} />
               <Route element={<RequirePermission permission="systemSettings" />}>
                 <Route path="/sozlamalar/tizim" element={<SystemPage />} />
+              </Route>
+              <Route element={<RequirePermission permission="managePrivacy" />}>
+                <Route path="/sozlamalar/maxfiylik" element={<PrivacyPage />} />
               </Route>
               {/* Noma'lum manzil — qobiq ichida, menyu joyida qoladi.
                   Tizimga kirmagan foydalanuvchi esa RequireAuth orqali

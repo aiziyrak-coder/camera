@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Boolean, CheckConstraint, Float, Integer, String
+from sqlalchemy import Boolean, CheckConstraint, Float, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -46,3 +46,7 @@ class AIModuleConfig(Base):
     # ogohlantirish va hisobotlarga chiqmaydi, faqat namuna sifatida
     # baholanadi (app/services/event_bus.py, app/routers/ai_modules.py).
     mode: Mapped[str] = mapped_column(String, nullable=False, default="ishchi", server_default="ishchi")
+    # Operator ko'rsatmasi (SOP): har qatorda bitta qadam. NULL — kodda
+    # yozilgan standart matn (app/services/sop.py) ishlatiladi, shuning
+    # uchun standartni yaxshilash bazani qayta yozishni talab qilmaydi.
+    sop: Mapped[str | None] = mapped_column(Text, nullable=True)

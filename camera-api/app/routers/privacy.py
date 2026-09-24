@@ -30,6 +30,7 @@ from app.schemas.privacy import (
     ConsentSectionOut,
     ConsentTextOut,
     ErasureOut,
+    PrivacyBiometricsOut,
     PrivacyFilter,
     PrivacyOverviewOut,
     PrivacyPeopleSearchIn,
@@ -41,14 +42,17 @@ from app.services.privacy import (
     CONSENT_STATEMENT,
     CONSENT_TITLE,
     biometric_purge_at,
+    biometric_summary,
     build_export,
     clear_biometrics,
     compute_overview,
     consent_sections,
+    erase_face_samples,
     finish_erasure,
     has_biometrics_clause,
     person_has_biometrics,
     record_consent,
+    unique_keys,
     withdraw_consent,
 )
 
@@ -76,6 +80,15 @@ def _to_out(person: StudentStaff) -> PrivacyPersonOut:
         consent_current=person.consent_given_at is not None and person.consent_version == settings.consent_version,
         biometric_purge_at=biometric_purge_at(person),
     )
+
+
+async def _erase(db: AsyncSession, person: StudentStaff) -> list[str]:
+    """Yozuvdagi va undan tashqaridagi (galereya, biriktirilgan kadrlar)
+    biometrikani tozalaydi; commit'dan keyin o'chiriladigan kalitlarni
+    qaytaradi."""
+    photo_key = clear_biometrics(person)
+    extra = await erase_face_samples(db, [person.id])
+    return unique_keys([photo_key, *extra])
 
 
 async def _get_person(db: AsyncSession, person_id: str) -> StudentStaff:
@@ -211,7 +224,7 @@ async def withdraw_person_consent(
     kutmasdan."""
     person = await _get_person(db, person_id)
     withdraw_consent(person)
-    photo_key = clear_biometrics(person)
+    keys = await _erase(db, person)
     await log_action(
         db,
         request,
@@ -220,8 +233,8 @@ async def withdraw_person_consent(
         AUDIT_MODULE,
     )
     await db.commit()
-    deleted = await finish_erasure([photo_key])
-    return ErasureOut(person=_to_out(person), photo_deleted=photo_key is None or deleted > 0)
+    deleted = await finish_erasure(keys)
+    return ErasureOut(person=_to_out(person), photo_deleted=deleted >= len(keys))
 
 
 # ---------------------------------------------------------------------------
@@ -287,20 +300,39 @@ async def erase_person_biometrics(
     ketadi. Odam keyin qayta ro'yxatdan o'tishi mumkin."""
     person = await _get_person(db, person_id)
     had_biometrics = person_has_biometrics(person)
-    photo_key = clear_biometrics(person)
+    keys = await _erase(db, person)
     await log_action(
         db,
         request,
         current_user.id,
         f"Biometrik ma'lumotlar o'chirildi: {person.full_name}"
-        + ("" if had_biometrics else " (saqlangan ma'lumot yo'q edi)"),
+        + ("" if had_biometrics or keys else " (saqlangan ma'lumot yo'q edi)"),
         AUDIT_MODULE,
     )
     await db.commit()
-    deleted = await finish_erasure([photo_key])
-    if photo_key and not deleted:
+    deleted = await finish_erasure(keys)
+    if deleted < len(keys):
         logger.warning("biometric photo could not be deleted from storage", extra={"person_id": person_id})
-    return ErasureOut(person=_to_out(person), photo_deleted=photo_key is None or deleted > 0)
+    return ErasureOut(person=_to_out(person), photo_deleted=deleted >= len(keys))
+
+
+@router.get("/api/privacy/people/{person_id}/biometrics", response_model=PrivacyBiometricsOut)
+async def person_biometrics(
+    person_id: str,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[CurrentUser, Depends(require_permission("managePrivacy"))],
+) -> PrivacyBiometricsOut:
+    """Odam haqida nima saqlanayotgani: yuz rasmi, galereya namunalari,
+    so'nggi ko'rinishlar. Yuz rasmini ochish ham ma'lumotni oshkor qilish —
+    audit jurnaliga yoziladi (eksport bilan bir xil sabab)."""
+    person = await _get_person(db, person_id)
+    summary = await biometric_summary(db, person)
+    await log_action(
+        db, request, current_user.id, f"Biometrik ma'lumotlar ko'rildi: {person.full_name}", AUDIT_MODULE
+    )
+    await db.commit()
+    return PrivacyBiometricsOut(person=_to_out(person), **summary)
 
 
 @router.get("/api/privacy/people/{person_id}/export")
