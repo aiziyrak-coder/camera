@@ -5,12 +5,13 @@ import { MemoryRouter } from 'react-router-dom';
 
 const authenticate = vi.fn(async () => ({ ok: false as const, error: "Login yoki parol noto'g'ri" }));
 const login = vi.fn();
+const verifyTwoFactor = vi.fn();
 
 vi.mock('../../lib/auth', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../lib/auth')>();
   return {
     ...original,
-    useAuth: () => ({ role: null, userName: null, token: null, authenticate, login, logout: () => {} }),
+    useAuth: () => ({ role: null, userName: null, token: null, authenticate, verifyTwoFactor, login, logout: () => {} }),
   };
 });
 
@@ -36,6 +37,7 @@ describe('LoginPage', () => {
     authenticate.mockReset();
     authenticate.mockImplementation(async () => ({ ok: false as const, error: "Login yoki parol noto'g'ri" }));
     login.mockReset();
+    verifyTwoFactor.mockReset();
   });
 
   it("chegaradan o'tilganda (429) nima qilish kerakligini aytadi", async () => {
@@ -73,6 +75,48 @@ describe('LoginPage', () => {
     submit();
     await waitFor(() => expect(screen.getByRole('button', { name: /Tekshirilmoqda/i })).toHaveProperty('disabled', true));
     pending.release();
+  });
+});
+
+describe('LoginPage — ikki bosqichli kirish', () => {
+  beforeEach(() => {
+    authenticate.mockReset();
+    login.mockReset();
+    verifyTwoFactor.mockReset();
+    authenticate.mockImplementation(async () => ({ ok: false as const, twoFactor: true as const, challenge: 'ch-1' }) as never);
+  });
+
+  it("parol to'g'ri bo'lsa kod so'raydi va sessiyani faqat koddan keyin ochadi", async () => {
+    verifyTwoFactor.mockImplementation(async () => ({ ok: true as const, role: 'admin' as const, userName: 'Ali', token: 'tok' }));
+    renderLogin();
+    submit();
+    const codeInput = await screen.findByLabelText(/^Kod$/i);
+    expect(login).not.toHaveBeenCalled();
+    expect(codeInput.getAttribute('autocomplete')).toBe('one-time-code');
+
+    fireEvent.change(codeInput, { target: { value: '123 456' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Tasdiqlash$/i }));
+    await waitFor(() => expect(verifyTwoFactor).toHaveBeenCalledWith('ch-1', '123456'));
+    await waitFor(() => expect(login).toHaveBeenCalledWith('admin', 'Ali', 'tok'));
+  });
+
+  it("noto'g'ri shakldagi kodni serverga yubormaydi", async () => {
+    renderLogin();
+    submit();
+    fireEvent.change(await screen.findByLabelText(/^Kod$/i), { target: { value: '12ab' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Tasdiqlash$/i }));
+    await screen.findByText(/^Ilovadagi 6 xonali kodni kiriting$/);
+    expect(verifyTwoFactor).not.toHaveBeenCalled();
+  });
+
+  it('chaqiruv eskirsa parol bosqichiga qaytadi', async () => {
+    verifyTwoFactor.mockImplementation(async () => ({ ok: false as const, error: 'Tasdiqlash muddati tugagan — qaytadan kiring' }));
+    renderLogin();
+    submit();
+    fireEvent.change(await screen.findByLabelText(/^Kod$/i), { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Tasdiqlash$/i }));
+    await screen.findByLabelText(/^Parol$/i);
+    expect(screen.getByRole('alert').textContent).toMatch(/muddati tugagan/);
   });
 });
 

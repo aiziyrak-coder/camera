@@ -38,6 +38,7 @@ from app.schemas.camera import (
     ModuleCameraAssignmentOut,
 )
 from app.schemas.camera_import import CameraImportResultOut
+from app.services.access_scope import camera_filter
 from app.services.camera_import import import_cameras_csv
 from app.services.camera_module_mapping import camera_allows_module_code, set_camera_module_enabled
 from app.services.camera_roles import ROOM_TYPE_LABELS, effective_room_type, normalize_room_code, role_allows
@@ -132,7 +133,7 @@ def _to_out(camera: Camera) -> CameraOut:
 @router.get("", response_model=Page[CameraOut])
 async def list_cameras(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: LocationDep,
+    current_user: LocationDep,
     page_params: Annotated[PageParams, Depends()],
     status_filter: Annotated[str | None, Query(alias="status")] = None,
     building: Annotated[str | None, Query()] = None,
@@ -141,7 +142,12 @@ async def list_cameras(
     search: Annotated[str | None, Query()] = None,
     room_type: Annotated[str | None, Query(alias="roomType")] = None,
 ) -> Page[CameraOut]:
-    stmt = select(Camera).options(selectinload(Camera.building)).order_by(Camera.created_at.desc())
+    stmt = (
+        select(Camera)
+        .options(selectinload(Camera.building))
+        .where(camera_filter(current_user))
+        .order_by(Camera.created_at.desc())
+    )
     if room_type == "none":
         # Turi belgilanmaganlar — ularni topib belgilash uchun.
         stmt = stmt.where(Camera.room_type.is_(None))
@@ -318,7 +324,7 @@ async def patch_module_camera_assignments(
 @router.get("/summary", response_model=CameraSummaryOut)
 async def get_cameras_summary(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: LocationDep,
+    current_user: LocationDep,
 ) -> CameraSummaryOut:
     """Holat bo'yicha sanoqlar bitta GROUP BY so'rovida — sahifadagi
     uchta qo'shimcha so'rov o'rniga."""
@@ -336,7 +342,9 @@ async def get_cameras_summary(
                     Camera.last_seen_at >= reachable_cutoff,
                 ),
                 func.count().filter(Camera.floor.is_(None)),
-            ).select_from(Camera)
+            )
+            .select_from(Camera)
+            .where(camera_filter(current_user))
         )
     ).one()
     total, faol, nofaol, tamirda, reachable, without_floor = row
@@ -353,7 +361,7 @@ async def get_cameras_summary(
 @router.get("/zones", response_model=list[CameraZoneOut])
 async def list_camera_zones(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: LocationDep,
+    current_user: LocationDep,
     building: Annotated[str | None, Query()] = None,
 ) -> list[CameraZoneOut]:
     """Distinct zone names with their camera count — a room routinely holds
@@ -361,7 +369,12 @@ async def list_camera_zones(
     zone-name autocomplete in AddCameraModal.tsx (pick an existing room
     instead of retyping/mistyping its name) and the zone filter chips in
     CamerasZonesPage.tsx."""
-    stmt = select(Camera.zone, func.count(Camera.id)).group_by(Camera.zone).order_by(Camera.zone)
+    stmt = (
+        select(Camera.zone, func.count(Camera.id))
+        .where(camera_filter(current_user))
+        .group_by(Camera.zone)
+        .order_by(Camera.zone)
+    )
     if building:
         stmt = stmt.join(Building).where(Building.name == building)
 
@@ -443,7 +456,7 @@ async def update_camera(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: PermDep,
 ) -> CameraOut:
-    result = await db.execute(select(Camera).where(Camera.id == camera_id))
+    result = await db.execute(select(Camera).where(Camera.id == camera_id).where(camera_filter(current_user)))
     camera = result.scalar_one_or_none()
     if camera is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
@@ -523,7 +536,7 @@ async def set_camera_zone_polygon(
     is drawn interactively on the live video feed — a distinct workflow
     (CameraZoneModal.tsx) from the edit form, and one that shouldn't force
     re-sending every other camera field just to draw/clear a zone."""
-    result = await db.execute(select(Camera).where(Camera.id == camera_id))
+    result = await db.execute(select(Camera).where(Camera.id == camera_id).where(camera_filter(current_user)))
     camera = result.scalar_one_or_none()
     if camera is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
@@ -551,7 +564,7 @@ async def set_camera_face_roi(
     """Kirish kamerasining eshik hududi: AI yuzni faqat shu yerda, to'liq
     sifatda qidiradi (app/services/face_recognition.py _detect_faces_sync).
     Bo'sh ko'pburchak — hudud olib tashlanadi, butun kadr tahlil qilinadi."""
-    result = await db.execute(select(Camera).where(Camera.id == _camera_uuid(camera_id)))
+    result = await db.execute(select(Camera).where(Camera.id == _camera_uuid(camera_id)).where(camera_filter(current_user)))
     camera = result.scalar_one_or_none()
     if camera is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
@@ -582,7 +595,7 @@ async def set_camera_excluded_modules(
     re-sending every other camera field. Every app/jobs/*.py sweep loop
     checks Camera.excluded_module_codes on its next tick — no restart
     needed for a change here to take effect."""
-    result = await db.execute(select(Camera).where(Camera.id == camera_id))
+    result = await db.execute(select(Camera).where(Camera.id == camera_id).where(camera_filter(current_user)))
     camera = result.scalar_one_or_none()
     if camera is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
@@ -612,12 +625,12 @@ async def test_connection(body: ConnectionTestIn, _: PermDep) -> ConnectionTestO
 
 @router.post("/{camera_id}/test-connection", response_model=ConnectionTestOut)
 async def test_saved_camera_connection(
-    camera_id: str, db: Annotated[AsyncSession, Depends(get_db)], _: PermDep
+    camera_id: str, db: Annotated[AsyncSession, Depends(get_db)], current_user: PermDep
 ) -> ConnectionTestOut:
     """Re-verifies an already-saved camera using its stored (encrypted)
     credentials — the admin doesn't need to retype login/parol to re-check
     a camera that's gone offline."""
-    result = await db.execute(select(Camera).where(Camera.id == camera_id))
+    result = await db.execute(select(Camera).where(Camera.id == camera_id).where(camera_filter(current_user)))
     camera = result.scalar_one_or_none()
     if camera is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
@@ -656,7 +669,11 @@ async def set_cameras_location(
 
     building = await _resolve_building(db, body.building) if body.building else None
     cameras = (
-        (await db.execute(select(Camera).where(Camera.id.in_(ids)))).scalars().all() if ids else []
+        (await db.execute(select(Camera).where(Camera.id.in_(ids)).where(camera_filter(current_user))))
+        .scalars()
+        .all()
+        if ids
+        else []
     )
     found_ids = {str(camera.id) for camera in cameras}
     not_found.extend(str(camera_id) for camera_id in ids if str(camera_id) not in found_ids)
@@ -735,7 +752,7 @@ async def update_camera_location(
 
     Yuborilmagan maydon o'zgarmaydi; qavatni bo'shatish uchun alohida
     `clearFloor` bayrog'i bor (None "tegmaslik" degani)."""
-    result = await db.execute(select(Camera).where(Camera.id == _camera_uuid(camera_id)))
+    result = await db.execute(select(Camera).where(Camera.id == _camera_uuid(camera_id)).where(camera_filter(current_user)))
     camera = result.scalar_one_or_none()
     if camera is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")

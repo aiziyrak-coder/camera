@@ -5,19 +5,39 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
+import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_action
 from app.config import settings
+from app.crypto import decrypt, encrypt
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_user
 from app.email import send_password_reset_email
 from app.models import AuditLog, PasswordResetToken, RevokedToken, User
 from app.rate_limit import limiter
-from app.schemas.auth import ForgotPasswordIn, LoginRequest, LoginResponse, ResetPasswordIn, SessionResponse
-from app.security import create_access_token, hash_password, verify_password
+from app.schemas.auth import (
+    ForgotPasswordIn,
+    LoginRequest,
+    LoginResponse,
+    ResetPasswordIn,
+    SessionResponse,
+    TwoFactorCodeIn,
+    TwoFactorLoginIn,
+    TwoFactorSetupOut,
+    TwoFactorStatusOut,
+)
+from app.security import (
+    create_access_token,
+    create_two_factor_challenge,
+    decode_two_factor_challenge,
+    hash_password,
+    verify_password,
+)
+from app.services import totp
 from app.services.security_checks import forget_default_password_check
 
 logger = logging.getLogger("app.auth")
@@ -69,6 +89,20 @@ async def login(
         await db.commit()
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Login yoki parol noto'g'ri")
 
+    if user.totp_enabled and user.totp_secret:
+        # Parol to'g'ri, lekin bu hali sessiya EMAS: faqat ikkinchi qadam
+        # uchun chaqiruv. Rol va ism ham qaytarilmaydi — parolni bilgan
+        # begona odam hisob haqida hech narsa bilib olmasin.
+        return LoginResponse(
+            two_factor_required=True,
+            challenge=create_two_factor_challenge(str(user.id), user.token_version),
+        )
+
+    return await _complete_login(db, user, ip)
+
+
+async def _complete_login(db: AsyncSession, user: User, ip: str) -> LoginResponse:
+    """Muvaffaqiyatli kirishni yakunlaydi: audit, last_login va token."""
     user.last_login_at = datetime.now(timezone.utc)
     db.add(
         AuditLog(
@@ -84,6 +118,201 @@ async def login(
 
     token = create_access_token(str(user.id), user.role, user.token_version)
     return LoginResponse(token=token, role=user.role, user_name=user.full_name)
+
+
+_CHALLENGE_EXPIRED = "Tasdiqlash muddati tugagan — qaytadan kiring"
+
+
+def _totp_secret(user: User) -> str:
+    try:
+        return decrypt(user.totp_secret or "")
+    except ValueError:
+        # ENCRYPTION_KEY almashgan: kodni tekshirib bo'lmaydi. Bu holatda
+        # 2FA'ni chetlab o'tish YO'Q — administrator uni bekor qiladi.
+        logger.error("2FA sirini ochib bo'lmadi", extra={"user_id": str(user.id)})
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Ikki bosqichli kirish kalitini o'qib bo'lmadi — administratorga murojaat qiling",
+        ) from None
+
+
+@router.post("/2fa/kirish", response_model=LoginResponse)
+@limiter.limit("5/minute")
+async def two_factor_login(
+    request: Request,
+    body: TwoFactorLoginIn,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> LoginResponse:
+    """Ikkinchi qadam: parol bilan olingan chaqiruv + ilovadagi 6 xonali kod.
+
+    Chaqiruv bir martalik: muvaffaqiyatli kirishdan keyin uning jti'si
+    revoked_tokens'ga yoziladi (ikkinchi marta ishlatib bo'lmaydi). Kod
+    ham bir martalik — totp_last_step. Noto'g'ri kod chaqiruvni
+    kuydirmaydi (odam raqamni adashtirib yozishi mumkin), lekin urinishlar
+    login kabi IP bo'yicha 5/daqiqa bilan cheklangan."""
+    ip = request.client.host if request.client else "unknown"
+    try:
+        challenge = decode_two_factor_challenge(body.challenge)
+        jti = uuid.UUID(challenge.jti)
+        user_id = uuid.UUID(challenge.user_id)
+    except (jwt.PyJWTError, ValueError):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, _CHALLENGE_EXPIRED) from None
+
+    if await db.get(RevokedToken, jti) is not None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, _CHALLENGE_EXPIRED)
+
+    # FOR UPDATE: bir xil kod bilan parallel ikki so'rov totp_last_step'ni
+    # bir vaqtda o'qib, ikkalasi ham o'tib ketmasin.
+    user = (
+        await db.execute(select(User).where(User.id == user_id).with_for_update())
+    ).scalar_one_or_none()
+    # token_version: chaqiruv olingandan keyin parol almashtirilgan yoki
+    # hisob bloklangan bo'lsa — eski parol bilan olingan chaqiruv yaroqsiz.
+    if (
+        user is None
+        or user.token_version != challenge.token_version
+        or not user.totp_enabled
+        or not user.totp_secret
+    ):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, _CHALLENGE_EXPIRED)
+
+    step = totp.verify(_totp_secret(user), body.code, last_step=user.totp_last_step)
+    if step is None:
+        db.add(
+            AuditLog(
+                user_id=user.id,
+                user_name=user.full_name,
+                action="Noto'g'ri 2FA kodi",
+                module="Autentifikatsiya",
+                status="xatolik",
+                ip=ip,
+            )
+        )
+        await db.commit()
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Kod noto'g'ri yoki eskirgan")
+
+    user.totp_last_step = step
+    db.add(RevokedToken(jti=jti, expires_at=challenge.expires_at))
+    try:
+        await db.flush()
+    except IntegrityError:
+        # Xuddi shu chaqiruv parallel so'rovda allaqachon ishlatildi.
+        await db.rollback()
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, _CHALLENGE_EXPIRED) from None
+    return await _complete_login(db, user, ip)
+
+
+async def _load_self(db: AsyncSession, current_user: CurrentUser) -> User:
+    user = (
+        await db.execute(select(User).where(User.id == uuid.UUID(current_user.id)).with_for_update())
+    ).scalar_one_or_none()
+    if user is None:  # pragma: no cover — get_current_user allaqachon tekshirgan
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessiya tugatilgan — qayta kiring")
+    return user
+
+
+def _status_out(user: User) -> TwoFactorStatusOut:
+    return TwoFactorStatusOut(
+        enabled=bool(user.totp_enabled),
+        confirmed_at=user.totp_confirmed_at.isoformat() if user.totp_confirmed_at else None,
+    )
+
+
+def clear_two_factor(user: User) -> None:
+    """2FA'ni butunlay olib tashlaydi (o'zi o'chirganda va admin bekor qilganda)."""
+    user.totp_secret = None
+    user.totp_enabled = False
+    user.totp_confirmed_at = None
+    user.totp_last_step = None
+
+
+@router.get("/2fa", response_model=TwoFactorStatusOut)
+async def two_factor_status(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> TwoFactorStatusOut:
+    user = await db.get(User, uuid.UUID(current_user.id))
+    if user is None:  # pragma: no cover
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessiya tugatilgan — qayta kiring")
+    return _status_out(user)
+
+
+@router.post("/2fa/boshlash", response_model=TwoFactorSetupOut)
+@limiter.limit("5/minute")
+async def two_factor_begin(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> TwoFactorSetupOut:
+    """Yangi sir yaratadi (hali YOQMAYDI). Qayta chaqirilsa eski
+    tasdiqlanmagan sir almashtiriladi — QR yo'qolgan bo'lsa shu yetarli.
+
+    Yoqilgan 2FA ustidan qayta boshlash taqiqlangan: aks holda ochiq
+    qolgan sessiyani egallagan odam sirni jimgina almashtirib, egasini
+    tizimdan qulflab qo'yardi. Avval kod bilan o'chirish kerak."""
+    user = await _load_self(db, current_user)
+    if user.totp_enabled:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Ikki bosqichli kirish allaqachon yoqilgan")
+    secret = totp.generate_secret()
+    user.totp_secret = encrypt(secret)
+    user.totp_last_step = None
+    await log_action(db, request, current_user.id, "2FA yoqishni boshladi", "Autentifikatsiya")
+    await db.commit()
+    return TwoFactorSetupOut(
+        otpauth_uri=totp.provisioning_uri(secret, user.login, settings.org_name),
+        secret=secret,
+    )
+
+
+@router.post("/2fa/tasdiqlash", response_model=TwoFactorStatusOut)
+@limiter.limit("5/minute")
+async def two_factor_confirm(
+    request: Request,
+    body: TwoFactorCodeIn,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> TwoFactorStatusOut:
+    """Ilovadagi birinchi kod bilan yoqadi — telefon sirni to'g'ri
+    saqlaganini shu isbotlaydi (aks holda odam o'zini qulflab qo'yardi)."""
+    user = await _load_self(db, current_user)
+    if user.totp_enabled:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Ikki bosqichli kirish allaqachon yoqilgan")
+    if not user.totp_secret:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Avval QR-kodni oling")
+    step = totp.verify(_totp_secret(user), body.code, last_step=user.totp_last_step)
+    if step is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Kod noto'g'ri yoki eskirgan")
+    user.totp_enabled = True
+    user.totp_confirmed_at = datetime.now(timezone.utc)
+    user.totp_last_step = step
+    await log_action(db, request, current_user.id, "Ikki bosqichli kirishni yoqdi", "Autentifikatsiya")
+    await db.commit()
+    return _status_out(user)
+
+
+@router.post("/2fa/ochirish", response_model=TwoFactorStatusOut)
+@limiter.limit("5/minute")
+async def two_factor_disable(
+    request: Request,
+    body: TwoFactorCodeIn,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> TwoFactorStatusOut:
+    """O'zi o'chirish — amaldagi kod bilan. Ochiq qolgan sessiyaning
+    o'zi yetarli emas: aks holda kompyuterni bir daqiqa qarovsiz
+    qoldirish himoyani butunlay olib tashlashga yetardi. Telefon
+    yo'qolgan bo'lsa — administrator bekor qiladi
+    (POST /api/users/{id}/2fa/bekor)."""
+    user = await _load_self(db, current_user)
+    if not user.totp_enabled or not user.totp_secret:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Ikki bosqichli kirish yoqilmagan")
+    step = totp.verify(_totp_secret(user), body.code, last_step=user.totp_last_step)
+    if step is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Kod noto'g'ri yoki eskirgan")
+    clear_two_factor(user)
+    await log_action(db, request, current_user.id, "Ikki bosqichli kirishni o'chirdi", "Autentifikatsiya")
+    await db.commit()
+    return _status_out(user)
 
 
 @router.get("/me", response_model=SessionResponse)

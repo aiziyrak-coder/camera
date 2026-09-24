@@ -34,6 +34,7 @@ from app.dependencies import CurrentUser, require_permission
 from app.models import Camera, Event
 from app.schemas.base import CamelModel
 from app.services import recording
+from app.services.access_scope import ensure_camera_allowed
 from app.timezone import INSTITUTE_TZ, local_now
 
 router = APIRouter(prefix="/api/arxiv", tags=["arxiv"])
@@ -79,7 +80,7 @@ class LinkOut(CamelModel):
     expires_at: str
 
 
-async def _camera(db: AsyncSession, camera_id: str) -> Camera:
+async def _camera(db: AsyncSession, camera_id: str, user: CurrentUser) -> Camera:
     try:
         key = uuid.UUID(camera_id)
     except ValueError:
@@ -87,7 +88,10 @@ async def _camera(db: AsyncSession, camera_id: str) -> Camera:
     camera = await db.get(Camera, key)
     if camera is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
-    return camera
+    # Bino doirasi. /video endpointi alohida tekshirmaydi: unga faqat shu
+    # yerdan o'tgan (doira tekshirilgan) /havola imzolagan havola bilan
+    # kirish mumkin.
+    return ensure_camera_allowed(user, camera)
 
 
 def _parse_moment(value: str) -> datetime:
@@ -109,10 +113,10 @@ def _signature(camera_id: str, start: str, duration: int, exp: int) -> str:
 async def archive_day(
     camera_id: str,
     db: DbDep,
-    _: LiveDep,
+    current_user: LiveDep,
     sana: Annotated[date_type | None, Query()] = None,
 ) -> DayOut:
-    camera = await _camera(db, camera_id)
+    camera = await _camera(db, camera_id, current_user)
     day = sana or local_now().date()
     start = datetime.combine(day, time_type.min, tzinfo=INSTITUTE_TZ)
     end = start + timedelta(days=1)
@@ -158,7 +162,7 @@ async def archive_link(
     start: Annotated[str, Query()],
     duration: Annotated[int, Query(ge=1, le=MAX_CHUNK_SECONDS)] = 600,
 ) -> LinkOut:
-    camera = await _camera(db, camera_id)
+    camera = await _camera(db, camera_id, current_user)
     if not settings.recording_enabled:
         raise HTTPException(status.HTTP_409_CONFLICT, "Arxiv yozuvi yoqilmagan")
     moment = _parse_moment(start)

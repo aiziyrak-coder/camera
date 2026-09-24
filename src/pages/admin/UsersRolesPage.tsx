@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Check, KeyRound, Lock, Pencil, Plus, Trash2, UserPlus, Users, X } from 'lucide-react';
+import { Building2, Check, KeyRound, Lock, Pencil, Plus, ShieldOff, Trash2, UserPlus, Users, X } from 'lucide-react';
 import {
   Avatar,
   Badge,
@@ -20,6 +20,7 @@ import {
 } from '../../ui';
 import AddUserModal from '../../components/admin/AddUserModal';
 import EditUserModal from '../../components/admin/EditUserModal';
+import UserBuildingScopeModal from '../../components/admin/UserBuildingScopeModal';
 import { Notice, Switch, pagerFooter } from '../../components/settings/kit';
 import { api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
@@ -48,6 +49,8 @@ export default function UsersRolesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<AdminUser | null>(null);
   const [deleting, setDeleting] = useState<AdminUser | null>(null);
+  const [resetting2fa, setResetting2fa] = useState<AdminUser | null>(null);
+  const [scoping, setScoping] = useState<AdminUser | null>(null);
   const { role: myRole, token, userName } = useAuth();
   const { matrix, toggle, saveError, clearSaveError } = usePermissions();
   // Serverga ketayotgan huquq o'zgarishlari. PATCH /api/permissions/{key}
@@ -102,6 +105,14 @@ export default function UsersRolesPage() {
     refresh();
   }
 
+  async function handleReset2fa() {
+    if (!resetting2fa) return;
+    await api.post(`/api/users/${resetting2fa.id}/2fa/bekor`, undefined, token);
+    toast.success(`${resetting2fa.name} — ikki bosqichli kirish bekor qilindi`);
+    setResetting2fa(null);
+    refresh();
+  }
+
   const userColumns: DataTableColumn<AdminUser>[] = [
     {
       key: 'name',
@@ -149,6 +160,32 @@ export default function UsersRolesPage() {
         ),
     },
     {
+      key: 'security',
+      header: 'Kirish',
+      hideOnMobile: true,
+      cell: (u) => {
+        const scope = u.allowedBuildingIds?.length ?? 0;
+        return (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {u.twoFactorEnabled ? (
+              <Badge tone="success" size="sm">
+                2FA
+              </Badge>
+            ) : (
+              <Badge tone="neutral" size="sm">
+                Faqat parol
+              </Badge>
+            )}
+            {u.role !== 'Super Admin' && scope > 0 && (
+              <Badge tone="warning" size="sm">
+                {scope} ta bino
+              </Badge>
+            )}
+          </div>
+        );
+      },
+    },
+    {
       key: 'lastLogin',
       header: 'Oxirgi kirish',
       sortValue: (u) => u.lastLogin,
@@ -159,13 +196,25 @@ export default function UsersRolesPage() {
       key: 'actions',
       header: <span className="sr-only">Amallar</span>,
       align: 'right',
-      width: '6rem',
+      width: '9rem',
       mobileLabel: 'Amallar',
       cell: (u) => {
         const blocked = deleteBlockReason(u);
         return (
           <div onClick={(e) => e.stopPropagation()} className="flex justify-end gap-1">
             <IconButton icon={Pencil} label={`${u.name} — tahrirlash`} size="sm" onClick={() => setEditing(u)} />
+            {/* Super Admin doim barcha binolarni ko'radi (server ham rad etadi). */}
+            {u.role !== 'Super Admin' && (
+              <IconButton icon={Building2} label={`${u.name} — bino doirasi`} size="sm" onClick={() => setScoping(u)} />
+            )}
+            {u.twoFactorEnabled && (
+              <IconButton
+                icon={ShieldOff}
+                label={`${u.name} — ikki bosqichli kirishni bekor qilish`}
+                size="sm"
+                onClick={() => setResetting2fa(u)}
+              />
+            )}
             {/* Server rad etadigan tugma bosiladigan holda turmasin —
                 sababi tooltipda va ekran o'quvchi uchun yorliqda. */}
             <IconButton
@@ -338,6 +387,28 @@ export default function UsersRolesPage() {
           toast.success(`${user.name} — o'zgarishlar saqlandi`);
           refresh();
         }}
+      />
+      {scoping && (
+        <UserBuildingScopeModal
+          user={scoping}
+          onClose={() => setScoping(null)}
+          onSaved={(user) => {
+            toast.success(`${user.name} — bino doirasi saqlandi`);
+            refresh();
+          }}
+        />
+      )}
+      <ConfirmDialog
+        open={!!resetting2fa}
+        title="Ikki bosqichli kirishni bekor qilish"
+        message={
+          resetting2fa
+            ? `"${resetting2fa.name}" keyingi safar faqat parol bilan kiradi va 2FA'ni qaytadan yoqishi kerak. Ochiq sessiyalari yopiladi.`
+            : ''
+        }
+        confirmLabel="Bekor qilish"
+        onCancel={() => setResetting2fa(null)}
+        onConfirm={handleReset2fa}
       />
       <ConfirmDialog
         open={!!deleting}

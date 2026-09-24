@@ -14,11 +14,15 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 class CurrentUser:
-    def __init__(self, id: str, role: str, jti: str, expires_at) -> None:
+    def __init__(self, id: str, role: str, jti: str, expires_at, allowed_building_ids: list | None = None) -> None:
         self.id = id
         self.role = role
         self.jti = jti
         self.expires_at = expires_at
+        # Bino doirasi — app/services/access_scope.py. Tokenda EMAS, har
+        # so'rovda bazadan (rol kabi): admin doirani toraytirsa, eski
+        # sessiya darhol shu doirada ishlaydi.
+        self.allowed_building_ids = allowed_building_ids
 
 
 async def get_current_user(
@@ -58,7 +62,13 @@ async def user_from_token(token: str, db: AsyncSession) -> CurrentUser:
     # davom etardi — ya'ni lavozimidan olingan odam yana bir yarim kun
     # administrator huquqlari bilan yurardi. User qatori baribir shu yerda
     # o'qilgan, qo'shimcha so'rov kerak emas.
-    return CurrentUser(id=payload.user_id, role=user.role, jti=payload.jti, expires_at=payload.expires_at)
+    return CurrentUser(
+        id=payload.user_id,
+        role=user.role,
+        jti=payload.jti,
+        expires_at=payload.expires_at,
+        allowed_building_ids=user.allowed_building_ids,
+    )
 
 
 async def require_monitoring_access(
@@ -75,7 +85,19 @@ async def require_monitoring_access(
     from app.config import settings
 
     if not settings.public_monitoring_requires_auth:
-        return None
+        # Himoya o'chirilgan (ochiq devor) rejim: anonim so'rov hamma
+        # kameralarni ko'radi — bu sozlamaning o'zi shuni anglatadi. Lekin
+        # token BILAN kelgan foydalanuvchi (admin panelidagi monitoring)
+        # o'z bino doirasida qolishi kerak, shuning uchun token bo'lsa uni
+        # aniqlaymiz. Yaroqsiz token 401 EMAS, anonim deb qaraladi: bu
+        # rejimda anonimga baribir hamma narsa ochiq, 401 esa faqat eski
+        # tokenli devor ekranini buzardi.
+        if credentials is None:
+            return None
+        try:
+            return await user_from_token(credentials.credentials, db)
+        except HTTPException:
+            return None
     return await get_current_user(credentials, db)
 
 

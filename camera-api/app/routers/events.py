@@ -39,6 +39,7 @@ from app.schemas.event import (
     EventTimelineItemOut,
 )
 from app.services.event_bus import event_to_out, sla_due_at
+from app.services.access_scope import NOT_FOUND_EVENT, allowed_buildings, event_filter
 from app.services.sop import load_sops
 from app.services.event_scope import NOT_SUPPRESSED, OPERATOR_EVENTS, REGISTERED_MODULE
 from app.services.event_status import (
@@ -100,11 +101,15 @@ def _parse_uuid(raw: str, message: str, code: int = status.HTTP_422_UNPROCESSABL
         raise HTTPException(code, message) from None
 
 
-async def _get_event(db: AsyncSession, event_id: str, *, for_update: bool = False) -> Event:
+async def _get_event(db: AsyncSession, event_id: str, user: CurrentUser, *, for_update: bool = False) -> Event:
     """Hodisani topadi. Noto'g'ri identifikator ham "topilmadi" — bazaga
-    yaroqsiz UUID yuborilsa 500 qaytardi."""
-    parsed = _parse_uuid(event_id, "Hodisa topilmadi", status.HTTP_404_NOT_FOUND)
-    stmt = select(Event).where(Event.id == parsed)
+    yaroqsiz UUID yuborilsa 500 qaytardi.
+
+    `user` MAJBURIY: bino doirasidan tashqaridagi hodisa ham "topilmadi"
+    (app/services/access_scope.py). Ixtiyoriy qilinsa, yangi endpoint
+    uni uzatishni unutib, doirani jimgina aylanib o'tardi."""
+    parsed = _parse_uuid(event_id, NOT_FOUND_EVENT, status.HTTP_404_NOT_FOUND)
+    stmt = select(Event).where(Event.id == parsed).where(event_filter(user))
     if for_update:
         # Ikki operator bir vaqtda holatni o'zgartirsa, o'tish qoidasi
         # eskirgan holatga qarab tekshirilmasin.
@@ -248,6 +253,25 @@ async def authorize_events_socket(token: str | None, session_factory=SessionLoca
     return None
 
 
+async def socket_camera_scope(token: str | None, session_factory=SessionLocal) -> frozenset[str] | None:
+    """Bino doirasi bor foydalanuvchi uchun — ulanish paytidagi ruxsat
+    etilgan kameralar; cheklovsiz bo'lsa None. authorize_events_socket
+    allaqachon tokenni tekshirgan, bu yerda faqat doira o'qiladi.
+
+    Ulanish paytidagi surat: keyin qo'shilgan kamera qayta ulanguncha
+    ko'rinmaydi (xavfsiz tomonga xato)."""
+    async with session_factory() as db:
+        try:
+            user = await user_from_token(token or "", db)
+        except HTTPException:
+            return frozenset()
+        ids = allowed_buildings(user)
+        if ids is None:
+            return None
+        rows = (await db.execute(select(Camera.id).where(Camera.building_id.in_(ids)))).scalars().all()
+    return frozenset(str(camera_id) for camera_id in rows)
+
+
 @router.websocket("/ws/events")
 async def events_websocket(websocket: WebSocket) -> None:
     """Real-time push for new AI events — replaces the frontend's
@@ -265,7 +289,7 @@ async def events_websocket(websocket: WebSocket) -> None:
         await websocket.close(code=close_code)
         return
 
-    await manager.connect(websocket)
+    await manager.connect(websocket, await socket_camera_scope(websocket.query_params.get("token")))
     try:
         while True:
             await websocket.receive_text()  # no client->server protocol yet; just detect disconnects
@@ -296,7 +320,12 @@ async def list_events(
     overdue: Annotated[bool, Query()] = False,
 ) -> Page[EventOut]:
     # trial=true — faqat sinov rejimidagi modullar signallari (baholash uchun).
-    stmt = select(Event).where(Event.is_trial == (true() if trial else false())).where(REGISTERED_MODULE)
+    stmt = (
+        select(Event)
+        .where(Event.is_trial == (true() if trial else false()))
+        .where(REGISTERED_MODULE)
+        .where(event_filter(current_user))
+    )
     if exclude_suppressed:
         # Monitoring devoridagi alarm (event_scope.NOT_SUPPRESSED).
         stmt = stmt.where(NOT_SUPPRESSED)
@@ -385,15 +414,17 @@ async def events_summary(
     current_user: ReviewDep,
 ) -> EventSummaryOut:
     now = datetime.now(timezone.utc)
+    # Bino doirasi bor foydalanuvchi sanoqlarda ham faqat o'z binolarini ko'radi.
+    scope = event_filter(current_user)
     status_counts = dict(
-        (await db.execute(select(Event.status, func.count()).where(OPERATOR_EVENTS).group_by(Event.status))).all()
+        (await db.execute(select(Event.status, func.count()).where(OPERATOR_EVENTS, scope).group_by(Event.status))).all()
     )
     # "Qaror kutayotgan" = yangi + jarayonda (ko'rib chiqish navbati).
     unreviewed_by_severity = dict(
         (
             await db.execute(
                 select(Event.severity, func.count())
-                .where(OPERATOR_EVENTS)
+                .where(OPERATOR_EVENTS, scope)
                 .where(Event.status.in_(OPEN_STATUSES))
                 .group_by(Event.severity)
             )
@@ -403,18 +434,18 @@ async def events_summary(
     today_row = (
         await db.execute(
             select(func.count(), func.count().filter(Event.severity.in_(SERIOUS)))
-            .where(OPERATOR_EVENTS)
+            .where(OPERATOR_EVENTS, scope)
             .where(Event.occurred_at >= start_of_today)
         )
     ).one()
     oldest = await db.scalar(
-        select(func.min(Event.occurred_at)).where(OPERATOR_EVENTS).where(Event.status.in_(OPEN_STATUSES))
+        select(func.min(Event.occurred_at)).where(OPERATOR_EVENTS, scope).where(Event.status.in_(OPEN_STATUSES))
     )
     stale_serious = (
         await db.scalar(
             select(func.count())
             .select_from(Event)
-            .where(OPERATOR_EVENTS)
+            .where(OPERATOR_EVENTS, scope)
             .where(Event.status.in_(OPEN_STATUSES))
             .where(Event.severity.in_(SERIOUS))
             .where(Event.occurred_at < now - timedelta(hours=24))
@@ -428,7 +459,7 @@ async def events_summary(
                 func.count().filter(Event.status.in_(OPEN_STATUSES), Event.due_at < now),
                 func.count().filter(Event.status.in_(ACTIVE_STATUSES), Event.assigned_to_id == me),
                 func.count().filter(Event.status.in_(OPEN_STATUSES), Event.assigned_to_id.is_(None)),
-            ).where(OPERATOR_EVENTS)
+            ).where(OPERATOR_EVENTS, scope)
         )
     ).one()
 
@@ -442,7 +473,7 @@ async def events_summary(
                 func.count().filter(Event.status.in_(CONFIRMED_STATUSES)),
                 func.count().filter(Event.status == "rad_etilgan"),
             )
-            .where(OPERATOR_EVENTS)
+            .where(OPERATOR_EVENTS, scope)
             .where(reviewed_recently)
         )
     ).one()
@@ -452,7 +483,7 @@ async def events_summary(
     module_rows = (
         await db.execute(
             select(Event.module_code, Event.module_name, func.count())
-            .where(OPERATOR_EVENTS)
+            .where(OPERATOR_EVENTS, scope)
             .group_by(Event.module_code, Event.module_name)
             .order_by(func.count().desc())
             .limit(FACET_LIMIT)
@@ -461,7 +492,7 @@ async def events_summary(
     building_rows = (
         await db.execute(
             select(Event.building, func.count())
-            .where(OPERATOR_EVENTS)
+            .where(OPERATOR_EVENTS, scope)
             .where(Event.building != "")
             .group_by(Event.building)
             .order_by(Event.building)
@@ -473,6 +504,7 @@ async def events_summary(
             select(Event.module_code, Event.module_name, func.count())
             .where(Event.is_trial == true())
             .where(REGISTERED_MODULE)
+            .where(scope)
             .where(Event.status == "yangi")
             .group_by(Event.module_code, Event.module_name)
             .order_by(func.count().desc())
@@ -586,7 +618,15 @@ async def review_events_bulk(
     reviewer_name = await _actor_name(db, current_user)
     now = datetime.now(timezone.utc)
     events = (
-        (await db.execute(select(Event).where(Event.id.in_(ids)).order_by(Event.id).with_for_update()))
+        (
+            await db.execute(
+                select(Event)
+                .where(Event.id.in_(ids))
+                .where(event_filter(current_user))
+                .order_by(Event.id)
+                .with_for_update()
+            )
+        )
         .scalars()
         .all()
     )
@@ -627,9 +667,9 @@ async def review_events_bulk(
 async def get_event(
     event_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: ReviewDep,
+    current_user: ReviewDep,
 ) -> EventOut:
-    return await _out(db, await _get_event(db, event_id))
+    return await _out(db, await _get_event(db, event_id, current_user))
 
 
 @router.delete("/api/events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -639,7 +679,7 @@ async def delete_event(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[CurrentUser, Depends(require_permission("deleteEvents"))],
 ) -> None:
-    event = await _get_event(db, event_id)
+    event = await _get_event(db, event_id, current_user)
     snapshot_key = event.snapshot_key
     await log_action(db, request, current_user.id, f"Hodisani o'chirdi: {event.module_name}", AUDIT_MODULE)
     await db.delete(event)
@@ -662,7 +702,7 @@ async def review_event(
     """Tezkor qaror: tasdiqlash yoki rad etish (navbat kartalari, devor,
     sinov namunalari). Har qanday holatdan ruxsat — qarorni o'zgartirish
     ham shu yerdan; holat o'zgarsa tarixga yoziladi."""
-    event = await _get_event(db, event_id, for_update=True)
+    event = await _get_event(db, event_id, current_user, for_update=True)
     actor_id = uuid.UUID(current_user.id)
     actor_name = await _actor_name(db, current_user)
     previous = event.status
@@ -689,7 +729,7 @@ async def change_event_status(
 ) -> EventOut:
     """Ish jarayoni bo'yicha holat o'zgarishi (app/services/event_status.py
     TRANSITIONS). "hal_qilindi" uchun yechim izohi majburiy."""
-    event = await _get_event(db, event_id, for_update=True)
+    event = await _get_event(db, event_id, current_user, for_update=True)
     if event.is_trial:
         raise HTTPException(status.HTTP_409_CONFLICT, "Sinov signali ish jarayoniga kirmaydi — faqat baholanadi")
     note = _clean_note(body.note)
@@ -734,7 +774,7 @@ async def assign_event(
     """Hodisani operatorga tayinlash (userId: null — tayinlovni olib
     tashlash). Yangi hodisa tayinlanganda "jarayonda" ga o'tadi va
     tayinlangan foydalanuvchiga shaxsiy bildirishnoma yuboriladi."""
-    event = await _get_event(db, event_id, for_update=True)
+    event = await _get_event(db, event_id, current_user, for_update=True)
     if event.is_trial:
         raise HTTPException(status.HTTP_409_CONFLICT, "Sinov signali ish jarayoniga kirmaydi — faqat baholanadi")
     if event.status in ("rad_etilgan", "hal_qilindi"):
@@ -811,9 +851,9 @@ async def assign_event(
 async def list_comments(
     event_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: ReviewDep,
+    current_user: ReviewDep,
 ) -> list[EventCommentOut]:
-    event = await _get_event(db, event_id)
+    event = await _get_event(db, event_id, current_user)
     comments = (
         (
             await db.execute(
@@ -849,7 +889,7 @@ async def add_comment(
     text = body.body.strip()
     if not text:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Izoh bo'sh bo'lmasligi kerak")
-    event = await _get_event(db, event_id)
+    event = await _get_event(db, event_id, current_user)
     comment = EventComment(
         event_id=event.id,
         author_id=uuid.UUID(current_user.id),
@@ -870,14 +910,14 @@ async def add_comment(
 async def event_timeline(
     event_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: ReviewDep,
+    current_user: ReviewDep,
 ) -> list[EventTimelineItemOut]:
     """Hodisa tarixi vaqt bo'yicha: yaratilish, izohlar, holat va tayinlash
     o'zgarishlari, muddat o'tgani haqidagi ogohlantirish.
 
     Ish jarayonidan oldin ko'rib chiqilgan hodisalarda holat yozuvi yo'q —
     ular uchun qaror reviewed_by/reviewed_at dan tiklanadi."""
-    event = await _get_event(db, event_id)
+    event = await _get_event(db, event_id, current_user)
     comments = (
         (await db.execute(select(EventComment).where(EventComment.event_id == event.id))).scalars().all()
     )
