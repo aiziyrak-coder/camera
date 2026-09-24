@@ -25,6 +25,7 @@ from app.models.platform import (
 )
 from app.models.presence_visit import PresenceVisit
 from app.models.report import Report
+from app.models.report_schedule import ReportSchedule
 from app.models.revoked_token import RevokedToken
 from app.models.student_staff import StudentStaff
 from app.models.user import User
@@ -52,6 +53,7 @@ __all__ = [
     "ModuleCameraSuppression",
     "PresenceVisit",
     "Report",
+    "ReportSchedule",
     "RevokedToken",
     "PasswordResetToken",
     "NotificationRule",

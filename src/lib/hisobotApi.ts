@@ -110,7 +110,7 @@ export interface HisobotFilterOptions {
 /** Uch ko'rinish: holat taxtasi (rahbar uchun), ro'yxat (batafsil) va
  *  oylik tabel (imzolanadigan hujjat). Eski havolalardagi `tahlil`
  *  taxtaga tushadi. */
-export type HisobotView = 'taxta' | 'royxat' | 'tabel';
+export type HisobotView = 'taxta' | 'royxat' | 'tabel' | 'kpi';
 
 /** URL'dagi holat — havola bilan ulashiladi, "orqaga" ishlaydi. */
 export interface HisobotState {
@@ -133,6 +133,7 @@ export interface HisobotState {
 function readView(raw: string | null): HisobotView {
   if (raw === 'tabel') return 'tabel';
   if (raw === 'royxat') return 'royxat';
+  if (raw === 'kpi') return 'kpi';
   return 'taxta'; // 'tahlil' — eski nom, shu yerga tushadi
 }
 
@@ -193,7 +194,9 @@ export function writeState(current: URLSearchParams, patch: Partial<HisobotState
   };
   // Ko'rinish va oy bo'limga bog'liq emas: xodimdan talabaga o'tganda
   // ham odam o'sha oyning tabelida qoladi.
-  if (patch.view !== undefined) set('korinish', patch.view === 'tabel' ? 'tabel' : undefined);
+  // Standart ko'rinish (taxta) URL'ga yozilmaydi. Ilgari faqat 'tabel'
+  // yozilardi — 'royxat' tanlansa ham URL'da qolmay, taxtaga qaytib ketardi.
+  if (patch.view !== undefined) set('korinish', patch.view === 'taxta' ? undefined : patch.view);
   if (patch.month !== undefined) set('oy', patch.month);
   if (patch.section !== undefined) {
     if (patch.section !== (current.get('bolim') === 'talabalar' ? 'talabalar' : 'xodimlar')) {
@@ -339,7 +342,7 @@ export function drillPatch(state: HisobotState, rowId: string): Partial<HisobotS
 /** Tashkilot kodi — boshqa muassasaga o'rnatishda almashtiriladi. */
 export const DOCUMENT_ORG_CODE = 'FERMI';
 
-const DOCUMENT_VIEW_CODE: Record<HisobotView, string> = { tabel: 'TBL', taxta: 'HLT', royxat: 'RYX' };
+const DOCUMENT_VIEW_CODE: Record<HisobotView, string> = { tabel: 'TBL', taxta: 'HLT', royxat: 'RYX', kpi: 'KPI' };
 const DOCUMENT_SECTION_CODE: Record<HisobotSection, string> = { xodimlar: 'XDM', talabalar: 'TLB' };
 
 /** Tanlovdan deterministik 4 xonali tartib raqami (0002–9999).

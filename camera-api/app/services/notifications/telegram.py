@@ -1,4 +1,4 @@
-"""Telegram Bot API mijozi (sendMessage, sendPhoto, getUpdates, getMe).
+"""Telegram Bot API mijozi (sendMessage, sendPhoto, sendDocument, getUpdates, getMe).
 
 Hech bir funksiya istisno ko'tarmaydi (get_updates bundan mustasno —
 bot sikli o'zi qayta urinadi): natija SendResult bo'lib qaytadi va
@@ -204,6 +204,38 @@ async def send_photo(chat_id: str | int, photo: bytes, caption: str, *, filename
                 return SendResult(ok=False, error=f"Bot bloklangan yoki chat topilmadi: {exc}", blocked=True)
             if exc.status == 429 and attempt < MAX_ATTEMPTS and (exc.retry_after or 0) <= MAX_RETRY_AFTER_SECONDS:
                 await _sleep(exc.retry_after or 1)
+                continue
+            return SendResult(ok=False, error=last_error)
+    return SendResult(ok=False, error=last_error)
+
+
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+async def send_document(
+    chat_id: str | int, content: bytes, filename: str, caption: str, *, mime: str = XLSX_MIME
+) -> SendResult:
+    """Fayl (masalan, Excel hisobot) izoh bilan. Avtomatik hisobotlar
+    (app/services/report_schedule.py) shu orqali yuboriladi. Qayta urinish
+    qoidasi send_photo bilan bir xil: timeout'da takror yuborilmaydi —
+    rahbarga bir hisobot ikki marta kelmasin."""
+    if not is_configured():
+        return SendResult(ok=False, error="Telegram bot sozlanmagan (TELEGRAM_BOT_TOKEN)")
+    data = {"chat_id": str(chat_id), "caption": _truncate(caption, CAPTION_LIMIT), "parse_mode": "HTML"}
+    last_error = "Noma'lum xato"
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            await _call("sendDocument", data=data, files={"document": (filename, content, mime)}, timeout=60)
+            return SendResult(ok=True)
+        except TelegramError as exc:
+            last_error = str(exc)
+            if _is_blocked(exc):
+                return SendResult(ok=False, error=f"Bot bloklangan yoki chat topilmadi: {exc}", blocked=True)
+            if exc.status == 429 and attempt < MAX_ATTEMPTS and (exc.retry_after or 0) <= MAX_RETRY_AFTER_SECONDS:
+                await _sleep(exc.retry_after or 1)
+                continue
+            if exc.status is None and attempt < MAX_ATTEMPTS:
+                await _sleep(attempt)
                 continue
             return SendResult(ok=False, error=last_error)
     return SendResult(ok=False, error=last_error)
