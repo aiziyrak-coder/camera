@@ -367,3 +367,57 @@ class TestLiveDetectionFaceStatus:
     async def test_falls_back_to_substream(self, client, a_camera, monkeypatch):
         body = await self._call(client, a_camera, monkeypatch, main_frame=None, faces=[])
         assert body["source"] == "kichik"
+
+
+# ─────────────────────── Real vaqtdagi skaner (2026-09-24)
+
+@pytest.mark.usefixtures("seeded", "monitoring_open")
+class TestLiveDetectionFromWatcher:
+    """Skaner ai-worker kuzatuvchisining natijasini o'qiydi — API o'zi kadr
+    olmaydi va tahlil qilmaydi (app/services/live_focus.py)."""
+
+    async def test_watcher_result_is_served_without_inference(self, client, a_camera, monkeypatch):
+        from app.routers import public as public_router
+        from app.services import live_focus
+
+        async def must_not_run(*_args, **_kwargs):
+            raise AssertionError("API kadrni o'zi tahlil qilmasligi kerak")
+
+        monkeypatch.setattr(public_router, "detect_faces", must_not_run)
+        monkeypatch.setattr(public_router, "grab_live_main_frame", must_not_run)
+        await live_focus.publish_result(
+            str(a_camera.id),
+            {
+                "frame_width": 1280,
+                "frame_height": 720,
+                "source": "kichik",
+                "faces": [{"bbox": [1, 2, 3, 4], "person_name": "Ali Valiyev", "asleep": False, "status": "tanildi", "similarity": 0.61}],
+            },
+        )
+        resp = await client.get(f"/api/public/cameras/{a_camera.id}/live-detection")
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["faces"][0]["personName"] == "Ali Valiyev"
+        assert body["frameWidth"] == 1280
+        # So'rov kamerani "kuzatilmoqda" deb belgiladi — kuzatuvchi uni tezlashtiradi.
+        assert await live_focus.is_focused(str(a_camera.id))
+
+    async def test_waits_briefly_for_the_watcher_then_falls_back(self, client, a_camera, monkeypatch):
+        from app.routers import public as public_router
+
+        monkeypatch.setattr(settings, "live_result_first_wait_seconds", 0.3)
+        calls: list[int] = []
+
+        async def fake_sub(camera, *, wait_seconds=None):
+            calls.append(1)
+            return None
+
+        async def no_main(camera, *, wait_seconds):
+            return None
+
+        monkeypatch.setattr(public_router, "grab_live_main_frame", no_main)
+        monkeypatch.setattr(public_router, "grab_frame_for_camera", fake_sub)
+        resp = await client.get(f"/api/public/cameras/{a_camera.id}/live-detection")
+        assert resp.status_code == 200 and calls == [1]
+        # Kuzatuvchi javob bermagan kamera uchun keyingi so'rov kutmaydi.
+        assert str(a_camera.id) in public_router._no_watcher_until

@@ -74,8 +74,12 @@ class TestAttendanceUsesItsPriority:
     def test_entrance_camera_loop_requests_attendance_priority(self):
         # Kirish kamerasi kuzatuvchisi ham, bir martalik tekshiruv ham
         # process_camera_frame'ni PRIORITY_ATTENDANCE bilan chaqiradi.
-        for function in (attendance_ai._analyse_entrance_frame, attendance_ai.run_entrance_exit_attendance_sweep_once):
-            assert "inference_priority=PRIORITY_ATTENDANCE" in inspect.getsource(function)
+        # Kuzatuvchi: operator ko'rayotgan kamera PRIORITY_LIVE, qolganlari ATTENDANCE.
+        source = inspect.getsource(attendance_ai._analyse_entrance_frame)
+        assert "inference_priority=PRIORITY_LIVE if live else PRIORITY_ATTENDANCE" in source
+        assert "inference_priority=PRIORITY_ATTENDANCE" in inspect.getsource(
+            attendance_ai.run_entrance_exit_attendance_sweep_once
+        )
         # Xona kameralari (unified_face_sweep) esa tegilmagan — fon navbatida qoladi.
         from app.jobs import unified_face_sweep
 

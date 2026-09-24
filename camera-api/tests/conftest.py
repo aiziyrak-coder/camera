@@ -64,6 +64,25 @@ def _behaviour_hours_off():
 
 
 @pytest.fixture(autouse=True)
+def _fresh_live_focus():
+    """Jonli skaner holati (app/services/live_focus.py) testlar orasida
+    bo'lishilmasin; API kuzatuvchi natijasini kutmaydi (testda kuzatuvchi
+    yo'q) — eski yo'l darhol ishlaydi. Kutishning o'z testlari uni yoqadi."""
+    from app.config import settings
+    from app.routers import public
+    from app.services import live_focus
+
+    original = settings.live_result_first_wait_seconds
+    settings.live_result_first_wait_seconds = 0.0
+    live_focus.reset_for_tests()
+    public._no_watcher_until.clear()
+    yield
+    settings.live_result_first_wait_seconds = original
+    live_focus.reset_for_tests()
+    public._no_watcher_until.clear()
+
+
+@pytest.fixture(autouse=True)
 def _fresh_inference_cache():
     """Kadr natijalari keshi (app/services/inference_cache.py) testlar
     orasida bo'lishilmasin: ko'p test bir xil soxta kadr baytlarini

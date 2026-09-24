@@ -583,6 +583,31 @@ class Settings(BaseSettings):
     pacing_idle_after: int = 3
     pacing_idle_base_seconds: float = 20.0
     pacing_idle_max_seconds: float = 150.0  # entrance_watcher_stall_seconds dan kichik
+    # Kutayotgan kamerada harakat paydo bo'lsa, kutish to'xtatiladi — odam
+    # 150 s kutmasdan 1-3 s da tahlil qilinadi. Faqat bugun kamida bitta
+    # yaroqli yuz bergan kamerada (orqa tomondan ko'radigan koridor harakat
+    # tufayli uyg'onib, CPU'ni behuda yemasin) va eng ko'pi har
+    # pacing_motion_min_seconds da bir marta.
+    pacing_motion_wake: bool = True
+    pacing_motion_min_seconds: float = 3.0
+    # Harakat hududida aniqlash (app/services/motion_gate.py, motion_box):
+    # kadrning faqat o'zgargan qismi (+hoshiya) detektorga beriladi. Aniqlash
+    # vaqti piksellar soniga mutanosib — odam kadrning 30% ida bo'lsa,
+    # tahlil ~3 barobar tez. To'liq kadr baribir motion_gate_max_skip_seconds
+    # da bir marta (qimirlamay o'tirganlar ham ko'rilsin).
+    motion_roi_enabled: bool = True
+    motion_roi_margin: float = 0.35  # hudud o'lchamiga nisbatan har tomonga
+    motion_roi_max_area: float = 0.6  # bundan katta hudud — to'liq kadr arzonroq
+    # Real vaqtdagi skaner (app/services/live_focus.py). Operator so'rovlari
+    # to'xtagach kamera shuncha soniyadan keyin odatdagi navbatga qaytadi.
+    live_focus_ttl_seconds: float = 12.0
+    live_focus_poll_seconds: float = 1.0
+    live_result_ttl_seconds: int = 15
+    # Kuzatuvchi natijasi shundan eski bo'lsa ishlatilmaydi.
+    live_result_max_age_seconds: float = 5.0
+    # Birinchi so'rovda kuzatuvchi natijasini shuncha kutadi; kelmasa API
+    # kadrni o'zi tahlil qiladi (ai-worker o'chiq yoki kamera kuzatilmaydi).
+    live_result_first_wait_seconds: float = 4.0
     # Operator kuzatayotgan kameraning yuz belgilari asosiy (4K) oqimdan
     # olinadi. O'lchov (2026-09-24, "2-xona", ~20 talaba): kichik oqimda
     # 10 yuzdan faqat 3 tasi tahlilga yaradi (10-20 px), 4K da — 10 tasi

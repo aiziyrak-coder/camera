@@ -98,3 +98,12 @@ def test_faces_identified_in_the_previous_frame_are_not_recomputed(fake_app):
     assert [face.tracked for face in faces] == [False, False, True]
     assert faces[2].embedding is None
     assert recognition.batches == [2]
+
+
+def test_attendance_can_skip_the_3d_landmarks(fake_app):
+    """Davomat 68 nuqtali belgilarni o'qimaydi — ular hisoblanmaydi (~0.16 s/yuz)."""
+    recognition, landmarks = fake_app
+    faces = face_recognition._detect_faces_sync(b"jpeg", min_face_px=20, landmarks=False)
+    assert recognition.batches == [2]
+    assert landmarks.calls == 0
+    assert all(face.landmarks_68 is None for face in faces)

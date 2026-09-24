@@ -4,24 +4,20 @@ import { useVisibleInterval } from './useVisibleInterval';
 import { tryAcquireLiveDetection, releaseLiveDetection } from './liveDetectionGate';
 import type { LiveDetectionResult } from '../types';
 
-// 6s, not 3s — found from real testing: each call is a genuine ffmpeg
-// frame grab + InsightFace inference pass on the backend, and polling
-// this aggressively was starving the background attendance/sleep sweep
-// loops of CPU time (a 30s sweep loop was observed stretching to minutes
-// between completions while this was polling at 3s — see
-// app/services/face_recognition.py's _inference_semaphore, the other
-// half of this fix). 6s still reads as "live" for a human watching one
-// camera.
-const POLL_INTERVAL_MS = 6000;
+// 1.5 s: javob endi ai-worker kuzatuvchisi yozib turgan natijadan o'qiladi
+// (camera-api/app/services/live_focus.py) — so'rov kadr olmaydi va tahlil
+// qilmaydi, ya'ni tez-tez so'rash serverni yuklamaydi. So'rovning o'zi
+// kamerani "operator ko'ryapti" deb belgilaydi: kuzatuvchi uni kutishsiz,
+// eng yuqori navbat bilan tahlil qiladi. Ilgari (6 s, har so'rov — yangi
+// kadr + tahlil) natija 5-12 s kechikardi.
+const POLL_INTERVAL_MS = 1500;
 
 /** Polls GET /api/public/cameras/{id}/live-detection while `enabled` — the
  * face-box overlay's data source. No auth needed (it's the same public,
  * no-token endpoint the Monitoring page's camera feed itself uses); the
- * admin CameraConfigDetailModal calls it the same way. Deliberately not
- * hooked into WebSocket real-time — each call is a genuine fresh frame
- * grab + inference pass on the backend (see app/routers/public.py's
- * get_live_detection() docstring), so polling only while a camera is
- * actually being watched (`enabled`) matters here more than usual. */
+ * admin CameraConfigDetailModal calls it the same way. Polling only while a
+ * camera is actually being watched (`enabled`) still matters: each call keeps
+ * that camera in the AI's real-time focus. */
 export function useLiveDetection(cameraId: string | undefined, enabled: boolean) {
   const [result, setResult] = useState<LiveDetectionResult | null>(null);
   const [slotDenied, setSlotDenied] = useState(false);

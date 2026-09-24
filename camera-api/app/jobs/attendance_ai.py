@@ -32,6 +32,7 @@ originally structured to allow either.
 import asyncio
 import logging
 import random
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, time as time_type
 from time import monotonic
@@ -57,22 +58,28 @@ from app.services import face_gallery
 from app.services.face_matching import GradedMatch
 from app.services.face_recognition import TRACK_IOU, Box, _iou, detect_faces, face_quality_ok, recognizable_faces
 from app.services.face_tracks import track_store
-from app.services.inference_gate import PRIORITY_ATTENDANCE, PRIORITY_BACKGROUND
+from app.services.inference_gate import PRIORITY_ATTENDANCE, PRIORITY_BACKGROUND, PRIORITY_LIVE
 from app.services.frame_grabber import (
     ai_prefers_substream,
+    camera_video_source,
     frame_wait_seconds_for_camera,
     grab_frame_burst_for_camera,
     grab_frame_for_camera,
     grab_main_stream_frame_once,
     grab_newer_frame,
+    grab_newer_main_frame,
+    main_stream_source,
     stream_label,
 )
+from app.services import live_focus
+from app.services.sleep_detection import is_asleep, is_face_measurable
+from app.services.stream_cache import peek_cached_frame, stop_stream_reader
 from app.services import face_zoom
 from app.services import static_faces
 from app.services.image_size import jpeg_dimensions
 from app.services import recognition_stats
 from app.services.camera_roles import face_roi_box
-from app.services.motion_gate import MotionGate
+from app.services.motion_gate import MotionGate, compose_roi
 from app.services.notifications import notify_attendance
 from app.services.presence import record_visit
 from app.timezone import local_now, to_local
@@ -497,6 +504,9 @@ async def process_camera_frame(
     identified_boxes: list | None = None,
     allow_zoom: bool = True,
     matched_boxes_out: list | None = None,
+    landmarks: bool = True,
+    overlay_out: list | None = None,
+    zoom_session_factory: async_sessionmaker[AsyncSession] | None = None,
 ) -> list[AttendanceRecord]:
     """Checks EVERY face in the frame — not just the largest — and writes
     an attendance record for each one that matches an enrolled person.
@@ -538,7 +548,13 @@ async def process_camera_frame(
     unga qo'shiladi (shu kadrning o'z koordinatalarida). Zoom passi shu
     orqali "4K kadrda kim tanildi" ni biladi va o'sha joyni substream
     koordinatalarida statik filtrdan himoyalaydi — _zoom_recheck izohiga
-    qarang."""
+    qarang.
+
+    `landmarks=False` — 3D belgilar hisoblanmaydi (davomat ularni o'qimaydi,
+    har yuzga ~0.16 s tejaladi). `overlay_out` berilsa, har bir yuz uchun
+    jonli skaner yozuvi qo'shiladi (app/services/live_focus.py).
+    `zoom_session_factory` berilsa, zoom passi kuzatuvchini to'xtatmasdan
+    FONDA o'z sessiyasi bilan ishlaydi (4K ulanish 8 s gacha kutishi mumkin)."""
     camera_key = str(camera.id) if camera is not None else None
     # Devordagi rasmlar (app/services/static_faces.py). Faqat ODATDAGI
     # tekshiruvda: zoom kadri 4K, ya'ni uning koordinatalari boshqa
@@ -553,6 +569,7 @@ async def process_camera_frame(
             roi=roi,
             # Statik ramkadagi yuz shu yerda embedding olmaydi — eng arzon joyi shu.
             skip_boxes=tuple(skip_boxes) + static_boxes,
+            landmarks=landmarks,
         )
     if static_pass:
         faces, skipped_static = static_faces.static_face_store.split(camera_key, faces)
@@ -575,6 +592,8 @@ async def process_camera_frame(
     if candidates is None:
         candidates = await load_candidate_matrix_for_sweep(db)
     if candidates.is_empty:
+        if overlay_out is not None:
+            overlay_out.extend(_overlay_entries(faces, [], [], {}))
         return []
 
     moment = occurred_at or local_now()
@@ -601,6 +620,8 @@ async def process_camera_frame(
     matched_ids: set[str] = set()
     matched_boxes: list = []
     records: list[AttendanceRecord] = []
+    # id(face) -> tanilgan odam (jonli skaner uchun).
+    accepted: dict[int, str] = {}
     for face, match in zip(usable, graded, strict=True):
         if match.person_id is None:
             continue
@@ -637,6 +658,7 @@ async def process_camera_frame(
             recognition_stats.record_credit(camera_key, "relaxed_confirmed")
 
         matched_ids.add(student_staff_id)
+        accepted[id(face)] = student_staff_id
         matched_boxes.append(face.bbox)
         if matched_boxes_out is not None:
             matched_boxes_out.append(face.bbox)
@@ -670,6 +692,8 @@ async def process_camera_frame(
 
     if static_pass:
         _note_static_faces(camera, camera_key, faces, matched_boxes)
+    if overlay_out is not None:
+        overlay_out.extend(_overlay_entries(faces, usable, graded, accepted))
 
     if camera is not None:
         try:
@@ -685,7 +709,20 @@ async def process_camera_frame(
             await db.rollback()
             logger.warning("face review queue failed", exc_info=True)
 
-    if allow_zoom:
+    if allow_zoom and zoom_session_factory is not None:
+        _spawn_background_zoom(
+            zoom_session_factory,
+            faces,
+            tuple(matched_boxes),
+            frame_bytes,
+            camera,
+            candidates,
+            moment=moment,
+            off_hours_module_active=off_hours_module_active,
+            staff_module_active=staff_module_active,
+            student_module_active=student_module_active,
+        )
+    elif allow_zoom:
         # Zoom — ODATDAGI tekshiruvga qo'shimcha. Uning har qanday xatosi
         # (4K oqim ulanmadi, detektor yiqildi) shu kadrda ALLAQACHON
         # yozilgan davomat natijasini yo'q qilmasligi kerak: oldin istisno
@@ -709,6 +746,88 @@ async def process_camera_frame(
         except Exception:
             logger.warning("zoom pass failed; keeping the substream result", exc_info=True)
     return records
+
+
+def _overlay_entries(faces: list, usable: list, graded: list, accepted: dict[int, str]) -> list[dict]:
+    """Jonli skaner uchun har yuz: ramka, holat ("tanildi" / "notanish" /
+    "kichik" / "kuzatuvda"), tanilgan odam va eng yaqin o'xshashlik.
+
+    "tanildi" — faqat davomatga QABUL QILINGAN moslik (qat'iy yoki
+    tasdiqlangan yumshoq): operator ekranida ko'rinadigan ism davomat
+    jurnalidagi bilan bir xil bo'lsin. "kuzatuvda" — oldingi kadrda
+    tanilgan, bu kadrda qayta hisoblanmagan yuz: ismi oldingi natijadan
+    olinadi (kuzatuvchi buni o'zi to'ldiradi)."""
+    similarity_of = {id(face): match.similarity for face, match in zip(usable, graded, strict=True)}
+    entries = []
+    for face in faces:
+        key = id(face)
+        if key in accepted:
+            status = "tanildi"
+        elif getattr(face, "tracked", False):
+            status = "kuzatuvda"
+        elif getattr(face, "embedding", None) is not None:
+            status = "notanish"
+        else:
+            status = "kichik"
+        similarity = similarity_of.get(key)
+        entries.append(
+            {
+                "bbox": [float(v) for v in face.bbox[:4]],
+                "status": status,
+                "person_id": accepted.get(key),
+                "similarity": round(max(0.0, float(similarity)), 3) if similarity is not None else None,
+                "landmarks_68": getattr(face, "landmarks_68", None),
+            }
+        )
+    return entries
+
+
+# Fondagi zoom: kamera bo'yicha bir vaqtda bittadan ortiq emas.
+_zoom_tasks: dict[str, asyncio.Task] = {}
+
+
+def _spawn_background_zoom(
+    session_factory: async_sessionmaker[AsyncSession],
+    faces: list,
+    matched_boxes: tuple,
+    frame_bytes: bytes,
+    camera: Camera | None,
+    candidates: CandidateMatrix,
+    **flags,
+) -> None:
+    """_zoom_recheck ni kuzatuvchidan ajratib ishga tushiradi.
+
+    Ilgari zoom kuzatuvchi ichida bajarilardi: 4K oqimga ulanish va birinchi
+    kalit kadrni kutish (face_zoom_wait_seconds gacha) shu kameraning
+    keyingi kadrini ham kechiktirardi — ya'ni har zoom'da kamera bir necha
+    soniya "ko'r" bo'lardi. Endi kuzatuvchi darhol keyingi kadrga o'tadi."""
+    if camera is None or not settings.face_zoom_enabled or not ai_prefers_substream(camera):
+        return
+    if not face_zoom.zoom_candidate_boxes(
+        faces,
+        min_px=settings.face_zoom_max_px,
+        floor_px=settings.face_zoom_min_px,
+        max_faces=settings.face_zoom_max_faces,
+        matched=matched_boxes,
+    ):
+        return
+    key = str(camera.id)
+    running = _zoom_tasks.get(key)
+    if running is not None and not running.done():
+        return
+
+    async def run() -> None:
+        try:
+            async with session_factory() as db:
+                await _zoom_recheck(faces, matched_boxes, frame_bytes, db, camera, candidates, **flags)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning("background zoom pass failed", exc_info=True, extra={"camera_id": key})
+
+    task = asyncio.create_task(run(), name=f"zoom:{key}")
+    _zoom_tasks[key] = task
+    task.add_done_callback(lambda done, key=key: _zoom_tasks.pop(key, None) if _zoom_tasks.get(key) is done else None)
 
 
 _review_module_cache: dict[str, tuple[float, bool]] = {}
@@ -910,7 +1029,7 @@ async def _zoom_recheck(
         # detektsiya vazifalari esa 4K kadr ustida ishlashda davom etib
         # (inference sloti band), natijasi hech kim tomonidan olinmasdi.
         detections = await asyncio.gather(
-            *(detect_faces(main_frame, priority=PRIORITY_ATTENDANCE, roi=roi) for roi in rois),
+            *(detect_faces(main_frame, priority=PRIORITY_ATTENDANCE, roi=roi, landmarks=False) for roi in rois),
             return_exceptions=True,
         )
         good: list[list] = []
@@ -1245,7 +1364,16 @@ async def _analyse_entrance_frame(
     *,
     skip_boxes: tuple = (),
     identified_boxes: list | None = None,
+    roi: Box | None = None,
+    live: bool = False,
+    main_stream: bool = False,
+    overlay_out: list | None = None,
 ) -> int:
+    """`live` — operator shu kamerani ko'ryapti: eng yuqori navbat va 3D
+    belgilar (skanerdagi "uxlayapti" belgisi uchun). `main_stream` — kadr
+    asosiy (4K) oqimdan: statik ramkalar va zoom kichik oqim
+    koordinatalarida yuritiladi, shuning uchun ular o'chiriladi (zoom
+    passidagi kabi)."""
     async with entrance_exit_sweep_slot():
         async with context.session_factory() as db:
             records = await process_camera_frame(
@@ -1257,92 +1385,230 @@ async def _analyse_entrance_frame(
                 staff_module_active=context.staff_active,
                 student_module_active=context.student_active,
                 # Eshik kadri xona kameralaridan oldin tahlil qilinsin
-                # (app/services/inference_gate.py, PRIORITY_ATTENDANCE).
-                inference_priority=PRIORITY_ATTENDANCE,
-                roi=face_roi_box(camera),
+                # (app/services/inference_gate.py, PRIORITY_ATTENDANCE);
+                # operator ko'rayotgan kamera esa hammasidan oldin.
+                inference_priority=PRIORITY_LIVE if live else PRIORITY_ATTENDANCE,
+                roi=roi,
                 skip_boxes=skip_boxes,
                 identified_boxes=identified_boxes,
+                allow_zoom=not main_stream,
+                landmarks=live,
+                overlay_out=overlay_out,
+                zoom_session_factory=context.session_factory,
             )
+            if overlay_out:
+                await _name_overlay(db, overlay_out)
     return len({str(r.student_staff_id) for r in records})
 
 
-async def _watch_entrance_camera(camera: Camera, watcher: _EntranceWatcher) -> None:
-    """Bitta kirish/chiqish kamerasini to'xtovsiz kuzatadi (bekor
-    qilinguncha): har yangi kadr — bitta tahlil.
+async def _name_overlay(db: AsyncSession, entries: list[dict]) -> None:
+    ids = {str(entry["person_id"]) for entry in entries if entry.get("person_id")}
+    if not ids:
+        return
+    rows = (
+        await db.execute(
+            select(StudentStaff.id, StudentStaff.full_name).where(StudentStaff.id.in_([uuid.UUID(i) for i in ids]))
+        )
+    ).all()
+    names = {str(person_id): name for person_id, name in rows}
+    for entry in entries:
+        if entry.get("person_id"):
+            entry["person_name"] = names.get(str(entry["person_id"]))
 
-    Uch tejash (hammasi ertalabki tirband soat uchun CPU bo'shatadi):
-      * harakat bo'lmagan kadr tahlil qilinmaydi (app/services/motion_gate.py);
+
+def _carry_tracked_names(entries: list[dict], previous: list[dict]) -> None:
+    """Kuzatuvdagi (qayta hisoblanmagan) yuzga oldingi kadrdagi ismini beradi."""
+    for entry in entries:
+        if entry["status"] != "kuzatuvda":
+            continue
+        entry["status"] = "tanildi"  # oldingi kadrda tanilgan (tracked)
+        best = max(
+            (old for old in previous if old.get("person_name")),
+            key=lambda old: _iou(entry["bbox"], old["bbox"]),
+            default=None,
+        )
+        if best is not None and _iou(entry["bbox"], best["bbox"]) >= TRACK_IOU:
+            entry["person_id"] = best.get("person_id")
+            entry["person_name"] = best.get("person_name")
+            entry["similarity"] = best.get("similarity")
+
+
+def _overlay_payload(frame: bytes, entries: list[dict], *, source: str) -> dict:
+    """Skaner javobi — LiveDetectionOut shaklida (app/schemas/public.py)."""
+    width, height = jpeg_dimensions(frame) or (0, 0)
+    faces = []
+    for entry in entries:
+        landmarks_68 = entry.get("landmarks_68")
+        asleep = bool(landmarks_68 is not None and is_face_measurable(entry["bbox"]) and is_asleep(landmarks_68))
+        faces.append(
+            {
+                "bbox": entry["bbox"],
+                "person_name": entry.get("person_name"),
+                "asleep": asleep,
+                "status": entry["status"],
+                "similarity": entry.get("similarity"),
+            }
+        )
+    return {"frame_width": width, "frame_height": height, "faces": faces, "source": source}
+
+
+async def _pause(watcher: _EntranceWatcher, seconds: float, *, wake=None) -> None:
+    """Kutish; kuzatuvchi bu paytda ham "tirik" (qotgan deb qayta ishga
+    tushirilmaydi). `wake()` True qaytarsa (har ~1 s tekshiriladi) kutish
+    muddatidan oldin tugaydi."""
+    deadline = monotonic() + seconds
+    step = 1.0 if wake is not None else 5.0
+    while monotonic() < deadline:
+        watcher.last_progress = monotonic()
+        await asyncio.sleep(min(step, max(0.0, deadline - monotonic())))
+        if wake is not None and await wake():
+            return
+
+
+async def _watch_entrance_camera(camera: Camera, watcher: _EntranceWatcher) -> None:
+    """Bitta kamerani to'xtovsiz kuzatadi (bekor qilinguncha): har yangi
+    kadr — bitta tahlil.
+
+    Tejashlar (hammasi ertalabki tirband soat uchun CPU bo'shatadi):
+      * harakat bo'lmagan kadr tahlil qilinmaydi (app/services/motion_gate.py),
+        harakat bo'lsa — faqat harakat hududi (+hoshiya) tahlil qilinadi;
       * faqat eshik hududi tahlil qilinadi (Camera.face_roi);
-      * oldingi kadrda tanilgan odam qayta hisoblanmaydi (kuzatuv)."""
+      * oldingi kadrda tanilgan odam qayta hisoblanmaydi (kuzatuv);
+      * yaroqli yuz bermagan kamera navbatni bo'shatadi (camera_pacing),
+        lekin kutish paytida harakat paydo bo'lsa darhol uyg'onadi.
+
+    Operator kamerani ochsa (app/services/live_focus.py) — kutish yo'q, eng
+    yuqori navbat, xona kamerasi asosiy (4K) oqimdan o'qiladi. Har tahlil
+    natijasi skanerga yoziladi."""
     key = str(camera.id)
     last_seq: int | None = None
+    last_stream: str | None = None
     misses = 0
     previous_analysis = monotonic()
     gate = MotionGate()
-    roi = face_roi_box(camera)
+    camera_roi = face_roi_box(camera)
     tracked: tuple = ()
+    previous_overlay: list[dict] = []
+    main_reader: str | None = None
     pacer = CameraPacer(exempt=is_door_camera(camera))
+
+    async def focused() -> bool:
+        return await live_focus.is_focused(key)
+
+    async def activity() -> bool:
+        if await focused():
+            return True
+        if not settings.pacing_motion_wake or _useful_face_total(key) <= 0:
+            return False
+        frame = peek_cached_frame(camera_video_source(camera))
+        if frame is None:
+            return False
+        return await asyncio.to_thread(gate.moved_since_peek, frame, camera_roi)
+
     if not (is_door_camera(camera) or camera.is_perimeter):
         # Xona kameralari kirish eshiklaridan keyin (config izohi:
-        # room_watcher_start_delay_seconds). Kutish paytida ham "tirik" —
-        # qotib qolgan kuzatuvchi sifatida qayta ishga tushirilmaydi.
+        # room_watcher_start_delay_seconds). Operator ochsa — darhol.
         delay = settings.room_watcher_start_delay_seconds + random.uniform(
             0, max(0.0, settings.room_watcher_start_spread_seconds)
         )
-        deadline = monotonic() + delay
-        while monotonic() < deadline:
+        await _pause(watcher, delay, wake=focused)
+    try:
+        while True:
             watcher.last_progress = monotonic()
-            await asyncio.sleep(min(5.0, max(0.0, deadline - monotonic())))
-    while True:
-        watcher.last_progress = monotonic()
-        try:
-            context = _entrance_context
-            if context is None:
-                await asyncio.sleep(1.0)
-                continue
-            waited_from = monotonic()
-            latest = await grab_newer_frame(
-                camera, wait_seconds=frame_wait_seconds_for_camera(camera), after_seq=last_seq
-            )
-            grab_seconds = monotonic() - waited_from
-            if latest is None:
-                misses += 1
-                if misses >= ENTRANCE_MISSES_BEFORE_RESET:
-                    last_seq = None
-                await asyncio.sleep(min(float(misses), ENTRANCE_MAX_BACKOFF_SECONDS))
-                continue
-            misses = 0
-            frame, last_seq = latest
-            if not await asyncio.to_thread(gate.should_analyse, frame, roi):
-                recognition_stats.record_motion_skip(key)
-                tracked = ()  # eshik bo'sh — kuzatuv uziladi
-                continue
-            identified: list = []
-            useful_before = _useful_face_total(key)
-            watcher.matched += await _analyse_entrance_frame(
-                camera, frame, context, skip_boxes=tracked, identified_boxes=identified
-            )
-            tracked = tuple(identified)
-            now = monotonic()
-            recognition_stats.record_cycle(
-                key, total_seconds=now - previous_analysis, grab_seconds=grab_seconds, stream=stream_label(camera)
-            )
-            previous_analysis = now
-            # Yaroqli yuz bermagan kamera navbatni boshqalarga bo'shatadi
-            # (app/services/camera_pacing.py). Kutish paytida ham "tirik".
-            idle = pacer.note(_useful_face_total(key) - useful_before)
-            if idle > 0:
-                recognition_stats.record_idle(key, idle)
-                deadline = monotonic() + idle
-                while monotonic() < deadline:
-                    watcher.last_progress = monotonic()
-                    await asyncio.sleep(min(5.0, max(0.0, deadline - monotonic())))
-                last_seq = None  # kutishdan keyin eng yangi kadr olinadi
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("entrance/exit watcher failed on a frame", extra={"camera_id": key})
-            await asyncio.sleep(ENTRANCE_ERROR_PAUSE_SECONDS)
+            try:
+                context = _entrance_context
+                if context is None:
+                    await asyncio.sleep(1.0)
+                    continue
+                live = await focused()
+                waited_from = monotonic()
+                latest = None
+                stream = "kichik"
+                if live and settings.live_detection_main_stream and main_stream_source(camera) is not None:
+                    main_reader = main_stream_source(camera)
+                    latest = await grab_newer_main_frame(
+                        camera,
+                        wait_seconds=settings.live_detection_main_wait_seconds,
+                        after_seq=last_seq if last_stream == "asosiy" else None,
+                    )
+                    stream = "asosiy"
+                elif main_reader is not None:
+                    # Kuzatuv tugadi — 4K o'quvchi darhol yopiladi.
+                    await stop_stream_reader(main_reader)
+                    main_reader = None
+                if latest is None:
+                    stream = "kichik"
+                    latest = await grab_newer_frame(
+                        camera,
+                        wait_seconds=frame_wait_seconds_for_camera(camera),
+                        after_seq=last_seq if last_stream == "kichik" else None,
+                    )
+                grab_seconds = monotonic() - waited_from
+                if latest is None:
+                    misses += 1
+                    if misses >= ENTRANCE_MISSES_BEFORE_RESET:
+                        last_seq = None
+                    await asyncio.sleep(min(float(misses), ENTRANCE_MAX_BACKOFF_SECONDS))
+                    continue
+                misses = 0
+                frame, last_seq = latest
+                if stream != last_stream:
+                    # Boshqa oqim — boshqa o'lcham: kuzatuv va harakat tayanchi yangidan.
+                    tracked, previous_overlay, gate = (), [], MotionGate()
+                    last_stream = stream
+                # Skanerdagi belgi: kamera o'zi asosiy oqimda bo'lsa ham "asosiy".
+                label = "asosiy" if stream == "asosiy" or not ai_prefers_substream(camera) else "kichik"
+                if not await asyncio.to_thread(gate.should_analyse, frame, camera_roi):
+                    recognition_stats.record_motion_skip(key)
+                    tracked = ()  # eshik bo'sh — kuzatuv uziladi
+                    if live:
+                        # Kadr o'zgarmadi — skaner oxirgi natijani ko'rsataveradi.
+                        await live_focus.publish_result(key, _overlay_payload(frame, previous_overlay, source=label))
+                    continue
+                identified: list = []
+                overlay: list[dict] = []
+                useful_before = _useful_face_total(key)
+                watcher.matched += await _analyse_entrance_frame(
+                    camera,
+                    frame,
+                    context,
+                    skip_boxes=tracked,
+                    identified_boxes=identified,
+                    roi=compose_roi(camera_roi, gate.region),
+                    live=live,
+                    main_stream=stream == "asosiy",
+                    overlay_out=overlay,
+                )
+                tracked = tuple(identified)
+                _carry_tracked_names(overlay, previous_overlay)
+                previous_overlay = overlay
+                await live_focus.publish_result(key, _overlay_payload(frame, overlay, source=label))
+                now = monotonic()
+                recognition_stats.record_cycle(
+                    key, total_seconds=now - previous_analysis, grab_seconds=grab_seconds, stream=stream_label(camera)
+                )
+                previous_analysis = now
+                if live:
+                    continue
+                # Yaroqli yuz bermagan kamera navbatni boshqalarga bo'shatadi
+                # (app/services/camera_pacing.py); harakat yoki operator uni
+                # uyg'otadi — lekin pacing_motion_min_seconds dan oldin emas.
+                idle = pacer.note(_useful_face_total(key) - useful_before)
+                if idle > 0:
+                    recognition_stats.record_idle(key, idle)
+                    gate.reset_peek()
+                    floor = min(idle, max(0.0, settings.pacing_motion_min_seconds))
+                    await _pause(watcher, floor, wake=focused)
+                    await _pause(watcher, idle - floor, wake=activity)
+                    last_seq = None  # kutishdan keyin eng yangi kadr olinadi
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("entrance/exit watcher failed on a frame", extra={"camera_id": key})
+                await asyncio.sleep(ENTRANCE_ERROR_PAUSE_SECONDS)
+    finally:
+        if main_reader is not None:
+            await stop_stream_reader(main_reader)
 
 
 def _useful_face_total(camera_key: str) -> int:

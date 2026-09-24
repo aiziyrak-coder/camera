@@ -333,7 +333,7 @@ class TestWatcherSavesCpu:
             done.set()
             await asyncio.Event().wait()
 
-        async def fake_analyse(camera, frame, context, *, skip_boxes=(), identified_boxes=None):
+        async def fake_analyse(camera, frame, context, *, skip_boxes=(), identified_boxes=None, **_options):
             seen_skip.append(skip_boxes)
             identified_boxes.append((10.0, 10.0, 50.0, 60.0))
             return 1
@@ -347,3 +347,97 @@ class TestWatcherSavesCpu:
         await asyncio.gather(task, return_exceptions=True)
 
         assert seen_skip == [(), ((10.0, 10.0, 50.0, 60.0),)]
+
+
+class TestRealTime:
+    """Operator ochgan kamera va kutayotgan kameradagi harakat (2026-09-24):
+    ilgari kutish 150 s gacha cho'zilardi, skaner esa 5-12 s kechikardi."""
+
+    @pytest.fixture(autouse=True)
+    def _fast(self, monkeypatch):
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "pacing_enabled", True)
+        monkeypatch.setattr(settings, "pacing_idle_after", 0)
+        monkeypatch.setattr(settings, "pacing_idle_base_seconds", 60.0)
+        monkeypatch.setattr(settings, "pacing_motion_min_seconds", 0.0)
+        monkeypatch.setattr(settings, "room_watcher_start_delay_seconds", 0.0)
+        monkeypatch.setattr(settings, "room_watcher_start_spread_seconds", 0.0)
+        monkeypatch.setattr(attendance_ai, "main_stream_source", lambda camera: None)
+        monkeypatch.setattr(attendance_ai.MotionGate, "should_analyse", lambda self, frame, roi=None: True)
+
+    async def _run(self, monkeypatch, camera, frames, *, analyse=None, until: int):
+        analysed: list[bytes] = []
+        done = asyncio.Event()
+
+        async def fake_grab(camera, *, wait_seconds, after_seq):
+            if frames:
+                return frames.pop(0)
+            await asyncio.Event().wait()
+
+        async def fake_analyse(camera, frame, context, *, overlay_out=None, **_options):
+            analysed.append(frame)
+            if analyse is not None:
+                analyse(overlay_out)
+            if len(analysed) >= until:
+                done.set()
+            return 0
+
+        monkeypatch.setattr(attendance_ai, "grab_newer_frame", fake_grab)
+        monkeypatch.setattr(attendance_ai, "_analyse_entrance_frame", fake_analyse)
+        monkeypatch.setattr(attendance_ai, "_entrance_context", _context())
+        task = asyncio.create_task(attendance_ai._watch_entrance_camera(camera, attendance_ai._EntranceWatcher(())))
+        try:
+            await asyncio.wait_for(done.wait(), timeout=4)
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        return analysed
+
+    async def test_a_watched_camera_never_waits_and_feeds_the_scanner(self, monkeypatch):
+        from app.services import live_focus
+
+        room = _camera("room-1", is_entrance=False, is_exit=False)
+        await live_focus.mark_focus("room-1")
+        monkeypatch.setattr(attendance_ai, "jpeg_dimensions", lambda _frame: (1280, 720))
+
+        def add_face(overlay_out):
+            overlay_out.append({"bbox": [1.0, 2.0, 30.0, 40.0], "status": "notanish", "similarity": 0.3})
+
+        analysed = await self._run(monkeypatch, room, [(b"a", 1), (b"b", 2), (b"c", 3)], analyse=add_face, until=3)
+        assert analysed == [b"a", b"b", b"c"]  # yaroqli yuz yo'q, lekin kutmadi
+        payload = await live_focus.latest_result("room-1", max_age_seconds=5)
+        assert payload["frame_width"] == 1280
+        assert payload["faces"][0]["status"] == "notanish"
+
+    async def test_motion_wakes_an_idle_camera(self, monkeypatch):
+        room = _camera("room-2", is_entrance=False, is_exit=False)
+        monkeypatch.setattr(attendance_ai, "_useful_face_total", lambda key: 1)  # kamera "hosildor"
+        monkeypatch.setattr(attendance_ai, "camera_video_source", lambda camera: "src")
+        monkeypatch.setattr(attendance_ai, "peek_cached_frame", lambda source: b"peek")
+        moves = iter([False, True])
+        monkeypatch.setattr(attendance_ai.MotionGate, "moved_since_peek", lambda self, frame, roi=None: next(moves, True))
+        analysed = await self._run(monkeypatch, room, [(b"a", 1), (b"b", 2)], until=2)
+        # 60 s kutish o'rniga ~2 s da uyg'ondi (timeout=4 s).
+        assert analysed == [b"a", b"b"]
+
+
+def test_tracked_faces_keep_their_name_on_the_scanner():
+    previous = [{"bbox": [10.0, 10.0, 50.0, 60.0], "status": "tanildi", "person_id": "p1", "person_name": "Ali", "similarity": 0.6}]
+    entries = [
+        {"bbox": [11.0, 11.0, 51.0, 61.0], "status": "kuzatuvda"},
+        {"bbox": [200.0, 10.0, 240.0, 60.0], "status": "notanish", "similarity": 0.2},
+    ]
+    attendance_ai._carry_tracked_names(entries, previous)
+    assert entries[0]["status"] == "tanildi" and entries[0]["person_name"] == "Ali"
+    assert entries[1]["status"] == "notanish"
+
+
+def test_overlay_marks_only_accepted_matches_as_known():
+    known = SimpleNamespace(bbox=np.array([0, 0, 50, 60]), embedding=np.ones(2), tracked=False, landmarks_68=None)
+    stranger = SimpleNamespace(bbox=np.array([60, 0, 110, 60]), embedding=np.ones(2), tracked=False, landmarks_68=None)
+    tiny = SimpleNamespace(bbox=np.array([0, 0, 8, 8]), embedding=None, tracked=False, landmarks_68=None)
+    graded = [SimpleNamespace(similarity=0.62), SimpleNamespace(similarity=0.44)]
+    entries = attendance_ai._overlay_entries([known, stranger, tiny], [known, stranger], graded, {id(known): "p1"})
+    assert [e["status"] for e in entries] == ["tanildi", "notanish", "kichik"]
+    assert entries[0]["person_id"] == "p1" and entries[1]["similarity"] == 0.44

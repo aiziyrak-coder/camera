@@ -448,6 +448,7 @@ def _detect_faces_sync(
     analyse: bool = True,
     roi: Box | None = None,
     skip_boxes: tuple[Box, ...] = (),
+    landmarks: bool = True,
 ) -> list[DetectedFace]:
     """Every face in the frame (not just the largest) with its bounding box,
     and — for faces worth it — its embedding and 68-point landmarks.
@@ -477,7 +478,12 @@ def _detect_faces_sync(
     `skip_boxes` — oldingi kadrda allaqachon tanilgan yuzlar (to'liq kadr
     koordinatalarida). Ular bilan ustma-ust tushgan yuz qayta
     embedding qilinmaydi: bugun uning davomati yozilgan, olomonda esa bir
-    odamni har soniyada qayta hisoblash CPU'ni behuda yeydi."""
+    odamni har soniyada qayta hisoblash CPU'ni behuda yeydi.
+
+    `landmarks=False` — 68 nuqtali 3D belgilar hisoblanmaydi. Ularni faqat
+    uyqu, frontallik va ro'yxatga olish o'qiydi; davomat esa yo'q. Model
+    (1k3d68, 143 MB) har yuzga ~0.16 s oladi — ArcFace'ning deyarli
+    yarmi (productionda o'lchandi, 2026-09-24)."""
     img = _decode_image(image_bytes)
     offset_x = offset_y = 0
     if roi is not None:
@@ -521,10 +527,10 @@ def _detect_faces_sync(
         for (face, _), feat in zip(to_analyse, recognition.get_feat(crops), strict=True):
             norm = np.linalg.norm(feat)
             face.embedding = feat / norm if norm > 0 else feat
-    landmarks = app.models.get("landmark_3d_68")
-    if landmarks is not None:
+    landmark_model = app.models.get("landmark_3d_68") if landmarks else None
+    if landmark_model is not None:
         for face, raw in to_analyse:
-            landmarks.get(img, raw)
+            landmark_model.get(img, raw)
             points = raw.landmark_3d_68
             if points is not None and (offset_x or offset_y):
                 points = points.copy()
@@ -546,23 +552,33 @@ async def detect_faces(
     analyse: bool = True,
     roi: Box | None = None,
     skip_boxes: tuple[Box, ...] = (),
+    landmarks: bool = True,
 ) -> list[DetectedFace]:
     """Gated by face_inference_gate — pass PRIORITY_LIVE for live-detection.
 
     `min_face_px` — shundan kichik yuz tahlil qilinmaydi (None:
     settings.face_analysis_min_px). Ro'yxatga olish kabi yuzning har
     burchagi kerak bo'lgan joylar 0 beradi. `analyse=False` — faqat bbox.
-    `roi`, `skip_boxes` — _detect_faces_sync izohiga qarang.
+    `roi`, `skip_boxes`, `landmarks` — _detect_faces_sync izohiga qarang.
 
     Bir xil kadr uchun natija qisqa muddat eslab qolinadi
     (app/services/inference_cache.py): kadr tarixidan bir xil kadrni olgan
     bir nechta modul modelni qayta ishga tushirmaydi."""
     threshold = _min_face_px(min_face_px)
-    key = ("faces", threshold, analyse, roi, tuple(tuple(round(float(v), 1) for v in box[:4]) for box in skip_boxes))
+    key = (
+        "faces",
+        threshold,
+        analyse,
+        roi,
+        tuple(tuple(round(float(v), 1) for v in box[:4]) for box in skip_boxes),
+        landmarks,
+    )
 
     async def run() -> list[DetectedFace]:
         async with face_inference_gate.slot(priority=priority):
-            return await asyncio.to_thread(_detect_faces_sync, image_bytes, threshold, analyse, roi, tuple(skip_boxes))
+            return await asyncio.to_thread(
+                _detect_faces_sync, image_bytes, threshold, analyse, roi, tuple(skip_boxes), landmarks
+            )
 
     return await inference_cache.get_or_run(image_bytes, key, run)
 

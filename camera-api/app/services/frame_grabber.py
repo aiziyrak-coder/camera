@@ -264,6 +264,40 @@ async def grab_main_stream_frame_once(camera: Camera, *, wait_seconds: float | N
         await stop_stream_reader(source)
 
 
+def main_stream_source(camera: Camera) -> str | None:
+    """Kamerani kichik oqimda o'qiyotgan AI uchun uning asosiy oqimi; None —
+    asosiy oqim ishlatib bo'lmaydi yoki kamera allaqachon unda."""
+    if not settings.ai_use_direct_rtsp or _main_stream_blocked(camera):
+        return None
+    source = rtsp_url_for_camera(camera, substream=False)
+    if not source or source == camera_video_source(camera):
+        return None
+    return source
+
+
+async def grab_newer_main_frame(camera: Camera, *, wait_seconds: float, after_seq: int | None) -> tuple[bytes, int] | None:
+    """Operator kuzatayotgan kamera uchun asosiy (4K) oqimdan `after_seq` dan
+    keyingi kadr — doimiy kuzatuvchi (app/jobs/attendance_ai.py) uchun
+    grab_live_main_frame() ning juftligi. O'quvchi yopilmaydi: kuzatuv
+    tugagach kuzatuvchi uni o'zi yopadi (stop_stream_reader)."""
+    source = main_stream_source(camera)
+    if source is None:
+        return None
+    deadline = time.monotonic() + wait_seconds
+    while time.monotonic() < deadline:
+        latest = await get_cached_frame_with_seq(source)
+        if latest is not None and (after_seq is None or latest[1] > after_seq):
+            _note_main_stream_result(camera, ok=True)
+            return latest
+        if is_stream_known_broken(source):
+            break
+        await asyncio.sleep(_POLL_SECONDS)
+    if after_seq is None:
+        _note_main_stream_result(camera, ok=False)
+        await stop_stream_reader(source)
+    return None
+
+
 async def grab_live_main_frame(camera: Camera, *, wait_seconds: float) -> bytes | None:
     """Operator KUZATAYOTGAN kamera uchun asosiy (4K) oqimdan kadr.
 

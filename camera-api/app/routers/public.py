@@ -7,6 +7,7 @@ credentials, and the frontend can't filter by faculty/course/group the way
 an earlier mock-data version pretended to.
 """
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 import logging
 import time
@@ -44,6 +45,7 @@ from app.services.face_recognition import detect_faces
 from app.services.inference_gate import PRIORITY_LIVE
 from app.services.frame_grabber import frame_wait_seconds_for_camera, grab_frame_for_camera, grab_live_main_frame
 from app.services.image_size import jpeg_dimensions
+from app.services import live_focus
 from app.services.sleep_detection import is_asleep, is_face_measurable
 from app.services.stream_links import signed_stream_url
 from app.services.sweep_result_cache import get_camera_sweep
@@ -281,8 +283,36 @@ async def list_top_students(db: Annotated[AsyncSession, Depends(get_db)]) -> lis
     ]
 
 
+# camera_id -> monotonic payt: shu paytgacha kuzatuvchi natijasi kutilmaydi
+# (kamera kuzatilmaydi yoki ai-worker o'chiq) — har so'rov bir necha soniya
+# behuda kutmasin.
+_no_watcher_until: dict[str, float] = {}
+_NO_WATCHER_BACKOFF_SECONDS = 60.0
+
+
+async def _await_watcher_result(camera_id: str) -> dict | None:
+    max_age = settings.live_result_max_age_seconds
+    payload = await live_focus.latest_result(camera_id, max_age_seconds=max_age)
+    if payload is not None:
+        _no_watcher_until.pop(camera_id, None)
+        return payload
+    if time.monotonic() < _no_watcher_until.get(camera_id, 0.0):
+        return None
+    # Kuzatuvchi kutish rejimida bo'lsa, fokusni ~1 s da sezadi va keyingi
+    # kadrni darhol tahlil qiladi.
+    deadline = time.monotonic() + settings.live_result_first_wait_seconds
+    while time.monotonic() < deadline:
+        await asyncio.sleep(0.25)
+        payload = await live_focus.latest_result(camera_id, max_age_seconds=max_age)
+        if payload is not None:
+            return payload
+    _no_watcher_until[camera_id] = time.monotonic() + _NO_WATCHER_BACKOFF_SECONDS
+    return None
+
+
 @router.get("/cameras/{camera_id}/live-detection", response_model=LiveDetectionOut)
-@limiter.limit("20/minute")
+# Natija keshdan o'qiladi (arzon) — skaner har ~1.5 s da so'raydi.
+@limiter.limit("90/minute")
 async def get_live_detection(
     request: Request, camera_id: str, db: Annotated[AsyncSession, Depends(get_db)], viewer: Viewer
 ) -> LiveDetectionOut:
@@ -305,6 +335,15 @@ async def get_live_detection(
     camera, not something to leave wide open on a no-auth endpoint.
     """
     camera = await _load_camera(db, camera_id, viewer)
+
+    # Real vaqt: ai-worker kuzatuvchisi shu kamerani eng yuqori navbat bilan
+    # tahlil qiladi va natijani yozib boradi (app/services/live_focus.py).
+    # So'rov o'sha natijani o'qiydi — o'zi kadr olmaydi va tahlil qilmaydi.
+    key = str(camera.id)
+    await live_focus.mark_focus(key)
+    payload = await _await_watcher_result(key)
+    if payload is not None:
+        return LiveDetectionOut.model_validate(payload)
 
     try:
         # Mayda yuzlar (sinf xonasi, shiftdagi kamera) faqat asosiy
