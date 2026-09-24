@@ -28,6 +28,7 @@ from app.models.report import Report
 from app.models.revoked_token import RevokedToken
 from app.models.student_staff import StudentStaff
 from app.models.user import User
+from app.models.wall_view import WallView
 
 __all__ = [
     "Base",
@@ -61,4 +62,5 @@ __all__ = [
     "AccessDevice",
     "AccessEvent",
     "IntegrationSyncRun",
+    "WallView",
 ]
