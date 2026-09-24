@@ -38,6 +38,7 @@ from app.jobs.lesson_attendance import run_lesson_attendance_finalization_once
 from app.jobs.lesson_quality_ai import run_lesson_quality_ai_sweep_once
 from app.jobs.module_status import is_within_attendance_priority_window
 from app.jobs.module_suppression import run_module_suppression_once
+from app.jobs.report_schedules import INTERVAL_SECONDS as REPORT_SCHEDULES_INTERVAL, run_report_schedules_once
 from app.jobs.scheduler_metrics import record_sweep_finished, record_sweep_paused, record_sweep_started, register_sweep
 from app.jobs.teacher_punctuality_ai import run_teacher_punctuality_sweep_once
 from app.jobs.unauthorized_person_ai import run_unauthorized_person_ai_sweep_once
@@ -128,6 +129,8 @@ def _build_registry() -> list[_SweepEntry]:
         ("event_clips", 30, run_event_clips_once, "standard"),
         # Faqat DB: operatorlar ko'p rad etgan kamera×modul juftliklarini o'chiradi.
         ("module_suppression", settings.suppression_interval_seconds, run_module_suppression_once, "standard"),
+        # Faqat DB + Telegram: haftalik/oylik hisobotni rahbarga yuboradi.
+        ("report_schedules", REPORT_SCHEDULES_INTERVAL, run_report_schedules_once, "standard"),
     ]
     specs = _face_entries() + rest
     return [_SweepEntry(name=n, interval_seconds=i, run_once=fn, tier=t) for n, i, fn, t in specs]
@@ -182,7 +185,9 @@ async def _sweep_loop(entry: _SweepEntry, initial_delay: float) -> None:
 
 
 # O'z alohida sikli (app/main.py dagi *_loop) bo'lmagan sweeplar.
-_STANDALONE_SWEEPS = {"entrance_exit_attendance", "absence_marking", "module_suppression", "event_clips"}
+_STANDALONE_SWEEPS = {
+    "entrance_exit_attendance", "absence_marking", "module_suppression", "event_clips", "report_schedules",
+}
 
 
 def standalone_sweep_loops() -> list:

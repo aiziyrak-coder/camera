@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { CalendarDays, Download, LayoutGrid, List, Printer, TriangleAlert } from 'lucide-react';
+import { CalendarDays, Download, Gauge, LayoutGrid, List, Printer, Send, TriangleAlert } from 'lucide-react';
 import {
   Button,
   CodeText,
+  DateRangePicker,
   DocumentHeader,
   ErrorState,
   IntelPanel,
@@ -19,17 +20,21 @@ import {
 import { RAG_LETTER, RAG_TEXT, RATE_RAG, rag } from '../../ui/rag';
 import CriteriaStrip from '../../components/hisobot/CriteriaStrip';
 import KpiStrip from '../../components/hisobot/KpiStrip';
+import KpiView from '../../components/hisobot/KpiView';
+import ReportSchedulesDialog from '../../components/hisobot/ReportSchedulesDialog';
 import PeopleTable from '../../components/hisobot/PeopleTable';
 import { RagLegend, StatusBoard, boardRag, type BoardItem } from '../../components/hisobot/board';
 import ReportFilters from '../../components/reports/ReportFilters';
 import TabelView from '../../components/reports/TabelView';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
+import { usePermissions } from '../../lib/permissions';
 import { branding } from '../../lib/branding';
 import { downloadBlob } from '../../lib/download';
 import { useApiResource } from '../../lib/useApiResource';
 import { formatUzMonth } from '../../lib/uzDate';
 import {
+  PERIOD_PRESETS,
   SECTION_KIND,
   documentReference,
   drillPatch,
@@ -47,11 +52,13 @@ import { tabelExcelFilename, tabelExcelHref, tabelPaths, type TabelReport } from
 /**
  * Hisobotlar — rahbar uchun.
  *
- * Uchta ko'rinish, bittadan vazifa bilan:
+ * To'rtta ko'rinish, bittadan vazifa bilan:
  *   HOLAT TAXTASI — "qayerda muammo bor?" Bo'linmalar svetofor bilan,
  *                   yomoni birinchi. Bosilsa o'sha bo'linmaga kiradi.
  *   RO'YXAT       — "kim?" Har qator bitta odam.
  *   OYLIK TABEL   — imzolanadigan hujjat (kun-kun jadval).
+ *   KPI           — rahbariyat paneli: davomat, yuzni tanish, xavfsizlik,
+ *                   kameralar — bir ekranda, oldingi davrga nisbatan.
  *
  * Butun holat URL'da: havola ulashiladi, "orqaga" ishlaydi.
  */
@@ -65,6 +72,7 @@ const VIEWS: TabItem<HisobotView>[] = [
   { id: 'taxta', label: 'Holat taxtasi', icon: LayoutGrid },
   { id: 'royxat', label: "Ro'yxat", icon: List },
   { id: 'tabel', label: 'Oylik tabel', icon: CalendarDays },
+  { id: 'kpi', label: 'KPI', icon: Gauge },
 ];
 
 function stamp(): string {
@@ -82,14 +90,18 @@ function stamp(): string {
 export default function HisobotPage() {
   const [params, setParams] = useSearchParams();
   const state = useMemo(() => readState(params), [params]);
-  const { token } = useAuth();
+  const { token, role } = useAuth();
+  const { can } = usePermissions();
   const toast = useToast();
   const [exporting, setExporting] = useState(false);
+  const [schedulesOpen, setSchedulesOpen] = useState(false);
 
   const kind = SECTION_KIND[state.section];
   const tabel = state.view === 'tabel';
-  const options = useApiResource<HisobotFilterOptions>(hisobotPaths.filters(kind));
-  const report = useApiResource<HisobotReport>(tabel ? null : hisobotPaths.report(state));
+  // KPI butun institut bo'yicha: bo'lim, mezon va aholi filtrlari unga tegishli emas.
+  const kpi = state.view === 'kpi';
+  const options = useApiResource<HisobotFilterOptions>(kpi ? null : hisobotPaths.filters(kind));
+  const report = useApiResource<HisobotReport>(tabel || kpi ? null : hisobotPaths.report(state));
   const sheet = useApiResource<TabelReport>(tabel ? tabelPaths.data(state) : null);
 
   // Bo'lim almashganda oldingi bo'limning ma'lumoti ko'rinib qolmasin.
@@ -114,8 +126,8 @@ export default function HisobotPage() {
   const criterion = data?.criterion ?? state.criterion;
   const reference = useMemo(() => documentReference(state), [state]);
   const generatedAt = useMemo(stamp, [state, data, sheetData]);
-  const ready = tabel ? Boolean(sheetData) : Boolean(data);
-  const loading = tabel ? sheet.loading : report.loading;
+  const ready = kpi || (tabel ? Boolean(sheetData) : Boolean(data));
+  const loading = kpi ? false : tabel ? sheet.loading : report.loading;
 
   async function exportExcel() {
     if (exporting) return;
@@ -164,8 +176,10 @@ export default function HisobotPage() {
 
   const canDrill = data ? drillPatch(state, '_') !== null : false;
 
-  const scope = tabel ? sheetData?.scope : data?.scope;
-  const period = tabel
+  const scope = kpi ? 'Butun institut' : tabel ? sheetData?.scope : data?.scope;
+  const period = kpi
+    ? formatUzRange(state.from, state.to)
+    : tabel
     ? sheetData?.monthLabel || formatUzMonth(state.month)
     : data
       ? formatUzRange(data.period.from, data.period.to)
@@ -191,10 +205,15 @@ export default function HisobotPage() {
       title="Hisobotlar"
       actions={
         <span className="flex gap-2 print-hide">
+          {can('manageNotifications', role) && (
+            <Button variant="secondary" icon={Send} onClick={() => setSchedulesOpen(true)}>
+              Avtomatik yuborish
+            </Button>
+          )}
           <Button variant="secondary" icon={Printer} onClick={() => window.print()} disabled={!ready || loading}>
             Chop etish
           </Button>
-          {tabel ? (
+          {kpi ? null : tabel ? (
             <a
               href={tabelExcelHref(state)}
               data-tabel-excel
@@ -241,8 +260,8 @@ export default function HisobotPage() {
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border border-border bg-surface px-3 py-2">
             <Readout label="Qamrov" value={scope ?? '—'} title={scope ?? undefined} />
             <Readout label="Davr" value={period} />
-            <Readout label="Ro'yxatda" value={population} />
-            {headline && (
+            {!kpi && <Readout label="Ro'yxatda" value={population} />}
+            {!kpi && headline && (
               <span className="ms-auto flex items-baseline gap-2">
                 <CodeText className={cn('text-[28px] font-semibold leading-none', RAG_TEXT[headline.tone])}>
                   {Math.round(headline.value * 10) / 10}%
@@ -258,7 +277,9 @@ export default function HisobotPage() {
         {/* 2. Boshqaruv: bo'lim, ko'rinish, filtrlar. */}
         <div className="print-hide flex flex-col gap-2 border border-border bg-surface">
           <div className="flex flex-wrap items-center gap-3 border-b border-border px-3 py-2">
-            <Tabs tabs={SECTIONS} value={state.section} onChange={(section) => update({ section })} ariaLabel="Bo'lim" />
+            {!kpi && (
+              <Tabs tabs={SECTIONS} value={state.section} onChange={(section) => update({ section })} ariaLabel="Bo'lim" />
+            )}
             <Tabs
               tabs={VIEWS}
               value={state.view}
@@ -269,7 +290,7 @@ export default function HisobotPage() {
               className="sm:ms-auto"
             />
           </div>
-          {!tabel && (
+          {!tabel && !kpi && (
             <CriteriaStrip
               criteria={data?.criteria ?? null}
               value={criterion}
@@ -278,12 +299,23 @@ export default function HisobotPage() {
             />
           )}
           <div className="px-3 pb-2">
-            <ReportFilters state={state} options={options.data} onChange={update} onReset={reset} />
+            {kpi ? (
+              <DateRangePicker
+                value={{ preset: state.preset, from: state.from, to: state.to }}
+                presets={PERIOD_PRESETS}
+                onChange={(v) => update({ preset: v.preset, from: v.from, to: v.to })}
+                showSummary={false}
+              />
+            ) : (
+              <ReportFilters state={state} options={options.data} onChange={update} onReset={reset} />
+            )}
           </div>
         </div>
 
         {/* 3. Javob. */}
-        {tabel ? (
+        {kpi ? (
+          <KpiView from={state.from} to={state.to} />
+        ) : tabel ? (
           sheet.error && !sheetData ? (
             <ErrorState title="Tabelni yuklab bo'lmadi" message={sheet.error} onRetry={sheet.reload} />
           ) : !sheetData ? (
@@ -336,6 +368,7 @@ export default function HisobotPage() {
           </div>
         )}
       </div>
+      <ReportSchedulesDialog open={schedulesOpen} onClose={() => setSchedulesOpen(false)} />
     </Page>
   );
 }

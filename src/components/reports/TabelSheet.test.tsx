@@ -353,6 +353,8 @@ describe('Oylik tabel — URL va Excel manzili', () => {
  * ---------------------------------------------------------------- */
 
 vi.mock('../../lib/auth', () => ({ useAuth: () => ({ token: 'test-token', user: null }) }));
+// "Avtomatik yuborish" tugmasi huquqni so'raydi — sahifa sinovida ahamiyatsiz.
+vi.mock('../../lib/permissions', () => ({ usePermissions: () => ({ can: () => false }) }));
 
 vi.mock('../../lib/useApiResource', () => ({
   useApiResource: (path: string | null) => {

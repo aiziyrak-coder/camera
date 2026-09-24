@@ -54,6 +54,8 @@ from app.routers import (
     events,
     face,
     hisobot,
+    hisobot_jadval,
+    kpi,
     floor_plans,
     xarita,
     integrations,
@@ -304,6 +306,8 @@ app.include_router(privacy.router)
 app.include_router(situation.router)
 app.include_router(situation_analytics.router)
 app.include_router(hisobot.router)
+app.include_router(hisobot_jadval.router)
+app.include_router(kpi.router)
 app.include_router(attendance_policy.router)
 app.include_router(wall_views.router)
 
