@@ -185,6 +185,8 @@ export const api = {
     request<void>(path, { method: 'DELETE', token, signal: opts.signal }),
   postForm: <T>(path: string, form: FormData, token?: string | null, opts: CallOptions = {}) =>
     request<T>(path, { method: 'POST', body: form, token, isForm: true, signal: opts.signal }),
+  putForm: <T>(path: string, form: FormData, token?: string | null, opts: CallOptions = {}) =>
+    request<T>(path, { method: 'PUT', body: form, token, isForm: true, signal: opts.signal }),
   /** Fayl (Excel) — xato bo'lsa JSON'dagi `detail` bilan ApiError. */
   blob: (path: string, token?: string | null, opts: CallOptions = {}) =>
     request<Blob>(path, { method: 'GET', token, signal: opts.signal, responseType: 'blob' }),

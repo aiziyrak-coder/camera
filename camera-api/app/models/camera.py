@@ -182,6 +182,9 @@ class Camera(Base):
     plan_x: Mapped[float | None] = mapped_column(Float, nullable=True)
     plan_y: Mapped[float | None] = mapped_column(Float, nullable=True)
     plan_rotation: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    # Ko'rish burchagi (gradus) — xaritada konus kengligi. Obyektivga
+    # bog'liq, joyga emas: kamera boshqa qavatga ko'chsa ham saqlanadi.
+    plan_fov: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=70, server_default="70")
 
     building: Mapped[Building | None] = relationship("Building", lazy="joined")
     department: Mapped["Department | None"] = relationship("Department", lazy="joined")

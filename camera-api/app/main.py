@@ -59,6 +59,7 @@ from app.routers import (
     face,
     hisobot,
     floor_plans,
+    xarita,
     integrations,
     lesson_sessions,
     metrics,
@@ -304,6 +305,7 @@ app.include_router(integrations.router)
 app.include_router(access_control.router)
 app.include_router(ptz.router)
 app.include_router(floor_plans.router)
+app.include_router(xarita.router)
 app.include_router(metrics.router)
 app.include_router(privacy.router)
 app.include_router(situation.router)
