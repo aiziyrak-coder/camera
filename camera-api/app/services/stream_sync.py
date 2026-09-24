@@ -39,8 +39,12 @@ async def _sync_recording(camera: Camera) -> None:
     """Arxiv yozuvi yo'li — jonli yo'ldan mustaqil; xatosi jonli oqimni buzmaydi."""
     from app.services import recording
 
+    # Yozuv o'chirilgan bo'lsa MediaMTX'ga umuman murojaat qilinmaydi (yo'llar
+    # uning xotirasida — shard qayta ishga tushganda o'zi yo'qoladi).
+    if not settings.recording_enabled:
+        return
     try:
-        if settings.recording_enabled and camera.status == "faol":
+        if camera.status == "faol":
             await recording.register_recording(str(camera.id), _rtsp_url_for(camera))
         else:
             await recording.unregister_recording(str(camera.id))
