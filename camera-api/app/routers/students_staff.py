@@ -30,7 +30,9 @@ from app.schemas.student_staff import (
     StudentStaffUpdateIn,
     PeopleOverviewOut,
 )
+from app.schemas.base import CamelModel
 from app.schemas.student_staff_import import StudentStaffImportResultOut
+from app.services import person_dedupe
 from app.services.face_matching import announce_roster_change
 from app.services.name_matching import name_key, name_tokens, names_match
 from app.services.notifications.sms import normalize_phone
@@ -535,6 +537,106 @@ async def _find_similar(db: AsyncSession, full_name: str, type: str | None) -> l
         await db.execute(select(StudentStaff).options(selectinload(StudentStaff.faculty)).where(StudentStaff.id.in_(ids[:50])))
     ).scalars().all()
     return sorted(records, key=lambda r: (r.pinfl is None, r.biometrics_status != "tasdiqlangan", r.full_name))[:SIMILAR_LIMIT]
+
+
+class _DupPersonOut(CamelModel):
+    id: str
+    full_name: str
+    type: str
+    group_or_position: str
+    has_pinfl: bool
+    biometrics_status: str
+    self_registered: bool
+    attendance: int
+    created_at: str | None
+
+
+class _DupGroupOut(CamelModel):
+    keeper: _DupPersonOut
+    duplicates: list[_DupPersonOut]
+
+
+class _MergeGroupIn(CamelModel):
+    keep_id: uuid.UUID
+    remove_ids: list[uuid.UUID]
+
+
+class _MergeIn(CamelModel):
+    groups: list[_MergeGroupIn]
+
+
+class _MergeOut(CamelModel):
+    merged_groups: int
+    removed: int
+    errors: list[str]
+
+
+def _dup_person(row: dict) -> _DupPersonOut:
+    created = row.get("created_at")
+    return _DupPersonOut(
+        id=str(row["id"]),
+        full_name=row["full_name"],
+        type=row["type"],
+        group_or_position=row.get("group_or_position") or "",
+        # JSHSHIR raqamining o'zi chiqarilmaydi — faqat bor/yo'qligi.
+        has_pinfl=bool(row.get("pinfl")),
+        biometrics_status=row.get("biometrics_status") or "yoq",
+        self_registered=bool(row.get("self_registered")),
+        attendance=int(row.get("att") or 0),
+        created_at=to_local(created).strftime("%d.%m.%Y") if created else None,
+    )
+
+
+@router.get("/dublikatlar", response_model=list[_DupGroupOut])
+async def duplicate_people(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
+) -> list[_DupGroupOut]:
+    """Bir odamning bir nechta faol yozuvi (app/services/person_dedupe.py)."""
+    groups = await person_dedupe.find_duplicates(db)
+    return [
+        _DupGroupOut(keeper=_dup_person(g.keeper), duplicates=[_dup_person(d) for d in g.duplicates]) for g in groups
+    ]
+
+
+@router.post("/dublikatlar/birlashtirish", response_model=_MergeOut)
+async def merge_duplicate_people(
+    body: _MergeIn,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
+) -> _MergeOut:
+    """Har guruh — alohida tranzaksiya: bittasi xato bersa, qolganlari davom etadi."""
+    merged = removed = 0
+    errors: list[str] = []
+    for group in body.groups[:500]:
+        try:
+            names = []
+            for dup_id in group.remove_ids:
+                dup = await db.get(StudentStaff, dup_id)
+                label = dup.full_name if dup else str(dup_id)
+                moved = await person_dedupe.merge_people(db, group.keep_id, dup_id)
+                names.append(f"{label} ({', '.join(f'{k}: {v}' for k, v in moved.items()) or 'bo‘sh'})")
+            keeper = await db.get(StudentStaff, group.keep_id)
+            await log_action(
+                db, request, current_user.id,
+                f"Dublikat birlashtirildi: {keeper.full_name if keeper else group.keep_id} ← {'; '.join(names)}",
+                "Shaxslar reestri",
+            )
+            await db.commit()
+            merged += 1
+            removed += len(group.remove_ids)
+        except person_dedupe.MergeError as exc:
+            await db.rollback()
+            errors.append(str(exc))
+        except Exception:
+            await db.rollback()
+            logger.exception("duplicate merge failed", extra={"keep_id": str(group.keep_id)})
+            errors.append(f"{group.keep_id}: birlashtirib bo'lmadi")
+    if merged:
+        # Yuz va galereya o'zgardi — tanish matritsasi yangilansin.
+        await announce_roster_change()
+    return _MergeOut(merged_groups=merged, removed=removed, errors=errors)
 
 
 @router.get("/similar", response_model=list[StudentStaffOut])

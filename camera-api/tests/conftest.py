@@ -108,7 +108,6 @@ async def _clean_tables():
     yield
     invalidate_candidate_matrix_cache()
     reset_camera_health_state_for_tests()
-    reset_motion_history_for_tests()
 
 
 #: Testlardagi ro'yxatdan o'tish kodi.

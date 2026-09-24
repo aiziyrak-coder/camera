@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Copy,
   Download,
   GraduationCap,
   Pencil,
@@ -46,6 +47,7 @@ import AddStudentStaffModal from '../../components/admin/AddStudentStaffModal';
 import EditStudentStaffModal from '../../components/admin/EditStudentStaffModal';
 import BiometricsTimeLookupModal from '../../components/admin/BiometricsTimeLookupModal';
 import ExportPeopleModal from '../../components/admin/ExportPeopleModal';
+import DuplicatePeopleModal from '../../components/admin/DuplicatePeopleModal';
 import SelfEnrollmentReviewModal from '../../components/admin/SelfEnrollmentReviewModal';
 import { api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
@@ -183,6 +185,7 @@ export default function StudentsStaffPage() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [overviewError, setOverviewError] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [dupOpen, setDupOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<StudentStaffRecord | null>(null);
   const [deleting, setDeleting] = useState<StudentStaffRecord | null>(null);
@@ -482,6 +485,9 @@ export default function StudentsStaffPage() {
           <Button icon={Download} onClick={() => setExportOpen(true)} disabled={!token}>
             Yuklab olish
           </Button>
+          <Button icon={Copy} onClick={() => setDupOpen(true)} disabled={!token}>
+            Dublikatlar
+          </Button>
           <Button variant="primary" icon={Plus} onClick={() => setModalOpen(true)}>
             Yangi qo&apos;shish
           </Button>
@@ -597,6 +603,12 @@ export default function StudentsStaffPage() {
         }
       />
       </IntelPanel>
+
+      <DuplicatePeopleModal
+        open={dupOpen}
+        onClose={() => setDupOpen(false)}
+        onMerged={refresh}
+      />
 
       <ExportPeopleModal
         open={exportOpen}
