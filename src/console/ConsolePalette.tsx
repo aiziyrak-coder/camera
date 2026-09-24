@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
-import { Building2, Cctv, CornerDownLeft, Search, SearchX, type LucideIcon } from 'lucide-react';
+import { Building2, Cctv, CornerDownLeft, Search, SearchX, UserRound, type LucideIcon } from 'lucide-react';
+import { searchPeople } from '../lib/teachersApi';
 import { api, buildQuery, isAbortError, type Page as ApiPage } from '../lib/apiClient';
 import { isBackendConfigured } from '../lib/config';
 import { highlight, matchText, rankItems, type MatchRange } from '../lib/search';
@@ -21,9 +22,14 @@ import { EASE, reducedMotion } from './motion';
  * (matn moslash, baholash, ajratib ko'rsatish) qayta yozilmadi.
  */
 
-export interface PaletteTarget { panel: 'units' | 'cameras'; }
+/** Tanlov: panel va undagi aniq obyekt (kamera kattalashadi, bo'linma
+ *  ichi ochiladi). Shaxs — uning sahifasi (konsolda shaxs paneli yo'q). */
+export type PaletteTarget =
+  | { panel: 'units'; id?: string | null }
+  | { panel: 'cameras'; id?: string }
+  | { panel: 'person'; id: string };
 
-type Kind = 'unit' | 'camera';
+type Kind = 'unit' | 'camera' | 'person';
 
 interface Row {
   key: string;
@@ -39,9 +45,10 @@ interface Row {
 const KIND_LABEL: Record<Kind, string> = {
   unit: "Bo'linmalar",
   camera: 'Kameralar',
+  person: 'Shaxslar',
 };
 
-const KIND_CODE: Record<Kind, string> = { unit: 'BLM', camera: 'KMR' };
+const KIND_CODE: Record<Kind, string> = { unit: 'BLM', camera: 'KMR', person: 'SHX' };
 
 interface PublicCamera {
   id: string;
@@ -80,14 +87,18 @@ export interface ConsolePaletteProps {
   /** Konsol allaqachon olgan bo'linmalar — qayta so'ralmaydi. */
   units: readonly KafedraStat[];
   onOpen: (target: PaletteTarget) => void;
+  /** Shaxslar qidirilsinmi (davomat huquqi bo'lsa). */
+  people?: boolean;
+  /** Kameralar qidirilsinmi (jonli ko'rish huquqi bo'lsa). */
+  cameras?: boolean;
 }
 
-export default function ConsolePalette({ open, onClose, units, onOpen }: ConsolePaletteProps) {
+export default function ConsolePalette({ open, ...props }: ConsolePaletteProps) {
   if (!open) return null;
-  return createPortal(<Dialog onClose={onClose} units={units} onOpen={onOpen} />, document.body);
+  return createPortal(<Dialog {...props} />, document.body);
 }
 
-function Dialog({ onClose, units, onOpen }: Omit<ConsolePaletteProps, 'open'>) {
+function Dialog({ onClose, units, onOpen, people = false, cameras: withCameras = true }: Omit<ConsolePaletteProps, 'open'>) {
   const panelRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -99,9 +110,10 @@ function Dialog({ onClose, units, onOpen }: Omit<ConsolePaletteProps, 'open'>) {
   const debounced = useDebouncedValue(query.trim(), 200);
   const remoteQ = isBackendConfigured && debounced.length >= 2 ? debounced : '';
 
-  const cameras = useRemote(remoteQ ? `c:${remoteQ}` : null, (signal) =>
+  const cameras = useRemote(withCameras && remoteQ ? `c:${remoteQ}` : null, (signal) =>
     api.get<ApiPage<PublicCamera>>(`/api/public/cameras${buildQuery({ search: remoteQ, pageSize: 5 })}`, null, { signal }),
   );
+  const persons = useRemote(people && remoteQ ? `p:${remoteQ}` : null, (signal) => searchPeople(remoteQ, 6, { signal }));
 
   const rows: Row[] = useMemo(() => {
     const q = query.trim();
@@ -118,17 +130,23 @@ function Dialog({ onClose, units, onOpen }: Omit<ConsolePaletteProps, 'open'>) {
 
     const out: Row[] = [];
     const unitItems = q ? rankItems(q, units.map((unit) => ({ ...unit, title: unit.name })), 6).map((hit) => hit.item) : units.slice(0, 4);
-    out.push(...unitItems.map((unit) => mk('unit', unit.id ?? unit.name, unit.name, { panel: 'units' }, `${unit.staffTotal} xodim`)));
+    out.push(...unitItems.map((unit) => mk('unit', unit.id ?? unit.name, unit.name, { panel: 'units', id: unit.id }, `${unit.staffTotal} xodim`)));
+
+    out.push(
+      ...(persons.data ?? []).map((person) =>
+        mk('person', person.id, person.fullName, { panel: 'person', id: person.id }, person.groupOrPosition),
+      ),
+    );
 
     out.push(
       ...(cameras.data?.items ?? []).map((camera) =>
-        mk('camera', camera.id, camera.name, { panel: 'cameras' }, [camera.building, camera.zone].filter(Boolean).join(' · ')),
+        mk('camera', camera.id, camera.name, { panel: 'cameras', id: camera.id }, [camera.building, camera.zone].filter(Boolean).join(' · ')),
       ),
     );
     return out;
-  }, [query, units, cameras.data]);
+  }, [query, units, cameras.data, persons.data]);
 
-  const loading = cameras.loading || (isBackendConfigured && query.trim().length >= 2 && query.trim() !== debounced);
+  const loading = cameras.loading || persons.loading || (isBackendConfigured && query.trim().length >= 2 && query.trim() !== debounced);
 
   useEffect(() => setActive(0), [query]);
   useEffect(() => {
@@ -194,7 +212,7 @@ function Dialog({ onClose, units, onOpen }: Omit<ConsolePaletteProps, 'open'>) {
             ref={inputRef}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Bo'linma yoki kamera"
+            placeholder={people ? "Shaxs, bo'linma yoki kamera" : "Bo'linma yoki kamera"}
             aria-label="Konsol qidiruvi"
             role="combobox"
             aria-expanded="true"
@@ -269,4 +287,4 @@ function Dialog({ onClose, units, onOpen }: Omit<ConsolePaletteProps, 'open'>) {
   );
 }
 
-const ICONS: Record<Kind, LucideIcon> = { unit: Building2, camera: Cctv };
+const ICONS: Record<Kind, LucideIcon> = { unit: Building2, camera: Cctv, person: UserRound };

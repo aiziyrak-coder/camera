@@ -3,6 +3,7 @@ import { Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-
 import { useAuth, type Role } from '../lib/auth';
 import { usePermissions } from '../lib/permissions';
 import { useLiveEvents } from '../lib/realtime';
+import { signalAlarm } from '../lib/alarmSignal';
 import { usePersistedState } from '../lib/usePersistedState';
 import { VIEW_DATE_PARAM } from '../lib/viewDate';
 import { ButtonLink, EmptyState, PageSkeleton, cn } from '../ui';
@@ -40,6 +41,7 @@ export default function AppShell() {
   const [unreadEvents, setUnreadEvents] = useState(0);
   const liveStatus = useLiveEvents((event) => {
     if (event.kind !== 'event_updated') setUnreadEvents((n) => n + 1);
+    signalAlarm(event);
   }, canReviewEvents);
 
   useEffect(() => {

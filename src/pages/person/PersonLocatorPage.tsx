@@ -48,6 +48,8 @@ export default function PersonLocatorPage() {
   const [items, setItems] = useState<PersonLocation[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Qayta urinish — so'rov matni o'zgarmasa ham effekt qayta ishlaydi.
+  const [attempt, setAttempt] = useState(0);
   const trimmed = query.trim();
 
   useEffect(() => {
@@ -60,7 +62,7 @@ export default function PersonLocatorPage() {
       finally { if (!controller.signal.aborted) setLoading(false); }
     }, 280);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [trimmed]);
+  }, [trimmed, attempt]);
 
   return (
     <Page title="Shaxs qidirish" subtitle="Oxirgi kamera aniqlagan joyi va vaqti" breadcrumbs={[{ label: 'Nazorat', to: '/' }, { label: 'Shaxs qidirish' }]}>
@@ -68,7 +70,7 @@ export default function PersonLocatorPage() {
         <Input value={query} onChange={(event) => setQuery(event.target.value)} autoFocus placeholder="Ism yoki familiyani kiriting" autoComplete="off" icon={Search} />
         {trimmed.length < 2 && <EmptyState icon={Search} title="Shaxsni qidiring" description="Kamida 2 harf kiriting" compact />}
         {loading && <div className="space-y-2"><Skeleton className="h-20" /><Skeleton className="h-20" /></div>}
-        {error && <ErrorState message={error} onRetry={() => setQuery(`${query} `)} />}
+        {error && <ErrorState message={error} onRetry={() => setAttempt((n) => n + 1)} />}
         {!loading && !error && items?.length === 0 && <EmptyState icon={Search} title="Topilmadi" description="Ism yoki familiyani tekshirib ko‘ring" compact />}
         {!loading && !error && items && items.length > 0 && <div className="space-y-2">{items.map((person) => <PersonResult key={person.id} person={person} />)}</div>}
       </div>

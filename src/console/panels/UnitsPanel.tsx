@@ -231,9 +231,11 @@ export interface UnitsPanelProps {
   expanded: boolean;
   onExpand: (id: string | null) => void;
   area?: string;
+  /** Tashqaridan (Ctrl+K) "shu bo'linma ichini och" so'rovi. */
+  openRequest?: { id: string; nonce: number } | null;
 }
 
-export default function UnitsPanel({ units, faculties, scope, setScope, date, expanded, onExpand, area }: UnitsPanelProps) {
+export default function UnitsPanel({ units, faculties, scope, setScope, date, expanded, onExpand, area, openRequest = null }: UnitsPanelProps) {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortState | null>(null);
   const [open, setOpen] = useState<UnitRow | null>(null);
@@ -252,6 +254,15 @@ export default function UnitsPanel({ units, faculties, scope, setScope, date, ex
       setQuery('');
     }
   }, [expanded]);
+
+  useEffect(() => {
+    if (!openRequest) return;
+    const staff = staffUnitRows(units, unitKindLabel);
+    const found = staff.find((row) => row.id === openRequest.id);
+    if (found) setOpen(found);
+    // Faqat yangi so'rovda — ro'yxat yangilanishi ochiq bo'linmani almashtirmasin.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openRequest]);
 
   const visible = useMemo(() => {
     const found = filterUnits(rows, query);

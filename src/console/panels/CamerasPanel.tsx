@@ -51,11 +51,19 @@ import {
 
 const MOSAIC_TILES = 4;
 
+/** Tashqaridan (Ctrl+K) "shu kamerani kattalashtir" so'rovi. */
+export interface FocusRequest {
+  id: string;
+  nonce: number;
+}
+
 export default function CamerasPanel({
   expanded,
   onExpand,
   area,
+  focusRequest = null,
 }: {
+  focusRequest?: FocusRequest | null;
   expanded: boolean;
   onExpand: (id: string | null) => void;
   area?: string;
@@ -89,6 +97,7 @@ export default function CamerasPanel({
           error={error}
           pageVisible={pageVisible}
           onStreamUnavailable={refreshStreams}
+          focusRequest={focusRequest}
         />
       }
     >
@@ -150,7 +159,9 @@ function CameraWall({
   error,
   pageVisible,
   onStreamUnavailable,
+  focusRequest,
 }: {
+  focusRequest: FocusRequest | null;
   cameras: CameraFeed[];
   codes: ReadonlyMap<string, string>;
   stats: { flowing: number; live: number; total: number };
@@ -170,6 +181,13 @@ function CameraWall({
     [cameras, filter],
   );
   const focus = useMemo(() => shown.find((camera) => camera.id === focusId) ?? null, [shown, focusId]);
+
+  // Palitradan tanlangan kamera: filtr tozalanadi (u yashirib qo'ymasin) va kamera kattalashadi.
+  useEffect(() => {
+    if (!focusRequest) return;
+    setFilter(EMPTY_FILTER);
+    setFocusId(focusRequest.id);
+  }, [focusRequest]);
 
   // Filtr o'zgarib, tanlangan kamera ro'yxatdan chiqib ketsa — yopamiz.
   useEffect(() => {

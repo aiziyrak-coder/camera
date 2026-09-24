@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { LayoutGroup, motion } from 'motion/react';
 import { ChartColumn, Search } from 'lucide-react';
+import { useAuth } from '../lib/auth';
+import { usePermissions } from '../lib/permissions';
+import { homeForRole, isPathAllowedForRole } from '../layouts/shell/navConfig';
+import { ConsoleSectionsMenu, ConsoleUserMenu } from './ConsoleNav';
 import { cn } from '../ui';
 import { useLiveAttendance, useLiveEvents } from '../lib/realtime';
+import { signalAlarm } from '../lib/alarmSignal';
 import { getKafedras, getOverview, type KafedraStat, type Overview } from '../lib/situationApi';
 import { useCommandPaletteHotkey } from '../layouts/shell/useCommandPaletteHotkey';
 import AlertsPanel from './panels/AlertsPanel';
@@ -64,6 +69,20 @@ const timeFormat = new Intl.DateTimeFormat('uz-UZ', {
 });
 
 export default function ConsoleShell() {
+  const { role } = useAuth();
+  // Cheklangan rol (masalan kamera mas'uli) konsolni ko'rmaydi — o'z sahifasiga.
+  if (!isPathAllowedForRole(role, '/')) return <Navigate to={homeForRole(role)} replace />;
+  return <Console />;
+}
+
+function Console() {
+  const { role } = useAuth();
+  const { can } = usePermissions();
+  // Har panel o'z huquqi bilan: ko'rish huquqi yo'q panel umuman chizilmaydi
+  // (avval "Ma'lumot olinmadi" deb chiqardi — xato emas, huquq yo'q edi).
+  const canLive = can('viewLive', role);
+  const canAttendance = can('manageAttendance', role);
+  const canReports = can('viewReports', role);
   const filter = useConsoleFilter();
   const { date, isToday, scope } = filter;
   const now = useClock();
@@ -103,16 +122,33 @@ export default function ConsoleShell() {
   // kanalidan olinadi — davomat kanali holat qaytarmaydi. O'tgan kunni
   // ko'rayotganda jonli yangilanish kerak emas — u kun o'zgarmaydi.
   useLiveAttendance(() => isToday && setPulse((n) => n + 1), true);
-  const live = useLiveEvents(() => isToday && setPulse((n) => n + 1), true) === 'live' && isToday;
+  const canReview = can('reviewEvents', role);
+  const live =
+    useLiveEvents((event) => {
+      if (canReview) signalAlarm(event);
+      if (isToday) setPulse((n) => n + 1);
+    }, true) === 'live' && isToday;
 
   // Ctrl/⌘+K — konsol palitrasi: bo'linma, shaxs, kamera va boshqaruv
   // bo'limlari. Tanlov MANZILNI emas, panelni ochadi.
   const togglePalette = useCallback(() => setPaletteOpen((open) => !open), []);
   useCommandPaletteHotkey(togglePalette);
 
-  const openTarget = useCallback((target: PaletteTarget) => {
-    setExpanded(target.panel);
-  }, []);
+  // Palitra tanlovi: aniq kamera kattalashadi, aniq bo'linma ichi ochiladi,
+  // shaxs — o'z sahifasi. `nonce` bir xil obyektni qayta tanlashni ham ushlaydi.
+  const navigate = useNavigate();
+  const [target, setTarget] = useState<{ panel: string; id: string; nonce: number } | null>(null);
+  const openTarget = useCallback(
+    (picked: PaletteTarget) => {
+      if (picked.panel === 'person') {
+        navigate(`/shaxs/${encodeURIComponent(picked.id)}`);
+        return;
+      }
+      setExpanded(picked.panel);
+      setTarget(picked.id ? { panel: picked.panel, id: picked.id, nonce: Date.now() } : null);
+    },
+    [navigate],
+  );
 
   // Esc — yoyilgan panelni yopadi.
   useEffect(() => {
@@ -150,7 +186,7 @@ export default function ConsoleShell() {
           className="ms-2 flex h-10 min-w-0 flex-1 items-center gap-2 rounded-control bg-surface-2 px-3 text-left transition-colors hover:bg-primary-soft sm:max-w-md"
         >
           <Search size={15} aria-hidden="true" className="shrink-0 text-subtle" />
-          <span className="min-w-0 flex-1 truncate text-[13px] text-subtle">Kamera yoki bo‘linma</span>
+          <span className="min-w-0 flex-1 truncate text-[13px] text-subtle">{canAttendance ? "Shaxs, bo‘linma yoki kamera" : "Kamera qidirish"}</span>
           <kbd className="hidden shrink-0 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-semibold text-muted shadow-sm sm:inline">Ctrl K</kbd>
         </button>
 
@@ -160,20 +196,17 @@ export default function ConsoleShell() {
             <span className={cn('h-1.5 w-1.5 rounded-full bg-current', live && 'live-dot')} aria-hidden="true" />
             <span className="text-[11px] font-semibold !text-current">{live ? 'Jonli' : isToday ? 'Aloqa yo‘q' : 'Arxiv'}</span>
           </span>
-          <Link
-            to="/shaxs-qidirish"
-            className="hidden h-10 items-center gap-1.5 rounded-control bg-surface-2 px-3 text-[13px] font-semibold text-fg transition-colors hover:bg-primary-soft sm:flex"
-          >
-            <Search size={15} aria-hidden="true" />
-            <span>Shaxs qidirish</span>
-          </Link>
-          <Link
-            to="/hisobotlar"
-            className="flex h-10 items-center gap-1.5 rounded-control bg-primary-soft px-3 text-[13px] font-semibold text-primary transition-colors hover:bg-primary/15"
-          >
-            <ChartColumn size={15} aria-hidden="true" />
-            <span className="hidden sm:inline">Hisobotlar</span>
-          </Link>
+          <ConsoleSectionsMenu />
+          {canReports && (
+            <Link
+              to="/hisobotlar"
+              className="flex h-10 items-center gap-1.5 rounded-control bg-primary-soft px-3 text-[13px] font-semibold text-primary transition-colors hover:bg-primary/15"
+            >
+              <ChartColumn size={15} aria-hidden="true" />
+              <span className="hidden sm:inline">Hisobotlar</span>
+            </Link>
+          )}
+          <ConsoleUserMenu />
         </span>
       </motion.header>
 
@@ -182,15 +215,18 @@ export default function ConsoleShell() {
 
       {/* Panellar maydoni — siljish yo'q, hammasi shu yerda. */}
       <motion.main
-        className="console-grid relative z-10 grid min-h-0 flex-1 auto-rows-fr grid-cols-2 gap-2.5 px-3 pb-3 lg:grid-cols-4 lg:grid-rows-3"
+        className="console-grid relative z-10 grid min-h-0 flex-1 auto-rows-[minmax(260px,auto)] grid-cols-1 gap-2.5 px-3 pb-3 sm:grid-cols-2 lg:auto-rows-fr lg:grid-cols-4 lg:grid-rows-3"
       >
-        <CamerasPanel
-          expanded={expanded === 'cameras'}
-          onExpand={setExpanded}
-          area="col-span-2 lg:col-span-2 lg:row-span-2"
-        />
+        {canLive && (
+          <CamerasPanel
+            focusRequest={target?.panel === 'cameras' ? target : null}
+            expanded={expanded === 'cameras'}
+            onExpand={setExpanded}
+            area="min-h-[340px] sm:col-span-2 lg:min-h-0 lg:col-span-2 lg:row-span-2"
+          />
+        )}
 
-        <PeoplePanel
+        {canAttendance && <PeoplePanel
           arrivals={arrivals}
           scope={scope}
           date={date}
@@ -198,7 +234,7 @@ export default function ConsoleShell() {
           expanded={expanded === 'people'}
           onExpand={setExpanded}
           area="lg:col-span-1 lg:row-span-2"
-        />
+        />}
 
         <AlertsPanel
           overview={overview}
@@ -210,7 +246,7 @@ export default function ConsoleShell() {
           area="lg:col-span-1"
         />
 
-        <VerdictPanel
+        {canAttendance && <VerdictPanel
           overview={overview}
           scope={scope}
           date={date}
@@ -219,9 +255,10 @@ export default function ConsoleShell() {
           expanded={expanded === 'verdict'}
           onExpand={setExpanded}
           area="lg:col-span-1"
-        />
+        />}
 
-        <UnitsPanel
+        {canAttendance && <UnitsPanel
+          openRequest={target?.panel === 'units' ? target : null}
           units={units}
           faculties={overview?.byFaculty ?? null}
           scope={scope}
@@ -229,8 +266,8 @@ export default function ConsoleShell() {
           date={date}
           expanded={expanded === 'units'}
           onExpand={setExpanded}
-          area="col-span-2 lg:col-span-2"
-        />
+          area="sm:col-span-2 lg:col-span-2"
+        />}
 
         {/* Tizim o'lchovlari — yoyilganda tizim holati kartalari. */}
         <VitalsPanel expanded={expanded === 'vitals'} onExpand={setExpanded} area="lg:col-span-1" />
@@ -249,13 +286,15 @@ export default function ConsoleShell() {
       <footer className="relative z-10 flex shrink-0 items-center gap-3 px-5 pb-2 text-subtle">
         <span className="text-[10px] font-medium">{date}</span>
         {error && <span className="text-[10px] font-semibold !text-danger">Ma’lumot olinmadi</span>}
-        <span className="ms-auto text-[10px] font-medium">Kamerani bosing — kattalashadi · Ctrl+K — qidiruv · Esc — yopadi</span>
+        <span className="ms-auto hidden text-[10px] font-medium lg:inline">Kamerani bosing — kattalashadi · Ctrl+K — qidiruv · Esc — yopadi</span>
       </footer>
 
       <ConsolePalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
-        units={units ?? []}
+        units={canAttendance ? (units ?? []) : []}
+        people={canAttendance}
+        cameras={canLive}
         onOpen={openTarget}
       />
     </div>

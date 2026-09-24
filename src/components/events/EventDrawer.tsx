@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, ExternalLink, FlaskConical, ImageOff, Lightbulb, Trash2, X } from 'lucide-react';
-import { Badge, Button, Drawer, IconButton, KeyValue, StatusBadge, topDialogPanel, type KeyValueItem } from '../../ui';
+import { Check, ChevronLeft, ChevronRight, ExternalLink, FlaskConical, ImageOff, Lightbulb, MonitorPlay, Trash2, X } from 'lucide-react';
+import { Badge, Button, ButtonLink, Drawer, IconButton, KeyValue, StatusBadge, topDialogPanel, type KeyValueItem } from '../../ui';
 import EventActivity from './EventActivity';
 import { cameraLabel } from './ReviewCard';
 import EventWorkflowPanel from './EventWorkflowPanel';
 import { detailMetrics } from '../../lib/eventDetails';
 import { relativeTime } from '../../lib/uzDate';
 import type { AIEvent } from '../../types';
+import { useAuth } from '../../lib/auth';
+import { usePermissions } from '../../lib/permissions';
 
 type Decision = 'tasdiqlangan' | 'rad_etilgan';
 
@@ -41,6 +43,9 @@ export default function EventDrawer({
 }) {
   const panelRef = useRef<HTMLElement>(null);
   const [snapshotFailed, setSnapshotFailed] = useState(false);
+  const { role } = useAuth();
+  const { can } = usePermissions();
+  const canLive = can('viewLive', role);
   // Boshqa hodisaga o'tilganda oldingi kadrning xatosi qolib ketmasin.
   useEffect(() => setSnapshotFailed(false), [event?.id, event?.snapshotUrl]);
 
@@ -155,6 +160,13 @@ export default function EventDrawer({
               </div>
             )}
           </div>
+
+          {canLive && event.cameraId && (
+            // Kadr — bir lahza. Operator vaziyatni hozir ko'rishi kerak.
+            <ButtonLink to={`/videodevor?kamera=${encodeURIComponent(event.cameraId)}`} icon={MonitorPlay} size="sm">
+              Kamerani jonli ko‘rish
+            </ButtonLink>
+          )}
 
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge kind="event" status={event.status} />

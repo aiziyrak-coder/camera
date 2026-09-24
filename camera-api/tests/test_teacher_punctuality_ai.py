@@ -231,10 +231,13 @@ class _FakeFace:
     qismi — embedding. Haqiqiy InsightFace chaqiruvi sekin va bu yerda
     tekshirilayotgan narsa aniqlash emas, QAROR mantig'i."""
 
-    def __init__(self, embedding):
+    def __init__(self, embedding, height: float = 120.0):
         import numpy as np
 
         self.embedding = np.array(embedding, dtype=np.float64)
+        # Haqiqiy yuz ramkasi: "o'qituvchi yo'q" degan xulosa faqat
+        # tanish mumkin bo'lgan yirik yuz bo'lganda chiqariladi.
+        self.bbox = np.array([100.0, 100.0, 200.0, 100.0 + height])
 
 
 @pytest.mark.usefixtures("seeded")
@@ -286,6 +289,25 @@ class TestTwoFrameConfirmation:
 
         await check_lesson_session(row, db_session)
         assert calls["n"] == 1
+
+
+    async def test_only_tiny_faces_is_undetermined_not_absent(
+        self, db_session, a_teacher, a_camera, monkeypatch
+    ):
+        """Kamera faqat mayda (tanib bo'lmaydigan) yuzlarni ko'rdi —
+        o'qituvchi "kelmadi" deb ayblanmaydi, holat noma'lum qoladi."""
+        await self._frames(monkeypatch)
+        stranger = [0.0] * 511 + [1.0]
+
+        async def fake_detect_faces(frame):
+            return [_FakeFace(stranger, height=18.0)]
+
+        monkeypatch.setattr(teacher_punctuality_ai, "detect_faces", fake_detect_faces)
+        row = await _make_session(db_session, a_teacher, a_camera, minutes_ago_start=15)
+
+        assert await check_lesson_session(row, db_session) is False
+        assert row.teacher_on_time is None
+        assert (await db_session.execute(select(Event))).scalars().all() == []
 
 
 @pytest.mark.usefixtures("seeded")

@@ -75,7 +75,7 @@ from app.database import SessionLocal
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import is_module_active
 from app.jobs.sweep_guard import SweepGuard
-from app.models import LessonSession, StudentStaff
+from app.models import FaceGalleryEmbedding, LessonSession, StudentStaff
 from app.services.event_bus import raise_event
 from app.services.face_matching import (
     CandidateMatrix,
@@ -214,13 +214,49 @@ def _substitution_confidence(similarity: float | None) -> int:
     return exceed_confidence(similarity, threshold, floor=70, ceiling=95, full_at=0.9 / threshold)
 
 
-def _matches_teacher(faces, teacher) -> bool:
-    """Kadrda aynan rejadagi o'qituvchi bormi."""
-    candidate = [(str(teacher.id), json.loads(teacher.biometric_embedding))]
+async def _teacher_embeddings(db: AsyncSession, teacher) -> list[list[float]]:
+    """O'qituvchining asosiy rasmi VA kamera galereyasidagi namunalari.
+
+    Ilgari faqat ro'yxatdan o'tish rasmi bilan solishtirilardi: doskaga
+    qarab turgan yoki kamera burchagidan ko'ringan o'qituvchi tanilmay,
+    "darsga kelmadi" hodisasi yozilardi. Galereya — shu kameralardan
+    olingan, tasdiqlangan yuzlar."""
+    vectors = [json.loads(teacher.biometric_embedding)]
+    rows = await db.execute(
+        select(FaceGalleryEmbedding.embedding).where(FaceGalleryEmbedding.student_staff_id == teacher.id)
+    )
+    for raw in rows.scalars().all():
+        try:
+            vectors.append(json.loads(raw))
+        except (TypeError, ValueError):
+            continue
+    return vectors
+
+
+def _matches_teacher(faces, teacher, embeddings: list[list[float]] | None = None) -> bool:
+    """Kadrda aynan rejadagi o'qituvchi bormi.
+
+    Bitta odamga solishtirilgani uchun (8000 kishilik ro'yxatga emas)
+    yumshoq chegara xavfsiz: boshqa odam bilan adashish ehtimoli yo'q."""
+    vectors = embeddings or [json.loads(teacher.biometric_embedding)]
+    candidate = [(str(teacher.id), vector) for vector in vectors]
+    threshold = min(settings.attendance_ai_match_threshold, settings.attendance_ai_relaxed_threshold)
     for face in faces:
-        if find_best_match(face.embedding.tolist(), candidate, settings.attendance_ai_match_threshold) is not None:
+        if find_best_match(face.embedding.tolist(), candidate, threshold) is not None:
             return True
     return False
+
+
+def _has_judgeable_face(*face_lists) -> bool:
+    """Kadrda tanish mumkin bo'lgan darajada yirik yuz bormi. Bo'lmasa
+    "o'qituvchi yo'q" degan xulosa asossiz — kamera shunchaki hech kimni
+    aniq ko'rmagan (productionda yuzlarning 97% i 40 px dan kichik)."""
+    return any(
+        (face.bbox[3] - face.bbox[1]) >= settings.attendance_min_face_px
+        for faces in face_lists
+        for face in faces or []
+        if getattr(face, "bbox", None) is not None
+    )
 
 
 async def check_lesson_session(
@@ -244,6 +280,7 @@ async def check_lesson_session(
     # Ikkala kadrda ham odam yuzlari bor, lekin o'qituvchi ular orasida yo'q —
     # "kamera hech kimni ko'rmadi" holatidan kuchliroq dalil.
     faces_in_both = False
+    judgeable = True
     evidence_frame: bytes | None = None
 
     # Faolsizlantirilgan o'qituvchining yuzi solishtirilmaydi (app/routers/privacy.py).
@@ -267,16 +304,20 @@ async def check_lesson_session(
             # tekshiruv tugadi va ikkinchi kadr umuman tahlil qilinmaydi.
             # Solishtirish faqat tahlil qilingan (yetarlicha katta) yuzlar
             # bilan; "kadrda odam bor" degan xulosa esa barcha yuzlardan.
+            teacher_vectors = await _teacher_embeddings(db, teacher)
             faces_b = await detect_faces(frame_b)
             usable_b = recognizable_faces(faces_b)
-            seen = bool(usable_b) and _matches_teacher(usable_b, teacher)
+            seen = bool(usable_b) and _matches_teacher(usable_b, teacher, teacher_vectors)
 
             if not seen:
                 faces_a = await detect_faces(frame_a)
                 usable_a = recognizable_faces(faces_a)
-                seen = bool(usable_a) and _matches_teacher(usable_a, teacher)
+                seen = bool(usable_a) and _matches_teacher(usable_a, teacher, teacher_vectors)
 
                 if not seen:
+                    # Bo'sh xona (hech qanday yuz yo'q) — o'zi dalil. Faqat
+                    # yuzlar BOR-u, hammasi mayda bo'lsa, xulosa chiqarilmaydi.
+                    judgeable = not (faces_a or faces_b) or _has_judgeable_face(faces_a, faces_b)
                     faces_in_both = bool(faces_a) and bool(faces_b)
                     # Ikkala kadrda ham yo'q. Endi almashinuvni
                     # tekshiramiz: BIR XIL boshqa xodim ikkalasida ham
@@ -349,6 +390,17 @@ async def check_lesson_session(
         return event is not None
 
     if not punctuality_active:
+        await db.commit()
+        return False
+
+    if not judgeable:
+        # Kamera birorta ham aniq yuz ko'rmadi — "kelmadi" deb ayblab
+        # bo'lmaydi. Holat noma'lum qoladi (operator jadvalda ko'radi).
+        session_row.teacher_on_time = None
+        logger.info(
+            "teacher punctuality undetermined: no face large enough to judge",
+            extra={"lesson_session_id": str(session_row.id)},
+        )
         await db.commit()
         return False
 

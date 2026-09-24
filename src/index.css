@@ -754,6 +754,17 @@ table[data-tabel] [data-today] {
     linear-gradient(145deg, #f9fbff 0%, #edf4ff 47%, #f8faff 100%);
 }
 
+/* Telefon va planshet: 7 panel bitta ekranga sig'maydi (har biri ~110 px
+   bo'lib qolardi) — panellar ustma-ust, sahifa aylantiriladi. */
+@media (max-width: 1023px) {
+  .console-root {
+    height: auto;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: visible;
+  }
+}
+
 /* Sekin suzuvchi yorug'lik — muhit tirik ekanini bildiradi. */
 .console-root::before {
   content: "";
