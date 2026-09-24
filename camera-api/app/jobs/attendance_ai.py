@@ -678,6 +678,12 @@ async def process_camera_frame(
             # Ro'yxat — qo'shimcha. Uning xatosi davomatni buzmasligi kerak.
             await db.rollback()
             logger.warning("unknown-face review failed", exc_info=True)
+        try:
+            await _queue_grey_matches(db, camera, frame_bytes, usable, graded, candidates, matched_ids, moment)
+        except Exception:
+            # Navbat — qo'shimcha; uning xatosi davomatni buzmasligi kerak.
+            await db.rollback()
+            logger.warning("face review queue failed", exc_info=True)
 
     if allow_zoom:
         # Zoom — ODATDAGI tekshiruvga qo'shimcha. Uning har qanday xatosi
@@ -752,6 +758,19 @@ async def _review_unknown_faces(db, camera: Camera, frame_bytes: bytes, usable: 
         _idx, best_sim, _second = candidates.top_two(np.stack([face.embedding for face in unknown]))
         closest = [round(max(0.0, float(value)), 3) for value in best_sim]
     await record_unknown_faces(db, camera, frame_bytes, unknown, closest)
+
+
+async def _queue_grey_matches(
+    db, camera: Camera, frame_bytes: bytes, usable: list, graded: list, candidates, credited: set[str], moment
+) -> None:
+    """Qat'iy chegaradan biroz past ("kulrang zona") mosliklarni odam
+    tekshiruvi navbatiga beradi (app/services/face_review.py). Tasdiqlangan
+    yuz davomat yozadi va galereyaga qo'shiladi — tanish o'zini o'zi yaxshilaydi."""
+    if not usable or not settings.face_review_enabled:
+        return
+    from app.services.face_review import queue_grey_matches
+
+    await queue_grey_matches(db, camera, frame_bytes, usable, graded, candidates, credited, now=moment)
 
 
 def _note_static_faces(camera: Camera | None, camera_key: str | None, faces: list, matched_boxes: list) -> None:

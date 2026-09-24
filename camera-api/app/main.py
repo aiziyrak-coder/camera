@@ -45,6 +45,7 @@ from app.services.thread_limits import apply_thread_limits
 from app.storage import check_bucket
 from app.routers import (
     unknown_sightings,
+    face_review,
     archive,
     presence,
     person_locator,
@@ -281,6 +282,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(unknown_sightings.router)
+app.include_router(face_review.router)
 app.include_router(archive.router)
 app.include_router(users.router)
 app.include_router(students_staff.router)

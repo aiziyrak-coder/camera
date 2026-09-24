@@ -7,6 +7,7 @@ from app.models.camera import Camera
 from app.models.enrollment_code import EnrollmentCode
 from app.models.event import Event
 from app.models.face_gallery import FaceGalleryEmbedding
+from app.models.face_review import FaceReviewItem
 from app.models.unknown_sighting import UnknownSighting
 from app.models.lesson_attendance import LessonAttendance
 from app.models.lesson_session import LessonSession
@@ -44,6 +45,7 @@ __all__ = [
     "EnrollmentCode",
     "Event",
     "FaceGalleryEmbedding",
+    "FaceReviewItem",
     "UnknownSighting",
     "AIModuleConfig",
     "AttendanceRecord",
