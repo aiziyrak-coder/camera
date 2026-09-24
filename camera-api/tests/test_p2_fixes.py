@@ -5,7 +5,6 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.jobs.camera_health import run_camera_health_sweep_once
-from app.jobs.disorder_ai import _is_motion_spike, reset_motion_history_for_tests
 from app.models import AuditLog, Building, Camera
 
 
@@ -56,16 +55,3 @@ class TestOfflineAlertSemantics:
             select(AuditLog).where(AuditLog.module == "Kameralar", AuditLog.action.like("%Alert o'chirilgan%"))
         )
         assert result.scalars().first() is None
-
-
-class TestMotionSpikeIsolation:
-    def test_spike_detects_after_baseline_warmup(self, monkeypatch):
-        monkeypatch.setattr(settings, "disorder_min_absolute_magnitude", 1.5)
-        monkeypatch.setattr(settings, "disorder_spike_multiplier", 3.0)
-        monkeypatch.setattr(settings, "disorder_baseline_min_samples", 5)
-        reset_motion_history_for_tests()
-
-        camera_id = "p2-motion-isolated"
-        for magnitude in [1.0, 1.0, 1.0, 1.0, 1.0]:
-            _is_motion_spike(camera_id, magnitude)
-        assert _is_motion_spike(camera_id, 4.0) is True

@@ -13,16 +13,10 @@ from app.database import SessionLocal, engine
 from app.jobs.attendance_ai import attendance_ai_loop, stop_entrance_watchers
 from app.jobs.camera_health import camera_health_loop
 from app.jobs.cleanup import cleanup_loop
-from app.jobs.fire_ai import fire_ai_loop
-from app.jobs.disorder_ai import disorder_ai_loop
-from app.jobs.dress_code_ai import dress_code_ai_loop
-from app.jobs.fight_ai import fight_ai_loop
 from app.jobs.leader_lock import release_leadership, try_become_leader
 from app.jobs.ai_scheduler import ai_scheduler_loop, standalone_sweep_loops
 from app.jobs.lesson_attendance import lesson_attendance_loop
 from app.jobs.lesson_quality_ai import lesson_quality_ai_loop
-from app.jobs.ppe_ai import ppe_ai_loop
-from app.jobs.smoking_ai import smoking_ai_loop
 from app.jobs.teacher_punctuality_ai import teacher_punctuality_ai_loop
 from app.jobs.unauthorized_person_ai import unauthorized_person_ai_loop
 from app.jobs.unified_face_sweep import unified_face_sweep_loop
@@ -150,16 +144,10 @@ def _start_ai_loops(tasks: list[asyncio.Task]) -> None:
         ai_loops = [
             camera_health_loop(),
             *face_loops,
-            fire_ai_loop(),
             teacher_punctuality_ai_loop(),
-            disorder_ai_loop(),
-            dress_code_ai_loop(),
-            ppe_ai_loop(),
-            smoking_ai_loop(),
             zone_entry_ai_loop(),
             lesson_quality_ai_loop(),
             lesson_attendance_loop(),
-            fight_ai_loop(),
             *standalone_sweep_loops(),
         ]
         tasks += [asyncio.create_task(_staggered(i * stagger, loop_coro)) for i, loop_coro in enumerate(ai_loops)]

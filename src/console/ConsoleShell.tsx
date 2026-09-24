@@ -123,9 +123,13 @@ function Console() {
   // ko'rayotganda jonli yangilanish kerak emas — u kun o'zgarmaydi.
   useLiveAttendance(() => isToday && setPulse((n) => n + 1), true);
   const canReview = can('reviewEvents', role);
+  // Ekran o'quvchi uchun: yangi signal ovoz bilan birga matn sifatida ham e'lon qilinadi.
+  const [announcement, setAnnouncement] = useState('');
   const live =
     useLiveEvents((event) => {
-      if (canReview) signalAlarm(event);
+      if (canReview && signalAlarm(event)) {
+        setAnnouncement(`Yangi signal: ${event.moduleName}, ${event.cameraName}`);
+      }
       if (isToday) setPulse((n) => n + 1);
     }, true) === 'live' && isToday;
 
@@ -288,6 +292,8 @@ function Console() {
         {error && <span className="text-[10px] font-semibold !text-danger">Ma’lumot olinmadi</span>}
         <span className="ms-auto hidden text-[10px] font-medium lg:inline">Kamerani bosing — kattalashadi · Ctrl+K — qidiruv · Esc — yopadi</span>
       </footer>
+
+      <div role="status" aria-live="assertive" className="sr-only">{announcement}</div>
 
       <ConsolePalette
         open={paletteOpen}

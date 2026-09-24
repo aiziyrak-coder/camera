@@ -140,18 +140,13 @@ const SWEEP_LABELS: Record<string, string> = {
   unified_face: 'Yuz tanish (umumiy)',
   attendance: 'Davomat',
   vision_sleep: 'Darsda uxlash',
-  fire: "Yong'in / tutun",
   zone_entry: 'Taqiqlangan zona',
-  fight: 'Mushtlashuv',
   teacher_punctuality: "O'qituvchi punktualligi",
-  disorder: 'Tartibsizlik',
-  dress_code: 'Kiyinish qoidasi',
-  ppe: 'Himoya vositalari',
-  smoking: 'Chekish',
   lesson_quality: 'Dars sifati',
   lesson_attendance: 'Dars davomatini yakunlash',
   absence_marking: '"Kelmadi" belgilash',
   module_suppression: 'Shovqinli signallarni cheklash',
+  event_clips: 'Hodisa kliplari',
 };
 
 export function sweepLabel(name: string): string {

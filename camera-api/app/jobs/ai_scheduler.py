@@ -34,17 +34,11 @@ from app.database import SessionLocal
 from app.jobs.absence_marker import run_absence_marking_once
 from app.jobs.event_clips import run_event_clips_once
 from app.jobs.attendance_ai import run_attendance_ai_sweep_once, run_entrance_exit_attendance_dispatch_once
-from app.jobs.disorder_ai import run_disorder_ai_sweep_once
-from app.jobs.dress_code_ai import run_dress_code_ai_sweep_once
-from app.jobs.fight_ai import run_fight_ai_sweep_once
-from app.jobs.fire_ai import run_fire_ai_sweep_once
 from app.jobs.lesson_attendance import run_lesson_attendance_finalization_once
 from app.jobs.lesson_quality_ai import run_lesson_quality_ai_sweep_once
-from app.jobs.ppe_ai import run_ppe_ai_sweep_once
 from app.jobs.module_status import is_within_attendance_priority_window
 from app.jobs.module_suppression import run_module_suppression_once
 from app.jobs.scheduler_metrics import record_sweep_finished, record_sweep_paused, record_sweep_started, register_sweep
-from app.jobs.smoking_ai import run_smoking_ai_sweep_once
 from app.jobs.teacher_punctuality_ai import run_teacher_punctuality_sweep_once
 from app.jobs.unauthorized_person_ai import run_unauthorized_person_ai_sweep_once
 from app.jobs.unified_face_sweep import run_unified_face_sweep_once
@@ -62,10 +56,10 @@ MIN_PAUSE_SECONDS = 1.0
 PAUSE_RECHECK_SECONDS = 30.0
 
 
-# Hayot xavfsizligi: sozlamada yozilgan bo'lsa ham hech qachon pauzaga
-# qo'yilmaydi. Productionda (2026-09-24) yong'in tekshiruvi tirband
-# soatlarda — kuniga 4 soat — o'chib turardi.
-NEVER_PAUSED_SWEEPS = frozenset({"fire"})
+# Sozlamada yozilgan bo'lsa ham hech qachon pauzaga qo'yilmaydigan
+# sweeplar (hayot xavfsizligi). Yong'in moduli 2026-09-24 da olib
+# tashlangan; to'plam kelajakdagi shunday modul uchun qoldirildi.
+NEVER_PAUSED_SWEEPS: frozenset[str] = frozenset()
 
 
 def attendance_priority_sweeps() -> set[str]:
@@ -123,14 +117,8 @@ def _face_entries() -> list[tuple[str, int, Callable[..., Awaitable[Any]], Tier]
 
 def _build_registry() -> list[_SweepEntry]:
     rest: list[tuple[str, int, Callable[..., Awaitable[Any]], Tier]] = [
-        ("fire", settings.fire_ai_interval_seconds, run_fire_ai_sweep_once, "critical"),
         ("zone_entry", settings.zone_ai_interval_seconds, run_zone_entry_ai_sweep_once, "critical"),
-        ("fight", settings.fight_ai_interval_seconds, run_fight_ai_sweep_once, "critical"),
         ("teacher_punctuality", settings.teacher_punctuality_interval_seconds, run_teacher_punctuality_sweep_once, "standard"),
-        ("disorder", settings.disorder_ai_interval_seconds, run_disorder_ai_sweep_once, "standard"),
-        ("dress_code", settings.dress_code_ai_interval_seconds, run_dress_code_ai_sweep_once, "standard"),
-        ("ppe", settings.ppe_ai_interval_seconds, run_ppe_ai_sweep_once, "standard"),
-        ("smoking", settings.smoking_ai_interval_seconds, run_smoking_ai_sweep_once, "standard"),
         ("lesson_quality", settings.lesson_quality_ai_interval_seconds, run_lesson_quality_ai_sweep_once, "standard"),
         ("lesson_attendance", settings.lesson_attendance_finalize_interval_seconds, run_lesson_attendance_finalization_once, "standard"),
         # Kamera talab qilmaydi (faqat DB); o'zi ish kuni tugaguncha hech

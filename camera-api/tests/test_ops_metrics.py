@@ -224,19 +224,19 @@ class TestContent:
 
 class TestAiRuntime:
     async def test_sweep_stats_exported(self, client: AsyncClient):
-        scheduler_metrics.register_sweep("fire_ai", "critical", 30)
-        scheduler_metrics.record_sweep_started("fire_ai")
-        scheduler_metrics.record_sweep_finished("fire_ai", duration_seconds=2.5, result=3)
-        scheduler_metrics.register_sweep("ppe_ai", "standard", 60)
-        scheduler_metrics.record_sweep_started("ppe_ai")
-        scheduler_metrics.record_sweep_finished("ppe_ai", duration_seconds=1.0, result=0, error="boom")
+        scheduler_metrics.register_sweep("zone_entry", "critical", 30)
+        scheduler_metrics.record_sweep_started("zone_entry")
+        scheduler_metrics.record_sweep_finished("zone_entry", duration_seconds=2.5, result=3)
+        scheduler_metrics.register_sweep("teacher_punctuality", "standard", 60)
+        scheduler_metrics.record_sweep_started("teacher_punctuality")
+        scheduler_metrics.record_sweep_finished("teacher_punctuality", duration_seconds=1.0, result=0, error="boom")
 
         s = _samples((await client.get("/metrics")).text)
-        assert _value(s, "sm_ai_sweep_runs", name="fire_ai", tier="critical") == 1
-        assert _value(s, "sm_ai_sweep_last_duration_seconds", name="fire_ai", tier="critical") == 2.5
-        assert _value(s, "sm_ai_sweep_failures", name="ppe_ai", tier="standard") == 1
-        assert _value(s, "sm_ai_sweep_lagging", name="fire_ai", tier="critical") == 0
-        assert _value(s, "sm_ai_sweep_last_finished_timestamp_seconds", name="fire_ai", tier="critical") is not None
+        assert _value(s, "sm_ai_sweep_runs", name="zone_entry", tier="critical") == 1
+        assert _value(s, "sm_ai_sweep_last_duration_seconds", name="zone_entry", tier="critical") == 2.5
+        assert _value(s, "sm_ai_sweep_failures", name="teacher_punctuality", tier="standard") == 1
+        assert _value(s, "sm_ai_sweep_lagging", name="zone_entry", tier="critical") == 0
+        assert _value(s, "sm_ai_sweep_last_finished_timestamp_seconds", name="zone_entry", tier="critical") is not None
         assert _value(s, "sm_ai_stream_readers") is not None
         # AI (leader) surati yo'q — shu jarayon o'lchanmaydi.
         assert _value(s, "sm_ai_entrance_watchers") is None

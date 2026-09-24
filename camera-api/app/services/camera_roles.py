@@ -5,14 +5,12 @@ kameraning birortasida ham modul o'chirilmagan edi. Natijada:
 
   * uyqu (#20) kirish kameralarida o'tib ketayotgan odamni "uxlayapti"
     deb signal berardi (0.107, 0.113, 0.10, 0.11 — 4K kirish kameralari);
-  * oq xalat (#10) va qo'lqop/niqob (#13) koridor va auditoriyalarda
-    ham tekshirilardi, ular esa faqat laboratoriya/klinikada talab;
   * har bir ortiqcha tekshiruv AVX'siz CPU'da yuz tanish navbatini
     to'ldirardi — kirish eshigidagi davomat kadri shu navbatni kutardi.
 
 YECHIM. Har kameraga xona turi beriladi (Camera.room_type) va modul faqat
 o'ziga mos turdagi kamerada ishlaydi (MODULE_ROOM_TYPES). Ro'yxatda
-bo'lmagan modul (yong'in, jang, tartib, zona) — xavfsizlik mezonlari —
+bo'lmagan modul (masalan taqiqlangan zona) — xavfsizlik mezonlari —
 har qanday kamerada, jumladan turi belgilanmagan kamerada ham ishlaydi.
 
 Turi belgilanmagan kamera eski bayroqlardan tur oladi: kirish/chiqish
@@ -65,11 +63,6 @@ MODULE_ROOM_TYPES: dict[int, frozenset[str]] = {
     # Kunlik davomat — faqat kirish eshigi (2026-09-18 qarori).
     6: frozenset({"kirish"}),
     7: frozenset({"kirish"}),
-    # Oq xalat va qo'lqop/niqob — faqat laboratoriya/klinikada talab.
-    10: frozenset({"laboratoriya"}),
-    13: frozenset({"laboratoriya"}),
-    # Chekish — koridor, zina, hovli, eshik oldi.
-    15: frozenset({"kirish", "koridor", "tashqi"}),
     # Uyqu — faqat dars xonasi.
     20: frozenset({"auditoriya"}),
 }

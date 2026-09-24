@@ -2,7 +2,6 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -510,16 +509,6 @@ class Settings(BaseSettings):
     # kerak — bir lahzalik tasodifiy burilish hisobga olinmaydi.
     enrollment_stable_frames: int = 2
 
-    # TT kriteriya 23 ("Yong'in / tutun aniqlash") — app/jobs/fire_ai.py.
-    # Its own interval (not shared with vision_ai_interval_seconds) since
-    # each fire sweep tick costs two ffmpeg frame grabs per camera
-    # (app/services/frame_grabber.py's grab_frame_pair, ~1s apart) instead
-    # of one. fire_dedup_minutes is deliberately shorter than
-    # sleep_dedup_minutes — a sustained fire is worth re-confirming sooner
-    # than a sustained nap.
-    fire_ai_interval_seconds: int = 30
-    fire_dedup_minutes: int = 5
-
     # TT kriteriya 22 ("O'qituvchining darsga aniq kelishi") —
     # app/jobs/teacher_punctuality_ai.py. Only affects LessonSession rows
     # that have teacher_id/camera_id/scheduled_start_time set (no
@@ -616,18 +605,6 @@ class Settings(BaseSettings):
     # tanib qoladi).
     unknown_assign_min_similarity: float = 0.25
 
-    # TT kriteriya 17 ("Tartib-intizom buzilishi") —
-    # app/jobs/disorder_ai.py. min_absolute_magnitude/spike_multiplier are
-    # calibrated against real Farneback optical-flow numbers (see the
-    # module docstring): identical frames read ~0.0003-0.0006, a 5-10px
-    # shift reads 5-10.
-    disorder_ai_interval_seconds: int = 30
-    disorder_dedup_minutes: int = 10
-    disorder_baseline_window: int = 20
-    disorder_baseline_min_samples: int = 5
-    disorder_spike_multiplier: float = 3.0
-    disorder_min_absolute_magnitude: float = 1.5
-
     # YOLOv8 object detection (app/services/object_detection.py) — TT
     # kriteriya 19 (dars diqqati) telefon signali uchun ishlatiladi. See
     # face_recognition_gpu_enabled/inference_concurrency for the same
@@ -643,7 +620,6 @@ class Settings(BaseSettings):
     # ("Talabaning darsga diqqati"), u yerda telefon ko'rinishi diqqat
     # ballini pasaytiruvchi signal sifatida qoladi.
     phone_detection_confidence: float = 0.5
-
 
     # mediapipe Pose Landmarker (app/services/pose_detection.py) — shared
     # by TT kriteriya 2 (taqiqlangan zona), 10 (oq xalat), 21 (o'qituvchi
@@ -662,19 +638,6 @@ class Settings(BaseSettings):
     # umrining oxirigacha YOLOv8-pose ga o'tiladi (qayta-qayta yiqilib CPU
     # yeyish o'rniga).
     pose_detection_max_worker_crashes: int = 3
-
-    # TT kriteriya 10 ("Oq xalat kiyilganligi") — app/jobs/dress_code_ai.py
-    # / app/services/coat_detection.py. Classical HSV heuristic, not a
-    # trained classifier — see that module's docstring for the honest
-    # scope limits. S/V thresholds are OpenCV's 0-255 HSV ranges.
-    coat_ai_interval_seconds: int = 45
-    dress_code_ai_interval_seconds: int = 45
-    coat_dedup_minutes: int = 30
-    coat_min_landmark_visibility: float = 0.5
-    coat_torso_extension_factor: float = 0.6
-    coat_white_saturation_max: int = 60
-    coat_white_value_min: int = 170
-    coat_white_fraction_threshold: float = 0.60
 
     # TT kriteriya 2 ("Taqiqlangan zonaga kirish") —
     # app/jobs/zone_entry_ai.py / app/services/zone_detection.py.
@@ -720,17 +683,6 @@ class Settings(BaseSettings):
     # real classroom footage — chosen so a small (~0.1 average landmark
     # movement) reads as a mid-range score, an untuned starting point.
     teacher_activity_scale: float = 500.0
-
-    # TT kriteriya 14 ("Jang/nizolashish holati") — app/jobs/fight_ai.py.
-    # THE LEAST RELIABLE criterion in this system — see that module's
-    # docstring. Reuses app/jobs/disorder_ai.py's motion-spike baseline
-    # logic under a namespaced key, plus its own proximity check.
-    fight_ai_interval_seconds: int = 30
-    fight_dedup_minutes: int = 5
-    fight_min_landmark_visibility: float = 0.5
-    fight_proximity_threshold: float = 0.12
-    fight_spike_multiplier: float = 4.0
-    fight_min_absolute_magnitude: float = 2.0
 
     # DIQQAT — bu son db_pool_size + db_max_overflow (hozir 20+40=60) dan
     # oshib ketmasligi kerak: unified_face_sweep har bir kamera uchun
@@ -994,7 +946,7 @@ class Settings(BaseSettings):
     # davomatga beriladi. Kun davomida hammasi odatdagidek ishlaydi.
     attendance_priority_enabled: bool = True
     attendance_priority_windows: str = "07:30-09:30,16:00-18:00"
-    attendance_priority_paused_sweeps: str = "fight,disorder,dress_code,ppe"
+    attendance_priority_paused_sweeps: str = ""
 
     # GPU batch inference caps — detect_faces_batch / detect_objects_batch chunk size.
     face_recognition_batch_size: int = 4
@@ -1160,21 +1112,6 @@ class Settings(BaseSettings):
     thumbnail_stale_seconds: int = 120
     thumbnail_grab_concurrency: int = 3
 
-    # TT kriteriya 13 — SIZ
-    ppe_ai_interval_seconds: int = 45
-    ppe_dedup_minutes: int = 20
-    ppe_detection_model_path: str = ""
-    ppe_detection_confidence: float = 0.5
-    ppe_mask_saturation_min: int = 40
-    ppe_mask_value_min: int = 40
-    ppe_mask_fraction_threshold: float = 0.15
-
-    # TT kriteriya 15 — chekish postura
-    smoking_ai_interval_seconds: int = 45
-    smoking_dedup_minutes: int = 15
-    smoking_min_landmark_visibility: float = 0.5
-    smoking_wrist_mouth_distance: float = 0.12
-
     # Bo'sh bazaga birinchi foydalanuvchi. Production'da shu ikkisi
     # (INITIAL_ADMIN_LOGIN / INITIAL_ADMIN_PASSWORD) orqali yaratiladi.
     initial_admin_login: str = ""
@@ -1272,6 +1209,5 @@ class Settings(BaseSettings):
     # mumkin. 0 — event_retention_days bilan birga.
     snapshot_retention_days: int = 90
     access_event_retention_days: int = 365
-
 
 settings = Settings()

@@ -91,17 +91,23 @@ class TestMetrics:
 
 
 class TestBuildRegistry:
-    def test_registry_includes_dress_code_interval(self, monkeypatch):
+    def test_registry_includes_zone_entry_interval(self, monkeypatch):
         monkeypatch.setattr(ai_scheduler.settings, "unified_face_sweep_enabled", True)
         registry = ai_scheduler._build_registry()
-        dress = next(e for e in registry if e.name == "dress_code")
-        assert dress.interval_seconds == ai_scheduler.settings.dress_code_ai_interval_seconds
+        zone = next(e for e in registry if e.name == "zone_entry")
+        assert zone.interval_seconds == ai_scheduler.settings.zone_ai_interval_seconds
+
+    def test_removed_heuristic_modules_are_gone(self, monkeypatch):
+        """Ishonchsiz evristikalar olib tashlangan (2026-09-24)."""
+        monkeypatch.setattr(ai_scheduler.settings, "unified_face_sweep_enabled", True)
+        names = {e.name for e in ai_scheduler._build_registry()}
+        assert not names & {"fire", "fight", "disorder", "dress_code", "ppe", "smoking"}
 
     def test_critical_modules_tagged(self, monkeypatch):
         monkeypatch.setattr(ai_scheduler.settings, "unified_face_sweep_enabled", True)
         registry = ai_scheduler._build_registry()
         critical_names = {e.name for e in registry if e.tier == "critical"}
-        assert {"unified_face", "entrance_exit_attendance", "fire", "zone_entry", "fight"} <= critical_names
+        assert {"unified_face", "entrance_exit_attendance", "zone_entry"} <= critical_names
 
     def test_badge_module_is_gone(self, monkeypatch):
         monkeypatch.setattr(ai_scheduler.settings, "unified_face_sweep_enabled", True)

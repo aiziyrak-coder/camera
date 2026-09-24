@@ -163,6 +163,14 @@ function QuickChip({
   );
 }
 
+/** "2026-09-24 12:05" → bugun "12:05", boshqa kun "23.09 12:05". */
+export function shortEventTime(timestamp: string, today: string = todayInTashkent()): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2})/.exec(timestamp);
+  if (!match) return timestamp;
+  const [, year, month, day, time] = match;
+  return `${year}-${month}-${day}` === today ? time : `${day}.${month} ${time}`;
+}
+
 export default function EventsPage() {
   const { token, role } = useAuth();
   const { can } = usePermissions();
@@ -765,7 +773,7 @@ export default function EventsPage() {
       width: '9rem',
       cell: (event) => (
         <span title={event.timestamp} className="block whitespace-nowrap">
-          <span className="intel-code block text-[12px] text-fg">{event.timestamp}</span>
+          <span className="intel-code block text-[12px] text-fg">{shortEventTime(event.timestamp)}</span>
           <MicroLabel className="hidden md:block">{event.occurredAt ? relativeTime(event.occurredAt) : ''}</MicroLabel>
         </span>
       ),

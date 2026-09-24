@@ -1,12 +1,11 @@
 """2026-09-24 audit tuzatishlari: begona shaxs juftligi, eshik kameralari,
-yong'in pauzasi va uyqu tekshiruvining behuda burst'i."""
+uyqu tekshiruvining behuda burst'i."""
 
 from types import SimpleNamespace
 
 import numpy as np
 
 from app.config import settings
-from app.jobs import ai_scheduler
 from app.jobs.unauthorized_person_ai import _same_person_pairs
 from app.services.camera_roles import is_door_camera
 
@@ -41,12 +40,3 @@ class TestDoorCamera:
         assert is_door_camera(SimpleNamespace(is_entrance=False, is_exit=True, room_type=None))
         assert is_door_camera(SimpleNamespace(is_entrance=False, is_exit=False, room_type="kirish"))
         assert not is_door_camera(SimpleNamespace(is_entrance=False, is_exit=False, room_type="auditoriya"))
-
-
-class TestFireNeverPaused:
-    def test_fire_in_setting_is_ignored(self, monkeypatch):
-        monkeypatch.setattr(settings, "attendance_priority_enabled", True)
-        monkeypatch.setattr(settings, "attendance_priority_paused_sweeps", "fire,fight")
-        monkeypatch.setattr(ai_scheduler, "is_within_attendance_priority_window", lambda: True)
-        assert ai_scheduler.is_paused_for_attendance("fire") is False
-        assert ai_scheduler.is_paused_for_attendance("fight") is True

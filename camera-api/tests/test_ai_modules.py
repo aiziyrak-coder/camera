@@ -21,40 +21,32 @@ class TestAiModules:
         assert resp.status_code == 200
         module_1 = next(m for m in resp.json() if m["code"] == 1)
         assert module_1["hasDetector"] is True
-        module_13 = next(m for m in resp.json() if m["code"] == 13)
-        assert module_13["hasDetector"] is True
-        # #12 (beyjik) butunlay olib tashlangan — yolg'on signal manbai edi.
-        assert all(m["code"] != 12 for m in resp.json())
+        zone = next(m for m in resp.json() if m["code"] == 2)
+        assert zone["hasDetector"] is True
+        # Olib tashlangan modullar: #12 (beyjik, 2026-09-16) va ishonchsiz
+        # evristikalar #10, #13, #14, #15, #17, #23 (2026-09-24).
+        assert not {m["code"] for m in resp.json()} & {10, 12, 13, 14, 15, 17, 23}
         # Aniqlik — statik raqam emas, ko'rib chiqilgan signallardan o'lchanadi.
         assert module_1["measuredPrecision"] is None
         assert module_1["accuracy"] == 0
-        assert module_13["maturity"] == "sinov"
+        assert zone["maturity"] == "sinov"
 
-    async def test_smoking_module_is_off(self, client: AsyncClient, db_session: AsyncSession):
-        """#15 buyurtmachi qarori bilan o'chirilgan (2026-09-16) — sweep
-        umuman ishlamasligi kerak, lekin modul ro'yxatda qoladi."""
+    async def test_no_module_ships_a_made_up_accuracy(self, db_session: AsyncSession):
+        """96,4 / 98,6 / 99,2 kabi raqamlar hech qachon o'lchanmagan edi."""
+        rows = (await db_session.execute(select(AIModuleConfig))).scalars().all()
+        assert rows and all(row.accuracy == 0 for row in rows)
+
+    async def test_student_attendance_module_is_off(self, client: AsyncClient, db_session: AsyncSession):
+        """#7 buyurtmachi qarori bilan to'xtatilgan — modul ro'yxatda qoladi."""
         from app.jobs.module_status import is_module_active
 
-        module = await _get_module(db_session, 15)
+        module = await _get_module(db_session, 7)
         assert module.active is False
-        assert await is_module_active(db_session, 15) is False
+        assert await is_module_active(db_session, 7) is False
 
         headers = await auth_headers(client, "admin", "admin123")
         listed = (await client.get("/api/ai-modules", headers=headers)).json()
-        assert next(m for m in listed if m["code"] == 15)["active"] is False
-
-    async def test_p3_modules_have_detectors_and_can_activate(self, client: AsyncClient, db_session: AsyncSession):
-        for code in (13, 15):
-            module = await _get_module(db_session, code)
-            assert module.has_detector is True
-        headers = await auth_headers(client, "admin", "admin123")
-        module = await _get_module(db_session, 13)
-        resp = await client.patch(
-            f"/api/ai-modules/{module.id}",
-            headers=headers,
-            json={"threshold": module.threshold, "sensitivity": module.sensitivity, "active": True},
-        )
-        assert resp.status_code == 200
+        assert next(m for m in listed if m["code"] == 7)["active"] is False
 
     async def test_activating_a_module_with_a_real_detector_but_zero_accuracy_succeeds(
         self, client: AsyncClient, db_session: AsyncSession
@@ -78,7 +70,7 @@ class TestAiModules:
     async def test_deactivating_a_no_detector_module_is_always_allowed(
         self, client: AsyncClient, db_session: AsyncSession
     ):
-        module = await _get_module(db_session, 13)
+        module = await _get_module(db_session, 2)
         headers = await auth_headers(client, "admin", "admin123")
 
         resp = await client.patch(
@@ -119,14 +111,14 @@ class TestMeasuredPrecision:
         assert module["maturity"] == "asosiy"
 
     async def test_small_sample_is_not_a_percentage(self, client: AsyncClient, db_session: AsyncSession):
-        await self._events(db_session, 17, confirmed=1, rejected=0)
-        module = await self._module(client, 17)
+        await self._events(db_session, 19, confirmed=1, rejected=0)
+        module = await self._module(client, 19)
         assert module["measuredPrecision"] is None  # "100% (1/1)" emas
         assert module["maturity"] == "sinov"
         assert "1" in module["maturityNote"]
 
     async def test_mostly_rejected_module_needs_tuning(self, client: AsyncClient, db_session: AsyncSession):
-        await self._events(db_session, 14, confirmed=2, rejected=18)
-        module = await self._module(client, 14)
+        await self._events(db_session, 2, confirmed=2, rejected=18)
+        module = await self._module(client, 2)
         assert module["maturity"] == "sozlash_kerak"
         assert module["measuredPrecision"] == 10.0

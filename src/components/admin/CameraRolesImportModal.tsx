@@ -128,8 +128,7 @@ export default function CameraRolesImportModal({
           <li>Faylni yuklab «Tekshirish», keyin «Saqlash».</li>
         </ol>
         <Notice tone="info">
-          Xona turi AI modullarini yo&apos;naltiradi: uyqu faqat auditoriyada, oq xalat va
-          niqob faqat laboratoriyada. Kunlik davomat kirish belgisini talab qilmaydi — kelish istalgan kameradagi birinchi
+          Xona turi AI modullarini yo&apos;naltiradi: uyqu faqat auditoriyada. Kunlik davomat kirish belgisini talab qilmaydi — kelish istalgan kameradagi birinchi
           ko&apos;rinish.
         </Notice>
 

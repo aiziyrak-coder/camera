@@ -41,11 +41,9 @@ class TestRules:
         assert not role_allows(_cam(), 20)
         assert role_allows(_cam(is_entrance=True), 6)
         assert not role_allows(_cam(room_type="auditoriya"), 6)
-        assert role_allows(_cam(room_type="laboratoriya"), 10)
-        assert not role_allows(_cam(room_type="koridor"), 13)
 
     def test_security_modules_run_everywhere(self):
-        for code in (2, 14, 17, 23):
+        for code in (2,):
             assert code not in MODULE_ROOM_TYPES
             assert role_allows(_cam(), code)
             assert role_allows(_cam(room_type="ofis"), code)
