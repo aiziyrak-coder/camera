@@ -3,7 +3,7 @@
 import json
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 from sqlalchemy import func, or_, select
@@ -24,6 +24,7 @@ from app.schemas.integrations import (
     AccessDeviceOut,
     AccessDeviceUpdateIn,
     AccessEventOut,
+    AccessSummaryOut,
     ApiKeyOut,
     DeviceTestOut,
     UnmatchedCredentialOut,
@@ -288,10 +289,13 @@ async def list_events(
     granted: Annotated[bool | None, Query()] = None,
     matched: Annotated[bool | None, Query()] = None,
     search: Annotated[str | None, Query(max_length=100)] = None,
+    direction: Annotated[Literal["kirish", "chiqish"] | None, Query()] = None,
 ) -> Page[AccessEventOut]:
     stmt = select(AccessEvent)
     if device_id:
         stmt = stmt.where(AccessEvent.device_id == device_id)
+    if direction:
+        stmt = stmt.where(AccessEvent.direction == direction)
     if person_id:
         stmt = stmt.where(AccessEvent.student_staff_id == person_id)
     if date_from:
@@ -360,6 +364,41 @@ async def list_events(
             )
         )
     return build_page(items, total, page_params)
+
+
+@router.get("/api/access/summary", response_model=AccessSummaryOut)
+async def events_summary(
+    db: DbDep,
+    _: ManageDep,
+    day: Annotated[date | None, Query(alias="date")] = None,
+    device_id: Annotated[uuid.UUID | None, Query(alias="deviceId")] = None,
+) -> AccessSummaryOut:
+    """Bir kunlik sanoq (turniketlar sahifasining yuqori qatori). Jurnal
+    sahifalangan — undan hisoblab bo'lmaydi, shuning uchun alohida."""
+    day = day or datetime.now(INSTITUTE_TZ).date()
+    stmt = select(
+        func.count().label("total"),
+        func.count().filter(AccessEvent.direction == "kirish").label("entries"),
+        func.count().filter(AccessEvent.direction == "chiqish").label("exits"),
+        func.count().filter(AccessEvent.granted.is_(False)).label("denied"),
+        func.count().filter(AccessEvent.student_staff_id.is_(None)).label("unmatched"),
+        func.count(func.distinct(AccessEvent.student_staff_id)).label("people"),
+    ).where(
+        AccessEvent.occurred_at >= _local_day_start(day),
+        AccessEvent.occurred_at < _local_day_start(day + timedelta(days=1)),
+    )
+    if device_id:
+        stmt = stmt.where(AccessEvent.device_id == device_id)
+    row = (await db.execute(stmt)).one()
+    return AccessSummaryOut(
+        date=day.isoformat(),
+        total=row.total,
+        entries=row.entries,
+        exits=row.exits,
+        denied=row.denied,
+        unmatched=row.unmatched,
+        people=row.people,
+    )
 
 
 @router.get("/api/access/unmatched", response_model=list[UnmatchedCredentialOut])

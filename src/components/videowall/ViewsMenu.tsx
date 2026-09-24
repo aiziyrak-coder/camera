@@ -2,13 +2,17 @@ import { useId, useRef, useState } from 'react';
 import { Check, Download, ExternalLink, LayoutGrid, Pencil, Save, Trash2, Upload, X } from 'lucide-react';
 import { Button, IconButton, Input, cn } from '../../ui';
 import { LAYOUT_LABELS, MAX_VIEW_NAME, isViewNameTaken, type WallView } from '../../lib/videoWall';
+import { isForeignShared, type ViewMetaMap } from '../../lib/wallViewsApi';
 import WallPopover from './WallPopover';
 
-/** "Ko'rinishlar" — nomlangan setkalar (shu brauzerda saqlanadi): tez
+/** "Ko'rinishlar" — nomlangan setkalar (serverda, ish joylari bilan
+ * umumiy; server yo'q bo'lsa shu brauzerda): tez
  * almashtirish, joriy holatni saqlash/yangilash, nomini o'zgartirish,
  * o'chirish, JSON eksport/import va alohida oynada ochish. */
 export default function ViewsMenu({
   views,
+  meta = {},
+  remote = false,
   activeViewId,
   dirty,
   onApply,
@@ -22,6 +26,10 @@ export default function ViewsMenu({
   align = 'right',
 }: {
   views: WallView[];
+  /** Serverdan: kimniki, tahrirlash mumkinmi (bo'lmasa — o'ziniki). */
+  meta?: ViewMetaMap;
+  /** Ko'rinishlar serverda saqlanadimi. */
+  remote?: boolean;
   activeViewId: string | null;
   /** Joriy devor faol ko'rinishdan farq qiladimi. */
   dirty: boolean;
@@ -62,7 +70,7 @@ export default function ViewsMenu({
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold">Ko&apos;rinishlar</p>
-            <span className="text-xs text-muted">shu brauzerda saqlanadi</span>
+            <span className="text-xs text-muted">{remote ? 'serverda saqlanadi' : 'shu brauzerda saqlanadi'}</span>
           </div>
 
           {views.length === 0 ? (
@@ -74,6 +82,9 @@ export default function ViewsMenu({
               {views.map((view, index) => {
                 const filled = view.tiles.filter(Boolean).length;
                 const isActive = view.id === activeViewId;
+                const info = meta[view.id];
+                const foreign = isForeignShared(info);
+                const editable = info?.canEdit !== false;
                 if (editing?.id === view.id) {
                   return (
                     <li key={view.id}>
@@ -118,7 +129,17 @@ export default function ViewsMenu({
                     >
                       <span className="w-4 shrink-0 text-xs tabular-nums text-subtle">{index + 1}</span>
                       <span className="min-w-0 flex-1">
-                        <span className={cn('block truncate text-[13px] font-medium', isActive ? 'text-primary' : 'text-fg')}>{view.name}</span>
+                        <span className="flex items-center gap-1.5">
+                          <span className={cn('truncate text-[13px] font-medium', isActive ? 'text-primary' : 'text-fg')}>{view.name}</span>
+                          {foreign && (
+                            <span
+                              className="shrink-0 rounded-full bg-surface-2 px-1.5 text-[11px] leading-4 text-muted"
+                              title={info?.ownerName ? `${info.ownerName} ulashgan` : 'Boshqa operator ulashgan'}
+                            >
+                              umumiy
+                            </span>
+                          )}
+                        </span>
                         <span className="block text-xs text-muted">
                           {LAYOUT_LABELS[view.layout]} katak · {filled} ta kamera
                         </span>
@@ -143,8 +164,12 @@ export default function ViewsMenu({
                     ) : (
                       <span className="flex shrink-0 items-center opacity-70 group-hover:opacity-100">
                         <IconButton icon={ExternalLink} size="sm" label="Yangi oynada ochish" title="Yangi oynada ochish (ikkinchi monitor)" onClick={() => onOpenWindow(view.id)} />
-                        <IconButton icon={Pencil} size="sm" label="Nomini o'zgartirish" onClick={() => setEditing({ id: view.id, name: view.name })} />
-                        <IconButton icon={Trash2} size="sm" variant="danger" label="O'chirish" onClick={() => setConfirmDelete(view.id)} />
+                        {editable && (
+                          <>
+                            <IconButton icon={Pencil} size="sm" label="Nomini o'zgartirish" onClick={() => setEditing({ id: view.id, name: view.name })} />
+                            <IconButton icon={Trash2} size="sm" variant="danger" label="O'chirish" onClick={() => setConfirmDelete(view.id)} />
+                          </>
+                        )}
                       </span>
                     )}
                   </li>
@@ -153,7 +178,7 @@ export default function ViewsMenu({
             </ul>
           )}
 
-          {active && dirty && (
+          {active && dirty && meta[active.id]?.canEdit !== false && (
             <Button variant="soft" size="sm" icon={Save} fullWidth onClick={() => onUpdate(active.id)}>
               «{active.name}» ni joriy devor bilan yangilash
             </Button>

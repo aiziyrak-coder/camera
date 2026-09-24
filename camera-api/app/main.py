@@ -71,6 +71,7 @@ from app.routers import (
     students_staff,
     system,
     users,
+    wall_views,
 )
 from app.seed import seed_all
 from app.services.face_matching import announce_roster_change
@@ -304,6 +305,7 @@ app.include_router(situation.router)
 app.include_router(situation_analytics.router)
 app.include_router(hisobot.router)
 app.include_router(attendance_policy.router)
+app.include_router(wall_views.router)
 
 
 @app.get("/health")

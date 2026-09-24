@@ -38,6 +38,7 @@ const PrivacyPage = lazyPage(() => import('./pages/settings/PrivacyPage'));
 const EventsPage = lazyPage(() => import('./pages/admin/EventsPage'));
 const ReviewPage = lazyPage(() => import('./pages/review/ReviewPage'));
 const DarsJadvaliPage = lazyPage(() => import('./pages/admin/DarsJadvaliPage'));
+const AccessPage = lazyPage(() => import('./pages/access/AccessPage'));
 const HisobotPage = lazyPage(() => import('./pages/admin/HisobotPage'));
 const VideoWallPage = lazyPage(() => import('./pages/admin/VideoWallPage'));
 const StudentsStaffPage = lazyPage(() => import('./pages/admin/StudentsStaffPage'));
@@ -158,6 +159,9 @@ export default function App() {
               <Route element={<RequirePermission permission="reviewEvents" />}>
                 <Route path="/hodisalar" element={<EventsPage />} />
                 <Route path="/tekshiruv" element={<ReviewPage />} />
+              </Route>
+              <Route element={<RequirePermission permission="manageIntegrations" />}>
+                <Route path="/turniketlar" element={<AccessPage />} />
               </Route>
               <Route element={<RequirePermission permission="viewReports" />}>
                 <Route path="/hisobotlar" element={<HisobotPage />} />

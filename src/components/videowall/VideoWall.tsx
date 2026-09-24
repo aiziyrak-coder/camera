@@ -169,7 +169,11 @@ export default function VideoWall({
   // shuning uchun filtr o'zgarsa ham katakdagi kod o'zgarmaydi.
   const codes = useMemo(() => buildCameraCodes(cameras), [cameras]);
 
-  const [views, setViews] = useStoredViews();
+  const [views, setViews, viewsInfo] = useStoredViews({
+    onError: (message) => toast.error(message),
+    // Server id'ni almashtirsa (band yoki eski "v-..." id) faol belgi saqlansin.
+    onIdChange: (from, to) => setActiveViewId((current) => (current === from ? to : current)),
+  });
   const [storedState, setStoredState] = usePersistedState<WallState>(
     standalone ? STANDALONE_CURRENT_KEY : CURRENT_KEY,
     DEFAULT_STATE,
@@ -674,6 +678,8 @@ export default function VideoWall({
   const viewsMenu = (
     <ViewsMenu
       views={views}
+      meta={viewsInfo.meta}
+      remote={viewsInfo.remote}
       activeViewId={activeViewId}
       dirty={dirty}
       onApply={applyView}

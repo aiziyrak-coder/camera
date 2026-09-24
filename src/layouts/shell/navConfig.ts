@@ -7,6 +7,7 @@ import {
   History,
   ChartColumn,
   Contact,
+  DoorOpen,
   GraduationCap,
   LayoutDashboard,
   Lock,
@@ -62,6 +63,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/talabalar', code: 'TLB', label: 'Talabalar', icon: GraduationCap, permission: 'manageAttendance' },
       { to: '/oqituvchilar', code: 'XOD', label: 'Xodimlar', icon: BookUser, permission: 'manageAttendance' },
       { to: '/dars-jadvali', code: 'DRS', label: 'Dars jadvali', icon: CalendarRange, permission: 'manageAttendance' },
+      { to: '/turniketlar', code: 'TRN', label: 'Turniketlar', icon: DoorOpen, permission: 'manageIntegrations' },
     ],
   },
   {
