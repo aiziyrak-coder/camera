@@ -25,3 +25,50 @@ class PersonLocationOut(CamelModel):
     zone: str | None = None
     last_seen_at: datetime | None = None
     currently_visible: bool = False
+
+
+class PhotoPersonMatch(CamelModel):
+    id: str
+    full_name: str
+    type: Literal["talaba", "xodim"]
+    group_or_position: str
+    similarity: float
+    photo_url: str | None = None
+    last_seen_at: datetime | None = None
+
+
+class PhotoSightingMatch(CamelModel):
+    id: str
+    similarity: float
+    crop_url: str | None = None
+    camera_id: str | None = None
+    camera_name: str | None = None
+    first_seen_at: datetime
+    last_seen_at: datetime
+    hits: int
+
+
+class PhotoSearchOut(CamelModel):
+    people: list[PhotoPersonMatch]
+    sightings: list[PhotoSightingMatch]
+    date_from: str
+    date_to: str
+
+
+class RouteStopOut(CamelModel):
+    camera_id: str | None = None
+    camera_name: str | None = None
+    building: str | None = None
+    floor: int | None = None
+    zone: str | None = None
+    started_at: datetime
+    ended_at: datetime
+    count: int
+    best_similarity: float | None = None
+
+
+class PersonRouteOut(CamelModel):
+    person_id: str
+    full_name: str
+    day: str
+    stops: list[RouteStopOut]
