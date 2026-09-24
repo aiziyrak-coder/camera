@@ -5,7 +5,7 @@ import EventActivity from './EventActivity';
 import { cameraLabel } from './ReviewCard';
 import EventWorkflowPanel from './EventWorkflowPanel';
 import { detailMetrics } from '../../lib/eventDetails';
-import { relativeTime } from '../../lib/uzDate';
+import { relativeTime, todayInTashkent } from '../../lib/uzDate';
 import type { AIEvent } from '../../types';
 import { useAuth } from '../../lib/auth';
 import { usePermissions } from '../../lib/permissions';
@@ -176,7 +176,8 @@ export default function EventDrawer({
                 <ButtonLink
                   to={`/arxiv?${new URLSearchParams({
                     kamera: event.cameraId,
-                    sana: event.occurredAt.slice(0, 10),
+                    // Toshkent sanasi: UTC satrning boshi 05:00 gacha oldingi kunni beradi.
+                    sana: todayInTashkent(new Date(event.occurredAt)),
                     t: new Date(Date.parse(event.occurredAt) - 15_000).toISOString(),
                   }).toString()}`}
                   icon={History}
