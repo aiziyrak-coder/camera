@@ -479,3 +479,17 @@ def test_overlay_marks_only_accepted_matches_as_known():
     entries = attendance_ai._overlay_entries([known, stranger, tiny], [known, stranger], graded, {id(known): "p1"})
     assert [e["status"] for e in entries] == ["tanildi", "notanish", "kichik"]
     assert entries[0]["person_id"] == "p1" and entries[1]["similarity"] == 0.44
+
+
+def test_diagnosis_flags_a_camera_that_misses_most_faces():
+    from types import SimpleNamespace
+
+    from app.routers.presence import _diagnose
+
+    base = dict(frames=100, stream="asosiy", strict=5, relaxed_confirmed=0, face_px_median=24)
+    mostly_small = SimpleNamespace(**base, faces=200, small_faces=180)
+    assert "90%" in _diagnose(True, True, mostly_small, recognized=5, enrolled=100)
+    fine = SimpleNamespace(**base, faces=200, small_faces=40)
+    assert _diagnose(True, True, fine, recognized=5, enrolled=100) is None
+    few = SimpleNamespace(**base, faces=10, small_faces=10)
+    assert _diagnose(True, True, few, recognized=5, enrolled=100) is None

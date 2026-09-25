@@ -1274,6 +1274,31 @@ class Settings(BaseSettings):
     # va familiya-ismi mos (tartibi boshqa bo'lsa ham) yozuvlar bir odam;
     # ismi boshqa bo'lsa — faqat ko'rib chiqish uchun (birlashtirilmaydi).
     dedupe_face_similarity: float = 0.70
+    # Noma'lum yuzlarni yangi baza bilan qayta solishtirish
+    # (app/jobs/unknown_rematch.py) — oddiy tanishdan qat'iyroq chegara.
+    unknown_rematch_enabled: bool = True
+    # Fermi Face ID — institut loyihalari uchun yuz orqali kirish
+    # (app/services/faceid.py). Chegaralar: 1:1 — ID kiritilganda (odamning
+    # o'z yuziga), 1:N — faqat yuz bilan (qat'iyroq va ikkinchi nomzoddan uzoq).
+    faceid_enabled: bool = True
+    faceid_match_threshold: float = 0.50
+    faceid_anchor_min: float = 0.40
+    faceid_identify_threshold: float = 0.60
+    faceid_identify_margin: float = 0.10
+    faceid_frame_consistency: float = 0.30
+    faceid_challenge_seconds: int = 120
+    faceid_code_seconds: int = 120
+    faceid_max_failures: int = 5
+    faceid_lock_minutes: int = 15
+    # O'zi ro'yxatdan o'tgan yuz (JSHSHIR sir emas) — administrator
+    # tasdiqlamaguncha Face ID uchun yaroqsiz. None (eski) yuzlar — ishonchli.
+    faceid_trust_self_enrolled: bool = False
+    faceid_trust_legacy: bool = True
+    unknown_rematch_interval_seconds: int = 1800
+    unknown_rematch_days: int = 2
+    unknown_rematch_similarity: float = 0.55
+    unknown_rematch_margin: float = 0.08
+    unknown_rematch_min_px: int = 36
     dedupe_face_only_similarity: float = 0.80
     hemis_photo_min_face_px: int = 60
     hemis_photo_retry_minutes: int = 60

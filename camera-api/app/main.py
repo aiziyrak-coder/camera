@@ -26,6 +26,7 @@ from app.jobs.access_poll import access_poll_loop
 from app.jobs.event_escalation import event_escalation_loop
 from app.jobs.hemis_photos import hemis_photos_loop
 from app.jobs.teacher_absence import teacher_absence_loop
+from app.jobs.unknown_rematch import unknown_rematch_loop
 from app.jobs.hemis_sync import hemis_sync_loop
 from app.jobs.telegram_bot import telegram_bot_loop
 from app.logging_config import configure_logging
@@ -124,6 +125,7 @@ def _start_platform_loops(tasks: list[asyncio.Task]) -> None:
         hemis_sync_loop(),
         hemis_photos_loop(),
         teacher_absence_loop(),
+        unknown_rematch_loop(),
         access_poll_loop(),
     ):
         tasks.append(asyncio.create_task(loop_coro))

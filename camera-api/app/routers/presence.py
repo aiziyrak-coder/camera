@@ -331,6 +331,27 @@ async def teachers_day(
     return sorted(out, key=lambda t: (t.first_seen is None, t.first_seen or "", t.full_name))
 
 
+PARTIAL_MIN_FACES = 50
+PARTIAL_SMALL_SHARE = 0.6
+
+
+def _partial_diagnosis(live) -> str | None:
+    """Kamera kimnidir taniyapti, lekin ko'pchilik yuzni o'tkazib yubormoqda
+    (production, 2026-09-24: yuzlarning 96% 40 px dan kichik). Bu ham
+    tuzatiladigan holat — kamera o'rni yoki linza."""
+    if live.faces < PARTIAL_MIN_FACES:
+        return None
+    share = live.small_faces / live.faces
+    if share >= PARTIAL_SMALL_SHARE:
+        median_px = live.face_px_median
+        size = f", o'rtacha {median_px} px" if median_px else ""
+        return (
+            f"Yuzlarning {round(share * 100)}% tanish uchun juda kichik{size} — kamerani eshikka "
+            "yaqinroq yoki yuz balandligiga (2-2.5 m) tushiring, yoki torroq burchakli linza qo'ying"
+        )
+    return None
+
+
 def _diagnose(enabled: bool, online: bool, live, recognized: int, enrolled: int) -> str | None:
     """Kamera nima uchun hech kimni davomatga yozmayotganini oddiy tilda."""
     if not enabled:
@@ -349,7 +370,7 @@ def _diagnose(enabled: bool, online: bool, live, recognized: int, enrolled: int)
             "(yuzlar kichik). Kameraning asosiy oqimini tekshiring"
         )
     if recognized > 0 or live.strict or live.relaxed_confirmed:
-        return None
+        return _partial_diagnosis(live)
     cycle = live.last_cycle_seconds or 0
     if cycle > 60:
         return (
