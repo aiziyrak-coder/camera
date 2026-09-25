@@ -52,7 +52,7 @@ from app.database import SessionLocal
 from app.models import Department, Faculty, IntegrationSyncRun, StudentGroup, StudentStaff
 from app.services.face_matching import announce_roster_change
 from app.services.integrations.http import make_client
-from app.services.name_matching import name_key
+from app.services.name_matching import name_key, name_tokens
 
 logger = logging.getLogger("app.integrations.hemis")
 
@@ -85,6 +85,7 @@ ENTITY_LABELS = {
     "groups": "Guruhlar",
     "students": "Talabalar",
     "employees": "Xodimlar",
+    "schedule": "Dars jadvali",
 }
 
 
@@ -294,6 +295,8 @@ class HemisPerson:
     department_name: str | None
     active: bool
     main_employment: bool = True
+    # HEMIS rasmi (image_full, bo'lmasa image) — yuzi yo'q odamni tanitish uchun.
+    photo_url: str | None = None
 
     @property
     def group_or_position(self) -> str:
@@ -332,6 +335,11 @@ def map_group(item: dict) -> HemisGroup | None:
     return HemisGroup(hemis_id=group_id, name=name, faculty_name=ref_name(faculty) or None, course=course)
 
 
+def photo_url(item: dict) -> str | None:
+    url = _text(pick(item, "image_full", "image"))
+    return url if url.startswith(("http://", "https://")) else None
+
+
 def map_student(item: dict) -> HemisPerson | None:
     """None — yozuvni aniqlab bo'lmaydi (identifikator yoki ism yo'q)."""
     hemis_id = _text(pick(item, "student_id_number", "studentIdNumber", "student_id"))
@@ -352,6 +360,7 @@ def map_student(item: dict) -> HemisPerson | None:
         position=None,
         department_name=None,
         active=is_student_active(item),
+        photo_url=photo_url(item),
     )
 
 
@@ -390,7 +399,38 @@ def map_employee(item: dict, units: dict[str, HemisUnit] | None = None) -> Hemis
         department_name=department_name,
         active=is_employee_active(item),
         main_employment=not employment or any(word in employment for word in _MAIN_EMPLOYMENT_WORDS),
+        photo_url=photo_url(item),
     )
+
+
+_KINSHIP = {"ogli", "ugli", "ogl", "kizi", "qizi", "kiz"}
+
+
+def fuzzy_name_key(full_name: str | None) -> str:
+    """Imlo farqlariga chidamli kalit: "USAROV BARKAMOL BAXODIR O'G'LI" va
+    "Usarov Barkamol Bahodir o'g'li" bir xil. O'g'li/qizi va ota ismining
+    -ovich/-ovna qo'shimchasi e'tiborsiz."""
+    tokens = [t for t in name_tokens(full_name) if t not in _KINSHIP]
+    tokens = [re.sub(r"(ovich|evich|ovna|evna)$", "", t) for t in tokens]
+    return " ".join(tokens)
+
+
+def short_name_key(full_name: str | None) -> str:
+    """Familiya + ism (imloga chidamli) — otasining ismisiz."""
+    return " ".join(fuzzy_name_key(full_name).split()[:2])
+
+
+def patronymic_compatible(a: str | None, b: str | None) -> bool:
+    """Otasining ismi zid emas: bittasida yo'q yoki birinchi 4 harfi bir xil
+    ("Bahodir"/"Baxodirovich" -> "bahodir"/"bahodir")."""
+    pa, pb = fuzzy_name_key(a).split()[2:3], fuzzy_name_key(b).split()[2:3]
+    return not pa or not pb or pa[0][:4] == pb[0][:4]
+
+
+def group_code(text: str | None) -> str:
+    """Guruh kodi: "2-kurs, DI-2301" va "DI-2301" -> "2301"."""
+    found = re.findall(r"[0-9]{3,}[a-z]?", (text or "").lower())
+    return found[-1] if found else ""
 
 
 def dedupe_people(people: list[HemisPerson]) -> tuple[list[HemisPerson], int]:
@@ -539,20 +579,24 @@ class HemisClient:
                 await self._sleep(delay)
         raise HemisError(f"{last_error} — {MAX_ATTEMPTS} marta urinildi")
 
-    async def fetch_page(self, endpoint: str, page: int = 1, limit: int | None = None) -> HemisPage:
-        payload = await self._get_json(endpoint, {"page": page, "limit": limit or self.page_size})
+    async def fetch_page(
+        self, endpoint: str, page: int = 1, limit: int | None = None, params: dict[str, Any] | None = None
+    ) -> HemisPage:
+        payload = await self._get_json(endpoint, {**(params or {}), "page": page, "limit": limit or self.page_size})
         return parse_page(payload, requested_page=page)
 
     async def fetch_all(
         self,
         endpoint: str,
         on_page: Callable[[int, int], Awaitable[None]] | None = None,
+        params: dict[str, Any] | None = None,
     ) -> list[dict]:
-        """Barcha sahifalar. `on_page(page, page_count)` — jarayonni ko'rsatish uchun."""
+        """Barcha sahifalar. `on_page(page, page_count)` — jarayonni ko'rsatish uchun.
+        `params` — qo'shimcha filtrlar (masalan employee-list uchun type)."""
         items: list[dict] = []
         page = 1
         while True:
-            result = await self.fetch_page(endpoint, page)
+            result = await self.fetch_page(endpoint, page, params=params)
             items.extend(result.items)
             if on_page is not None:
                 await on_page(page, result.page_count)
@@ -560,6 +604,37 @@ class HemisClient:
                 break
             page += 1
         return items
+
+
+# employee-list "type" parametrisiz 400 qaytaradi ("Kerakli parametrlar
+# yetishmayapti: type"). fjsti'da (2026-09-25): teacher — 669, employee — 323;
+# bir odam ikkalasida bo'lishi mumkin, shuning uchun HEMIS id bo'yicha birlashtiriladi.
+EMPLOYEE_TYPES = ("teacher", "employee")
+
+
+def employee_numbers(items: list[dict]) -> dict[str, str]:
+    """HEMIS employee.id -> employee_id_number (StudentStaff.hemis_id)."""
+    out: dict[str, str] = {}
+    for item in items:
+        number = _text(pick(item, "employee_id_number", "employeeIdNumber", "employee_id"))
+        if item.get("id") is not None and number:
+            out[str(item["id"])] = number
+    return out
+
+
+async def fetch_employees(
+    client: HemisClient, on_page: Callable[[int, int], Awaitable[None]] | None = None
+) -> list[dict]:
+    seen: set = set()
+    items: list[dict] = []
+    for kind in EMPLOYEE_TYPES:
+        for item in await client.fetch_all(ENTITY_ENDPOINTS["employees"], on_page=on_page, params={"type": kind}):
+            key = item.get("id") if item.get("id") is not None else id(item)
+            if key in seen:
+                continue
+            seen.add(key)
+            items.append(item)
+    return items
 
 
 # ── Sinxronlash ─────────────────────────────────────────────────────────────
@@ -659,6 +734,8 @@ class _HemisSync:
         self.step_errors: list[str] = []
         self.fatal_error: str | None = None
         self.units: dict[str, HemisUnit] = {}
+        # HEMIS employee.id -> employee_id_number (dars jadvalidagi o'qituvchini topish uchun).
+        self.employee_numbers: dict[str, str] = {}
         self.touched_faculty_ids: set[uuid.UUID] = set()
         # Talabalar ro'yxatidan: guruh nomi -> kurslar, faol talabalar soni.
         self.group_courses: dict[str, Counter] = defaultdict(Counter)
@@ -718,6 +795,7 @@ class _HemisSync:
             ("students", self._sync_students),
             ("groups", self._sync_groups),
             ("employees", self._sync_employees),
+            ("schedule", self._sync_schedule),
         ):
             try:
                 await handler(client)
@@ -741,7 +819,10 @@ class _HemisSync:
         async def on_page(page: int, page_count: int) -> None:
             await self._save_progress(f"{label}: yuklab olinmoqda", page, page_count)
 
-        items = await client.fetch_all(ENTITY_ENDPOINTS[entity], on_page=on_page)
+        if entity == "employees":
+            items = await fetch_employees(client, on_page=on_page)
+        else:
+            items = await client.fetch_all(ENTITY_ENDPOINTS[entity], on_page=on_page)
         self.stats[entity]["fetched"] = len(items)
         return items
 
@@ -874,6 +955,7 @@ class _HemisSync:
 
     async def _sync_employees(self, client: HemisClient) -> None:
         items = await self._fetch(client, "employees")
+        self.employee_numbers = employee_numbers(items)
         people: list[HemisPerson] = []
         for item in items:
             person = map_employee(item, self.units)
@@ -884,6 +966,28 @@ class _HemisSync:
         # Bir odamning bir nechta lavozimi — xato emas, alohida hisoblanmaydi.
         people, _ = dedupe_people(people)
         await self._sync_people("employees", "xodim", people)
+
+    async def _sync_schedule(self, client: HemisClient) -> None:
+        from app.services.integrations import hemis_schedule
+
+        first, last = hemis_schedule.schedule_window()
+        label = ENTITY_LABELS["schedule"]
+
+        async def on_page(page: int, page_count: int) -> None:
+            await self._save_progress(f"{label}: yuklab olinmoqda", page, page_count)
+
+        items = await hemis_schedule.fetch_lessons(client, first, last, on_page=on_page)
+        if not self.employee_numbers:
+            self.employee_numbers = employee_numbers(await fetch_employees(client))
+        result = await hemis_schedule.sync_schedule(self.db, items, self.employee_numbers, first=first, last=last)
+        for key in ("fetched", "created", "updated", "unchanged", "deactivated", "skipped", "errors"):
+            self.stats["schedule"][key] = result[key]
+        lessons = result["created"] + result["updated"] + result["unchanged"]
+        self.message(
+            f"Dars jadvali {first:%d.%m}-{last:%d.%m}: {lessons} dars, kamerasi topilgan — {result['with_camera']}, "
+            f"o'qituvchisi topilgan — {result['with_teacher']}"
+        )
+        await self.db.commit()
 
     async def _sync_people(self, entity: str, person_type: str, people: list[HemisPerson]) -> None:
         stats = self.stats[entity]
@@ -899,10 +1003,16 @@ class _HemisSync:
         by_hemis: dict[str, StudentStaff] = {r.hemis_id: r for r in rows if r.hemis_id}
         by_pinfl: dict[str, StudentStaff] = {r.pinfl: r for r in rows if r.pinfl}
         by_name: dict[str, list[StudentStaff]] = defaultdict(list)
+        by_fuzzy: dict[str, list[StudentStaff]] = defaultdict(list)
+        by_short: dict[str, list[StudentStaff]] = defaultdict(list)
         for row in rows:
             if row.type == person_type:
                 by_name[name_key(row.full_name)].append(row)
+                by_fuzzy[fuzzy_name_key(row.full_name)].append(row)
+                by_short[short_name_key(row.full_name)].append(row)
         name_counts = Counter(name_key(p.full_name) for p in people)
+        fuzzy_counts = Counter(fuzzy_name_key(p.full_name) for p in people)
+        short_counts = Counter(short_name_key(p.full_name) for p in people)
         claimed: set[uuid.UUID] = set()
         seen_hemis: set[str] = set()
         now = _utcnow()
@@ -911,7 +1021,9 @@ class _HemisSync:
             if index % 200 == 0:
                 await self._save_progress(f"{label}: yozilmoqda", index, len(people))
             seen_hemis.add(person.hemis_id)
-            match, conflict = self._match(person, by_hemis, by_pinfl, by_name, name_counts)
+            match, conflict = self._match(
+                person, by_hemis, by_pinfl, by_name, name_counts, by_fuzzy, fuzzy_counts, by_short, short_counts
+            )
             if conflict:
                 stats["skipped"] += 1
                 self.message(f"{person.full_name} ({person.hemis_id}): {conflict}")
@@ -946,6 +1058,7 @@ class _HemisSync:
                         group_or_position=person.group_or_position[:300],
                         biometrics_status="yoq",
                         active=True,
+                        hemis_photo_url=person.photo_url,
                     )
                     async with self.db.begin_nested():
                         self.db.add(record)
@@ -986,8 +1099,28 @@ class _HemisSync:
         by_pinfl: dict[str, StudentStaff],
         by_name: dict[str, list[StudentStaff]],
         name_counts: Counter,
+        by_fuzzy: dict[str, list[StudentStaff]] | None = None,
+        fuzzy_counts: Counter | None = None,
+        by_short: dict[str, list[StudentStaff]] | None = None,
+        short_counts: Counter | None = None,
     ) -> tuple[StudentStaff | None, str | None]:
-        """(yozuv, ziddiyat sababi)."""
+        """(yozuv, ziddiyat sababi).
+
+        Ism bo'yicha moslik — faqat ikkala tomonda ham YAGONA bo'lsa. HEMIS
+        REST javobida JSHSHIR yo'q (fjsti, 2026-09-25): ilgari bazadagi
+        JSHSHIRli yozuv ism bo'yicha umuman tanlanmasdi va sinxronlash
+        deyarli har bir talabani yangi (dublikat) qator qilib yaratgan
+        bo'lardi. Endi JSHSHIR faqat IKKALA tomonda bo'lib, farq qilsagina
+        to'siq. Aniq ism topilmasa — imlo farqlariga chidamli kalit
+        (x/h, q/k, kirill/lotin, o'g'li/qizi), u ham faqat yagona bo'lsa.
+
+        Uchinchi bosqich — familiya + ism (2026-09-25 quruq sinovi: 2276
+        moslashmagan talabadan 1111 tasining bazada yagona "egizagi" bor edi,
+        farq faqat otasining ismida — bittasida yo'q yoki qisqartirilgan).
+        Qabul qilinadi: ikkala tomonda yagona (yoki bir nechta bo'lsa — guruh
+        kodi bittasiga mos), otasining ismi zid emas va guruh kodi qarshi
+        dalil bermaydi (otasining ismi bir tomonda yo'q bo'lsa, guruh ham
+        farq qilsa — dalil yetarli emas)."""
         match = by_hemis.get(person.hemis_id)
         if match is not None:
             return match, None
@@ -997,15 +1130,38 @@ class _HemisSync:
                 if match.hemis_id and match.hemis_id != person.hemis_id:
                     return None, f"JSHSHIR boshqa HEMIS yozuviga ({match.hemis_id}) biriktirilgan — o'tkazildi"
                 return match, None
+        def free(row: StudentStaff) -> bool:
+            return row.hemis_id is None and (not person.pinfl or not row.pinfl or row.pinfl == person.pinfl)
+
         key = name_key(person.full_name)
         if key and name_counts.get(key) == 1:
-            candidates = [
-                row
-                for row in by_name.get(key, [])
-                if row.hemis_id is None and (row.pinfl is None or row.pinfl == person.pinfl)
-            ]
+            candidates = [row for row in by_name.get(key, []) if free(row)]
             if len(candidates) == 1:
                 return candidates[0], None
+        if by_fuzzy is not None and fuzzy_counts is not None:
+            fuzzy = fuzzy_name_key(person.full_name)
+            if fuzzy and fuzzy_counts.get(fuzzy) == 1:
+                candidates = [row for row in by_fuzzy.get(fuzzy, []) if free(row)]
+                if len(candidates) == 1:
+                    return candidates[0], None
+        if by_short is not None and short_counts is not None:
+            short = short_name_key(person.full_name)
+            if short and len(short.split()) == 2:
+                candidates = [
+                    row
+                    for row in by_short.get(short, [])
+                    if free(row) and patronymic_compatible(person.full_name, row.full_name)
+                ]
+                wanted = group_code(person.group_name)
+                if len(candidates) > 1 or short_counts.get(short, 0) > 1:
+                    same_group = [row for row in candidates if wanted and group_code(row.group_or_position) == wanted]
+                    candidates = same_group if len(same_group) == 1 else []
+                if len(candidates) == 1:
+                    row = candidates[0]
+                    theirs = group_code(row.group_or_position)
+                    one_lacks = len(fuzzy_name_key(person.full_name).split()) < 3 or len(fuzzy_name_key(row.full_name).split()) < 3
+                    if not (one_lacks and wanted and theirs and wanted != theirs):
+                        return row, None
         return None, None
 
     async def _apply_update(
@@ -1029,6 +1185,11 @@ class _HemisSync:
         position = person.group_or_position[:300]
         if record.group_or_position != position:
             changes["group_or_position"] = position
+        if person.photo_url and record.hemis_photo_url != person.photo_url:
+            # Yangi rasm — rasmdan tanitish qayta urinib ko'radi (app/jobs/hemis_photos.py).
+            changes["hemis_photo_url"] = person.photo_url
+            changes["hemis_photo_checked_at"] = None
+            changes["hemis_photo_error"] = None
         outcome = "updated"
         if person.active and not record.active:
             changes["active"] = True

@@ -23,6 +23,11 @@ class LessonSessionOut(CamelModel):
     teacher_id: str | None = None
     camera_id: str | None = None
     scheduled_start_time: str | None = None  # ISO 8601, institute-local (see app/timezone.py)
+    # HEMIS dars jadvalidan (app/services/integrations/hemis_schedule.py).
+    scheduled_end_time: str | None = None
+    auditorium: str | None = None
+    building: str | None = None
+    from_hemis: bool = False
 
 
 class LessonSessionCreateIn(CamelModel):

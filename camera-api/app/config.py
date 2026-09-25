@@ -1257,8 +1257,19 @@ class Settings(BaseSettings):
     hemis_base_url: str = ""
     hemis_api_token: str = ""
     # 0 — faqat qo'lda ("Sinxronlash" tugmasi). >0 — har N soatda.
-    hemis_sync_interval_hours: int = 0
+    # HEMIS sozlangan bo'lsagina ishlaydi (hemis_configured). Kuniga bir marta
+    # to'liq (talabalar, xodimlar, guruhlar, jadval); jadvalning o'zi tez-tez.
+    hemis_sync_interval_hours: int = 24
+    hemis_schedule_interval_hours: float = 3.0
+    hemis_schedule_days_back: int = 1
+    hemis_schedule_days_ahead: int = 14
     hemis_page_size: int = 200
+    # HEMIS rasmidan tanitish (app/jobs/hemis_photos.py): har N soniyada bir
+    # to'plam, fon navbatida (davomat kadrlaridan keyin).
+    hemis_photo_enrollment: bool = True
+    hemis_photo_batch: int = 60
+    hemis_photo_interval_seconds: int = 300
+    hemis_photo_min_face_px: int = 60
     # HEMIS'da endi yo'q odamni faolsizlantirish (o'chirmaydi).
     hemis_deactivate_missing: bool = False
 

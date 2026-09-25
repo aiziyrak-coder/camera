@@ -583,3 +583,64 @@ async def test_active_changes_announce_roster_change(hemis_settings, monkeypatch
     # Faollik o'zgarmadi — kesh tegilmaydi.
     await _run_sync()
     assert announced == [False, True]
+
+
+# ── Moslash: JSHSHIRsiz HEMIS (fjsti, 2026-09-25) ──────────────────────────
+
+def _row(full_name, *, pinfl=None, group="", hemis_id=None, type_="talaba"):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(full_name=full_name, pinfl=pinfl, group_or_position=group, hemis_id=hemis_id, type=type_, id=full_name)
+
+
+def _person(full_name, group=None):
+    from app.services.integrations.hemis import HemisPerson
+
+    return HemisPerson(type="talaba", hemis_id="H-" + full_name, full_name=full_name, pinfl=None, faculty_name=None,
+                       group_name=group, course=None, position=None, department_name=None, active=True)
+
+
+def _match(person, rows, people=None):
+    from collections import Counter, defaultdict
+
+    from app.services.integrations.hemis import _HemisSync, fuzzy_name_key, short_name_key
+    from app.services.name_matching import name_key
+
+    people = people or [person]
+    by_name, by_fuzzy, by_short = defaultdict(list), defaultdict(list), defaultdict(list)
+    for row in rows:
+        by_name[name_key(row.full_name)].append(row)
+        by_fuzzy[fuzzy_name_key(row.full_name)].append(row)
+        by_short[short_name_key(row.full_name)].append(row)
+    match, _ = _HemisSync._match(
+        person, {}, {}, by_name, Counter(name_key(p.full_name) for p in people),
+        by_fuzzy, Counter(fuzzy_name_key(p.full_name) for p in people),
+        by_short, Counter(short_name_key(p.full_name) for p in people),
+    )
+    return match
+
+
+def test_row_with_pinfl_is_matched_by_name_when_hemis_has_none():
+    row = _row("Usarov Barkamol Bahodir o'g'li", pinfl="30101990000011")
+    assert _match(_person("USAROV BARKAMOL BAXODIR O‘G‘LI"), [row]) is row
+
+
+def test_missing_patronymic_matches_a_unique_twin():
+    row = _row("Usarov Barkamol", group="1-kurs, 101")
+    assert _match(_person("USAROV BARKAMOL BAXODIR O‘G‘LI", group="101"), [row]) is row
+
+
+def test_different_father_is_not_the_same_student():
+    row = _row("Usarov Barkamol Rustamovich")
+    assert _match(_person("USAROV BARKAMOL BAXODIR O‘G‘LI"), [row]) is None
+
+
+def test_namesakes_are_split_by_group_or_left_alone():
+    a, b = _row("Aliyev Anvar", group="1-kurs, 101"), _row("Aliyev Anvar", group="2-kurs, 202")
+    assert _match(_person("ALIYEV ANVAR KARIM O‘G‘LI", group="202"), [a, b]) is b
+    assert _match(_person("ALIYEV ANVAR KARIM O‘G‘LI", group="303"), [a, b]) is None
+
+
+def test_weak_twin_with_a_different_group_is_rejected():
+    row = _row("Usarov Barkamol", group="3-kurs, 305")
+    assert _match(_person("USAROV BARKAMOL BAXODIR O‘G‘LI", group="101"), [row]) is None

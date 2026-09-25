@@ -55,6 +55,11 @@ class LessonSession(Base):
     # when the check could not run (no frame) or its window had passed, in
     # which case teacher_on_time stays NULL. Keeps the job from retrying.
     punctuality_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # HEMIS dars jadvalidan (app/services/integrations/hemis_schedule.py).
+    hemis_id: Mapped[str | None] = mapped_column(String, nullable=True, unique=True, index=True)
+    auditorium: Mapped[str | None] = mapped_column(String, nullable=True)
+    building: Mapped[str | None] = mapped_column(String, nullable=True)
+    scheduled_end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     teacher_ref: Mapped["StudentStaff | None"] = relationship("StudentStaff", lazy="joined")
     camera: Mapped["Camera | None"] = relationship("Camera", lazy="joined")

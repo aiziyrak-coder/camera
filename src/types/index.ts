@@ -896,6 +896,11 @@ export interface LessonSession {
   teacherId?: string | null;
   cameraId?: string | null;
   scheduledStartTime?: string | null;
+  /** HEMIS dars jadvalidan: tugash vaqti, xona va bino. */
+  scheduledEndTime?: string | null;
+  auditorium?: string | null;
+  building?: string | null;
+  fromHemis?: boolean;
 }
 
 /** GET /api/events/summary — Hodisalar jurnalining tepa qatori va filtrlari. */

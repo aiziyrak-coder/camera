@@ -83,6 +83,11 @@ class StudentStaff(Base):
     card_number: Mapped[str | None] = mapped_column(String, nullable=True, unique=True, index=True)
     # HEMIS tizimidagi identifikator (talaba: student_id_number, xodim: employee_id_number).
     hemis_id: Mapped[str | None] = mapped_column(String, nullable=True, unique=True, index=True)
+    # HEMIS rasmi (image_full) — yuzi yo'q odamni shu rasmdan tanitish
+    # (app/jobs/hemis_photos.py). checked_at/error — urinish natijasi.
+    hemis_photo_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    hemis_photo_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    hemis_photo_error: Mapped[str | None] = mapped_column(String, nullable=True)
     # Faol emas (bitirgan, ishdan ketgan): tanish ro'yxatiga kirmaydi,
     # biometrikasi saqlash muddatidan keyin o'chiriladi (app/jobs/cleanup.py).
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")

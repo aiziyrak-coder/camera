@@ -606,7 +606,11 @@ def lesson_select():
             LessonSession.faculty, LessonSession.teacher, LessonSession.teacher_id, LessonSession.camera_id,
             start, LessonSession.attention_score, LessonSession.attention_samples,
             LessonSession.teacher_activity_score, LessonSession.activity_samples, LessonSession.sleep_incidents,
-            LessonSession.teacher_on_time, Camera.name, Building.name, StudentStaff.biometric_photo_key,
+            # Xona va bino: HEMIS jadvalidagi (kamerasi bo'lmasa ham), bo'lmasa kameraniki.
+            LessonSession.teacher_on_time,
+            func.coalesce(LessonSession.auditorium, Camera.name),
+            func.coalesce(LessonSession.building, Building.name),
+            StudentStaff.biometric_photo_key,
             arrived,
         )
         .select_from(LessonSession)

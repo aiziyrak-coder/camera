@@ -24,6 +24,7 @@ from app.jobs.vision_ai import vision_ai_loop
 from app.jobs.zone_entry_ai import zone_entry_ai_loop
 from app.jobs.access_poll import access_poll_loop
 from app.jobs.event_escalation import event_escalation_loop
+from app.jobs.hemis_photos import hemis_photos_loop
 from app.jobs.hemis_sync import hemis_sync_loop
 from app.jobs.telegram_bot import telegram_bot_loop
 from app.logging_config import configure_logging
@@ -118,6 +119,7 @@ def _start_platform_loops(tasks: list[asyncio.Task]) -> None:
         telegram_bot_loop(),
         event_escalation_loop(),
         hemis_sync_loop(),
+        hemis_photos_loop(),
         access_poll_loop(),
     ):
         tasks.append(asyncio.create_task(loop_coro))

@@ -65,6 +65,10 @@ def _to_out(s: LessonSession) -> LessonSessionOut:
         teacher_id=str(s.teacher_id) if s.teacher_id else None,
         camera_id=str(s.camera_id) if s.camera_id else None,
         scheduled_start_time=s.scheduled_start_time.isoformat() if s.scheduled_start_time else None,
+        scheduled_end_time=s.scheduled_end_time.isoformat() if s.scheduled_end_time else None,
+        auditorium=s.auditorium,
+        building=s.building,
+        from_hemis=s.hemis_id is not None,
     )
 
 

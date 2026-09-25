@@ -29,6 +29,8 @@ export interface SyncStats {
   groups?: EntityStats;
   students?: EntityStats;
   employees?: EntityStats;
+  /** HEMIS dars jadvali (deactivated — HEMIS'dan olib tashlangan kelajakdagi darslar). */
+  schedule?: EntityStats;
   progress?: SyncProgress;
   messages?: string[];
 }
@@ -228,6 +230,7 @@ export const ENTITY_ORDER: { key: keyof Omit<SyncStats, 'progress' | 'messages'>
   { key: 'groups', label: 'Guruhlar' },
   { key: 'faculties', label: 'Fakultetlar' },
   { key: 'departments', label: 'Kafedralar' },
+  { key: 'schedule', label: 'Dars jadvali' },
 ];
 
 export interface StatsRow extends EntityStats {

@@ -57,6 +57,43 @@ async def run_scheduled_sync_once() -> bool:
     return True
 
 
+# Jadvalning o'zi to'liq sinxronlashdan tez-tez yangilanadi: dars ko'chiriladi,
+# xona almashadi — kamera va punktuallik tekshiruvi eskirgan jadvalga qaramasin.
+_last_schedule_refresh: list[datetime | None] = [None]
+
+
+async def run_schedule_refresh_once(now: datetime | None = None) -> dict | None:
+    """Faqat dars jadvali (settings.hemis_schedule_interval_hours). None —
+    navbati kelmagan, HEMIS sozlanmagan yoki to'liq sinxronlash ishlamoqda."""
+    from app.services.integrations import hemis_schedule
+
+    if settings.hemis_schedule_interval_hours <= 0 or not hemis.hemis_configured():
+        return None
+    now = now or datetime.now(timezone.utc)
+    last = _last_schedule_refresh[0]
+    if last is not None and now - last < timedelta(hours=settings.hemis_schedule_interval_hours):
+        return None
+    async with hemis.session_factory() as db:
+        running = (
+            await db.execute(
+                select(IntegrationSyncRun.id).where(
+                    IntegrationSyncRun.source == hemis.SOURCE, IntegrationSyncRun.status == "ishlamoqda"
+                )
+            )
+        ).first()
+        if running is not None:
+            return None
+        _last_schedule_refresh[0] = now
+        first, last_day = hemis_schedule.schedule_window()
+        async with hemis.HemisClient() as client:
+            items = await hemis_schedule.fetch_lessons(client, first, last_day)
+            numbers = hemis.employee_numbers(await hemis.fetch_employees(client))
+        stats = await hemis_schedule.sync_schedule(db, items, numbers, first=first, last=last_day)
+        await db.commit()
+    logger.info("HEMIS schedule refreshed", extra={"event": "hemis_schedule_refreshed", "stats": stats})
+    return stats
+
+
 async def hemis_sync_loop() -> None:
     while True:
         try:
@@ -65,4 +102,10 @@ async def hemis_sync_loop() -> None:
             raise
         except Exception:
             logger.exception("scheduled HEMIS sync failed", extra={"event": "hemis_sync_loop_error"})
+        try:
+            await run_schedule_refresh_once()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("HEMIS schedule refresh failed", extra={"event": "hemis_schedule_error"})
         await asyncio.sleep(CHECK_INTERVAL_SECONDS)
