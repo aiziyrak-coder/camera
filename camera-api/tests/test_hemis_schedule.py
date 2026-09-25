@@ -188,3 +188,20 @@ def test_transient_download_errors_count_attempts_then_give_up():
     for _ in range(hemis_photos.RETRY_LIMIT):
         message = hemis_photos.transient_message(message, "504")
     assert not message.startswith(hemis_photos.TRANSIENT)  # endi qayta urinilmaydi
+
+
+async def test_full_size_portrait_is_analysed_at_640(monkeypatch):
+    """993x1275 HEMIS portreti 1280 da emas, 640 da tahlil qilinadi (4 marta tezroq)."""
+    import cv2
+
+    ok, buffer = cv2.imencode(".jpg", np.full((1275, 993, 3), 200, dtype=np.uint8))
+    shapes: list[tuple] = []
+
+    async def fake_detect(data, **kwargs):
+        shapes.append(cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR).shape[:2])
+        return []
+
+    monkeypatch.setattr(hemis_photos, "detect_faces", fake_detect)
+    with pytest.raises(hemis_photos.NoFaceDetectedError):
+        await hemis_photos._embed_photo(buffer.tobytes())
+    assert shapes == [(640, 498), (640, 498)]

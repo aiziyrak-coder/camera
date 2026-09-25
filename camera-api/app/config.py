@@ -1269,6 +1269,7 @@ class Settings(BaseSettings):
     hemis_photo_enrollment: bool = True
     hemis_photo_batch: int = 60
     hemis_photo_interval_seconds: int = 300
+    hemis_photo_busy_pause_seconds: int = 5
     hemis_photo_min_face_px: int = 60
     hemis_photo_retry_minutes: int = 60
     # O'qituvchi darsga kelmadi (app/jobs/teacher_absence.py) — kamerasiz xonadagi

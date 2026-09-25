@@ -94,6 +94,37 @@ def transient_message(previous: str | None, reason: str) -> str:
     return f"{TRANSIENT} ({reason}) [{attempts}]"
 
 
+# Portret shu o'lchamgacha kichraytirib tahlil qilinadi. Detektor kadrni
+# uzun tomoni bo'yicha face_det_max_side (1280) gacha ishlaydi: 993x1275
+# rasm (chegara bilan 1986x2550) har safar ~1.7 s olardi, 640 da ~0.4 s.
+# Yuz baribir 112x112 ga tekislanadi — vektor sifati o'zgarmaydi.
+PHOTO_DET_SIDE = 640
+
+
+def fit_long_side(image: np.ndarray, side: int = PHOTO_DET_SIDE) -> np.ndarray:
+    height, width = image.shape[:2]
+    scale = side / max(height, width)
+    if scale >= 1.0:
+        return image
+    return cv2.resize(image, (max(1, round(width * scale)), max(1, round(height * scale))), interpolation=cv2.INTER_AREA)
+
+
+def _encode(image: np.ndarray) -> bytes | None:
+    ok, buffer = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 92])
+    return buffer.tobytes() if ok else None
+
+
+def shrink(data: bytes) -> bytes:
+    """Tahlil uchun kichraytirilgan nusxa (asl rasm saqlash uchun o'zgarmaydi)."""
+    image = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    if image is None:
+        return data
+    height, width = image.shape[:2]
+    if max(height, width) <= PHOTO_DET_SIDE:
+        return data
+    return _encode(fit_long_side(image)) or data
+
+
 def with_border(data: bytes, ratio: float = PAD_RATIO) -> bytes | None:
     """Rasm atrofiga kulrang chegara. HEMIS rasmi pasport uslubida
     (993x1275): yuz kadrni deyarli to'liq egallaydi va SCRFD bunday yirik
@@ -107,12 +138,12 @@ def with_border(data: bytes, ratio: float = PAD_RATIO) -> bytes | None:
         image, int(height * ratio), int(height * ratio), int(width * ratio), int(width * ratio),
         cv2.BORDER_CONSTANT, value=(128, 128, 128),
     )
-    ok, buffer = cv2.imencode(".jpg", padded, [cv2.IMWRITE_JPEG_QUALITY, 92])
-    return buffer.tobytes() if ok else None
+    return _encode(fit_long_side(padded))
 
 
 async def _embed_photo(data: bytes) -> tuple[np.ndarray, int]:
-    faces = await detect_faces(data, priority=PRIORITY_BACKGROUND, min_face_px=0, landmarks=False)
+    small = await asyncio.to_thread(shrink, data)
+    faces = await detect_faces(small, priority=PRIORITY_BACKGROUND, min_face_px=0, landmarks=False)
     face = _largest(faces)
     if face is None:
         padded = await asyncio.to_thread(with_border, data)
@@ -233,6 +264,7 @@ async def run_hemis_photos_once(batch: int | None = None) -> dict[str, int]:
                     person.hemis_photo_error = str(error)[:200]
                     stats["xato"] += 1
                 await db.commit()
+    stats["navbat_toldi"] = int(len(people) >= (batch or settings.hemis_photo_batch))
     if stats["asosiy"] or stats["galereya"]:
         try:
             await announce_roster_change()
@@ -243,11 +275,15 @@ async def run_hemis_photos_once(batch: int | None = None) -> dict[str, int]:
 
 
 async def hemis_photos_loop() -> None:
+    """Navbatda rasm ko'p bo'lsa to'plamlar orasida kutilmaydi (faqat qisqa
+    tanaffus) — 7000 rasm 5 daqiqalik tanaffuslar bilan bir necha kun
+    olardi. Tahlil fon navbatida: jonli kameralar baribir birinchi."""
     while True:
+        full = False
         try:
-            await run_hemis_photos_once()
+            full = bool((await run_hemis_photos_once()).get("navbat_toldi"))
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("HEMIS photo enrollment failed")
-        await asyncio.sleep(settings.hemis_photo_interval_seconds)
+        await asyncio.sleep(settings.hemis_photo_busy_pause_seconds if full else settings.hemis_photo_interval_seconds)
