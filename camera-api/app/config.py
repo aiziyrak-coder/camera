@@ -1277,10 +1277,19 @@ class Settings(BaseSettings):
     # Noma'lum yuzlarni yangi baza bilan qayta solishtirish
     # (app/jobs/unknown_rematch.py) — oddiy tanishdan qat'iyroq chegara.
     unknown_rematch_enabled: bool = True
+    # Tizim nosozliklari haqida Telegram xabari (app/jobs/system_alerts.py).
+    system_alerts_enabled: bool = True
+    system_alerts_interval_seconds: int = 300
+    system_alerts_repeat_hours: int = 6
+    system_alerts_disk_percent: float = 90.0
+    system_alerts_hemis_hours: int = 48
     # Fermi Face ID — institut loyihalari uchun yuz orqali kirish
     # (app/services/faceid.py). Chegaralar: 1:1 — ID kiritilganda (odamning
     # o'z yuziga), 1:N — faqat yuz bilan (qat'iyroq va ikkinchi nomzoddan uzoq).
-    faceid_enabled: bool = True
+    # Yoqilganda rozilik matniga Face ID maqsadi qo'shiladi (app/services/privacy.py) —
+    # shu bilan birga CONSENT_VERSION ni oshiring (v2): eski roziliklar eskirgan
+    # deb ko'rsatiladi va odamlar yangi maqsadga qayta rozilik beradi.
+    faceid_enabled: bool = False
     faceid_match_threshold: float = 0.50
     faceid_anchor_min: float = 0.40
     faceid_identify_threshold: float = 0.60
