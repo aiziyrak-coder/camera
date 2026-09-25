@@ -29,9 +29,10 @@ import logging
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
+import cv2
 import httpx
 import numpy as np
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -63,11 +64,40 @@ def _largest(faces: list):
     return max(usable, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
 
 
+# Eski xabar — shu sabab bilan rad etilganlar bir marta qayta tekshiriladi
+# (chegara qo'shilishidan oldin).
+OLD_NO_FACE = "Rasmda yuz topilmadi"
+NO_FACE = "Rasmda yuz topilmadi (chegara bilan ham)"
+PAD_RATIO = 0.5
+
+
+def with_border(data: bytes, ratio: float = PAD_RATIO) -> bytes | None:
+    """Rasm atrofiga kulrang chegara. HEMIS rasmi pasport uslubida
+    (993x1275): yuz kadrni deyarli to'liq egallaydi va SCRFD bunday yirik
+    yuzni topmaydi — 2026-09-25 da birinchi 60 ta rasmdan 15 tasi shu sababli
+    rad etilgan, 50% chegara bilan 15 tasining hammasida yuz topildi."""
+    image = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    if image is None:
+        return None
+    height, width = image.shape[:2]
+    padded = cv2.copyMakeBorder(
+        image, int(height * ratio), int(height * ratio), int(width * ratio), int(width * ratio),
+        cv2.BORDER_CONSTANT, value=(128, 128, 128),
+    )
+    ok, buffer = cv2.imencode(".jpg", padded, [cv2.IMWRITE_JPEG_QUALITY, 92])
+    return buffer.tobytes() if ok else None
+
+
 async def _embed_photo(data: bytes) -> tuple[np.ndarray, int]:
     faces = await detect_faces(data, priority=PRIORITY_BACKGROUND, min_face_px=0, landmarks=False)
     face = _largest(faces)
     if face is None:
-        raise NoFaceDetectedError("Rasmda yuz topilmadi")
+        padded = await asyncio.to_thread(with_border, data)
+        if padded is not None:
+            faces = await detect_faces(padded, priority=PRIORITY_BACKGROUND, min_face_px=0, landmarks=False)
+            face = _largest(faces)
+    if face is None:
+        raise NoFaceDetectedError(NO_FACE)
     height = int(face.bbox[3] - face.bbox[1])
     if height < settings.hemis_photo_min_face_px:
         raise NoFaceDetectedError(f"Yuz juda kichik ({height} px)")
@@ -132,7 +162,10 @@ async def run_hemis_photos_once(batch: int | None = None) -> dict[str, int]:
                 .where(
                     StudentStaff.active.is_(True),
                     StudentStaff.hemis_photo_url.is_not(None),
-                    StudentStaff.hemis_photo_checked_at.is_(None),
+                    or_(
+                        StudentStaff.hemis_photo_checked_at.is_(None),
+                        StudentStaff.hemis_photo_error == OLD_NO_FACE,
+                    ),
                 )
                 # Yuzi yo'qlar birinchi — ular tanishni eng ko'p o'stiradi.
                 .order_by(StudentStaff.biometric_embedding.is_not(None), StudentStaff.full_name)
@@ -141,7 +174,8 @@ async def run_hemis_photos_once(batch: int | None = None) -> dict[str, int]:
         ).scalars().all()
         if not people:
             return stats
-        async with httpx.AsyncClient(timeout=20.0, follow_redirects=False) as client:
+        # HEMIS rasm serveri ba'zan sekin (portretlar ~300 KB).
+        async with httpx.AsyncClient(timeout=45.0, follow_redirects=False) as client:
             for person in people:
                 url = person.hemis_photo_url or ""
                 person.hemis_photo_checked_at = datetime.now(timezone.utc)

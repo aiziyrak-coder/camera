@@ -152,3 +152,28 @@ async def test_photo_of_someone_else_is_not_added_to_an_existing_face(db_session
     await db_session.commit()
     gallery = (await db_session.execute(select(FaceGalleryEmbedding).where(FaceGalleryEmbedding.student_staff_id == person_id))).scalars().all()
     assert len(gallery) == 1
+
+
+async def test_portrait_filling_the_frame_is_retried_with_a_border(monkeypatch):
+    """HEMIS portreti: yuz butun kadrni egallaydi — detektor faqat chegara
+    qo'shilgandan keyin topadi."""
+    import cv2
+
+    image = np.full((200, 160, 3), 200, dtype=np.uint8)
+    ok, buffer = cv2.imencode(".jpg", image)
+    calls: list[tuple] = []
+
+    class Face:
+        def __init__(self):
+            self.bbox = np.array([10.0, 10.0, 150.0, 190.0])
+            self.embedding = np.ones(512) / np.sqrt(512)
+            self.det_score = 0.8
+
+    async def fake_detect(data, **kwargs):
+        shape = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR).shape[:2]
+        calls.append(shape)
+        return [] if shape == (200, 160) else [Face()]
+
+    monkeypatch.setattr(hemis_photos, "detect_faces", fake_detect)
+    vector, height = await hemis_photos._embed_photo(buffer.tobytes())
+    assert calls == [(200, 160), (400, 320)] and height == 180
