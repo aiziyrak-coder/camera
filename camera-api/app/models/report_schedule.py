@@ -18,9 +18,9 @@ class ReportSchedule(Base):
 
     __tablename__ = "report_schedules"
     __table_args__ = (
-        CheckConstraint("kind IN ('haftalik', 'oylik')", name="ck_report_schedules_kind"),
+        CheckConstraint("kind IN ('kunlik', 'haftalik', 'oylik')", name="ck_report_schedules_kind"),
         CheckConstraint(
-            "report IN ('kpi', 'davomat_xodim', 'davomat_talaba', 'tabel_xodim', 'tabel_talaba')",
+            "report IN ('kpi', 'davomat_xodim', 'davomat_talaba', 'tabel_xodim', 'tabel_talaba', 'jadval_davomat')",
             name="ck_report_schedules_report",
         ),
     )

@@ -24,6 +24,7 @@ KIND_LABELS = {
     "system": "Tizim",
     "parent_arrival": "Ota-ona: keldi",
     "parent_absence": "Ota-ona: kelmadi",
+    "teacher_absent": "O'qituvchi darsga kelmadi",
 }
 
 

@@ -15,6 +15,8 @@ import {
   useToast,
   type DataTableColumn,
   type DateRangeValue,
+  type TabItem,
+  useUrlTab,
 } from '../../ui';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
@@ -29,6 +31,12 @@ import {
   type ImportResult,
 } from '../../lib/darsJadvaliApi';
 import type { LessonSession } from '../../types';
+import ScheduleBoard from '../../components/schedule/ScheduleBoard';
+
+const SCHEDULE_TABS: TabItem<'jadval' | 'kim-qayerda'>[] = [
+  { id: 'jadval', label: 'Jadval' },
+  { id: 'kim-qayerda', label: 'Kim qayerda' },
+];
 
 /**
  * Dars jadvali.
@@ -45,6 +53,7 @@ export default function DarsJadvaliPage() {
   const { today } = useViewDate();
   const { token } = useAuth();
   const toast = useToast();
+  const [tab] = useUrlTab(SCHEDULE_TABS, { defaultTab: 'jadval' });
 
   const [range, setRange] = useState<DateRangeValue>(() => {
     const preset = defaultRange(today);
@@ -156,6 +165,8 @@ export default function DarsJadvaliPage() {
   return (
     <Page
       title="Dars jadvali"
+      tabs={SCHEDULE_TABS}
+      defaultTab="jadval"
       actions={
         <span className="flex gap-2">
           <Button variant="secondary" icon={Download} onClick={downloadTemplate} loading={busy && !file}>
@@ -164,6 +175,9 @@ export default function DarsJadvaliPage() {
         </span>
       }
     >
+      {tab === 'kim-qayerda' ? (
+        <ScheduleBoard />
+      ) : (
       <div className="flex min-w-0 flex-col gap-3">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border border-border bg-surface px-3 py-2">
           <Readout label="Darslar" value={lessons ? lessons.length.toLocaleString('ru-RU') : '—'} />
@@ -241,6 +255,7 @@ export default function DarsJadvaliPage() {
           )}
         </IntelPanel>
       </div>
+      )}
     </Page>
   );
 }

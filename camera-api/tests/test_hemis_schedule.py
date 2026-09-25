@@ -177,3 +177,14 @@ async def test_portrait_filling_the_frame_is_retried_with_a_border(monkeypatch):
     monkeypatch.setattr(hemis_photos, "detect_faces", fake_detect)
     vector, height = await hemis_photos._embed_photo(buffer.tobytes())
     assert calls == [(200, 160), (400, 320)] and height == 180
+
+
+def test_transient_download_errors_count_attempts_then_give_up():
+    first = hemis_photos.transient_message(None, "504")
+    assert first.endswith("[1]") and first.startswith(hemis_photos.TRANSIENT)
+    second = hemis_photos.transient_message(first, "ReadTimeout")
+    assert second.endswith("[2]")
+    message = first
+    for _ in range(hemis_photos.RETRY_LIMIT):
+        message = hemis_photos.transient_message(message, "504")
+    assert not message.startswith(hemis_photos.TRANSIENT)  # endi qayta urinilmaydi

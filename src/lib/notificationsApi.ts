@@ -13,7 +13,8 @@ export type NotificationKind =
   | 'camera_offline'
   | 'camera_online'
   | 'access_denied'
-  | 'system';
+  | 'system'
+  | 'teacher_absent';
 export type NotificationLogStatus = 'yuborildi' | 'xato' | 'otkazildi';
 
 export interface NotificationRule {
@@ -101,6 +102,11 @@ export const KIND_OPTIONS: { value: NotificationKind; label: string; hint: strin
   { value: 'camera_online', label: 'Kamera tiklandi', hint: "O'chgan kamera qayta ishladi" },
   { value: 'access_denied', label: 'Turniket rad etdi', hint: 'Kirish nazoratida rad etilgan urinish' },
   { value: 'system', label: 'Tizim', hint: 'Umumiy tizim xabarlari' },
+  {
+    value: 'teacher_absent',
+    label: "O'qituvchi darsga kelmadi",
+    hint: "Kamerasiz xonadagi dars: boshlanganidan 10 daqiqa o'tib ham o'qituvchini bugun hech bir kamera ko'rmagan",
+  },
 ];
 
 const EXTRA_KIND_LABELS: Record<string, string> = {

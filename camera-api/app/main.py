@@ -25,6 +25,7 @@ from app.jobs.zone_entry_ai import zone_entry_ai_loop
 from app.jobs.access_poll import access_poll_loop
 from app.jobs.event_escalation import event_escalation_loop
 from app.jobs.hemis_photos import hemis_photos_loop
+from app.jobs.teacher_absence import teacher_absence_loop
 from app.jobs.hemis_sync import hemis_sync_loop
 from app.jobs.telegram_bot import telegram_bot_loop
 from app.logging_config import configure_logging
@@ -42,6 +43,8 @@ from app.routers import (
     unknown_sightings,
     face_review,
     archive,
+    room_suggestions,
+    schedule_board,
     presence,
     person_locator,
     access_control,
@@ -120,6 +123,7 @@ def _start_platform_loops(tasks: list[asyncio.Task]) -> None:
         event_escalation_loop(),
         hemis_sync_loop(),
         hemis_photos_loop(),
+        teacher_absence_loop(),
         access_poll_loop(),
     ):
         tasks.append(asyncio.create_task(loop_coro))
@@ -279,6 +283,8 @@ app.include_router(auth.router)
 app.include_router(unknown_sightings.router)
 app.include_router(face_review.router)
 app.include_router(archive.router)
+app.include_router(room_suggestions.router)
+app.include_router(schedule_board.router)
 app.include_router(users.router)
 app.include_router(students_staff.router)
 app.include_router(org_structure.router)

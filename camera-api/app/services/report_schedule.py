@@ -36,15 +36,18 @@ from app.timezone import INSTITUTE_TZ
 
 logger = logging.getLogger("app.report_schedule")
 
-KINDS = {"haftalik": "Haftalik", "oylik": "Oylik"}
+KINDS = {"kunlik": "Kunlik", "haftalik": "Haftalik", "oylik": "Oylik"}
 REPORTS = {
     "kpi": "KPI",
     "davomat_xodim": "Xodimlar davomati",
     "davomat_talaba": "Talabalar davomati",
     "tabel_xodim": "Xodimlar tabeli",
     "tabel_talaba": "Talabalar tabeli",
+    "jadval_davomat": "Jadval bo'yicha davomat",
 }
 SEND_HOUR = 8
+# Kunlik hisobot — o'sha kunning o'zi, darslar tugagach.
+DAILY_SEND_HOUR = 19
 LOG_KIND = "report"
 
 
@@ -65,6 +68,9 @@ def _prev_month_start(day: date_type) -> date_type:
 def last_boundary(kind: str, now: datetime) -> datetime:
     """`now` dan oldingi (yoki unga teng) eng so'nggi yuborish chegarasi."""
     local = now.astimezone(INSTITUTE_TZ)
+    if kind == "kunlik":
+        boundary = datetime.combine(local.date(), time(DAILY_SEND_HOUR), tzinfo=INSTITUTE_TZ)
+        return boundary if boundary <= local else boundary - timedelta(days=1)
     if kind == "haftalik":
         boundary = _at(local.date() - timedelta(days=local.weekday()))
         return boundary if boundary <= local else boundary - timedelta(days=7)
@@ -75,6 +81,8 @@ def last_boundary(kind: str, now: datetime) -> datetime:
 def period_for(kind: str, boundary: datetime) -> tuple[date_type, date_type]:
     """Chegaradan oldingi to'liq davr: o'tgan hafta (Du–Ya) yoki o'tgan oy."""
     day = boundary.astimezone(INSTITUTE_TZ).date()
+    if kind == "kunlik":
+        return day, day
     if kind == "haftalik":
         return day - timedelta(days=7), day - timedelta(days=1)
     return _prev_month_start(day), day - timedelta(days=1)
@@ -165,6 +173,23 @@ async def build_attachment(db: AsyncSession, schedule: ReportSchedule, start: da
     kpi = await kpi_svc.build(db, start, end)
     report = schedule.report
     stamp = f"{start}_{end}"
+    if report == "jadval_davomat":
+        from app.services.schedule_presence import board_workbook, day_board
+
+        board = await day_board(db, end)
+        content, filename = board_workbook(end, board), f"jadval-davomat-{end.isoformat()}.xlsx"
+        not_seen = sum(1 for row in board if row.teacher_status == "kelmagan")
+        expected = sum(row.students_expected for row in board)
+        arrived = sum(row.students_arrived for row in board)
+        lines = [
+            f"<b>{html.escape(schedule.name)}</b>",
+            f"{REPORTS[report]} · {end:%d.%m.%Y}",
+            "",
+            f"Darslar: {len(board)}",
+            f"O'qituvchini kamera ko'rmadi: {not_seen}",
+            f"Talabalar keldi: {arrived}/{expected}" if expected else "Talabalar: —",
+        ]
+        return Attachment(filename=filename, content=content, caption="\n".join(lines))
     if report == "kpi":
         content, filename = build_kpi_workbook(kpi), f"kpi-{stamp}.xlsx"
     elif report.startswith("davomat_"):

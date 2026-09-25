@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Cpu, DoorOpen, Eye, FileUp, MapPin, MapPinned, Plus, ScanFace, Settings2, Video, type LucideIcon } from 'lucide-react';
+import { Cpu, DoorOpen, Eye, FileUp, MapPin, MapPinned, Plus, ScanFace, Settings2, Sparkles, Video, type LucideIcon } from 'lucide-react';
 import AddCameraModal from '../../components/admin/AddCameraModal';
 import CameraImportModal from '../../components/admin/CameraImportModal';
 import CameraConfigDetailModal from '../../components/admin/CameraConfigDetailModal';
@@ -8,6 +8,7 @@ import CameraZoneModal from '../../components/admin/CameraZoneModal';
 import CameraLocationModal from '../../components/admin/CameraLocationModal';
 import CameraLocationEditModal from '../../components/admin/CameraLocationEditModal';
 import CameraRolesImportModal from '../../components/admin/CameraRolesImportModal';
+import RoomSuggestionsModal from '../../components/admin/RoomSuggestionsModal';
 import { AttendanceCamerasPanel } from '../../components/admin/AttendanceCamerasPanel';
 import { Checkbox, pagerFooter } from '../../components/settings/kit';
 import {
@@ -139,6 +140,7 @@ export default function CamerasZonesPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [rolesOpen, setRolesOpen] = useState(false);
+  const [suggestOpen, setSuggestOpen] = useState(false);
   const [editing, setEditing] = useState<CameraConfig | null>(null);
   // Xona turi/raqami — har kim uchun joylashuv oynasi (to'liq sozlama
   // oynasida bu maydonlar yo'q, u ulanishni tahrirlaydi).
@@ -506,6 +508,9 @@ export default function CamerasZonesPage() {
           </Button>
           {canManage && (
             <>
+              <Button icon={Sparkles} onClick={() => setSuggestOpen(true)}>
+                Xona takliflari
+              </Button>
               <Button icon={FileUp} onClick={() => setImportOpen(true)}>
                 Fayldan yuklash
               </Button>
@@ -590,6 +595,7 @@ export default function CamerasZonesPage() {
       <CameraLocationEditModal camera={locating} onClose={() => setLocating(null)} onSave={handleLocationSaved} />
       <CameraImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={afterLocationChange} />
       <CameraRolesImportModal open={rolesOpen} onClose={() => setRolesOpen(false)} onDone={afterLocationChange} />
+      <RoomSuggestionsModal open={suggestOpen} onClose={() => setSuggestOpen(false)} onApplied={afterLocationChange} />
       <CameraConfigDetailModal
         camera={viewing}
         onClose={() => setViewing(null)}

@@ -6,7 +6,9 @@ from pydantic import Field, field_validator, model_validator
 from app.schemas.base import CamelModel
 from app.services.notifications.sms import normalize_phone
 
-NotificationKind = Literal["event", "event_overdue", "camera_offline", "camera_online", "access_denied", "system"]
+NotificationKind = Literal[
+    "event", "event_overdue", "camera_offline", "camera_online", "access_denied", "system", "teacher_absent"
+]
 NotificationChannel = Literal["telegram", "sms"]
 Severity = Literal["past", "o'rta", "yuqori"]
 

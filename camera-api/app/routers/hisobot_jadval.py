@@ -37,8 +37,8 @@ ManageDep = Annotated[CurrentUser, Depends(require_permission("manageNotificatio
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 
 AUDIT_MODULE = "Hisobotlar"
-ScheduleKind = Literal["haftalik", "oylik"]
-ScheduleReport = Literal["kpi", "davomat_xodim", "davomat_talaba", "tabel_xodim", "tabel_talaba"]
+ScheduleKind = Literal["kunlik", "haftalik", "oylik"]
+ScheduleReport = Literal["kpi", "davomat_xodim", "davomat_talaba", "tabel_xodim", "tabel_talaba", "jadval_davomat"]
 
 
 def _chat_ids(value: list[str] | None) -> list[str] | None:

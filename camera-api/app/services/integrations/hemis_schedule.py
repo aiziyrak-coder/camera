@@ -263,3 +263,23 @@ async def sync_schedule(
     result = await db.execute(stale)
     stats["deactivated"] = int(result.rowcount or 0)
     return stats
+
+
+async def relink_cameras(db: AsyncSession, since: date | None = None) -> int:
+    """Kameraga xona raqami yozilgach: bugungi va kelajakdagi HEMIS darslari
+    darhol shu kameraga bog'lanadi (jadvalning navbatdagi yangilanishini
+    kutmasdan). Qaytaradi: nechta dars bog'landi. Commit — chaqiruvchida."""
+    since = since or local_now().date()
+    cameras = await camera_index(db)
+    changed = 0
+    rows = (
+        await db.execute(select(LessonSession).where(LessonSession.hemis_id.is_not(None), LessonSession.date >= since))
+    ).unique().scalars()
+    for row in rows:
+        number, code = building_number(row.building), room_code(row.auditorium)
+        camera = cameras.get((number, normalize_room_code(code) or code)) if number is not None and code else None
+        camera_id = camera.id if camera else None
+        if row.camera_id != camera_id:
+            row.camera_id = camera_id
+            changed += 1
+    return changed

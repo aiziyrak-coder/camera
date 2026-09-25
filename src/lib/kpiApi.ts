@@ -176,8 +176,8 @@ export function kpiGroups(data: KpiReport): KpiGroup[] {
 // Avtomatik hisobotlar
 // ---------------------------------------------------------------------------
 
-export type ScheduleKind = 'haftalik' | 'oylik';
-export type ScheduleReport = 'kpi' | 'davomat_xodim' | 'davomat_talaba' | 'tabel_xodim' | 'tabel_talaba';
+export type ScheduleKind = 'kunlik' | 'haftalik' | 'oylik';
+export type ScheduleReport = 'kpi' | 'davomat_xodim' | 'davomat_talaba' | 'tabel_xodim' | 'tabel_talaba' | 'jadval_davomat';
 
 export interface ReportSchedule {
   id: string;
@@ -201,6 +201,7 @@ export interface ScheduleSendResult {
 }
 
 export const SCHEDULE_KIND_OPTIONS: { value: ScheduleKind; label: string }[] = [
+  { value: 'kunlik', label: 'Kunlik (har kuni 19:00, o‘sha kun uchun)' },
   { value: 'haftalik', label: 'Haftalik (dushanba 08:00)' },
   { value: 'oylik', label: 'Oylik (1-sana 08:00)' },
 ];
@@ -211,11 +212,13 @@ export const SCHEDULE_REPORT_OPTIONS: { value: ScheduleReport; label: string }[]
   { value: 'davomat_talaba', label: 'Talabalar davomati' },
   { value: 'tabel_xodim', label: 'Xodimlar tabeli' },
   { value: 'tabel_talaba', label: 'Talabalar tabeli' },
+  { value: 'jadval_davomat', label: 'Jadval bo‘yicha davomat (darslar kesimida)' },
 ];
 
 export function scheduleLabel(s: Pick<ReportSchedule, 'kind' | 'report'>): string {
   const report = SCHEDULE_REPORT_OPTIONS.find((o) => o.value === s.report)?.label ?? s.report;
-  return `${s.kind === 'haftalik' ? 'Haftalik' : 'Oylik'} · ${report}`;
+  const kind = s.kind === 'kunlik' ? 'Kunlik' : s.kind === 'haftalik' ? 'Haftalik' : 'Oylik';
+  return `${kind} · ${report}`;
 }
 
 /** Chat ID matnini ajratadi va tekshiradi (bildirishnoma qoidalari bilan bir xil). */

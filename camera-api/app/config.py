@@ -1270,6 +1270,12 @@ class Settings(BaseSettings):
     hemis_photo_batch: int = 60
     hemis_photo_interval_seconds: int = 300
     hemis_photo_min_face_px: int = 60
+    hemis_photo_retry_minutes: int = 60
+    # O'qituvchi darsga kelmadi (app/jobs/teacher_absence.py) — kamerasiz xonadagi
+    # darslar uchun: dars boshlanganidan shuncha daqiqa o'tib ham bugun hech bir
+    # kamera ko'rmagan bo'lsa, "teacher_absent" bildirishnomasi.
+    teacher_absence_alerts: bool = True
+    teacher_absence_after_minutes: int = 10
     # HEMIS'da endi yo'q odamni faolsizlantirish (o'chirmaydi).
     hemis_deactivate_missing: bool = False
 

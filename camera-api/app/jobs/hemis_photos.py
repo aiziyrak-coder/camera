@@ -26,13 +26,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 import cv2
 import httpx
 import numpy as np
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -69,6 +70,28 @@ def _largest(faces: list):
 OLD_NO_FACE = "Rasmda yuz topilmadi"
 NO_FACE = "Rasmda yuz topilmadi (chegara bilan ham)"
 PAD_RATIO = 0.5
+# HEMIS rasm serveri vaqtincha javob bermasa (vaqt tugadi, 5xx, 429) — rasm
+# keyinroq qayta yuklanadi (settings.hemis_photo_retry_minutes), ko'pi bilan
+# RETRY_LIMIT marta. 404 va boshqa doimiy xatolar qayta urinilmaydi.
+TRANSIENT = "Vaqtincha yuklab bo'lmadi"
+OLD_DOWNLOAD = "Rasmni yuklab bo'lmadi"
+RETRY_LIMIT = 5
+_ATTEMPT = re.compile(r"\[(\d+)\]$")
+
+
+class TransientDownloadError(Exception):
+    pass
+
+
+def transient_message(previous: str | None, reason: str) -> str:
+    """"Vaqtincha yuklab bo'lmadi (504) [2]" — oxirgi raqam urinishlar soni."""
+    attempts = 1
+    if previous and previous.startswith(TRANSIENT):
+        match = _ATTEMPT.search(previous)
+        attempts = (int(match.group(1)) if match else 1) + 1
+    if attempts > RETRY_LIMIT:
+        return f"Rasmni yuklab bo'lmadi: {reason} ({RETRY_LIMIT} marta urinildi)"
+    return f"{TRANSIENT} ({reason}) [{attempts}]"
 
 
 def with_border(data: bytes, ratio: float = PAD_RATIO) -> bytes | None:
@@ -165,6 +188,14 @@ async def run_hemis_photos_once(batch: int | None = None) -> dict[str, int]:
                     or_(
                         StudentStaff.hemis_photo_checked_at.is_(None),
                         StudentStaff.hemis_photo_error == OLD_NO_FACE,
+                        and_(
+                            or_(
+                                StudentStaff.hemis_photo_error.startswith(TRANSIENT),
+                                StudentStaff.hemis_photo_error.startswith(OLD_DOWNLOAD + " ("),
+                            ),
+                            StudentStaff.hemis_photo_checked_at
+                            < datetime.now(timezone.utc) - timedelta(minutes=settings.hemis_photo_retry_minutes),
+                        ),
                     ),
                 )
                 # Yuzi yo'qlar birinchi — ular tanishni eng ko'p o'stiradi.
@@ -182,7 +213,12 @@ async def run_hemis_photos_once(batch: int | None = None) -> dict[str, int]:
                 try:
                     if not allowed_photo_host(url):
                         raise ValueError("Rasm manzili HEMIS domenidan emas")
-                    response = await client.get(url)
+                    try:
+                        response = await client.get(url)
+                    except httpx.TransportError as error:
+                        raise TransientDownloadError(type(error).__name__) from error
+                    if response.status_code >= 500 or response.status_code == 429:
+                        raise TransientDownloadError(str(response.status_code))
                     if response.status_code != 200 or not response.headers.get("content-type", "").startswith("image/"):
                         raise ValueError(f"Rasmni yuklab bo'lmadi ({response.status_code})")
                     if len(response.content) > MAX_PHOTO_BYTES:
@@ -190,6 +226,9 @@ async def run_hemis_photos_once(batch: int | None = None) -> dict[str, int]:
                     kind = await enroll_person(db, person, response.content)
                     person.hemis_photo_error = None
                     stats[kind] += 1
+                except TransientDownloadError as error:
+                    person.hemis_photo_error = transient_message(person.hemis_photo_error, str(error))[:200]
+                    stats["xato"] += 1
                 except (ValueError, NoFaceDetectedError, httpx.HTTPError) as error:
                     person.hemis_photo_error = str(error)[:200]
                     stats["xato"] += 1
