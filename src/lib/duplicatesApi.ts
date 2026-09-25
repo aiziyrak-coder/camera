@@ -18,6 +18,10 @@ export interface DuplicatePerson {
 export interface DuplicateGroup {
   keeper: DuplicatePerson;
   duplicates: DuplicatePerson[];
+  /** ism — ism bo'yicha; ism_yuz — yuzi ham mos; yuz — yuzi bir xil, ismi boshqa (faqat ko'rib chiqish). */
+  reason?: 'ism' | 'ism_yuz' | 'yuz';
+  faceSimilarity?: number | null;
+  mergeable?: boolean;
 }
 
 export interface MergeResult {

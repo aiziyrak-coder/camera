@@ -124,3 +124,62 @@ class TestMergeApi:
 
     async def test_requires_permission(self, client: AsyncClient):
         assert (await client.get("/api/students-staff/dublikatlar")).status_code in (401, 403)
+
+
+def _face(seed: int, noise: float = 0.0, base: int | None = None):
+    import json
+
+    import numpy as np
+
+    rng = np.random.default_rng(seed)
+    vector = np.random.default_rng(base).normal(size=512) if base is not None else rng.normal(size=512)
+    vector = vector + rng.normal(size=512) * noise
+    return json.dumps((vector / np.linalg.norm(vector)).tolist())
+
+
+def _faced(name, emb, **kw):
+    row = _row(name, bio="tasdiqlangan", **kw)
+    row["biometric_embedding"] = emb
+    return row
+
+
+class TestFaceEvidence:
+    def test_swapped_name_order_with_the_same_face_is_one_person(self):
+        groups = group_duplicates([_faced("Karimov Anvar", _face(1, base=7)), _faced("ANVAR KARIMOV", _face(2, 0.3, base=7))])
+        assert len(groups) == 1 and groups[0].reason == "ism_yuz" and groups[0].mergeable
+        assert groups[0].face_similarity > 0.7
+
+    def test_swapped_names_with_different_faces_stay_apart(self):
+        assert group_duplicates([_faced("Karimov Anvar", _face(1)), _faced("Anvar Karimov", _face(2))]) == []
+
+    def test_same_face_different_name_is_review_only(self):
+        groups = group_duplicates([_faced("Karimov Anvar", _face(1, base=7)), _faced("Olimova Nigora", _face(2, 0.2, base=7))])
+        assert len(groups) == 1 and groups[0].reason == "yuz" and not groups[0].mergeable
+
+    def test_name_group_keeps_plain_reason(self):
+        groups = group_duplicates([_faced("Aliyev Vali", _face(1)), _faced("Aliyev Vali", _face(2))])
+        assert len(groups) == 1 and groups[0].reason == "ism"
+
+    def test_student_and_staff_with_the_same_face_are_not_grouped(self):
+        rows = [_faced("Karimov Anvar", _face(1, base=7), type_="talaba"), _faced("Anvar Karimov", _face(2, 0.2, base=7))]
+        assert group_duplicates(rows) == []
+
+
+async def test_face_evidence_merges_swapped_names_but_not_different_people(client: AsyncClient, db_session, seeded):
+    def person(name, emb):
+        return StudentStaff(id=uuid.uuid4(), full_name=name, type="xodim", group_or_position="Kafedra",
+                            biometrics_status="tasdiqlangan", biometric_embedding=emb)
+
+    a, b, c = person("Karimov Anvar", _face(1, base=7)), person("ANVAR KARIMOV", _face(2, 0.3, base=7)), person("Olimova Nigora", _face(3, 0.2, base=7))
+    ids = [a.id, b.id, c.id]
+    db_session.add_all([a, b, c])
+    await db_session.commit()
+    headers = await auth_headers(client, "admin", "admin123")
+    groups = (await client.get("/api/students-staff/dublikatlar", headers=headers)).json()
+    reasons = sorted((g["reason"], g["mergeable"]) for g in groups)
+    assert ("ism_yuz", True) in reasons and ("yuz", False) in reasons
+    url = "/api/students-staff/dublikatlar/birlashtirish"
+    refused = (await client.post(url, headers=headers, json={"groups": [{"keepId": str(ids[0]), "removeIds": [str(ids[2])]}]})).json()
+    assert refused["mergedGroups"] == 0
+    merged = (await client.post(url, headers=headers, json={"groups": [{"keepId": str(ids[0]), "removeIds": [str(ids[1])]}]})).json()
+    assert merged["mergedGroups"] == 1

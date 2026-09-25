@@ -1270,6 +1270,11 @@ class Settings(BaseSettings):
     hemis_photo_batch: int = 60
     hemis_photo_interval_seconds: int = 300
     hemis_photo_busy_pause_seconds: int = 5
+    # Dublikat qidirish (app/services/person_dedupe.py): yuzi shundan o'xshash
+    # va familiya-ismi mos (tartibi boshqa bo'lsa ham) yozuvlar bir odam;
+    # ismi boshqa bo'lsa — faqat ko'rib chiqish uchun (birlashtirilmaydi).
+    dedupe_face_similarity: float = 0.70
+    dedupe_face_only_similarity: float = 0.80
     hemis_photo_min_face_px: int = 60
     hemis_photo_retry_minutes: int = 60
     # O'qituvchi darsga kelmadi (app/jobs/teacher_absence.py) — kamerasiz xonadagi

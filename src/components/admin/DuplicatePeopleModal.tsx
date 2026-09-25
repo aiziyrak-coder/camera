@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ScanFace } from 'lucide-react';
-import { Button, ConfirmDialog, EmptyState, ErrorState, Modal, Skeleton, cn, useToast } from '../../ui';
+import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, Modal, Skeleton, cn, useToast } from '../../ui';
 import { ApiError } from '../../lib/apiClient';
 import { getDuplicates, mergeDuplicates, type DuplicateGroup, type DuplicatePerson } from '../../lib/duplicatesApi';
 
@@ -50,7 +50,11 @@ export default function DuplicatePeopleModal({ open, onClose, onMerged }: { open
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Ro‘yxatni olib bo‘lmadi'));
   }, [open, reload]);
 
-  const selected = useMemo(() => (groups ?? []).filter((g) => !skipped.has(g.keeper.id)), [groups, skipped]);
+  const selected = useMemo(
+    () => (groups ?? []).filter((g) => g.mergeable !== false && !skipped.has(g.keeper.id)),
+    [groups, skipped],
+  );
+  const reviewOnly = (groups ?? []).filter((g) => g.mergeable === false).length;
   const removeCount = selected.reduce((n, g) => n + g.duplicates.length, 0);
 
   const toggle = (id: string) =>
@@ -77,7 +81,11 @@ export default function DuplicatePeopleModal({ open, onClose, onMerged }: { open
         onClose={onClose}
         size="xl"
         title="Dublikatlar"
-        description={groups ? `${groups.length} guruh · ${removeCount} ta ortiqcha yozuv tanlangan` : undefined}
+        description={
+          groups
+            ? `${groups.length - reviewOnly} guruh · ${removeCount} ta ortiqcha yozuv tanlangan${reviewOnly ? ` · ${reviewOnly} ta ko‘rib chiqish uchun` : ''}`
+            : undefined
+        }
         footer={
           <>
             <Button icon={ArrowLeft} onClick={onClose}>
@@ -102,22 +110,38 @@ export default function DuplicatePeopleModal({ open, onClose, onMerged }: { open
         ) : (
           <ul className="max-h-[60vh] space-y-1.5 overflow-y-auto pr-1">
             {groups.map((group) => {
-              const on = !skipped.has(group.keeper.id);
+              const mergeable = group.mergeable !== false;
+              const on = mergeable && !skipped.has(group.keeper.id);
+              const similarity = group.faceSimilarity != null ? ` ${Math.round(group.faceSimilarity * 100)}%` : '';
               return (
-                <li key={group.keeper.id} className={cn('grid grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] items-start gap-2', !on && 'opacity-50')}>
-                  <input
-                    id={`dup-${group.keeper.id}`}
-                    type="checkbox"
-                    checked={on}
-                    onChange={() => toggle(group.keeper.id)}
-                    aria-label={`${group.keeper.fullName} — birlashtirish`}
-                    className="mt-3 h-4 w-4 accent-[rgb(var(--c-primary))]"
-                  />
-                  <PersonCell person={group.keeper} keep />
+                <li
+                  key={`${group.reason ?? 'ism'}-${group.keeper.id}-${group.duplicates[0]?.id ?? ''}`}
+                  className={cn('grid grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] items-start gap-2', !on && 'opacity-60')}
+                >
+                  {mergeable ? (
+                    <input
+                      id={`dup-${group.keeper.id}`}
+                      type="checkbox"
+                      checked={on}
+                      onChange={() => toggle(group.keeper.id)}
+                      aria-label={`${group.keeper.fullName} — birlashtirish`}
+                      className="mt-3 h-4 w-4 accent-[rgb(var(--c-primary))]"
+                    />
+                  ) : (
+                    <span className="w-4" />
+                  )}
+                  <PersonCell person={group.keeper} keep={mergeable} />
                   <div className="space-y-1">
                     {group.duplicates.map((dup) => (
                       <PersonCell key={dup.id} person={dup} />
                     ))}
+                    {group.reason === 'ism_yuz' && <Badge tone="info">Yuzi ham mos{similarity}</Badge>}
+                    {group.reason === 'yuz' && (
+                      <p className="text-[11px] text-warning">
+                        Yuzi bir xil{similarity}, ismi boshqa — birlashtirilmaydi. Rasmlardan biri noto‘g‘ri odamga
+                        biriktirilgan bo‘lishi mumkin: shaxs kartasida yuzni tekshiring.
+                      </p>
+                    )}
                   </div>
                 </li>
               );

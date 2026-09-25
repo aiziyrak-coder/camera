@@ -554,6 +554,9 @@ class _DupPersonOut(CamelModel):
 class _DupGroupOut(CamelModel):
     keeper: _DupPersonOut
     duplicates: list[_DupPersonOut]
+    reason: str = "ism"
+    face_similarity: float | None = None
+    mergeable: bool = True
 
 
 class _MergeGroupIn(CamelModel):
@@ -595,7 +598,14 @@ async def duplicate_people(
     """Bir odamning bir nechta faol yozuvi (app/services/person_dedupe.py)."""
     groups = await person_dedupe.find_duplicates(db)
     return [
-        _DupGroupOut(keeper=_dup_person(g.keeper), duplicates=[_dup_person(d) for d in g.duplicates]) for g in groups
+        _DupGroupOut(
+            keeper=_dup_person(g.keeper),
+            duplicates=[_dup_person(d) for d in g.duplicates],
+            reason=g.reason,
+            face_similarity=g.face_similarity,
+            mergeable=g.mergeable,
+        )
+        for g in groups
     ]
 
 
