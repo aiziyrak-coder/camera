@@ -95,16 +95,38 @@ function EnrollmentBlock({ enroll }: { enroll: EnrollCounts }) {
   );
 }
 
+/** Fakultetlar bo'yicha yuz topshirish — davomat faqat yuzi borlar uchun
+ *  yuritiladi, shuning uchun eng orqada qolgan fakultet ekranda ko'rinsin. */
+function FacultyEnrollBlock({ rows }: { rows: Array<EnrollCounts & { id: string | null; name: string }> }) {
+  const shown = rows.filter((r) => r.id && r.total > 0).sort((a, b) => (a.pct ?? 0) - (b.pct ?? 0)).slice(0, 5);
+  if (shown.length === 0) return null;
+  return (
+    <ul className="flex flex-col gap-[0.35em] text-[0.72em]">
+      {shown.map((r) => (
+        <li key={r.id} className="grid grid-cols-[minmax(0,1fr)_7em_3.2em] items-center gap-[0.6em]">
+          <span className="truncate text-fg">{r.name.replace(/ fakulteti$/i, '')}</span>
+          <span className="h-[0.45em] overflow-hidden rounded-full bg-surface-2">
+            <span className="block h-full rounded-full bg-primary" style={{ width: `${Math.min(100, r.pct ?? 0)}%` }} />
+          </span>
+          <span className="intel-code text-right text-muted">{formatPercent(r.pct ?? 0)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function TodayPanel({
   students,
   staff,
   studentsDataAvailable,
   studentsEnroll,
+  facultyEnroll = [],
 }: {
   students: Counts;
   staff: Counts;
   studentsDataAvailable: boolean;
   studentsEnroll: EnrollCounts;
+  facultyEnroll?: Array<EnrollCounts & { id: string | null; name: string }>;
 }) {
   return (
     <WallPanel area="A" title="Bugungi davomat" icon={<CalendarCheck2 />}>
@@ -115,6 +137,11 @@ export function TodayPanel({
         <Block icon={<GraduationCap />} title="Talabalar">
           {studentsDataAvailable ? <AttendanceBlock counts={students} /> : <EnrollmentBlock enroll={studentsEnroll} />}
         </Block>
+        {facultyEnroll.length > 0 && (
+          <Block icon={<GraduationCap />} title="Yuz topshirish — fakultetlar">
+            <FacultyEnrollBlock rows={facultyEnroll} />
+          </Block>
+        )}
       </div>
     </WallPanel>
   );

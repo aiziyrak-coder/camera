@@ -186,3 +186,21 @@ async def login(client: AsyncClient, login_name: str, password: str) -> str:
 async def auth_headers(client: AsyncClient, login_name: str, password: str) -> dict[str, str]:
     token = await login(client, login_name, password)
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture(autouse=True)
+def _today_is_a_work_day():
+    """Ko'p testlar "bugun"ni ish kuni deb kutadi (kutilmoqda, kech keldi).
+    Standart qoidada yakshanba — dam olish, shuning uchun yakshanba kuni
+    ishga tushirilgan to'plam tasodifan yiqilardi. Bugun ish kuni bo'lmasa —
+    test davomida hamma kun ish kuni."""
+    from app.services.attendance_policy import Policy, current_policy, set_cached
+    from app.timezone import business_today
+
+    if Policy().is_work_day(business_today()):
+        yield
+        return
+    before = current_policy()
+    set_cached(Policy(work_days=(1, 2, 3, 4, 5, 6, 7)))
+    yield
+    set_cached(before)

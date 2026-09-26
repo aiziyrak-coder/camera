@@ -280,3 +280,30 @@ class TestPlace:
         headers = await auth_headers(client, "oddiy-op", "oddiy-parol-1")
         resp = await client.put(f"/api/xarita/kamera/{cam.id}/joy", json={"x": 0.5, "y": 0.5}, headers=headers)
         assert resp.status_code == 403
+
+
+async def test_floor_view_counts_people_seen_in_last_ten_minutes(client, db_session, admin, building):
+    """Xarita: kamera oldida so'nggi 10 daqiqada tanilgan turli odamlar soni."""
+    from app.models import PresenceVisit, StudentStaff
+
+    cam = await _camera(db_session, "Zal", building, 1)
+    quiet = await _camera(db_session, "Bo'sh", building, 1)
+    people = [StudentStaff(full_name=f"Soxta {i}", type="xodim", group_or_position="X") for i in range(3)]
+    db_session.add_all(people)
+    await db_session.flush()
+    now = datetime.now(timezone.utc)
+    db_session.add_all([
+        PresenceVisit(student_staff_id=people[0].id, camera_id=cam.id, first_seen_at=now - timedelta(minutes=3),
+                      last_seen_at=now - timedelta(minutes=1), sightings=4),
+        PresenceVisit(student_staff_id=people[1].id, camera_id=cam.id, first_seen_at=now - timedelta(minutes=8),
+                      last_seen_at=now - timedelta(minutes=5), sightings=2),
+        # Eski tashrif (1 soat oldin) — "hozir" hisobiga kirmaydi.
+        PresenceVisit(student_staff_id=people[2].id, camera_id=cam.id, first_seen_at=now - timedelta(hours=1),
+                      last_seen_at=now - timedelta(minutes=50), sightings=2),
+    ])
+    await db_session.commit()
+
+    body = (await client.get(f"/api/xarita/{building.id}/1", headers=admin)).json()
+    by_name = {c["name"]: c for c in body["cameras"]}
+    assert by_name["Zal"]["peopleNow"] == 2
+    assert by_name["Bo'sh"]["peopleNow"] == 0

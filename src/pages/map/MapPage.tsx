@@ -331,6 +331,11 @@ function CameraList({ cameras, loading, openTotal, onSelect }: { cameras: MapCam
               <StatusDot tone={STATUS_TONE[camera.status]} label={STATUS_STYLE[camera.status].label} />
               <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{camera.name}</span>
               {camera.x == null && <span className="text-[11px] text-subtle">rejada yo‘q</span>}
+              {(camera.peopleNow ?? 0) > 0 && (
+                <span className="text-[12px] tabular-nums text-primary" title="So‘nggi 10 daqiqada tanilgan odamlar">
+                  {camera.peopleNow} kishi
+                </span>
+              )}
               {camera.openEvents > 0 && <span className="text-[12px] font-bold tabular-nums text-danger">{camera.openEvents}</span>}
             </button>
           ))
@@ -362,6 +367,9 @@ function CameraPanel({ camera, onClose }: { camera: MapCamera; onClose: () => vo
           <span className="grid h-full place-items-center text-[12px] text-white/60">Kamera oflayn</span>
         )}
       </div>
+      <p className="text-[12px] text-muted">
+        So‘nggi 10 daqiqada: <b className="text-fg">{camera.peopleNow ?? 0}</b> kishi tanildi
+      </p>
       <EventsLink count={camera.openEvents} cameraId={camera.id} />
       <ButtonLink size="sm" icon={MonitorPlay} to={`/videodevor?kamera=${id}`}>
         Videodevorda ochish

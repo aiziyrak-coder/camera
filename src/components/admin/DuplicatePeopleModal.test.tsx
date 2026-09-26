@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 
 const { groups } = vi.hoisted(() => {
   const person = (id: string, fullName: string) => ({
@@ -22,9 +23,11 @@ import DuplicatePeopleModal from './DuplicatePeopleModal';
 describe('DuplicatePeopleModal', () => {
   it("yuz bo'yicha guruhni ko'rsatadi, faqat-yuz juftligini birlashtirishga qo'ymaydi", async () => {
     render(
-      <ToastProvider>
-        <DuplicatePeopleModal open onClose={() => {}} onMerged={() => {}} />
-      </ToastProvider>,
+      <MemoryRouter>
+        <ToastProvider>
+          <DuplicatePeopleModal open onClose={() => {}} onMerged={() => {}} />
+        </ToastProvider>
+      </MemoryRouter>,
     );
     expect(await screen.findByText(/Yuzi ham mos 81%/)).toBeInTheDocument();
     expect(screen.getByText(/ismi boshqa — birlashtirilmaydi/)).toBeInTheDocument();

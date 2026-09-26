@@ -16,18 +16,18 @@ editCameraLocation. O'zgarishlar audit jurnaliga yoziladi.
 import asyncio
 import logging
 import uuid
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Path, Request, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_action
 from app.database import get_db
 from app.dependencies import CurrentUser, has_any_permission, require_permission
-from app.models import Building, Camera
+from app.models import Building, Camera, PresenceVisit
 from app.models.platform import FloorPlan
 from app.schemas.xarita import (
     XaritaBuildingOut,
@@ -102,7 +102,25 @@ def _map_status(camera: Camera) -> str:
     return "online" if video else "novideo"
 
 
-def _camera_out(camera: Camera, events: dict[uuid.UUID, int], *, assigned: bool = True) -> XaritaCameraOut:
+#: "Hozir" oynasi — xaritada kamera oldidagi odamlar soni shu davr bo'yicha.
+PEOPLE_WINDOW = timedelta(minutes=10)
+
+
+async def people_now_counts(db: AsyncSession, camera_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
+    if not camera_ids:
+        return {}
+    since = datetime.now(timezone.utc) - PEOPLE_WINDOW
+    rows = await db.execute(
+        select(PresenceVisit.camera_id, func.count(func.distinct(PresenceVisit.student_staff_id)))
+        .where(PresenceVisit.camera_id.in_(camera_ids), PresenceVisit.last_seen_at >= since)
+        .group_by(PresenceVisit.camera_id)
+    )
+    return dict(rows.all())
+
+
+def _camera_out(
+    camera: Camera, events: dict[uuid.UUID, int], *, assigned: bool = True, people: dict[uuid.UUID, int] | None = None
+) -> XaritaCameraOut:
     return XaritaCameraOut(
         id=str(camera.id),
         name=camera.name,
@@ -114,6 +132,7 @@ def _camera_out(camera: Camera, events: dict[uuid.UUID, int], *, assigned: bool 
         angle=camera.plan_rotation if assigned else None,
         fov=camera.plan_fov or DEFAULT_FOV,
         open_events=events.get(camera.id, 0),
+        people_now=(people or {}).get(camera.id, 0),
         stream_url=signed_stream_url(camera.stream_url),
         assigned=assigned,
     )
@@ -178,6 +197,7 @@ async def floor_view(building_id: str, floor: FloorPath, db: DbDep, current_user
         )
     ).scalars().all()
     events = await open_event_counts(db, [c.id for c in cameras])
+    people = await people_now_counts(db, [c.id for c in cameras])
 
     candidates: list[XaritaCameraOut] = []
     if await has_any_permission(db, current_user.role, ("editCameraLocation",)):
@@ -194,7 +214,7 @@ async def floor_view(building_id: str, floor: FloorPath, db: DbDep, current_user
         building_name=building.name,
         floor=floor,
         plan=_plan_out(plan) if plan else None,
-        cameras=[_camera_out(c, events) for c in cameras],
+        cameras=[_camera_out(c, events, people=people) for c in cameras],
         candidates=candidates,
     )
 

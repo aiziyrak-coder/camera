@@ -136,6 +136,16 @@ export default function FloorMapCanvas({ plan, cameras, selectedId, editing, onS
               return (
                 <g key={camera.id}>
                   <path d={conePath(center, angle, camera.fov, radius)} className={cn(style.cone, 'pointer-events-none')} strokeWidth={1} />
+                  {(camera.peopleNow ?? 0) > 0 && (
+                    // Odamlar zichligi: kamera oldida qancha odam bo'lsa, doira shuncha katta.
+                    <circle
+                      cx={center.x}
+                      cy={center.y}
+                      r={DOT_R + 6 + Math.min(24, Math.sqrt(camera.peopleNow ?? 0) * 5)}
+                      className="pointer-events-none fill-primary/15 stroke-primary/40"
+                      strokeWidth={1}
+                    />
+                  )}
                   {camera.openEvents > 0 && (
                     <circle cx={center.x} cy={center.y} r={DOT_R + 3} className="pointer-events-none fill-none stroke-danger" strokeWidth={2}>
                       <animate attributeName="r" values={`${DOT_R + 2};${DOT_R + 14}`} dur="1.4s" repeatCount="indefinite" />
@@ -191,6 +201,7 @@ export default function FloorMapCanvas({ plan, cameras, selectedId, editing, onS
               style={{ left: (hoveredCamera.x as number) * size.width, top: (hoveredCamera.y as number) * size.height - DOT_R - 26 }}
             >
               {hoveredCamera.name}
+              {(hoveredCamera.peopleNow ?? 0) > 0 && <span className="ms-1.5 font-normal">· {hoveredCamera.peopleNow} kishi</span>}
               {hoveredCamera.openEvents > 0 && <span className="ms-1.5 text-danger-soft">· {hoveredCamera.openEvents}</span>}
             </span>
           )}

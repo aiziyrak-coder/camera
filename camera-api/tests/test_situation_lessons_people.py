@@ -3,6 +3,8 @@
 from datetime import timedelta
 
 import pytest
+
+from app.services.attendance_policy import current_policy
 from httpx import AsyncClient
 
 from app.services.situation import hm
@@ -83,8 +85,9 @@ class TestPerson:
         assert calendar[-2]["status"] == "keldi" and calendar[-2]["checkIn"] == "08:15"
         # Yozuvsiz kunlar: ish kuni — "ma'lumot yo'q", yakshanba (ish kuni emas) — "dam olish".
         first = world.today - timedelta(days=29)
-        assert calendar[0]["status"] == ("dam_olish" if first.isoweekday() == 7 else "malumot_yoq")
-        sundays = sum(1 for i in range(28) if (first + timedelta(days=i)).isoweekday() == 7)
+        policy = current_policy()
+        assert calendar[0]["status"] == ("malumot_yoq" if policy.is_work_day(first) else "dam_olish")
+        sundays = sum(1 for i in range(28) if not policy.is_work_day(first + timedelta(days=i)))
         assert body["totals"] == {
             "days": 30, "present": 2, "late": 0, "absent": 0, "dayOff": sundays, "noData": 28 - sundays,
             "rate": 100.0, "avgArrival": "08:10",

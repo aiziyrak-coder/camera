@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { ArrowLeft, ScanFace } from 'lucide-react';
 import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, Modal, Skeleton, cn, useToast } from '../../ui';
 import { ApiError } from '../../lib/apiClient';
@@ -15,9 +16,17 @@ import { getDuplicates, mergeDuplicates, type DuplicateGroup, type DuplicatePers
 
 function PersonCell({ person, keep }: { person: DuplicatePerson; keep?: boolean }) {
   return (
-    <div className={cn('min-w-0 rounded-control border px-2.5 py-1.5', keep ? 'border-success/40 bg-success-soft' : 'border-border')}>
+    <div className={cn('flex min-w-0 items-center gap-2 rounded-control border px-2.5 py-1.5', keep ? 'border-success/40 bg-success-soft' : 'border-border')}>
+      {person.photoUrl ? (
+        <img src={person.photoUrl} alt="" loading="lazy" className="h-11 w-11 shrink-0 rounded-control object-cover" />
+      ) : (
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-control bg-surface-2 text-[10px] text-subtle">yuzsiz</span>
+      )}
+      <div className="min-w-0 flex-1">
       <div className="flex items-center gap-1.5">
-        <b className="truncate text-[13px]">{person.fullName}</b>
+        <Link to={`/shaxs/${person.id}`} target="_blank" className="truncate text-[13px] font-bold hover:text-primary hover:underline">
+          {person.fullName}
+        </Link>
         {person.biometricsStatus === 'tasdiqlangan' && <ScanFace size={13} className="shrink-0 text-success" aria-label="Yuzi bor" />}
       </div>
       <div className="truncate text-[11px] text-muted">
@@ -25,6 +34,7 @@ function PersonCell({ person, keep }: { person: DuplicatePerson; keep?: boolean 
           person.attendance ? `${person.attendance} kun davomat` : null, person.createdAt]
           .filter(Boolean)
           .join(' · ')}
+      </div>
       </div>
     </div>
   );
@@ -68,7 +78,7 @@ export default function DuplicatePeopleModal({ open, onClose, onMerged }: { open
   async function merge() {
     const result = await mergeDuplicates(selected.map((g) => ({ keepId: g.keeper.id, removeIds: g.duplicates.map((d) => d.id) })));
     if (result.errors.length) toast.error(`${result.errors.length} ta guruh birlashmadi: ${result.errors[0]}`);
-    toast.success(`${result.mergedGroups} guruh birlashtirildi, ${result.removed} ta ortiqcha yozuv o‘chirildi`);
+    if (result.mergedGroups) toast.success(`${result.mergedGroups} guruh birlashtirildi, ${result.removed} ta ortiqcha yozuv o‘chirildi`);
     setConfirming(false);
     onMerged();
     setReload((n) => n + 1);

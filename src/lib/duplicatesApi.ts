@@ -13,6 +13,7 @@ export interface DuplicatePerson {
   selfRegistered: boolean;
   attendance: number;
   createdAt: string | null;
+  photoUrl?: string | null;
 }
 
 export interface DuplicateGroup {

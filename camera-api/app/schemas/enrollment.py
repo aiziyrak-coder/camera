@@ -109,29 +109,6 @@ class EnrollmentFacultyOut(CamelModel):
     name: str
 
 
-class EnrollmentCodeOut(CamelModel):
-    """Guruh (yoki bo'lim) uchun ro'yxatdan o'tish kodi — admin uchun."""
-
-    scope: str
-    unit_name: str
-    code: str
-    created_at: datetime | None = None
-    expires_at: datetime | None = None
-
-
-class EnrollmentCodeIn(CamelModel):
-    """Qaysi guruhning kodi: qamrov + nom.
-
-    Nom aynan panelda ko'rinadigan nom (guruh nomi yoki fakultet nomi) —
-    solishtirishda u o'zi tozalanadi, ya'ni "DI-2301" va " di-2301 "
-    bitta guruh."""
-
-    scope: Literal["guruh", "bolim", "umumiy"] = "guruh"
-    unit: str = Field(default="", max_length=160)
-    #: Faqat yangilashda: kod shu paytdan keyin ishlamaydi (bo'sh — muddatsiz).
-    expires_at: datetime | None = None
-
-
 class PoseCheckOut(CamelModel):
     """Jonli yo'naltirish uchun bitta kadrning tahlili.
 

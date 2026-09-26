@@ -517,24 +517,6 @@ export interface EnrollMissing {
   enrollCode: string;
 }
 
-/** Guruh (yoki bo'lim) kodi — admin ko'radigan shakl. */
-export interface EnrollmentCode {
-  scope: 'guruh' | 'bolim' | 'umumiy';
-  unitName: string;
-  code: string;
-  createdAt: string | null;
-  expiresAt: string | null;
-}
-
-/**
- * Kodni yangilaydi. Eski kod SHU ZAHOTI ishlamay qoladi — kartani qayta
- * chop etish kerak bo'ladi. Kod tarqalib ketganda (guruh chatiga
- * tashlanganda) yagona to'g'ri harakat shu.
- */
-export function regenerateEnrollmentCode(scope: 'guruh' | 'bolim' | 'umumiy', unit: string): Promise<EnrollmentCode> {
-  return api.post<EnrollmentCode>('/api/enrollment-codes/regenerate', { scope, unit });
-}
-
 // ───────────────────────────────────────────── 17. Devor ekrani
 
 export interface WallUnit {

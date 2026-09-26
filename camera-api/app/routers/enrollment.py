@@ -63,11 +63,9 @@ from app.audit import log_action
 from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
-from app.models import EnrollmentCode, Faculty, OrgUnit, StudentGroup, StudentStaff
+from app.models import Faculty, OrgUnit, StudentGroup, StudentStaff
 from app.rate_limit import limiter
 from app.schemas.enrollment import (
-    EnrollmentCodeIn,
-    EnrollmentCodeOut,
     EnrollmentFacultyOut,
     PoseCheckOut,
     EnrollmentLookupIn,
@@ -75,7 +73,6 @@ from app.schemas.enrollment import (
     EnrollmentRegisterIn,
     EnrollmentSubmitOut,
 )
-from app.services import enrollment_code as codes
 from app.services.face_matching import announce_roster_change
 from app.services.inference_gate import PRIORITY_LIVE
 from app.services.privacy import record_consent
@@ -614,81 +611,3 @@ async def submit_enrollment(
         biometrics_status=record.biometrics_status,
         awaiting_approval=record.awaiting_approval,
     )
-
-
-# ─────────────────────────────── Admin: guruh kodlari ───────────────────────────────
-#
-# Ochiq yo'ldan farqli o'laroq bu yerga faqat "registerPeople" huquqi
-# bor foydalanuvchi kiradi. Kod — dekanat qo'lidagi kalit, shuning uchun
-# uni kim yangilagani audit jurnaliga yoziladi.
-
-codes_router = APIRouter(prefix="/api/enrollment-codes", tags=["enrollment"])
-
-
-def _target(body: EnrollmentCodeIn) -> tuple[str, str, str]:
-    """So'rovdagi qamrov va nomdan (qamrov, kalit, ko'rinadigan nom)."""
-    if body.scope == codes.SCOPE_ALL:
-        return codes.SCOPE_ALL, "", codes.ALL_UNIT_NAME
-    name = " ".join((body.unit or "").split())
-    if not name:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Guruh yoki bo'lim nomi kiritilmagan")
-    return body.scope, codes.unit_key(name), name
-
-
-def _code_out(row: EnrollmentCode) -> EnrollmentCodeOut:
-    return EnrollmentCodeOut(
-        scope=row.scope,
-        unit_name=row.unit_name or codes.ALL_UNIT_NAME,
-        code=row.code,
-        created_at=row.created_at,
-        expires_at=row.expires_at,
-    )
-
-
-@codes_router.get("", response_model=list[EnrollmentCodeOut])
-async def list_enrollment_codes(
-    db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
-) -> list[EnrollmentCodeOut]:
-    """Barcha kodlar — qamrov, so'ng nom bo'yicha."""
-    rows = (
-        await db.execute(select(EnrollmentCode).order_by(EnrollmentCode.scope, EnrollmentCode.unit_name))
-    ).scalars().all()
-    return [_code_out(row) for row in rows]
-
-
-@codes_router.post("/unit", response_model=EnrollmentCodeOut)
-async def get_enrollment_code(
-    body: EnrollmentCodeIn,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
-) -> EnrollmentCodeOut:
-    """Bitta guruh (yoki bo'lim) kodini ko'rsatadi.
-
-    Kodi hali bo'lmagan guruhga u shu yerda yaratiladi: yangi guruh
-    ochilganda admin alohida tugma qidirib yurmasligi kerak, kartani
-    esa shu zahoti chop etish kerak bo'ladi. Nomi POST tanasida
-    yuboriladi — guruh nomida chiziqcha ham, bo'sh joy ham bo'ladi."""
-    scope, key, name = _target(body)
-    row = await codes.ensure_code(db, scope, key, name)
-    await db.commit()
-    return _code_out(row)
-
-
-@codes_router.post("/regenerate", response_model=EnrollmentCodeOut)
-async def regenerate_enrollment_code(
-    body: EnrollmentCodeIn,
-    request: Request,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
-) -> EnrollmentCodeOut:
-    """Kodni yangilaydi — eski kod shu zahoti ishlamay qoladi.
-
-    Kod guruh chatiga tashlangan yoki tarqalib ketgan bo'lsa, yagona
-    to'g'ri harakat shu. Yangi kartani qayta chop etish kerak bo'ladi."""
-    scope, key, name = _target(body)
-    row = await codes.regenerate_code(db, scope, key, name, body.expires_at)
-    await log_action(db, request, current_user.id, f"Ro'yxatdan o'tish kodi yangilandi: {name}", "Talabalar")
-    await db.commit()
-    logger.info("enrollment code regenerated", extra={"scope": scope, "unit": name})
-    return _code_out(row)

@@ -470,6 +470,7 @@ export default function WallScreenPage() {
                 staff={wall.staff}
                 studentsDataAvailable={wall.studentsDataAvailable}
                 studentsEnroll={wall.enrollment.students}
+                facultyEnroll={wall.enrollment.byFaculty}
               />
             )}
             {effectivePanels.includes('B') && <ArrivalsPanel arrivals={arrivals} freshIds={freshArrivals} live={online} />}

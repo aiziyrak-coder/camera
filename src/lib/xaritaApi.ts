@@ -36,6 +36,8 @@ export interface MapCamera {
   angle: number | null;
   fov: number;
   openEvents: number;
+  /** So'nggi 10 daqiqada shu kamerada tanilgan turli odamlar. */
+  peopleNow?: number;
   streamUrl: string | null;
   /** false — kamera hali biror qavatga biriktirilmagan. */
   assigned: boolean;

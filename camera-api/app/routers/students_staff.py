@@ -576,6 +576,8 @@ class _DupPersonOut(CamelModel):
     self_registered: bool
     attendance: int
     created_at: str | None
+    # Yuz rasmi — "yuz bo'yicha" guruhni ko'z bilan tekshirish uchun.
+    photo_url: str | None = None
 
 
 class _DupGroupOut(CamelModel):
@@ -614,6 +616,7 @@ def _dup_person(row: dict) -> _DupPersonOut:
         self_registered=bool(row.get("self_registered")),
         attendance=int(row.get("att") or 0),
         created_at=to_local(created).strftime("%d.%m.%Y") if created else None,
+        photo_url=presigned_url(row["biometric_photo_key"]) if row.get("biometric_photo_key") else None,
     )
 
 

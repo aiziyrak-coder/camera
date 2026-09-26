@@ -44,6 +44,8 @@ class XaritaCameraOut(CamelModel):
     open_events: int
     """Oxirgi 24 soatdagi ochiq (yangi/jarayonda, sinov emas) signallar."""
     stream_url: str | None = None
+    people_now: int = 0
+    """So'nggi 10 daqiqada shu kamerada tanilgan turli odamlar soni."""
     assigned: bool = True
     """False — kamera hali biror qavatga biriktirilmagan (faqat tahrir
     huquqi borlarga, `candidates` ro'yxatida)."""
