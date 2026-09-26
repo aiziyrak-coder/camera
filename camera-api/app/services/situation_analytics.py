@@ -672,7 +672,7 @@ class UnitToday:
 
 async def staff_units_today(db: AsyncSession, day: date_type) -> list[UnitToday]:
     catalog = await svc.unit_catalog(db)
-    pending = day >= svc.today()
+    pending = svc.pending_state(day)
     per: dict[str, UnitToday] = {}
     for row in await svc.unit_rows(db, day):
         if row.type != "xodim":

@@ -268,3 +268,48 @@ class TestImpersonationOfAnImportedPerson:
         assert resp.status_code == 200, resp.text
         assert resp.json()["biometricsStatus"] == "tasdiqlangan"
         assert str(person.id) in await _known_ids(db_session)
+
+
+@pytest.mark.usefixtures("seeded")
+class TestRegistrationUsesHemisStructure:
+    async def test_student_group_gets_course_prefix(self, client: AsyncClient, db_session):
+        from app.models import Faculty, StudentGroup
+
+        faculty = Faculty(name="Pediatriya fakulteti", course_count=6)
+        db_session.add(faculty)
+        await db_session.flush()
+        db_session.add(StudentGroup(name="PE-2401", faculty_id=faculty.id, course=2))
+        await db_session.commit()
+
+        groups = (await client.get("/api/public/enrollment/groups")).json()
+        assert {"name": "PE-2401", "course": 2, "facultyId": str(faculty.id)} in groups
+
+        resp = await client.post(
+            "/api/public/enrollment/register",
+            json={"fullName": "Yangi Talaba Aliyevich", "type": "talaba", "groupOrPosition": "pe-2401", "pinfl": "41234567890123"},
+        )
+        assert resp.status_code == 201, resp.text
+        record = await db_session.get(StudentStaff, resp.json()["recordId"])
+        await db_session.refresh(record)
+        assert record.group_or_position == "2-kurs, PE-2401"
+        assert record.faculty_id == faculty.id
+
+    async def test_staff_picks_org_unit(self, client: AsyncClient, db_session):
+        from app.models import OrgUnit
+
+        unit = OrgUnit(name="Anatomiya kafedrasi", kind="kafedra")
+        db_session.add(unit)
+        await db_session.commit()
+        units = (await client.get("/api/public/enrollment/units")).json()
+        assert any(u["id"] == str(unit.id) and u["kind"] == "kafedra" for u in units)
+
+        resp = await client.post(
+            "/api/public/enrollment/register",
+            json={"fullName": "Yangi Xodim Karimovich", "type": "xodim", "groupOrPosition": "Assistent",
+                  "orgUnitId": str(unit.id), "pinfl": "71234567890123"},
+        )
+        assert resp.status_code == 201, resp.text
+        record = await db_session.get(StudentStaff, resp.json()["recordId"])
+        await db_session.refresh(record)
+        assert record.org_unit_id == unit.id
+        assert record.position == "Assistent"

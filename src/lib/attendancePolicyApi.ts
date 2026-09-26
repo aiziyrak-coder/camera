@@ -27,6 +27,29 @@ export function saveAttendancePolicy(token: string | null, body: AttendancePolic
   return api.put<AttendancePolicy>('/api/attendance-policy', body, token);
 }
 
+/** Bayram / qo'shimcha dam olish kuni. */
+export interface Holiday {
+  date: string;
+  name: string;
+  recomputed?: number;
+}
+
+export function listHolidays(token: string | null, year: number, opts: CallOptions = {}) {
+  return api.get<Holiday[]>(`/api/attendance-policy/holidays?year=${year}`, token, opts);
+}
+
+export function addHoliday(token: string | null, body: { date: string; name: string }) {
+  return api.post<Holiday>('/api/attendance-policy/holidays', body, token);
+}
+
+export function addStandardHolidays(token: string | null, year: number) {
+  return api.post<{ added: number; recomputed: number }>(`/api/attendance-policy/holidays/standart?year=${year}`, {}, token);
+}
+
+export function deleteHoliday(token: string | null, date: string) {
+  return api.del(`/api/attendance-policy/holidays/${date}`, token);
+}
+
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 /** "08:00" -> 480. Vaqt noto'g'ri bo'lsa null. */

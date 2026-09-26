@@ -65,6 +65,7 @@ export default function WallTile({
   editable,
   compact,
   pending = false,
+  alarm = null,
   onSelect,
   onToggleMaximize,
   onRemove,
@@ -87,6 +88,8 @@ export default function WallTile({
   compact: boolean;
   /** Kameralar ro'yxati hali yuklanmoqda — "topilmadi" deyish erta. */
   pending?: boolean;
+  /** Shu kamerada yaqinda yuqori muhimlikdagi hodisa (kriteriya nomi). */
+  alarm?: string | null;
   onSelect: (index: number) => void;
   onToggleMaximize: (index: number) => void;
   onRemove: (index: number) => void;
@@ -164,8 +167,14 @@ export default function WallTile({
         'group relative min-h-0 min-w-0 overflow-hidden rounded-[2px] bg-surface-2 outline-none',
         selected && !maximized && 'ring-2 ring-inset ring-primary',
         dragOver && 'ring-2 ring-inset ring-success',
+        alarm && 'animate-pulse ring-4 ring-inset ring-danger',
       )}
     >
+      {alarm && (
+        <span className="absolute bottom-1 left-1 z-20 max-w-[90%] truncate rounded-[2px] bg-danger px-1.5 py-0.5 text-[11px] font-semibold text-white" title={alarm}>
+          {alarm}
+        </span>
+      )}
       {!cameraId && (
         <div className="intel-grid flex h-full w-full flex-col items-center justify-center gap-1 border border-dashed border-border text-subtle">
           <Plus size={compact ? 14 : 18} aria-hidden="true" />

@@ -2,7 +2,15 @@ import { useEffect, useState } from 'react';
 import { ArrowLeft, UserPlus } from 'lucide-react';
 import { Button, CodeText, Field, Input, MicroLabel, Select, StatusLamp } from '../../ui';
 import { Notice, Segmented } from '../settings/kit';
-import { type EnrollmentFaculty, type EnrollmentRegisterInput, listEnrollmentFaculties } from '../../lib/enrollment';
+import {
+  type EnrollmentFaculty,
+  type EnrollmentGroup,
+  type EnrollmentRegisterInput,
+  type EnrollmentUnit,
+  listEnrollmentFaculties,
+  listEnrollmentGroups,
+  listEnrollmentUnits,
+} from '../../lib/enrollment';
 
 interface EnrollmentRegisterFormProps {
   /** Qidiruvda kiritilgan identifikator — qayta so'ralmaydi. */
@@ -46,6 +54,23 @@ export default function EnrollmentRegisterForm({
   const [groupOrPosition, setGroupOrPosition] = useState(initialGroup);
   const [facultyId, setFacultyId] = useState('');
   const [faculties, setFaculties] = useState<EnrollmentFaculty[]>([]);
+  const [groups, setGroups] = useState<EnrollmentGroup[]>([]);
+  const [units, setUnits] = useState<EnrollmentUnit[]>([]);
+  const [orgUnitId, setOrgUnitId] = useState('');
+
+  // HEMIS guruh va bo'linmalari — maslahat sifatida (ro'yxat yuklanmasa ham forma ishlaydi).
+  useEffect(() => {
+    let cancelled = false;
+    listEnrollmentGroups()
+      .then((rows) => !cancelled && setGroups(rows))
+      .catch(() => undefined);
+    listEnrollmentUnits()
+      .then((rows) => !cancelled && setUnits(rows))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Fakultet ro'yxati bo'lmasa ham forma ishlayveradi — maydon
   // ixtiyoriy, va ro'yxatni yuklab bo'lmagani odamning ro'yxatdan
@@ -85,6 +110,7 @@ export default function EnrollmentRegisterForm({
           type,
           groupOrPosition: trimmedGroup,
           facultyId: facultyId || undefined,
+          orgUnitId: type === 'xodim' ? orgUnitId || undefined : undefined,
           pinfl,
           passportSeries,
           passportNumber,
@@ -115,19 +141,53 @@ export default function EnrollmentRegisterForm({
 
       <fieldset className="flex flex-col gap-1.5">
         <legend className="intel-micro mb-1.5 !text-fg">Kim sifatida</legend>
-        <Segmented ariaLabel="Kim sifatida" value={type} onChange={setType} options={TYPE_OPTIONS} size="lg" />
+        <Segmented
+          ariaLabel="Kim sifatida"
+          value={type}
+          onChange={(next) => {
+            setType(next);
+            // QR dagi guruh nomi xodimga lavozim bo'lib o'tib ketmasin.
+            if (next === 'xodim' && groupOrPosition === initialGroup) setGroupOrPosition('');
+          }}
+          options={TYPE_OPTIONS}
+          size="lg"
+        />
       </fieldset>
 
       <Field label={type === 'talaba' ? 'Guruh' : 'Lavozim'} required>
         <Input
           value={groupOrPosition}
           onChange={(e) => setGroupOrPosition(e.target.value)}
-          placeholder={type === 'talaba' ? '301-guruh' : 'Laborant'}
+          placeholder={type === 'talaba' ? 'Guruh nomini yozing, ro‘yxatdan tanlang' : 'Laborant'}
+          list={type === 'talaba' && groups.length ? 'enroll-groups' : undefined}
+          autoComplete="off"
           required
           size="lg"
           className={mobileText}
         />
       </Field>
+      {type === 'talaba' && groups.length > 0 && (
+        <datalist id="enroll-groups">
+          {groups
+            .filter((g) => !facultyId || g.facultyId === facultyId)
+            .map((g) => (
+              <option key={g.name} value={g.name}>{`${g.course}-kurs`}</option>
+            ))}
+        </datalist>
+      )}
+
+      {type === 'xodim' && units.length > 0 && (
+        <Field label={<>Kafedra yoki bo‘lim <span className="font-normal text-muted">(ixtiyoriy)</span></>}>
+          <Select
+            value={orgUnitId}
+            onChange={setOrgUnitId}
+            placeholder="Tanlanmagan"
+            options={units.map((u) => ({ value: u.id, label: u.name }))}
+            size="lg"
+            className="sm:!w-full [&_select]:min-h-11 [&_select]:text-base"
+          />
+        </Field>
+      )}
 
       {faculties.length > 0 && (
         <Field label={<>Fakultet <span className="font-normal text-muted">(ixtiyoriy)</span></>}>

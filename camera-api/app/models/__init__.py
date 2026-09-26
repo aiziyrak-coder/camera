@@ -1,7 +1,7 @@
 from app.database import Base
 from app.models.ai_module import AIModuleConfig
 from app.models.attendance import AttendanceRecord
-from app.models.attendance_policy import AttendancePolicy
+from app.models.attendance_policy import AttendancePolicy, Holiday
 from app.models.audit_log import AuditLog
 from app.models.camera import Camera
 from app.models.camera_outage import CameraOutage
@@ -36,6 +36,7 @@ from app.models.wall_view import WallView
 __all__ = [
     "Base",
     "AttendancePolicy",
+    "Holiday",
     "User",
     "Permission",
     "Faculty",

@@ -6,7 +6,8 @@ bo'yicha qayta hisoblanadi — kelish vaqti o'zgarmaydi. Qo'lda kiritilgan
 yozuvdan (source='qolda') boshqa hammasi qayta hisoblanadi, manbasi
 yozilmagan eski yozuvlar ham."""
 
-from datetime import timedelta, time as time_type
+from dataclasses import replace
+from datetime import date as date_type, timedelta, time as time_type
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -18,8 +19,8 @@ from app.audit import log_action
 from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_user, require_permission
-from app.models import AttendancePolicy, AttendanceRecord, StudentStaff
-from app.services.attendance_policy import from_row, load_policy, set_cached
+from app.models import AttendancePolicy, AttendanceRecord, Holiday, StudentStaff
+from app.services.attendance_policy import current_policy, from_row, load_policy, set_cached
 from app.timezone import local_now
 from app.timezone import business_today
 
@@ -94,7 +95,8 @@ async def put_policy(
     row.work_days = ",".join(str(d) for d in body.work_days)
     row.track_last_seen = body.track_last_seen
     await db.flush()
-    policy = from_row(row)
+    # Bayram kunlari saqlanadi — ular alohida jadvalda (holidays).
+    policy = replace(from_row(row), holidays=current_policy().holidays)
 
     since = business_today() - timedelta(days=RECOMPUTE_DAYS)
     rows = (
@@ -145,3 +147,129 @@ async def put_policy(
     await db.commit()
     set_cached(policy)
     return {**_out(policy), "recomputed": recomputed}
+
+
+
+# ─────────────────────────────────────────── bayram va dam olish kunlari
+
+#: O'zbekistonda har yili bir xil sanadagi dam olish kunlari (Mehnat kodeksi).
+#: Ramazon va Qurbon hayit sanasi har yili o'zgaradi — ular qo'lda qo'shiladi.
+FIXED_HOLIDAYS = (
+    (1, 1, "Yangi yil"),
+    (3, 8, "Xalqaro xotin-qizlar kuni"),
+    (3, 21, "Navro'z bayrami"),
+    (5, 9, "Xotira va qadrlash kuni"),
+    (9, 1, "Mustaqillik kuni"),
+    (10, 1, "O'qituvchi va murabbiylar kuni"),
+    (12, 8, "Konstitutsiya kuni"),
+)
+
+
+class HolidayIn(BaseModel):
+    date: date_type
+    name: str = Field(min_length=1, max_length=120)
+
+
+def _holiday_out(row: Holiday) -> dict:
+    return {"date": row.date.isoformat(), "name": row.name}
+
+
+async def _apply_holiday(db: AsyncSession, day: date_type) -> int:
+    """O'tgan sana bayram deb belgilansa: o'sha kungi "kelmadi" — "dam_olish",
+    "kech_keldi" — "keldi" (bayramda kechikish yo'q). Qo'lda tuzatilgan yozuv
+    tegilmaydi. Qaytaradi: nechta yozuv o'zgardi."""
+    not_manual = or_(AttendanceRecord.source.is_(None), AttendanceRecord.source != "qolda")
+    absent = await db.execute(
+        update(AttendanceRecord)
+        .where(AttendanceRecord.date == day, AttendanceRecord.status == "kelmadi", not_manual)
+        .values(status="dam_olish")
+    )
+    late = await db.execute(
+        update(AttendanceRecord)
+        .where(AttendanceRecord.date == day, AttendanceRecord.status == "kech_keldi", not_manual)
+        .values(status="keldi")
+    )
+    return (absent.rowcount or 0) + (late.rowcount or 0)
+
+
+@router.get("/holidays")
+async def list_holidays(
+    db: DbDep,
+    _user: Annotated[CurrentUser, Depends(get_current_user)],
+    year: int | None = None,
+) -> list[dict]:
+    stmt = select(Holiday).order_by(Holiday.date)
+    if year:
+        stmt = stmt.where(Holiday.date.between(date_type(year, 1, 1), date_type(year, 12, 31)))
+    return [_holiday_out(row) for row in (await db.execute(stmt)).scalars().all()]
+
+
+@router.post("/holidays", status_code=status.HTTP_201_CREATED)
+async def add_holiday(
+    body: HolidayIn,
+    request: Request,
+    db: DbDep,
+    current_user: Annotated[CurrentUser, Depends(require_permission("manageAttendance"))],
+) -> dict:
+    row = await db.get(Holiday, body.date)
+    if row is None:
+        row = Holiday(date=body.date, name=body.name.strip())
+        db.add(row)
+    else:
+        row.name = body.name.strip()
+    changed = await _apply_holiday(db, body.date) if body.date <= business_today() else 0
+    await log_action(
+        db, request, current_user.id, f"Dam olish kuni: {body.date.isoformat()} — {row.name}; {changed} ta yozuv tuzatildi",
+        "Davomat",
+    )
+    await db.commit()
+    await load_policy(db, force=True)
+    return {**_holiday_out(row), "recomputed": changed}
+
+
+@router.post("/holidays/standart")
+async def add_standard_holidays(
+    request: Request,
+    db: DbDep,
+    current_user: Annotated[CurrentUser, Depends(require_permission("manageAttendance"))],
+    year: int | None = None,
+) -> dict:
+    """Shu yilning o'zgarmas bayramlarini qo'shadi (bor bo'lsa tegmaydi)."""
+    year = year or business_today().year
+    if not 2000 <= year <= 2100:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Yil noto'g'ri")
+    existing = set(
+        (await db.execute(
+            select(Holiday.date).where(Holiday.date.between(date_type(year, 1, 1), date_type(year, 12, 31)))
+        )).scalars().all()
+    )
+    added = 0
+    changed = 0
+    for month, day, name in FIXED_HOLIDAYS:
+        moment = date_type(year, month, day)
+        if moment in existing:
+            continue
+        db.add(Holiday(date=moment, name=name))
+        added += 1
+        if moment <= business_today():
+            changed += await _apply_holiday(db, moment)
+    await log_action(db, request, current_user.id, f"{year}-yil bayramlari qo'shildi: {added} ta", "Davomat")
+    await db.commit()
+    await load_policy(db, force=True)
+    return {"added": added, "recomputed": changed}
+
+
+@router.delete("/holidays/{day}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_holiday(
+    day: date_type,
+    request: Request,
+    db: DbDep,
+    current_user: Annotated[CurrentUser, Depends(require_permission("manageAttendance"))],
+) -> None:
+    row = await db.get(Holiday, day)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Bu sana dam olish kuni sifatida yozilmagan")
+    await db.delete(row)
+    await log_action(db, request, current_user.id, f"Dam olish kuni olib tashlandi: {day.isoformat()}", "Davomat")
+    await db.commit()
+    await load_policy(db, force=True)

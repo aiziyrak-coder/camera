@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { BarChart3, BookOpen, CalendarCheck, Rows3, Table2, Users } from 'lucide-react';
+import { BarChart3, BookOpen, CalendarCheck, Rows3, ScanFace, Table2, Users } from 'lucide-react';
 import PdfButton from '../../components/situation/PdfButton';
+import { UnitEnrollDrawer } from '../../components/teachers/UnitEnrollDrawer';
 import {
   Avatar,
   Badge,
+  Button,
   ButtonLink,
   DataTable,
   DateRangePicker,
@@ -112,6 +114,7 @@ export default function KafedraPage() {
   const [view, setView] = usePersistedState<View>('kafedra.view', 'board');
   const [sort, setSort] = usePersistedState<TeacherSort>('kafedra.sort', 'lateness');
   const [search, setSearch] = useState('');
+  const [enrollOpen, setEnrollOpen] = useState(false);
   // Boshqa bo'linmaga o'tilganda eski qidiruv so'zi yangi ro'yxatni
   // "Hech kim topilmadi" holatida qoldirmasin.
   useEffect(() => {
@@ -215,6 +218,11 @@ export default function KafedraPage() {
             }
           >
             <SearchInput value={search} onChange={setSearch} placeholder="Ism bo'yicha…" ariaLabel="O'qituvchini qidirish" />
+            {data.teachers.some((t) => t.biometricsStatus !== 'tasdiqlangan') && (
+              <Button size="sm" variant="soft" icon={ScanFace} onClick={() => setEnrollOpen(true)}>
+                {`Yuzsiz: ${data.teachers.filter((t) => t.biometricsStatus !== 'tasdiqlangan').length}`}
+              </Button>
+            )}
             <PdfButton
               path="/api/situation/pdf/people"
               params={{ type: 'xodim', departmentId, date, search: search || undefined }}
@@ -283,6 +291,7 @@ export default function KafedraPage() {
 
         </div>
       ) : null}
+      <UnitEnrollDrawer unit={data ?? null} open={enrollOpen} onClose={() => setEnrollOpen(false)} withDate={withDate} />
     </Page>
   );
 }

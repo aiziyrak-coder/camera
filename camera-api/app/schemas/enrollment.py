@@ -81,6 +81,8 @@ class EnrollmentRegisterIn(CamelModel):
     type: Literal["talaba", "xodim"]
     group_or_position: str = Field(min_length=1, max_length=120)
     faculty_id: str | None = None
+    # Xodim: HEMIS bo'linmasi (ixtiyoriy) — /api/public/enrollment/units.
+    org_unit_id: str | None = None
     pinfl: str | None = Field(default=None, max_length=32)
     passport_series: str | None = Field(default=None, min_length=2, max_length=4)
     passport_number: str | None = Field(default=None, min_length=5, max_length=10)

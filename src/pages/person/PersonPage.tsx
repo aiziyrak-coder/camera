@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, CalendarDays, Footprints, GraduationCap, MapPin, RefreshCw } from 'lucide-react';
+import { PersonRouteDrawer } from './PersonRouteDrawer';
+import { ArrowLeft, CalendarDays, Footprints, GraduationCap, MapPin, RefreshCw, Route } from 'lucide-react';
 import {
   Badge,
   Button,
@@ -187,6 +188,9 @@ export default function PersonPage() {
   const { role } = useAuth();
   const { can } = usePermissions();
   const canEdit = can('manageAttendance', role);
+  // Kameralar bo'yicha kunlik yo'l — Shaxs qidirish bilan bir xil ruxsat.
+  const canTrack = can('viewLive', role);
+  const [routeOpen, setRouteOpen] = useState(false);
   const [params, setParams] = useSearchParams();
   const range = readRange(params, today);
 
@@ -365,9 +369,18 @@ export default function PersonPage() {
   return (
     <Page
       title={person?.fullName ?? 'Shaxs profili'}
-      subtitle={person ? (isStudent ? person.group || 'Talaba' : person.unit || 'Xodim') : undefined}
+      subtitle={person ? (isStudent ? person.group || 'Talaba' : person.position || person.unit || 'Xodim') : undefined}
       breadcrumbs={crumbs}
-      actions={<IconButton icon={RefreshCw} label="Yangilash" variant="secondary" onClick={() => { profile.reload(); summary.reload(); previous.reload(); months.invalidate(); }} loading={profile.refreshing} />}
+      actions={
+        <>
+          {person && canTrack && (
+            <Button icon={Route} variant="secondary" onClick={() => setRouteOpen(true)}>
+              Yo‘li
+            </Button>
+          )}
+          <IconButton icon={RefreshCw} label="Yangilash" variant="secondary" onClick={() => { profile.reload(); summary.reload(); previous.reload(); months.invalidate(); }} loading={profile.refreshing} />
+        </>
+      }
     >
       {profile.loading ? (
         <>
@@ -433,6 +446,15 @@ export default function PersonPage() {
                       <Fact label="Lavozim">{person.position || person.unit || "Ko'rsatilmagan"}</Fact>
                     </>
                   )}
+                  <Fact label="Yuz">
+                    {person.biometricsStatus !== 'tasdiqlangan' ? (
+                      <span className="text-warning">Ro‘yxatdan o‘tmagan — kameralar tanimaydi</span>
+                    ) : (person.photoAngles ?? 0) >= 3 ? (
+                      'Tasdiqlangan · 3 tomon'
+                    ) : (
+                      <span className="text-warning">{`Tasdiqlangan · ${person.photoAngles ?? 0}/3 tomon — qayta o‘tishi kerak`}</span>
+                    )}
+                  </Fact>
                   <Fact label="Bugun">
                     <span className="flex items-center gap-2">
                       <StatusMark
@@ -625,6 +647,10 @@ export default function PersonPage() {
       />
       <LessonDrawer lesson={lesson} withDate={withDate} showGroupLink onClose={() => setLesson(null)} />
       <GroupEnrollDrawer target={enrollTarget} onClose={() => setEnrollTarget(null)} withDate={withDate} />
+      <PersonRouteDrawer
+        target={routeOpen && person ? { id: person.id, fullName: person.fullName } : null}
+        onClose={() => setRouteOpen(false)}
+      />
     </Page>
   );
 }

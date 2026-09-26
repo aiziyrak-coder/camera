@@ -293,6 +293,8 @@ export interface PersonInfo {
   unit: string;
   /** HEMIS lavozimi (xodim). */
   position?: string | null;
+  /** Ro'yxatdan o'tishda saqlangan tomonlar (old, chap, o'ng): 0..3. */
+  photoAngles?: number;
   group: string | null;
   course: number | null;
   departmentId: string | null;

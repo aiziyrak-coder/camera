@@ -51,6 +51,7 @@ from app.models import (
     StudentStaff,
 )
 from app.schemas.situation import CountsOut, LessonOut
+from app.services.attendance_policy import current_policy
 from app.services.event_scope import OPERATOR_EVENTS
 from app.services.event_status import OPEN_STATUSES
 from app.services.staff_export import NO_FACULTY_LABEL, split_course
@@ -200,9 +201,22 @@ def student_group(unit: str | None) -> tuple[int | None, str]:
     return split_course(unit)
 
 
+#: pending_state(): ish kuni emas (dam olish / bayram) — yozuvsiz odam "dam olish".
+OFF_DAY = "off"
+
+
+def pending_state(day: date_type) -> bool | str:
+    """True — kun hali tugamagan ish kuni; OFF_DAY — dam olish/bayram; False — o'tgan ish kuni."""
+    if not current_policy().is_work_day(day):
+        return OFF_DAY
+    return day >= today()
+
+
 def person_status(record_status: str | None, enrolled: bool, day: date_type) -> str:
     if record_status:
         return record_status
+    if not current_policy().is_work_day(day):
+        return "dam_olish"
     if enrolled and day >= today():
         return "kutilmoqda"
     return "malumot_yoq"
@@ -233,7 +247,7 @@ class Counts:
                 self.late += n
         elif record_status == "kelmadi":
             self.absent += n
-        elif record_status == "dam_olish":
+        elif record_status == "dam_olish" or pending == OFF_DAY:
             self.day_off += n
         elif enrolled and pending:
             self.not_yet += n

@@ -77,6 +77,8 @@ export interface EnrollmentRegisterInput {
   type: 'talaba' | 'xodim';
   groupOrPosition: string;
   facultyId?: string;
+  /** Xodim: HEMIS bo'linmasi. */
+  orgUnitId?: string;
   pinfl?: string;
   passportSeries?: string;
   passportNumber?: string;
@@ -106,6 +108,28 @@ export async function lookupPerson(identity: EnrollmentIdentity): Promise<Enroll
 
 export async function listEnrollmentFaculties(): Promise<EnrollmentFaculty[]> {
   return api.get<EnrollmentFaculty[]>('/api/public/enrollment/faculties');
+}
+
+/** HEMIS guruhlari — talaba guruhini ro'yxatdan tanlaydi. */
+export interface EnrollmentGroup {
+  name: string;
+  course: number;
+  facultyId: string | null;
+}
+
+export async function listEnrollmentGroups(): Promise<EnrollmentGroup[]> {
+  return api.get<EnrollmentGroup[]>('/api/public/enrollment/groups');
+}
+
+/** HEMIS bo'linmalari — xodim kafedra/bo'limini tanlaydi. */
+export interface EnrollmentUnit {
+  id: string;
+  name: string;
+  kind: string;
+}
+
+export async function listEnrollmentUnits(): Promise<EnrollmentUnit[]> {
+  return api.get<EnrollmentUnit[]>('/api/public/enrollment/units');
 }
 
 /** Tizimda yozuvi yo'q odam o'zini ro'yxatdan o'tkazadi. Javob lookup

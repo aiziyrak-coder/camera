@@ -1,6 +1,6 @@
-from datetime import datetime, time
+from datetime import date, datetime, time
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Time
+from sqlalchemy import Boolean, Date, DateTime, Integer, String, Time
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -25,3 +25,14 @@ class AttendancePolicy(Base):
     # Kunning oxirgi ko'rinishi (istalgan kamera) check_out ga yoziladimi.
     track_last_seen: Mapped[bool] = mapped_column(Boolean, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class Holiday(Base):
+    """Ish kuni bo'lmagan sana (bayram, qo'shimcha dam olish) — Sozlamalar →
+    Ish vaqti. Bu kunda hech kim "kelmadi" yoki "kech keldi" deb yozilmaydi."""
+
+    __tablename__ = "holidays"
+
+    date: Mapped[date] = mapped_column(Date, primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

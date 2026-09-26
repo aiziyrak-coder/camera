@@ -16,6 +16,7 @@ import {
   useToast,
 } from '../../ui';
 import { Notice } from '../../components/settings/kit';
+import HolidaysPanel from '../../components/settings/HolidaysPanel';
 import { ApiError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { usePermissions } from '../../lib/permissions';
@@ -309,6 +310,7 @@ export default function WorkHoursPage() {
           <StatusLamp className="ms-auto" status={dirty ? 'warn' : 'ok'} label={dirty ? 'Saqlanmagan' : 'Kuchda'} />
         </p>
       </IntelPanel>
+      <HolidaysPanel token={token} canEdit={canEdit} />
     </Page>
   );
 }

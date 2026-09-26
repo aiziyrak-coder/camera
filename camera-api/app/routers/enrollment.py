@@ -54,7 +54,7 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -63,7 +63,7 @@ from app.audit import log_action
 from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
-from app.models import EnrollmentCode, Faculty, StudentStaff
+from app.models import EnrollmentCode, Faculty, OrgUnit, StudentGroup, StudentStaff
 from app.rate_limit import limiter
 from app.schemas.enrollment import (
     EnrollmentCodeIn,
@@ -237,6 +237,23 @@ async def list_faculties(db: Annotated[AsyncSession, Depends(get_db)]) -> list[E
     return [EnrollmentFacultyOut(id=str(f.id), name=f.name) for f in result.scalars().all()]
 
 
+@router.get("/groups")
+async def list_groups(db: Annotated[AsyncSession, Depends(get_db)]) -> list[dict]:
+    """Guruhlar (HEMIS) — ro'yxatdan o'tishda guruhni tanlash uchun.
+    Ochiq: faqat nom, kurs va fakultet id si."""
+    rows = await db.execute(select(StudentGroup.name, StudentGroup.course, StudentGroup.faculty_id).order_by(StudentGroup.name))
+    return [{"name": name, "course": course, "facultyId": str(fid) if fid else None} for name, course, fid in rows.all()]
+
+
+@router.get("/units")
+async def list_units(db: Annotated[AsyncSession, Depends(get_db)]) -> list[dict]:
+    """Institut bo'linmalari (HEMIS) — xodim o'z kafedra/bo'limini tanlaydi."""
+    rows = await db.execute(
+        select(OrgUnit.id, OrgUnit.name, OrgUnit.kind).where(OrgUnit.active.is_(True)).order_by(OrgUnit.name)
+    )
+    return [{"id": str(uid), "name": name, "kind": kind} for uid, name, kind in rows.all()]
+
+
 @router.post("/register", response_model=EnrollmentLookupOut, status_code=status.HTTP_201_CREATED)
 @limiter.limit("30/minute")
 async def register_self(
@@ -283,10 +300,32 @@ async def register_self(
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Bunday fakultet topilmadi")
         faculty_id = faculty.id
 
+    group_or_position = body.group_or_position.strip()
+    org_unit_id = None
+    position = None
+    if body.type == "talaba":
+        # HEMIS guruhi bilan mos kelsa — "N-kurs, GURUH" (import bilan bir xil
+        # ko'rinish): kurs filtri va guruh sahifasi uni shunda topadi.
+        group = (
+            await db.execute(select(StudentGroup).where(func.lower(StudentGroup.name) == group_or_position.lower()))
+        ).scalars().first()
+        if group is not None:
+            group_or_position = f"{group.course}-kurs, {group.name}"
+            faculty_id = faculty_id or group.faculty_id
+    else:
+        position = group_or_position
+        if body.org_unit_id:
+            unit = await db.get(OrgUnit, _as_uuid(body.org_unit_id)) if _as_uuid(body.org_unit_id) else None
+            if unit is None:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Bunday bo'linma topilmadi")
+            org_unit_id = unit.id
+
     record = StudentStaff(
         full_name=body.full_name.strip(),
         type=body.type,
-        group_or_position=body.group_or_position.strip(),
+        group_or_position=group_or_position,
+        org_unit_id=org_unit_id,
+        position=position,
         faculty_id=faculty_id,
         pinfl=pinfl or None,
         passport_series=series or None,

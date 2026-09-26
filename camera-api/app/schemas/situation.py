@@ -328,6 +328,8 @@ class PersonInfoOut(CamelModel):
     unit: str  # group_or_position xom holda
     # HEMIS lavozimi (xodim).
     position: str | None = None
+    # Ro'yxatdan o'tishda saqlangan tomonlar (old, chap, o'ng): 0..3.
+    photo_angles: int = 0
     group: str | None = None  # talaba guruhi
     course: int | None = None
     department_id: str | None = None  # xodim kafedrasi (nom bo'yicha topilgan)

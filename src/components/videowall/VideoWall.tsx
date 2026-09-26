@@ -40,6 +40,9 @@ import { useStoredViews } from './useStoredViews';
 import { useWallCameras } from './useWallCameras';
 import { downloadBlob } from '../../lib/download';
 import { usePersistedState } from '../../lib/usePersistedState';
+import { useLiveEvents } from '../../lib/realtime';
+
+const ALARM_MS = 60_000;
 import {
   EMPTY_WALL_FILTERS,
   WALL_MAX_LIVE,
@@ -165,6 +168,22 @@ export default function VideoWall({
 
   const { cameras, loading, error, knownIds, reload, refreshStreams } = useWallCameras();
   const byId = useMemo(() => new Map(cameras.map((camera) => [camera.id, camera])), [cameras]);
+
+  // Signal: yuqori muhimlikdagi yangi hodisa bo'lgan kamera katagi 60 s
+  // qizil ramka bilan yonadi — operator qaysi ekranga qarashni darhol biladi.
+  const [alarms, setAlarms] = useState<Record<string, { label: string; until: number }>>({});
+  useLiveEvents((event) => {
+    if (event.severity !== 'yuqori' || event.status !== 'yangi' || !event.cameraId) return;
+    setAlarms((prev) => ({ ...prev, [event.cameraId]: { label: event.moduleName, until: Date.now() + ALARM_MS } }));
+  });
+  useEffect(() => {
+    if (Object.keys(alarms).length === 0) return;
+    const timer = window.setTimeout(() => {
+      const now = Date.now();
+      setAlarms((prev) => Object.fromEntries(Object.entries(prev).filter(([, a]) => a.until > now)));
+    }, 5_000);
+    return () => window.clearTimeout(timer);
+  }, [alarms]);
   // Xizmat kodlari (`CAM-084`) — filtrga emas, TO'LIQ ro'yxatga bog'langan,
   // shuning uchun filtr o'zgarsa ham katakdagi kod o'zgarmaydi.
   const codes = useMemo(() => buildCameraCodes(cameras), [cameras]);
@@ -748,6 +767,7 @@ export default function VideoWall({
             code={cameraId ? codes.get(cameraId) : undefined}
             playback={state}
             pending={loading && Boolean(cameraId) && !byId.has(cameraId ?? '')}
+            alarm={cameraId ? alarms[cameraId]?.label ?? null : null}
             style={
               isMax
                 ? { gridColumn: '1 / -1', gridRow: '1 / -1' }

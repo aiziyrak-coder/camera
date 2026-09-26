@@ -96,7 +96,7 @@ async def overview(db: DbDep, _: ReadDep, date: DateQuery = None) -> OverviewOut
 
 
 async def _build_overview(db: AsyncSession, day) -> OverviewOut:
-    pending = day >= svc.today()
+    pending = svc.pending_state(day)
     now = datetime.now(timezone.utc)
     rows = await svc.unit_rows(db, day)
     lessons = await svc.day_lessons(db, day)
@@ -145,7 +145,7 @@ async def faculty_detail(faculty_id: str, db: DbDep, _: ReadDep, date: DateQuery
     if faculty is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Fakultet topilmadi")
     day = svc.resolve_day(date)
-    pending = day >= svc.today()
+    pending = svc.pending_state(day)
     rows = [r for r in await svc.unit_rows(db, day) if r.type == "talaba" and r.faculty_id == fid]
     names = {fid: faculty.name}
 
@@ -202,7 +202,7 @@ async def groups_list(
 ) -> list[GroupStatOut]:
     """Barcha guruhlar tekis ro'yxatda (qidiruv / tez o'tish uchun), nom bo'yicha."""
     day = svc.resolve_day(date)
-    pending = day >= svc.today()
+    pending = svc.pending_state(day)
     groups = svc.aggregate_groups(await svc.unit_rows(db, day), pending)
     names = await svc.faculty_names(db)
     fallback = {}
@@ -234,7 +234,7 @@ async def group_detail(group_name: str, db: DbDep, _: ReadDep, date: DateQuery =
     """Guruh: talabalar yuz setkasi (shu kungi holati bilan), shu kungi
     darslari va oxirgi 14 kunlik davomat foizi."""
     day = svc.resolve_day(date)
-    pending = day >= svc.today()
+    pending = svc.pending_state(day)
     rows = await db.execute(
         select(
             StudentStaff.id, StudentStaff.full_name, StudentStaff.group_or_position, StudentStaff.faculty_id,
@@ -322,7 +322,7 @@ async def kafedras(
 
 
 async def _build_kafedras(db: AsyncSession, day) -> list[KafedraStatOut]:
-    pending = day >= svc.today()
+    pending = svc.pending_state(day)
     now = datetime.now(timezone.utc)
     catalog = await svc.unit_catalog(db)
     unassigned = svc.UNASSIGNED_KAFEDRA_ID
@@ -376,7 +376,7 @@ async def kafedra_detail(
     info, ids = await svc.department_staff_ids(db, department_id)
     day = svc.resolve_day(date)
     start, end = svc.resolve_range(date_from, date_to, default_end=day)
-    pending = day >= svc.today()
+    pending = svc.pending_state(day)
     now = datetime.now(timezone.utc)
 
     people = []
@@ -567,6 +567,8 @@ async def person_profile(
         faculty=person.faculty.name if person.faculty else (NO_FACULTY_LABEL if person.type == "talaba" else None),
         unit=person.group_or_position, group=group or None, course=course,
         position=person.position if person.type == "xodim" else None,
+        photo_angles=sum(1 for key in (person.biometric_photo_key, person.biometric_photo_left_key,
+                                       person.biometric_photo_right_key) if key),
         department_id=department.id if department else None,
         department=department.name if department else None,
         biometrics_status=person.biometrics_status, parent_notify=person.parent_notify_enabled,
@@ -865,7 +867,7 @@ UNASSIGNED = "yoq"
 def _bucket(record_status: str | None, enrolled: bool, pending: bool) -> str:
     if record_status in svc.PRESENT_STATUSES:
         return "present"
-    if record_status == "kelmadi" or (enrolled and pending and record_status is None):
+    if record_status == "kelmadi" or (enrolled and pending is True and record_status is None):
         return "absent"
     return "no_data"
 
@@ -896,7 +898,7 @@ async def org_tree(db: DbDep, _: ReadDep, date: DateQuery = None) -> OrgTreeOut:
     from app.services import org_structure as org
 
     day = svc.resolve_day(date)
-    pending = day >= svc.today()
+    pending = svc.pending_state(day)
     units = (await db.execute(select(OrgUnit).where(OrgUnit.active.is_(True)))).scalars().all()
     roots = org.build_tree(list(units))
     parent_of = {u.id: u.parent_id for u in units}

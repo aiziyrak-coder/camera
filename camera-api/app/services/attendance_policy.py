@@ -16,13 +16,14 @@ soniyada chaqiriladi, shuning uchun qoida xotirada keshlanadi (30 s)."""
 from __future__ import annotations
 
 import time as _clock
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import date as date_type, datetime, time as time_type, timedelta
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.attendance_policy import AttendancePolicy
+from app.models.attendance_policy import AttendancePolicy, Holiday
 from app.timezone import business_date, local_now
 
 CACHE_SECONDS = 30.0
@@ -36,6 +37,8 @@ class Policy:
     work_end: time_type = time_type(17, 0)
     work_days: tuple[int, ...] = (1, 2, 3, 4, 5, 6)
     track_last_seen: bool = True
+    # Bayram / qo'shimcha dam olish sanalari (holidays jadvali).
+    holidays: frozenset = frozenset()
 
     def start_for(self, person_type: str | None) -> time_type:
         return self.student_start if person_type == "talaba" else self.staff_start
@@ -45,7 +48,7 @@ class Policy:
         return (start + timedelta(minutes=self.grace_minutes)).time()
 
     def is_work_day(self, day: date_type | None) -> bool:
-        return day is None or day.isoweekday() in self.work_days
+        return day is None or (day.isoweekday() in self.work_days and day not in self.holidays)
 
     def late_minutes(self, arrived: time_type | None, person_type: str | None, day: date_type | None = None) -> int:
         """Ish boshlanishidan necha daqiqa kech (grace ichida bo'lsa 0).
@@ -72,6 +75,7 @@ class Policy:
         for key in ("staff_start", "student_start", "work_end"):
             data[key] = data[key].strftime("%H:%M")
         data["work_days"] = list(self.work_days)
+        data["holidays"] = sorted(d.isoformat() for d in self.holidays)
         return data
 
 
@@ -203,5 +207,13 @@ async def load_policy(db: AsyncSession, force: bool = False) -> Policy:
     if not force and _loaded_at and _clock.monotonic() - _loaded_at < CACHE_SECONDS:
         return _cached
     row = await db.get(AttendancePolicy, 1)
-    set_cached(from_row(row) if row is not None else Policy())
+    policy = from_row(row) if row is not None else Policy()
+    # O'tgan va kelasi bir yil — qolgani hisob-kitobga ta'sir qilmaydi.
+    today = business_date(local_now())
+    days = (
+        await db.execute(
+            select(Holiday.date).where(Holiday.date.between(today - timedelta(days=400), today + timedelta(days=400)))
+        )
+    ).scalars().all()
+    set_cached(replace(policy, holidays=frozenset(days)))
     return _cached

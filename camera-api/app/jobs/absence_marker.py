@@ -54,7 +54,8 @@ def _working_weekdays() -> set[int]:
 
 
 def is_working_day(day: date_type) -> bool:
-    return day.isoweekday() in _working_weekdays()
+    """Hafta ish kuni va bayram emas (Sozlamalar → Ish vaqti)."""
+    return current_policy().is_work_day(day)
 
 
 def _cutoff_time() -> time_type:
