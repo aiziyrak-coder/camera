@@ -15,6 +15,7 @@ import { DatePicker, IntelPanel, SearchInput, Select } from '../../ui';
 import StatusCounters, { COUNTER_META, type CounterKey } from '../situation/StatusCounters';
 import StatusPeopleTable from '../situation/StatusPeopleTable';
 import CountPicker, { type CountOption } from '../situation/CountPicker';
+import PdfButton from '../situation/PdfButton';
 
 /**
  * Hisobot — institutning umumiy (jonli) holati. Nazoratdagi guruh ko'rinishi
@@ -150,7 +151,13 @@ export default function InstituteStatusView({ type }: { type: PersonType }) {
           </>
         )}
         <SearchInput value={search} onChange={setSearch} placeholder="F.I.Sh. bo‘yicha" size="sm" className="w-48" />
-        {isToday && <span className="ms-auto text-[11px] font-semibold text-success">● jonli</span>}
+        <span className="ms-auto flex items-center gap-2">
+          {isToday && <span className="text-[11px] font-semibold text-success">● jonli</span>}
+          <PdfButton path="/api/situation/pdf/people" params={{ ...query, status }} filename={`${type}-${status}-${date}`} />
+          {!students && (
+            <PdfButton path="/api/situation/pdf/tuzilma" params={{ date }} filename={`tuzilma-${date}`} label="Tuzilma PDF" />
+          )}
+        </span>
       </div>
 
       <IntelPanel title={students ? 'Talabalar — umumiy holat' : 'Xodimlar — umumiy holat'}>

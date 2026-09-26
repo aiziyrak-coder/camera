@@ -949,3 +949,199 @@ async def org_tree(db: DbDep, _: ReadDep, date: DateQuery = None) -> OrgTreeOut:
         ),
         position_groups=dict(groups),
     )
+
+
+# ─────────────────────────────────────────── PDF: filtr natijalari
+
+from fastapi.responses import Response  # noqa: E402
+
+from app.services import pdf_export  # noqa: E402
+
+STATUS_LABELS = {
+    "hammasi": "Hammasi", "kelgan": "Keldi", "keldi": "O'z vaqtida keldi", "kech_keldi": "Kech keldi",
+    "kelmadi": "Kelmadi", "kutilmoqda": "Hali kelmagan", "yuzsiz": "Yuzi bazada yo'q", "dam_olish": "Dam olish",
+    "malumot_yoq": "Ma'lumot yo'q",
+}
+POSITION_GROUP_LABELS = {"oqituvchi": "Professor-o'qituvchilar", "mamuriy": "Ma'muriy xodimlar", "texnik": "Texnik xodimlar"}
+TONE_BY_STATUS = {"keldi": "success", "kech_keldi": "warning", "kelmadi": "danger"}
+
+
+def _pdf(content: bytes, name: str) -> Response:
+    return Response(
+        content, media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"},
+    )
+
+
+async def _faculty_label(db: AsyncSession, faculty_id: str | None) -> str | None:
+    if not faculty_id:
+        return None
+    try:
+        return (await svc.faculty_names(db)).get(uuid.UUID(faculty_id))
+    except ValueError:
+        return None
+
+
+@router.get("/pdf/people")
+async def people_status_pdf(
+    db: DbDep,
+    user: ReadDep,
+    date: DateQuery = None,
+    status_: Annotated[PeopleStatus, Query(alias="status")] = "hammasi",
+    type_: Annotated[Literal["talaba", "xodim"], Query(alias="type")] = "talaba",
+    faculty_id: Annotated[str | None, Query(alias="facultyId")] = None,
+    course: Annotated[int | None, Query(ge=1, le=12)] = None,
+    group: Annotated[str | None, Query(max_length=100)] = None,
+    org_unit_id: Annotated[str | None, Query(alias="orgUnitId", max_length=100)] = None,
+    position_group: Annotated[Literal["oqituvchi", "mamuriy", "texnik"] | None, Query(alias="positionGroup")] = None,
+    position: Annotated[str | None, Query(max_length=200)] = None,
+    search: Annotated[str | None, Query(max_length=100)] = None,
+) -> Response:
+    """people-status bilan bir xil filtrlar — natija PDF jadval (5000 qatorgacha)."""
+    result = await people_by_status(
+        db, user, date=date, status_=status_, type_=type_, faculty_id=faculty_id, course=course, group=group,
+        department_id=None, org_unit_id=org_unit_id, position_group=position_group, position=position,
+        search=search, page=1, page_size=5000,
+    )
+    staff = type_ == "xodim"
+    filters: list[tuple[str, str]] = [("Sana", result.date)]
+    if faculty_id:
+        filters.append(("Fakultet", await _faculty_label(db, faculty_id) or faculty_id))
+    if course:
+        filters.append(("Kurs", f"{course}-kurs"))
+    if group:
+        filters.append(("Guruh", group))
+    if org_unit_id:
+        name = "Tuzilmaga bog'lanmagan" if org_unit_id == UNASSIGNED else None
+        if name is None:
+            from app.models import OrgUnit
+
+            unit = await db.get(OrgUnit, _uuid_or_404(org_unit_id, "Bo'linma topilmadi"))
+            name = unit.name if unit else org_unit_id
+        filters.append(("Tuzilma", name))
+    if position_group:
+        filters.append(("Toifa", POSITION_GROUP_LABELS[position_group]))
+    if position:
+        filters.append(("Lavozim", position))
+    if search:
+        filters.append(("Qidiruv", search))
+    c = result.counts
+    columns = [pdf_export.PdfColumn("№", 0.5, "RIGHT"), pdf_export.PdfColumn("F.I.Sh.", 3.2)]
+    columns += (
+        [pdf_export.PdfColumn("Lavozim", 2), pdf_export.PdfColumn("Bo'linma", 3)] if staff
+        else [pdf_export.PdfColumn("Guruh", 1.4), pdf_export.PdfColumn("Kurs", 0.6, "CENTER"), pdf_export.PdfColumn("Fakultet", 2.4)]
+    )
+    columns += [pdf_export.PdfColumn("Holat", 1.3), pdf_export.PdfColumn("Kelgan", 0.8, "CENTER"), pdf_export.PdfColumn("Yuz", 0.8, "CENTER")]
+    rows, tones = [], {}
+    for index, p in enumerate(result.items):
+        middle = [p.position or "—", p.unit or p.group or "—"] if staff else [p.group or "—", p.course or "—", p.faculty or "—"]
+        rows.append([index + 1, p.full_name, *middle, STATUS_LABELS.get(p.status, p.status), p.check_in or "—",
+                     "bazada" if p.biometrics_status == "tasdiqlangan" else "yo'q"])
+        if p.status in TONE_BY_STATUS:
+            tones[index] = TONE_BY_STATUS[p.status]
+    who = "Xodimlar" if staff else "Talabalar"
+    document = pdf_export.PdfDocument(
+        title=f"{who} — {STATUS_LABELS.get(status_, status_)}",
+        columns=columns, rows=rows, filters=filters, row_tones=tones,
+        counts=[("Jami", c.hammasi), ("Keldi", c.kelgan), ("Kech keldi", c.kech_keldi), ("Kelmadi", c.kelmadi),
+                ("Hali kelmagan", c.kutilmoqda), ("Yuzi bazada yo'q", c.yuzsiz)],
+        note=None if result.total <= 5000 else f"Birinchi 5000 ta qator (jami {result.total})",
+    )
+    return _pdf(pdf_export.render(document), pdf_export.filename(f"{who}-{status_}", result.date))
+
+
+@router.get("/pdf/groups")
+async def groups_pdf(
+    db: DbDep,
+    user: ReadDep,
+    date: DateQuery = None,
+    faculty_id: Annotated[str | None, Query(alias="facultyId")] = None,
+    course: Annotated[int | None, Query(ge=1, le=12)] = None,
+) -> Response:
+    """Guruhlar jadvali (Nazorat chap paneli) — PDF."""
+    day = svc.resolve_day(date)
+    groups = await groups_list(db, user, date=date, faculty_id=faculty_id, course=course, search=None)
+    groups = [g for g in groups if g.total > 0]
+    groups.sort(key=lambda g: (not (g.course and g.faculty_id), g.course or 0, g.name))
+    filters = [("Sana", day.isoformat())]
+    if faculty_id:
+        filters.append(("Fakultet", await _faculty_label(db, faculty_id) or faculty_id))
+    if course:
+        filters.append(("Kurs", f"{course}-kurs"))
+    cols = [
+        pdf_export.PdfColumn("Guruh", 1.6), pdf_export.PdfColumn("Fakultet", 2.6), pdf_export.PdfColumn("Kurs", 0.6, "CENTER"),
+        pdf_export.PdfColumn("Jami", 0.7, "RIGHT"), pdf_export.PdfColumn("Keldi", 0.7, "RIGHT"),
+        pdf_export.PdfColumn("Kech", 0.7, "RIGHT"), pdf_export.PdfColumn("Kelmadi", 0.8, "RIGHT"),
+        pdf_export.PdfColumn("Hali yo'q", 0.8, "RIGHT"), pdf_export.PdfColumn("Yuzsiz", 0.8, "RIGHT"),
+        pdf_export.PdfColumn("%", 0.6, "RIGHT"),
+    ]
+    rows = [[g.name, g.faculty or "—", g.course or "—", g.total, g.present, g.late, g.absent, g.not_yet,
+             g.total - g.enrolled, "—" if g.rate is None else f"{round(g.rate)}%"] for g in groups]
+    document = pdf_export.PdfDocument(
+        title="Talabalar — guruhlar bo'yicha davomat", columns=cols, rows=rows, filters=filters,
+        counts=[("Guruhlar", len(groups)), ("Talabalar", sum(g.total for g in groups)),
+                ("Keldi", sum(g.present for g in groups)), ("Kech", sum(g.late for g in groups)),
+                ("Kelmadi", sum(g.absent for g in groups))],
+    )
+    return _pdf(pdf_export.render(document), pdf_export.filename("guruhlar", day.isoformat()))
+
+
+@router.get("/pdf/group")
+async def group_pdf(
+    db: DbDep,
+    user: ReadDep,
+    name: Annotated[str, Query(max_length=100)],
+    date: DateQuery = None,
+    status_: Annotated[PeopleStatus, Query(alias="status")] = "hammasi",
+) -> Response:
+    """Bitta guruh: talabalar ro'yxati (holat filtri bilan) va shu kungi darslar."""
+    detail = await group_detail(name, db, user, date=date)
+    students = detail.students
+    if status_ == "kelgan":
+        students = [s for s in students if s.status in svc.PRESENT_STATUSES]
+    elif status_ == "yuzsiz":
+        students = [s for s in students if s.biometrics_status != "tasdiqlangan"]
+    elif status_ != "hammasi":
+        students = [s for s in students if s.status == status_]
+    t = detail.group.totals
+    lessons = "; ".join(f"{lesson.subject} — {lesson.teacher}" for lesson in detail.lessons)
+    cols = [pdf_export.PdfColumn("№", 0.5, "RIGHT"), pdf_export.PdfColumn("F.I.Sh.", 4), pdf_export.PdfColumn("Holat", 1.5),
+            pdf_export.PdfColumn("Kelgan", 0.9, "CENTER"), pdf_export.PdfColumn("Ketgan", 0.9, "CENTER"),
+            pdf_export.PdfColumn("Yuz", 0.9, "CENTER")]
+    rows, tones = [], {}
+    for index, s in enumerate(students):
+        rows.append([index + 1, s.full_name, STATUS_LABELS.get(s.status, s.status), s.check_in or "—", s.check_out or "—",
+                     "bazada" if s.biometrics_status == "tasdiqlangan" else "yo'q"])
+        if s.status in TONE_BY_STATUS:
+            tones[index] = TONE_BY_STATUS[s.status]
+    filters = [("Sana", detail.date), ("Guruh", name)]
+    if detail.group.faculty:
+        filters.append(("Fakultet", detail.group.faculty))
+    if detail.group.course:
+        filters.append(("Kurs", f"{detail.group.course}-kurs"))
+    if status_ != "hammasi":
+        filters.append(("Holat", STATUS_LABELS.get(status_, status_)))
+    document = pdf_export.PdfDocument(
+        title=f"Guruh {name} — davomat", columns=cols, rows=rows, filters=filters, row_tones=tones,
+        counts=[("Jami", t.total), ("Keldi", t.present), ("Kech", t.late), ("Kelmadi", t.absent),
+                ("Hali kelmagan", t.not_yet), ("Yuzi bazada yo'q", t.total - t.enrolled)],
+        note=f"Shu kungi darslar: {lessons}" if lessons else None,
+    )
+    return _pdf(pdf_export.render(document), pdf_export.filename(f"guruh-{name}", detail.date))
+
+
+@router.get("/pdf/tuzilma")
+async def org_tree_pdf(db: DbDep, user: ReadDep, date: DateQuery = None) -> Response:
+    """Xodimlar: tuzilma bo'yicha shu kungi davomat — PDF."""
+    tree = await org_tree(db, user, date=date)
+    cols = [pdf_export.PdfColumn("Bo'linma", 5), pdf_export.PdfColumn("Turi", 1.6), pdf_export.PdfColumn("Jami", 0.8, "RIGHT"),
+            pdf_export.PdfColumn("Keldi", 0.8, "RIGHT"), pdf_export.PdfColumn("Kelmadi", 0.9, "RIGHT"),
+            pdf_export.PdfColumn("Ma'lumot yo'q", 1.1, "RIGHT")]
+    rows = [[("    " * u.depth) + u.name, u.kind_label, u.total, u.present, u.absent, u.no_data] for u in tree.units if u.total]
+    roots = [u for u in tree.units if u.depth == 0]
+    document = pdf_export.PdfDocument(
+        title="Xodimlar — tuzilma bo'yicha davomat", columns=cols, rows=rows, filters=[("Sana", tree.date)],
+        counts=[("Xodimlar", sum(u.total for u in roots)), ("Keldi", sum(u.present for u in roots)),
+                ("Kelmadi", sum(u.absent for u in roots))],
+    )
+    return _pdf(pdf_export.render(document), pdf_export.filename("tuzilma", tree.date))

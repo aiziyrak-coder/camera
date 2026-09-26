@@ -75,6 +75,8 @@ async def test_board_endpoint(client: AsyncClient, db_session, seeded):
     assert len(res.json()["items"]) == 2
     xlsx = await client.get(f"/api/jadval/kun.xlsx?sana={DAY.isoformat()}", headers=headers)
     assert xlsx.status_code == 200 and xlsx.content[:2] == b"PK"
+    pdf = await client.get(f"/api/jadval/kun.pdf?sana={DAY.isoformat()}", headers=headers)
+    assert pdf.status_code == 200 and pdf.content[:4] == b"%PDF"
 
 
 async def test_teacher_not_seen_anywhere_is_flagged_once(db_session, monkeypatch):

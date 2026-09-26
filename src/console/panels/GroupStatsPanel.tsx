@@ -11,6 +11,7 @@ import {
 import { Modal, cn } from '../../ui';
 import StatusCounters, { COUNTER_META, type CounterKey } from '../../components/situation/StatusCounters';
 import StatusPeopleTable from '../../components/situation/StatusPeopleTable';
+import PdfButton from '../../components/situation/PdfButton';
 import Panel from '../Panel';
 import type { GroupLive } from '../useGroupLive';
 import type { NazoratSelection } from '../nazoratSelection';
@@ -214,6 +215,15 @@ export default function GroupStatsPanel({
         size="xl"
         title={listing ? `${students ? 'Talabalar' : 'O‘qituvchi va xodimlar'}: ${COUNTER_META[listing as CounterKey]?.label ?? listing}` : ''}
         description={date}
+        footer={
+          listing ? (
+            <PdfButton
+              path="/api/situation/pdf/people"
+              params={{ date, type: who, orgUnitId, status: listing }}
+              filename={`${who}-${listing}-${date}`}
+            />
+          ) : undefined
+        }
       >
         {listing && <StatusPeopleTable query={{ date, type: who, orgUnitId }} status={listing} refreshKey={pulse} maxHeight="60vh" />}
       </Modal>

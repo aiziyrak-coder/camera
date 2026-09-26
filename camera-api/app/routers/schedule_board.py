@@ -96,3 +96,47 @@ async def export_day_board(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="jadval-davomat-{day.isoformat()}.xlsx"'},
     )
+
+
+@router.get("/kun.pdf")
+async def export_day_board_pdf(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: ReadDep,
+    sana: Annotated[str | None, Query()] = None,
+    hozir: Annotated[bool, Query()] = False,
+) -> Response:
+    """Kim qayerda — darslar jadvali PDF (hozir=true: faqat hozirgi darslar)."""
+    from app.services import pdf_export
+    from app.timezone import to_local
+
+    day = _day(sana)
+    now = local_now()
+    rows = await day_board(db, day, at=now if hozir and day == business_date(now) else None)
+    labels = {"xonada": "Xonada", "binoda": "Binoda", "kelmagan": "Kamera ko'rmadi"}
+
+    def hm(moment):
+        return to_local(moment).strftime("%H:%M") if moment else "—"
+
+    table = [
+        [f"{hm(r.start)}–{hm(r.end)}", r.group, r.subject, ", ".join(p for p in (r.auditorium, r.building) if p) or "—",
+         r.teacher, labels.get(r.teacher_status or "", "bazada topilmadi"),
+         f"{r.students_arrived}/{r.students_expected}", "—" if r.students_in_room is None else r.students_in_room]
+        for r in rows
+    ]
+    tones = {i: "danger" for i, r in enumerate(rows) if r.teacher_status == "kelmagan"}
+    document = pdf_export.PdfDocument(
+        title="Kim qayerda — dars jadvali bo'yicha",
+        columns=[
+            pdf_export.PdfColumn("Vaqt", 1), pdf_export.PdfColumn("Guruh", 1), pdf_export.PdfColumn("Fan", 2.2),
+            pdf_export.PdfColumn("Xona", 1.8), pdf_export.PdfColumn("O'qituvchi", 2), pdf_export.PdfColumn("O'qituvchi holati", 1.3),
+            pdf_export.PdfColumn("Talabalar keldi", 1, "CENTER"), pdf_export.PdfColumn("Xonada", 0.8, "CENTER"),
+        ],
+        rows=table, row_tones=tones,
+        filters=[("Sana", day.isoformat())] + ([("Ko'rinish", "faqat hozirgi darslar")] if hozir else []),
+        counts=[("Darslar", len(rows)), ("O'qituvchini kamera ko'rmadi", sum(1 for r in rows if r.teacher_status == "kelmagan")),
+                ("Talabalar keldi", f"{sum(r.students_arrived for r in rows)}/{sum(r.students_expected for r in rows)}")],
+    )
+    return Response(
+        content=pdf_export.render(document), media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="jadval-davomat-{day.isoformat()}.pdf"'},
+    )

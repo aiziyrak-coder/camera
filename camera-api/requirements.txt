@@ -55,3 +55,5 @@ ultralytics==8.4.118
 # mediapipe model hub) downloaded once — see
 # app/config.py's pose_detection_model_path.
 mediapipe==1.0.0
+# PDF eksport (filtr natijalari) — app/services/pdf_export.py
+reportlab>=4.2,<5

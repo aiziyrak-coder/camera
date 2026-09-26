@@ -4,6 +4,7 @@ import { api, ApiError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { downloadBlob } from '../../lib/download';
 import { todayInTashkent } from '../../lib/uzDate';
+import PdfButton from '../situation/PdfButton';
 import { Badge, Button, DataTable, EmptyState, ErrorState, Readout, useToast, type DataTableColumn } from '../../ui';
 
 /**
@@ -189,6 +190,7 @@ export default function ScheduleBoard() {
           <Button size="sm" icon={Download} onClick={exportExcel}>
             Excel
           </Button>
+          <PdfButton path="/api/jadval/kun.pdf" params={{ sana: day, hozir: String(nowOnly && isToday) }} filename={`jadval-davomat-${day}`} />
         </span>
       </div>
       <p className="text-[12px] text-muted">

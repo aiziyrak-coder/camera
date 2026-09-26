@@ -96,3 +96,23 @@ async def test_people_filtered_by_org_unit_and_position_group(client, world, adm
     assert [p["position"] for p in tech["items"]] == ["Farrosh"]
     loose = (await client.get(URL, params={**base, "orgUnitId": "yoq"}, headers=admin)).json()
     assert [p["fullName"] for p in loose["items"]] == ["Qodirova Malika"]
+
+
+
+async def test_pdf_exports_follow_the_filters(client, world, admin, db_session):
+    """Har PDF: haqiqiy PDF fayl, yuklab olish sarlavhasi bilan; filtr natijasi hujjatga tushadi."""
+    ids = await _org(db_session, world)
+    cases = [
+        ("/api/situation/pdf/people", {"status": "kech_keldi"}),
+        ("/api/situation/pdf/people", {"type": "xodim", "orgUnitId": ids["fac"], "positionGroup": "texnik"}),
+        ("/api/situation/pdf/groups", {}),
+        ("/api/situation/pdf/group", {"name": "DI-2301", "status": "kelmadi"}),
+        ("/api/situation/pdf/tuzilma", {}),
+    ]
+    for path, params in cases:
+        res = await client.get(path, params=params, headers=admin)
+        assert res.status_code == 200, (path, res.text[:300])
+        assert res.headers["content-type"] == "application/pdf"
+        assert res.content[:4] == b"%PDF" and len(res.content) > 1000
+        assert "attachment" in res.headers["content-disposition"] and ".pdf" in res.headers["content-disposition"]
+    assert (await client.get("/api/situation/pdf/people")).status_code in (401, 403)

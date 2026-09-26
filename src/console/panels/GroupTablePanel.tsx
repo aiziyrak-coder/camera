@@ -17,6 +17,7 @@ import { Button, DataTable, DatePicker, SearchInput, Select, StatusBadge, Tabs, 
 import StatusCounters, { COUNTER_META, type CounterKey } from '../../components/situation/StatusCounters';
 import StatusPeopleTable from '../../components/situation/StatusPeopleTable';
 import CountPicker, { type CountOption } from '../../components/situation/CountPicker';
+import PdfButton from '../../components/situation/PdfButton';
 import Panel from '../Panel';
 import type { GroupLive } from '../useGroupLive';
 import type { NazoratSelection, Who } from '../nazoratSelection';
@@ -299,6 +300,19 @@ export default function GroupTablePanel({
         search: needle || undefined,
       };
 
+  // PDF — aynan ekrandagi ko'rinish: guruh ro'yxati, bitta guruh yoki odamlar ro'yxati.
+  const pdfStatus = status === 'darsda' || status === 'darsda_emas' ? 'hammasi' : status;
+  const pdfTarget =
+    students && group
+      ? { path: '/api/situation/pdf/group', params: { name: group, date, status: pdfStatus }, filename: `guruh-${group}-${date}` }
+      : peopleMode
+        ? { path: '/api/situation/pdf/people', params: { ...peopleQuery, status: pdfStatus }, filename: `${who}-${pdfStatus}-${date}` }
+        : {
+            path: '/api/situation/pdf/groups',
+            params: { date, facultyId: faculty || undefined, course: course || undefined },
+            filename: `guruhlar-${date}`,
+          };
+
   const filters = (
     <div className="flex shrink-0 flex-col gap-1.5">
       <div className="flex flex-wrap items-center gap-2">
@@ -351,6 +365,9 @@ export default function GroupTablePanel({
           highlightActive
         />
         <SearchInput value={search} onChange={setSearch} placeholder="F.I.Sh. bo‘yicha qidirish" size="sm" className="w-52" />
+        <span className="ms-auto">
+          <PdfButton {...pdfTarget} />
+        </span>
       </div>
     </div>
   );
