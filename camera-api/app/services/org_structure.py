@@ -85,9 +85,55 @@ def _norm(text: str | None) -> str:
     return " ".join((text or "").translate(_APOS).lower().split())
 
 
+# O'zi ro'yxatdan o'tgan xodimlar lavozimni qo'lda, xato va kirillda yozgan
+# ("Assisent", "Фаррош", "Коровл", "stajyor o'qituvchi"). HEMIS nomiga keltiriladi.
+_CYR = str.maketrans({
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "yo", "ж": "j", "з": "z", "и": "i",
+    "й": "y", "к": "k", "л": "l", "м": "m", "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t",
+    "у": "u", "ф": "f", "х": "x", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "sh", "ъ": "", "ы": "i", "ь": "",
+    "э": "e", "ю": "yu", "я": "ya", "қ": "q", "ғ": "g'", "ў": "o'", "ҳ": "h",
+})
+_CANONICAL: tuple[tuple[re.Pattern, str], ...] = tuple(
+    (re.compile(pattern), name)
+    for pattern, name in (
+        (r"kabi ?net mudir", "Kabinet mudiri"),
+        (r"kafedra mudir", "Kafedra mudiri"),
+        (r"katta o'?q?i?t?u?v?chi|katta oqtuvchi", "Katta o‘qituvchi"),
+        (r"staj", "Stajer-o‘qituvchi"),
+        (r"^a+s+i*s*[ie]*s*[ie]*n*t|as+is+e?t|as+it+ent|assistant|kafedra as+is", "Assistent"),
+        (r"dotsent|dosent", "Dotsent"),
+        (r"professor", "Professor"),
+        (r"tyutor|tyuter", "Tyutor"),
+        (r"^o'?q[io]?t?u?v?chi$", "O‘qituvchi"),
+        (r"lab[ao]rant", "Laborant"),
+        (r"farrosh|farosh", "Farrosh"),
+        (r"qorovul|korovl|korovul", "Qorovul"),
+        (r"supuruvchi", "Ko‘cha supuruvchi"),
+        (r"duradgor|durodgor", "Duradgor"),
+        (r"elektr|elektra", "Elektromontyor"),
+        (r"xisobchi|hisobchi", "Hisobchi"),
+        (r"kutubxonachi", "Kutubxonachi"),
+        (r"ish yurituvchi", "Ish yurituvchi"),
+        (r"menejer|menedjer", "Menejer"),
+    )
+)
+
+
+def canonical_position(text: str | None) -> str | None:
+    """Qo'lda yozilgan lavozim -> HEMIS nomi (topilmasa — matnning o'zi)."""
+    raw = " ".join((text or "").split())
+    if not raw:
+        return None
+    norm = _norm(raw.lower().translate(_CYR))
+    for pattern, name in _CANONICAL:
+        if pattern.search(norm):
+            return name
+    return raw[:120]
+
+
 def position_group(position: str | None) -> str | None:
     """Lavozim -> 'oqituvchi' | 'texnik' | 'mamuriy' (None — lavozim noma'lum)."""
-    text = _norm(position)
+    text = _norm((canonical_position(position) or "").lower().translate(_CYR))
     if not text:
         return None
     if any(word in text for word in _TECHNICAL) and "o'qituvchi" not in text:
@@ -149,6 +195,9 @@ async def link_unassigned_staff(db: AsyncSession) -> int:
         if unit_id is not None:
             person.org_unit_id = unit_id
             linked += 1
+        elif not person.position:
+            # Bo'lim emas — lavozim yozilgan ("Farrosh", "Assisent"): filtrlar uchun lavozim.
+            person.position = canonical_position(person.group_or_position)
     return linked
 
 

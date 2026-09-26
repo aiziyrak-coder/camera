@@ -61,3 +61,18 @@ def test_tree_order_and_descendants():
     assert isinstance(roots[1].children[0], TreeUnit) and roots[1].children[0].id == kaf
     assert descendants(roots, fac) == {fac, kaf}
     assert descendants(roots, kaf) == {kaf}
+
+
+def test_hand_typed_positions_are_normalised():
+    from app.services.org_structure import canonical_position
+
+    for text, expected in [
+        ("Assisent", "Assistent"), ("asissent", "Assistent"), ("Ассистент", "Assistent"), ("кафедра ассистенти", "Assistent"),
+        ("stajyor o'qituvchi", "Stajer-o‘qituvchi"), ("O'qituvchi stajer", "Stajer-o‘qituvchi"),
+        ("Katta oqtuvchi", "Katta o‘qituvchi"), ("Фаррош", "Farrosh"), ("Коровл", "Qorovul"),
+        ("Durodgor", "Duradgor"), ("Elektramaner", "Elektromontyor"), ("Хисобчи", "Hisobchi"),
+        ("Kabi net mudiri", "Kabinet mudiri"), ("Labarant", "Laborant"), ("O’qituvchi", "O‘qituvchi"),
+    ]:
+        assert canonical_position(text) == expected, text
+    assert canonical_position("1-son TTJ boshligʻi") == "1-son TTJ boshligʻi"
+    assert position_group("Фаррош") == "texnik" and position_group("Assisent") == "oqituvchi"
