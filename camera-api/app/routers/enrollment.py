@@ -495,7 +495,9 @@ async def submit_enrollment(
         record = result.scalar_one_or_none()
 
     if record is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Shaxs yozuvi topilmadi")
+        # Yo'q yozuv va noto'g'ri JSHSHIR bir xil javob beradi — identifikatorlarni
+        # birma-bir sinab kim bor-yo'qligini aniqlab bo'lmasin.
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "JSHSHIR mos kelmadi")
 
     # Identifikatsiya /lookup dagi bilan AYNAN bir xil tekshiriladi.
     # Bu ataylab: aks holda /lookup ni chetlab o'tib, to'g'ridan-to'g'ri

@@ -369,4 +369,4 @@ async def test_duplicate_passport_does_not_break_lookup(
     )
     assert resp.status_code == 200
     # Eng eskisi — barqaror tanlov (har chaqiruvda bir xil yozuv).
-    assert resp.json()["fullName"] == "Dubl 0"
+    assert resp.json()["fullName"] == "D*** 0"  # ochiq sahifada ism niqoblanadi
