@@ -94,6 +94,22 @@ export default function SelfEnrollmentReviewModal({ record, onClose, onDone }: P
                 Rasm topilmadi
               </div>
             )}
+            {record.hemisPhotoUrl && (
+              <figure className="flex flex-col items-center gap-1">
+                <img
+                  src={record.hemisPhotoUrl}
+                  alt={`${record.fullName} — HEMIS surati`}
+                  referrerPolicy="no-referrer"
+                  className="h-32 w-24 rounded-card border border-border object-cover"
+                />
+                <figcaption className="text-[11px] text-muted">HEMIS surati — solishtiring</figcaption>
+              </figure>
+            )}
+            {record.reviewReason && (
+              <p className="rounded-control border border-warning/40 bg-warning-soft px-2 py-1 text-[12px] text-fg">
+                Tekshiruvga qoldi: {record.reviewReason}
+              </p>
+            )}
             <div className="min-w-0">
               <p className="text-base font-semibold text-fg">{record.fullName}</p>
               <p className="mt-1 flex flex-wrap items-center justify-center gap-1.5 text-xs text-muted">

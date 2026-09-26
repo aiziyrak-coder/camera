@@ -330,7 +330,7 @@ async def me(
     user = await db.get(User, current_user.id)
     if user is None:  # pragma: no cover — get_current_user allaqachon tekshirgan
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessiya tugatilgan — qayta kiring")
-    return SessionResponse(role=user.role, user_name=user.full_name)
+    return SessionResponse(role=user.role, user_name=user.full_name, two_factor_required=current_user.needs_2fa_setup)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

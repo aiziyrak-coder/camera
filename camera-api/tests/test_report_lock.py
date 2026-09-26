@@ -48,3 +48,19 @@ async def test_password_unlocks_reports_for_that_user_only(client: AsyncClient, 
     # Boshqa foydalanuvchi shu kalit bilan kira olmaydi.
     other = await auth_headers(client, "operator", "operator123")
     assert (await client.get(REPORT_URL, headers={**other, "X-Report-Token": token})).status_code == 403
+
+
+async def test_other_report_endpoints_are_behind_the_same_password(client: AsyncClient, seeded, monkeypatch):
+    """Hisobot ma'lumotini boshqa yo'l bilan parolsiz olib bo'lmaydi; kundalik
+    (jonli) ko'rinishlar esa ochiq qoladi."""
+    monkeypatch.setattr(settings, "report_password_hash", hash_report_password("secret-1", iterations=1000))
+    headers = await auth_headers(client, "admin", "admin123")
+    for url in ("/api/reports", "/api/situation/analytics/summary", "/api/situation/analytics/heatmap",
+                "/api/situation/analytics/people"):
+        assert (await client.get(url, headers=headers)).status_code == 403, url
+    token = (await client.post("/api/hisobot-kirish", json={"password": "secret-1"}, headers=headers)).json()["token"]
+    for url in ("/api/situation/analytics/summary", "/api/situation/analytics/heatmap"):
+        assert (await client.get(url, headers={**headers, "X-Report-Token": token})).status_code == 200, url
+    # Jonli Nazorat va devor ekrani paroliz ishlaydi.
+    assert (await client.get("/api/situation/people-status", headers=headers)).status_code == 200
+    assert (await client.get("/api/situation/analytics/chronic", headers=headers)).status_code == 200

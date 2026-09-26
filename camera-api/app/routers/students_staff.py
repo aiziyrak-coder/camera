@@ -141,6 +141,9 @@ def _to_out(record: StudentStaff, faculty_name: str, org_unit: str | None = None
         confirmed_label=_confirmed_label(record),
         self_registered=record.self_registered,
         awaiting_approval=record.awaiting_approval,
+        review_reason=record.biometrics_review_reason if record.awaiting_approval else None,
+        # HEMIS surati — administrator yuborilgan yuz bilan ko'z bilan solishtiradi.
+        hemis_photo_url=record.hemis_photo_url if record.awaiting_approval else None,
         # Tasdiqlash oynasi uchun: chap va o'ng tomon (faqat kutayotganlarda).
         biometric_photo_left_url=(
             presigned_url(record.biometric_photo_left_key)
@@ -453,7 +456,9 @@ def _filter_label(type: str | None, faculty: str | None, search: str | None,
 @router.get("/export")
 async def export_students_staff(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
+    # Faylda JSHSHIR va shaxs ma'lumotlari bor — reestrni ko'rish huquqi
+    # yetarli emas, alohida "Ma'lumotlarni eksport qilish" huquqi kerak.
+    _: Annotated[CurrentUser, Depends(require_permission("exportData"))],
     kind: Annotated[Literal["people", "stats"], Query()] = "people",
     type: Annotated[Literal["talaba", "xodim"] | None, Query()] = None,
     faculty: Annotated[str | None, Query()] = None,
@@ -1076,6 +1081,7 @@ async def approve_self_enrollment(
     record = await _awaiting_record(db, record_id)
     record.biometrics_status = "tasdiqlangan"
     record.biometrics_confirmed_at = datetime.now(timezone.utc)
+    record.biometrics_review_reason = None
     await log_action(
         db, request, current_user.id, f"O'zi ro'yxatdan o'tgan odamni tasdiqladi: {record.full_name}", "Talabalar"
     )
@@ -1096,6 +1102,7 @@ async def reject_self_enrollment(
     o'zini butunlay o'chirish — DELETE."""
     record = await _awaiting_record(db, record_id)
     photo_keys = clear_biometrics(record)
+    record.biometrics_review_reason = None
     await log_action(
         db, request, current_user.id, f"O'zi ro'yxatdan o'tgan odamning yuzini rad etdi: {record.full_name}", "Talabalar"
     )

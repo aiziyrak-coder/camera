@@ -250,6 +250,8 @@ async def authorize_events_socket(token: str | None, session_factory=SessionLoca
             user = await user_from_token(token, db)
         except HTTPException:
             return WS_CLOSE_UNAUTHORIZED
+        if user.needs_2fa_setup:
+            return WS_CLOSE_FORBIDDEN
         if not await has_any_permission(db, user.role, (REVIEW_PERMISSION,)):
             return WS_CLOSE_FORBIDDEN
     return None

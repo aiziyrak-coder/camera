@@ -204,3 +204,21 @@ def _today_is_a_work_day():
     set_cached(Policy(work_days=(1, 2, 3, 4, 5, 6, 7)))
     yield
     set_cached(before)
+
+
+@pytest.fixture(autouse=True)
+def _no_hemis_identity_check(monkeypatch):
+    """Shaxsni HEMIS surati bilan tekshirish tashqi HEMIS serverini so'raydi —
+    testlarda standart bo'yicha o'chiq; test_identity_check.py uni o'zi yoqadi."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "self_enrollment_identity_check", False)
+
+
+@pytest.fixture(autouse=True)
+def _admin_2fa_optional(monkeypatch):
+    """Test hisoblari (admin/admin123) 2FA siz — majburiy 2FA faqat
+    test_admin_2fa.py da yoqiladi."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "admin_2fa_required", False)

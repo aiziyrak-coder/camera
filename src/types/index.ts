@@ -157,6 +157,10 @@ export interface StudentStaffRecord {
   /** Tasdiq kutayotganlarda: chap va o'ng tomon rasmlari. */
   biometricPhotoLeftUrl?: string | null;
   biometricPhotoRightUrl?: string | null;
+  /** Nega administrator tekshiruviga qoldi. */
+  reviewReason?: string | null;
+  /** HEMIS surati — yuborilgan yuz bilan solishtirish uchun. */
+  hemisPhotoUrl?: string | null;
 }
 
 /** Tahrirlash oynasi — ro'yxatda yuborilmaydigan shaxsiy identifikatorlar bilan. */

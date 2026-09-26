@@ -40,6 +40,8 @@ from app.services.event_scope import OPERATOR_EVENTS
 from app.services.event_status import OPEN_STATUSES
 from app.timezone import local_now
 
+from app.routers.report_lock import require_report_unlock
+
 router = APIRouter(prefix="/api/situation", tags=["situation"])
 
 ReadDep = Annotated[CurrentUser, Depends(require_permission("manageAttendance", "viewReports"))]
@@ -55,7 +57,7 @@ def _period(date_from: str | None, date_to: str | None):
 
 # ─────────────────────────────────────────── a. KPI va kunlik chiziq
 
-@router.get("/analytics/summary", response_model=AnalyticsSummaryOut)
+@router.get("/analytics/summary", response_model=AnalyticsSummaryOut, dependencies=[Depends(require_report_unlock)])
 async def analytics_summary(
     db: DbDep, _: ReadDep, date_from: FromQuery = None, date_to: ToQuery = None, type_: TypeQuery = "xodim",
 ) -> AnalyticsSummaryOut:
@@ -67,7 +69,7 @@ async def analytics_summary(
 
 # ─────────────────────────────────────────── b. hafta kuni × soat
 
-@router.get("/analytics/heatmap", response_model=HeatmapOut)
+@router.get("/analytics/heatmap", response_model=HeatmapOut, dependencies=[Depends(require_report_unlock)])
 async def analytics_heatmap(
     db: DbDep, _: ReadDep, date_from: FromQuery = None, date_to: ToQuery = None, type_: TypeQuery = "xodim",
 ) -> HeatmapOut:
@@ -102,7 +104,7 @@ async def analytics_units(
 
 # ─────────────────────────────────────────── d. shaxslar reytingi
 
-@router.get("/analytics/people", response_model=list[PersonRankOut])
+@router.get("/analytics/people", response_model=list[PersonRankOut], dependencies=[Depends(require_report_unlock)])
 async def analytics_people(
     db: DbDep,
     _: ReadDep,

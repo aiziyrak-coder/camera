@@ -96,6 +96,8 @@ class StudentStaff(Base):
     # HEMIS rasmi (image_full) — yuzi yo'q odamni shu rasmdan tanitish
     # (app/jobs/hemis_photos.py). checked_at/error — urinish natijasi.
     hemis_photo_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Yuz nega administrator tekshiruviga qoldi (self_enrollment.decide_status).
+    biometrics_review_reason: Mapped[str | None] = mapped_column(String, nullable=True)
     hemis_photo_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     hemis_photo_error: Mapped[str | None] = mapped_column(String, nullable=True)
     # Faol emas (bitirgan, ishdan ketgan): tanish ro'yxatiga kirmaydi,

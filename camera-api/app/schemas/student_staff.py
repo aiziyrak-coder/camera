@@ -32,6 +32,9 @@ class StudentStaffOut(CamelModel):
     photo_angles: int = 0
     biometric_photo_left_url: str | None = None
     biometric_photo_right_url: str | None = None
+    # Tekshiruvga nega qoldi va HEMIS surati (solishtirish uchun) — faqat kutayotganlarda.
+    review_reason: str | None = None
+    hemis_photo_url: str | None = None
 
 
 class StudentStaffCreateIn(CamelModel):

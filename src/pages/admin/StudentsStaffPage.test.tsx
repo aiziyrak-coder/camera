@@ -17,6 +17,7 @@ const OVERVIEW = {
 };
 
 vi.mock('../../lib/auth', () => ({ useAuth: () => ({ token: 't', role: 'super-admin' }) }));
+vi.mock('../../lib/permissions', () => ({ usePermissions: () => ({ can: () => true }) }));
 vi.mock('../../lib/useFaculties', () => ({ useFaculties: () => ({ faculties: [], loading: false }) }));
 vi.mock('../../lib/apiClient', () => ({
   ApiError: class ApiError extends Error {},

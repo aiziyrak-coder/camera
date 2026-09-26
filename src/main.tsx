@@ -7,6 +7,7 @@ import { AuthProvider } from './lib/auth.tsx'
 import { PermissionsProvider } from './lib/permissions.tsx'
 import ErrorBoundary from './components/ErrorBoundary.tsx'
 import { ToastProvider } from './components/ui/Toast.tsx'
+import ForcedTwoFactor from './components/admin/ForcedTwoFactor.tsx'
 import { registerServiceWorker, watchForNewVersion } from './lib/pwa.ts'
 
 createRoot(document.getElementById('root')!).render(
@@ -17,6 +18,7 @@ createRoot(document.getElementById('root')!).render(
           <PermissionsProvider>
             <ToastProvider>
               <App />
+              <ForcedTwoFactor />
             </ToastProvider>
           </PermissionsProvider>
         </AuthProvider>

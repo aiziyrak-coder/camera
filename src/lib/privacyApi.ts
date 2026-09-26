@@ -12,6 +12,8 @@ export interface RetentionSettings {
   biometricRetentionDaysAfterInactive: number;
   accessEventRetentionDays: number;
   notificationLogRetentionDays: number;
+  presenceVisitRetentionDays?: number;
+  unknownSightingRetentionDays?: number;
   /** Video arxivi — soatda (disk byudjeti bilan o‘lchanadi). */
   recordingRetentionHours: number;
   eventClipRetentionDays: number;

@@ -72,6 +72,8 @@ function RetentionPanel({ overview }: { overview: PrivacyOverview }) {
     { label: 'Audit jurnali', value: formatRetentionDays(r.auditLogRetentionDays) },
     { label: 'Turniket qaydlari', value: formatRetentionDays(r.accessEventRetentionDays) },
     { label: 'Bildirishnomalar', value: formatRetentionDays(r.notificationLogRetentionDays) },
+    { label: 'Kameradagi tashriflar', value: formatRetentionDays(r.presenceVisitRetentionDays ?? 0) },
+    { label: 'Notanish yuzlar (rasmi bilan)', value: formatRetentionDays(r.unknownSightingRetentionDays ?? 0) },
     {
       label: 'Yuz (faolsizlantirilgach)',
       value: formatRetentionDays(r.biometricRetentionDaysAfterInactive, 'O‘chirilmaydi'),

@@ -1,7 +1,7 @@
 from typing import Annotated
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +14,12 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 class CurrentUser:
-    def __init__(self, id: str, role: str, jti: str, expires_at, allowed_building_ids: list | None = None) -> None:
+    def __init__(
+        self, id: str, role: str, jti: str, expires_at, allowed_building_ids: list | None = None,
+        needs_2fa_setup: bool = False,
+    ) -> None:
+        # Administrator, lekin 2FA hali yoqilmagan (settings.admin_2fa_required).
+        self.needs_2fa_setup = needs_2fa_setup
         self.id = id
         self.role = role
         self.jti = jti
@@ -25,13 +30,28 @@ class CurrentUser:
         self.allowed_building_ids = allowed_building_ids
 
 
+#: 2FA hali yoqilmagan administrator ham kira oladigan yo'llar: kirish/chiqish,
+#: sessiya va 2FA ni sozlash.
+TWO_FACTOR_SETUP_PATHS = ("/api/auth/",)
+TWO_FACTOR_REQUIRED_MESSAGE = "Ikki bosqichli kirish (2FA) majburiy — avval uni yoqing"
+
+
+def ensure_two_factor(user: CurrentUser, path: str) -> CurrentUser:
+    if user.needs_2fa_setup and not path.startswith(TWO_FACTOR_SETUP_PATHS):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, TWO_FACTOR_REQUIRED_MESSAGE, headers={"X-2FA-Required": "1"}
+        )
+    return user
+
+
 async def get_current_user(
+    request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CurrentUser:
     if credentials is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Autentifikatsiya talab qilinadi")
-    return await user_from_token(credentials.credentials, db)
+    return ensure_two_factor(await user_from_token(credentials.credentials, db), request.url.path)
 
 
 async def user_from_token(token: str, db: AsyncSession) -> CurrentUser:
@@ -62,16 +82,22 @@ async def user_from_token(token: str, db: AsyncSession) -> CurrentUser:
     # davom etardi — ya'ni lavozimidan olingan odam yana bir yarim kun
     # administrator huquqlari bilan yurardi. User qatori baribir shu yerda
     # o'qilgan, qo'shimcha so'rov kerak emas.
+    from app.config import settings
+
     return CurrentUser(
         id=payload.user_id,
         role=user.role,
         jti=payload.jti,
         expires_at=payload.expires_at,
         allowed_building_ids=user.allowed_building_ids,
+        needs_2fa_setup=bool(
+            settings.admin_2fa_required and user.role in ("super-admin", "admin") and not user.totp_enabled
+        ),
     )
 
 
 async def require_monitoring_access(
+    request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CurrentUser | None:
@@ -95,10 +121,10 @@ async def require_monitoring_access(
         if credentials is None:
             return None
         try:
-            return await user_from_token(credentials.credentials, db)
+            return ensure_two_factor(await user_from_token(credentials.credentials, db), request.url.path)
         except HTTPException:
             return None
-    return await get_current_user(credentials, db)
+    return await get_current_user(request, credentials, db)
 
 
 # Rol qaysi ustundan o'qiladi (app/models/permission.py).

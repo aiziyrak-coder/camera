@@ -33,7 +33,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models import AccessEvent, AuditLog, Event, NotificationLog, PasswordResetToken, RevokedToken, StudentStaff
+from app.models import (
+    AccessEvent, AuditLog, Event, NotificationLog, PasswordResetToken, PresenceVisit, RevokedToken, StudentStaff,
+    UnknownSighting,
+)
 from app.services.face_matching import announce_roster_change
 from app.services.privacy import clear_biometrics, erase_face_samples, has_biometrics_clause, unique_keys
 from app.storage import delete_file, delete_files_quietly
@@ -178,6 +181,40 @@ async def _prune_notification_logs(db: AsyncSession, now: datetime) -> int:
     return await _delete_in_batches(db, NotificationLog, NotificationLog.created_at, now - timedelta(days=days))
 
 
+async def _prune_presence_visits(db: AsyncSession, now: datetime) -> int:
+    days = settings.presence_visit_retention_days
+    if days <= 0:
+        return 0
+    return await _delete_in_batches(db, PresenceVisit, PresenceVisit.last_seen_at, now - timedelta(days=days))
+
+
+async def _prune_unknown_sightings(db: AsyncSession, now: datetime) -> int:
+    """Eski notanish yuzlar — qator va kesilgan yuz rasmi (ombordan) birga."""
+    days = settings.unknown_sighting_retention_days
+    if days <= 0:
+        return 0
+    cutoff = now - timedelta(days=days)
+    removed = 0
+    for _ in range(MAX_BATCHES_PER_SWEEP):
+        rows = (
+            await db.execute(
+                select(UnknownSighting.id, UnknownSighting.crop_key)
+                .where(UnknownSighting.last_seen_at < cutoff)
+                .limit(ROW_BATCH_SIZE)
+            )
+        ).all()
+        if not rows:
+            break
+        await db.execute(delete(UnknownSighting).where(UnknownSighting.id.in_([row_id for row_id, _key in rows])))
+        await db.commit()
+        # Qatorlar o'chgach — rasm o'chmasa ham tozalash orqaga qaytmaydi.
+        await delete_files_quietly([key for _id, key in rows if key])
+        removed += len(rows)
+        if len(rows) < ROW_BATCH_SIZE:
+            break
+    return removed
+
+
 async def run_cleanup_once(db: AsyncSession) -> dict[str, int]:
     now = datetime.now(timezone.utc)
     retention_cutoff = now - timedelta(days=settings.audit_log_retention_days)
@@ -224,6 +261,8 @@ async def run_cleanup_once(db: AsyncSession) -> dict[str, int]:
         ("snapshots_pruned", _prune_snapshots),
         ("access_events", _prune_access_events),
         ("notification_logs", _prune_notification_logs),
+        ("presence_visits", _prune_presence_visits),
+        ("unknown_sightings", _prune_unknown_sightings),
     )
     for name, step in steps:
         try:

@@ -31,6 +31,8 @@ class RetentionSettingsOut(CamelModel):
     biometric_retention_days_after_inactive: int
     access_event_retention_days: int
     notification_log_retention_days: int
+    presence_visit_retention_days: int = 0
+    unknown_sighting_retention_days: int = 0
     # Video arxivi soatda (disk byudjeti bilan o'lchanadi), hodisa klipi kunda.
     recording_retention_hours: int
     event_clip_retention_days: int

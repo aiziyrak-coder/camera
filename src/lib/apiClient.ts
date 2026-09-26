@@ -126,7 +126,7 @@ async function request<T>(
   const authToken = token ?? getAuthToken?.() ?? null;
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
   // Hisobotlar paroli bilan olingan kalit (lib/reportLock.ts) — faqat hisobot so'rovlariga.
-  if (/^\/api\/(hisobot|kpi)/.test(path)) {
+  if (/^\/api\/(hisobot|kpi|reports|situation\/analytics\/(summary|heatmap|people))/.test(path)) {
     const unlock = reportToken();
     if (unlock) headers['X-Report-Token'] = unlock;
   }
@@ -172,6 +172,10 @@ async function request<T>(
     // so'rovining 401'i (noto'g'ri parol) bunga kirmaydi — aks holda
     // login sahifasi o'zini cheksiz "chiqish"ga yuborardi.
     if (res.status === 401 && authToken) onUnauthorized?.();
+    // Administrator, 2FA hali yoqilmagan — sozlash oynasi ochiladi (ForcedTwoFactor).
+    if (res.status === 403 && res.headers.get('X-2FA-Required') === '1' && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event(TWO_FACTOR_REQUIRED_EVENT));
+    }
 
     let detail = `So'rov muvaffaqiyatsiz tugadi (${res.status})`;
     try {
@@ -191,6 +195,9 @@ async function request<T>(
   if (responseType === 'blob') return (await res.blob()) as T;
   return res.json() as Promise<T>;
 }
+
+/** Server "2FA majburiy" deganda chiqariladigan hodisa nomi. */
+export const TWO_FACTOR_REQUIRED_EVENT = 'camera:2fa-required';
 
 export const api = {
   get: <T>(path: string, token?: string | null, opts: CallOptions = {}) =>

@@ -599,6 +599,7 @@ async def submit_enrollment(
     # tekshiruvga faqat o'zgalashtirish holati tushadi.
     new_status, reason = await decide_status(db, record, embedding)
     record.biometrics_status = new_status
+    record.biometrics_review_reason = reason[:300] if reason else None
     record.biometrics_confirmed_at = datetime.now(timezone.utc) if new_status == "tasdiqlangan" else None
     if reason:
         logger.warning(

@@ -33,6 +33,8 @@ class SessionResponse(CamelModel):
 
     role: str
     user_name: str
+    # Administrator, 2FA hali yoqilmagan — mijoz sozlash oynasini majburan ochadi.
+    two_factor_required: bool = False
 
 
 class ForgotPasswordIn(CamelModel):

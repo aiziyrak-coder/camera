@@ -81,6 +81,16 @@ async def decide_status(db: AsyncSession, record: StudentStaff, embedding: list[
     hit = lookalike(embedding, ids, names, matrix, record.id)
     if hit:
         return "kutilmoqda", f"yuzi {hit[0]} ga o'xshash ({hit[1]:.2f})"
+    if settings.self_enrollment_identity_check:
+        # JSHSHIR sir emas: topshirgan odam AYNAN shu odam ekani HEMIS
+        # surati bilan tekshiriladi (app/services/identity_check.py).
+        from app.services import identity_check
+
+        similarity, problem = await identity_check.hemis_similarity(record, embedding)
+        if similarity is None:
+            return "kutilmoqda", f"shaxsni avtomatik tasdiqlab bo'lmadi: {problem}"
+        if similarity < settings.self_enrollment_identity_threshold:
+            return "kutilmoqda", f"HEMIS surati bilan mos kelmadi ({similarity:.2f})"
     return "tasdiqlangan", None
 
 
@@ -88,6 +98,11 @@ async def approve_pending(db: AsyncSession) -> tuple[int, int]:
     """Kutilayotganlarni (yuzi bor) tasdiqlaydi; o'xshash yuzlilar qoladi.
     Ishga tushishda chaqiriladi — idempotent. Qaytaradi: (tasdiqlandi, qoldi)."""
     if not settings.self_enrollment_auto_approve:
+        return 0, 0
+    if settings.self_enrollment_identity_check:
+        # Kutayotganlar orasida HEMIS surati bilan mos kelmaganlar ham bor —
+        # ularni ishga tushishda ko'r-ko'rona tasdiqlash shaxs tekshiruvini
+        # aylanib o'tish bo'lardi. Ular administrator qaroriga qoladi.
         return 0, 0
     # api va ai-worker bir vaqtda ishga tushadi — faqat bittasi bajaradi
     # (tranzaksiya qulfi commit bilan bo'shaydi).

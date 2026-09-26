@@ -81,6 +81,8 @@ class TestCleanup:
             "snapshots_pruned": 0,
             "access_events": 0,
             "notification_logs": 0,
+            "presence_visits": 0,
+            "unknown_sightings": 0,
         }
 
     async def test_purged_events_take_their_snapshots_with_them(

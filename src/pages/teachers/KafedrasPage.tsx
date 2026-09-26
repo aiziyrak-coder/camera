@@ -5,6 +5,7 @@ import { AnalyticsTab } from '../../components/teachers/AnalyticsTab';
 import { ChronicTab } from '../../components/teachers/ChronicTab';
 import { RankingTab } from '../../components/teachers/RankingTab';
 import { UnitsTab } from '../../components/teachers/UnitsTab';
+import ReportGate from '../../components/hisobot/ReportGate';
 import { useLoader } from '../../components/teachers/useLoader';
 import { getKafedras } from '../../lib/situationApi';
 import { useViewDate } from '../../lib/viewDate';
@@ -52,8 +53,17 @@ export default function KafedrasPage() {
       defaultTab="bolinmalar"
     >
       {tab === 'bolinmalar' && <UnitsTab loader={units} date={date} isToday={isToday} withDate={withDate} />}
-      {tab === 'tahlil' && <AnalyticsTab />}
-      {tab === 'reyting' && <RankingTab />}
+      {/* Davr tahlili va reyting — hisobot: Hisobotlar bilan bir xil parol. */}
+      {tab === 'tahlil' && (
+        <ReportGate>
+          <AnalyticsTab />
+        </ReportGate>
+      )}
+      {tab === 'reyting' && (
+        <ReportGate>
+          <RankingTab />
+        </ReportGate>
+      )}
       {tab === 'surunkali' && <ChronicTab />}
     </Page>
   );

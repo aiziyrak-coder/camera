@@ -43,6 +43,7 @@ import { TodayLessons } from '../../components/teachers/TeacherBits';
 import { TeacherDayDrawer } from '../../components/teachers/TeacherDayDrawer';
 import { useLoader } from '../../components/teachers/useLoader';
 import { UnitAnalyticsSection } from '../../components/teachers/UnitAnalyticsSection';
+import ReportGate from '../../components/hisobot/ReportGate';
 import { getKafedra, getLessons, situationPaths, UNIT_KIND_LABELS, type KafedraDetail, type KafedraTeacher, type Lesson } from '../../lib/situationApi';
 import { LESSON_TEACHER_SORTS, matchesName, resolveTeacherSort, sortTeachers, type TeacherSort } from '../../lib/teachersApi';
 import { usePersistedState } from '../../lib/usePersistedState';
@@ -278,7 +279,9 @@ export default function KafedraPage() {
             // eski bo'linmaning xodimida qolib ketmasin.
             <TeachersSection key={data.id} data={data} date={date} view={effectiveView} sort={effectiveSort} search={search} withDate={withDate} />
           ) : tab === 'tahlil' ? (
-            <UnitAnalyticsSection unitId={data.id} unitName={data.name} kind={data.kind} from={period.from} to={period.to} />
+            <ReportGate>
+              <UnitAnalyticsSection unitId={data.id} unitName={data.name} kind={data.kind} from={period.from} to={period.to} />
+            </ReportGate>
           ) : (
             <LessonsSection
               rows={lessons.data?.items ?? []}

@@ -291,6 +291,8 @@ async def compute_overview(db: AsyncSession) -> dict:
             "biometric_retention_days_after_inactive": settings.biometric_retention_days_after_inactive,
             "access_event_retention_days": settings.access_event_retention_days,
             "notification_log_retention_days": settings.notification_log_retention_days,
+            "presence_visit_retention_days": settings.presence_visit_retention_days,
+            "unknown_sighting_retention_days": settings.unknown_sighting_retention_days,
             "recording_retention_hours": settings.recording_retention_hours,
             "event_clip_retention_days": settings.event_clip_retention_days,
         },

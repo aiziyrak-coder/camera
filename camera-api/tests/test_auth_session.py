@@ -21,7 +21,7 @@ class TestSessionMe:
         token = await login(client, "admin", "admin123")
         resp = await client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code == 200
-        assert resp.json() == {"role": "super-admin", "userName": "Jamshid Alimov"}
+        assert resp.json() == {"role": "super-admin", "userName": "Jamshid Alimov", "twoFactorRequired": False}
 
     async def test_role_change_is_visible_without_a_new_login(
         self, client: AsyncClient, db_session: AsyncSession

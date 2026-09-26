@@ -51,6 +51,7 @@ import DuplicatePeopleModal from '../../components/admin/DuplicatePeopleModal';
 import SelfEnrollmentReviewModal from '../../components/admin/SelfEnrollmentReviewModal';
 import { api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
+import { usePermissions } from '../../lib/permissions';
 import { RAG_LABEL, RAG_LETTER, RAG_TEXT, RATE_RAG, rag } from '../../ui/rag';
 import { NO_FACULTY_KEY, NO_FACULTY_LABEL, PERSON_LABELS, STATUS_FILTERS, type PersonType, type StatusFilter } from '../../lib/peopleFilters';
 import { situationPaths } from '../../lib/situationApi';
@@ -170,7 +171,10 @@ function RowActions({ children }: { children: ReactNode }) {
 }
 
 export default function StudentsStaffPage() {
-  const { token } = useAuth();
+  const { token, role } = useAuth();
+  const { can } = usePermissions();
+  // Eksport faylida JSHSHIR bor — alohida huquq (server ham tekshiradi).
+  const canExport = can('exportData', role);
   const toast = useToast();
   // ?search=<matn>&tur=talaba|xodim — boshqa sahifalardan (turniket jurnali,
   // tanilmagan kartalar) aniq odamga havola. `tur` — sahifa tabi ham.
@@ -495,9 +499,11 @@ export default function StudentsStaffPage() {
           <Button icon={Clock} onClick={() => setLookup({ open: true, person: null })} disabled={!token}>
             Tasdiq vaqti
           </Button>
-          <Button icon={Download} onClick={() => setExportOpen(true)} disabled={!token}>
-            Yuklab olish
-          </Button>
+          {canExport && (
+            <Button icon={Download} onClick={() => setExportOpen(true)} disabled={!token}>
+              Yuklab olish
+            </Button>
+          )}
           <Button icon={Copy} onClick={() => setDupOpen(true)} disabled={!token}>
             Dublikatlar
           </Button>

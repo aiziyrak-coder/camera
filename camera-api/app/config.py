@@ -223,6 +223,17 @@ class Settings(BaseSettings):
     # shu o'xshashlikdan yuqori bo'lsa — tekshiruvga ("kutilmoqda") qoladi.
     self_enrollment_auto_approve: bool = True
     self_enrollment_duplicate_threshold: float = 0.55
+    # Shaxsni tasdiqlash (app/services/identity_check.py): topshirilgan yuz
+    # HEMIS'dagi surat bilan 1:1 solishtiriladi. Mos kelsa — avtomatik
+    # tasdiq; mos kelmasa yoki surat bo'lmasa — administrator ko'radi.
+    # O'lchov (2026-09-26, prod, 3 tomonlama ro'yxatdan o'tgan va HEMIS surati
+    # bor odamlar): o'zi bilan 0.51-0.78, boshqa odam bilan <= 0.28.
+    # Super Admin va Admin uchun ikki bosqichli kirish (TOTP) majburiy: 2FA
+    # yoqilmagan administrator faqat uni sozlash sahifasiga kira oladi
+    # (app/dependencies.py). Favqulodda holatda ADMIN_2FA_REQUIRED=false.
+    admin_2fa_required: bool = True
+    self_enrollment_identity_check: bool = True
+    self_enrollment_identity_threshold: float = 0.40
     face_det_max_side: int = 1280  # 720p qo'shimcha oqim to'liq o'lchamda tahlil qilinadi
     face_det_min_side: int = 640
     # Yuz sifati darvozasi (face_recognition.face_quality_ok): faqat YUMSHOQ
@@ -1361,5 +1372,11 @@ class Settings(BaseSettings):
     # mumkin. 0 — event_retention_days bilan birga.
     snapshot_retention_days: int = 90
     access_event_retention_days: int = 365
+    # Kameralardagi tashriflar (presence_visits) — shaxs harakati tarixi.
+    # 1 yildan eskisi kerak emas va jadval cheksiz o'smasin. 0 — o'chirilmaydi.
+    presence_visit_retention_days: int = 365
+    # Notanish yuzlar (kesilgan yuz rasmi bilan): qayta moslash 2 kun,
+    # takroriylar 14 kun oralig'ida ishlaydi; 90 kundan eskisi o'chiriladi.
+    unknown_sighting_retention_days: int = 90
 
 settings = Settings()

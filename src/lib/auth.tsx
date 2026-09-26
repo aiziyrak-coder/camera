@@ -17,6 +17,8 @@ interface AuthContextValue extends AuthState {
   verifyTwoFactor: (challenge: string, code: string) => Promise<AuthResult>;
   login: (role: Role, userName: string, token?: string | null) => void;
   logout: () => void;
+  /** Administrator, 2FA hali yoqilmagan — server faqat sozlashni ochadi. */
+  twoFactorRequired: boolean;
 }
 
 export type AuthResult =
@@ -223,6 +225,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // kelganda (lekin daqiqada bir martadan ko'p emas — so'rov to'lqini
   // bo'lmasin). 401 bo'lsa apiClient sessiyani o'zi tozalaydi.
   const lastCheck = useRef(0);
+  const [twoFactorRequired, setTwoFactorRequired] = useState(false);
   useEffect(() => {
     if (!isBackendConfigured || !state.token) return;
     let cancelled = false;
@@ -233,9 +236,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (now - lastCheck.current < SESSION_RECHECK_MS) return;
       lastCheck.current = now;
       api
-        .get<{ role: Role; userName: string }>('/api/auth/me', token)
+        .get<{ role: Role; userName: string; twoFactorRequired?: boolean }>('/api/auth/me', token)
         .then((session) => {
-          if (cancelled || !isRole(session.role)) return;
+          if (cancelled) return;
+          setTwoFactorRequired(Boolean(session.twoFactorRequired));
+          if (!isRole(session.role)) return;
           setState((current) => {
             if (current.token !== token) return current; // sessiya allaqachon almashgan
             if (current.role === session.role && current.userName === session.userName) return current;
@@ -276,6 +281,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function logout() {
     const outgoingToken = state.token;
+    setTwoFactorRequired(false);
     const next: AuthState = { role: null, userName: null, token: null };
     setState(next);
     localStorage.removeItem(STORAGE_KEY);
@@ -291,7 +297,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ ...state, authenticate, verifyTwoFactor, login, logout }}>
+    <AuthContext.Provider value={{ ...state, authenticate, verifyTwoFactor, login, logout, twoFactorRequired }}>
       {children}
     </AuthContext.Provider>
   );
