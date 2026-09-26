@@ -20,6 +20,7 @@ import {
 } from '../../lib/xaritaApi';
 import FloorMapCanvas, { DRAG_MIME, STATUS_STYLE } from './FloorMapCanvas';
 import { normalizeAngle, type Point } from './mapGeometry';
+import { ARCHIVE_ENABLED } from '../../lib/archiveFlag';
 
 /**
  * XARITA — qavat rejasi ustida kameralar (Milestone Smart Map kabi).
@@ -366,9 +367,11 @@ function CameraPanel({ camera, onClose }: { camera: MapCamera; onClose: () => vo
         <ButtonLink size="sm" icon={MonitorPlay} to={`/videodevor?kamera=${id}`}>
           Jonli
         </ButtonLink>
-        <ButtonLink size="sm" icon={History} to={`/arxiv?kamera=${id}`}>
-          Arxiv
-        </ButtonLink>
+        {ARCHIVE_ENABLED && (
+          <ButtonLink size="sm" icon={History} to={`/arxiv?kamera=${id}`}>
+            Arxiv
+          </ButtonLink>
+        )}
       </div>
     </div>
   );

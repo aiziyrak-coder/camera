@@ -33,6 +33,7 @@ import {
 } from '../../lib/cameraHealthApi';
 import { relativeTime } from '../../lib/uzDate';
 import { useLiveResource } from '../situation/useLiveResource';
+import { ARCHIVE_ENABLED } from '../../lib/archiveFlag';
 
 interface Props {
   tick: number;
@@ -284,9 +285,11 @@ function CameraOutageDrawer({ camera, onClose }: { camera: CameraHealthRow | nul
             <ButtonLink to={`/videodevor?kamera=${encodeURIComponent(camera.id)}`} icon={Film} size="sm">
               Jonli
             </ButtonLink>
-            <ButtonLink to={`/arxiv?kamera=${encodeURIComponent(camera.id)}`} icon={Archive} size="sm">
-              Arxiv
-            </ButtonLink>
+            {ARCHIVE_ENABLED && (
+              <ButtonLink to={`/arxiv?kamera=${encodeURIComponent(camera.id)}`} icon={Archive} size="sm">
+                Arxiv
+              </ButtonLink>
+            )}
           </div>
         )
       }

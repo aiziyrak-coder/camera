@@ -10,6 +10,7 @@ import { relativeTime, todayInTashkent } from '../../lib/uzDate';
 import type { AIEvent } from '../../types';
 import { useAuth } from '../../lib/auth';
 import { usePermissions } from '../../lib/permissions';
+import { ARCHIVE_ENABLED } from '../../lib/archiveFlag';
 
 type Decision = 'tasdiqlangan' | 'rad_etilgan';
 
@@ -173,7 +174,7 @@ export default function EventDrawer({
               <ButtonLink to={`/videodevor?kamera=${encodeURIComponent(event.cameraId)}`} icon={MonitorPlay} size="sm">
                 Kamerani jonli ko‘rish
               </ButtonLink>
-              {event.occurredAt && (
+              {ARCHIVE_ENABLED && event.occurredAt && (
                 <ButtonLink
                   to={`/arxiv?${new URLSearchParams({
                     kamera: event.cameraId,

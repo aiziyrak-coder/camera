@@ -1,5 +1,6 @@
 import { api } from './apiClient';
 import { todayInTashkent } from './uzDate';
+import { ARCHIVE_ENABLED } from './archiveFlag';
 
 export interface PersonLocation {
   id: string;
@@ -106,6 +107,7 @@ const ARCHIVE_LEAD_MS = 10_000;
 /** Arxivda shu paytga sakrash. Sana Toshkent bo'yicha: UTC satrning
  *  boshidan olinsa, ertalab 05:00 gacha bo'lgan payt oldingi kunga tushardi. */
 export function archiveLink(cameraId: string, at: string): string | null {
+  if (!ARCHIVE_ENABLED) return null;
   const ms = Date.parse(at);
   if (Number.isNaN(ms)) return null;
   const start = new Date(ms - ARCHIVE_LEAD_MS);
