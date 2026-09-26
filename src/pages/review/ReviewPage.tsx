@@ -17,11 +17,13 @@ import {
   type ReviewItem,
 } from '../../lib/tekshiruvApi';
 import { useApiResource } from '../../lib/useApiResource';
+import { addDays, todayInTashkent } from '../../lib/uzDate';
 import RecurringUnknowns from '../../components/review/RecurringUnknowns';
 import {
   Button,
   Card,
   DataTable,
+  DatePicker,
   EmptyState,
   ErrorState,
   Page,
@@ -86,12 +88,16 @@ function QueueTab({ onPending }: { onPending: (n: number | null) => void }) {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState(0);
   const [version, setVersion] = useState(0);
+  // Navbat bir kunlik: kechagi hal qilinmagan yuzlar ham ko'rib chiqilishi mumkin.
+  const today = todayInTashkent();
+  const [day, setDay] = useState(today);
   const cardRefs = useRef<Map<string, HTMLElement>>(new Map());
 
   useEffect(() => {
     if (!isBackendConfigured) return;
     const controller = new AbortController();
-    getReviewQueue({ holat: 'kutilmoqda', limit: 100 }, { signal: controller.signal })
+    setItems(null);
+    getReviewQueue({ sana: day, holat: 'kutilmoqda', limit: 100 }, { signal: controller.signal })
       .then((res) => {
         setItems(res.items);
         setPending(res.pending);
@@ -102,9 +108,9 @@ function QueueTab({ onPending }: { onPending: (n: number | null) => void }) {
         setError(err instanceof ApiError ? err.message : 'Navbat olinmadi');
       });
     return () => controller.abort();
-  }, [version]);
+  }, [version, day]);
 
-  useEffect(() => onPending(pending), [pending, onPending]);
+  useEffect(() => onPending(day === today ? pending : null), [pending, onPending, day, today]);
   const reload = useCallback(() => setVersion((v) => v + 1), []);
 
   const resolve = useCallback(
@@ -120,7 +126,9 @@ function QueueTab({ onPending }: { onPending: (n: number | null) => void }) {
         return next;
       });
       setPending((n) => (n === null ? n : Math.max(0, n - 1)));
-      (action === 'confirm' ? confirmReview(item.id) : rejectReview(item.id)).catch((err) => {
+      (action === 'confirm' ? confirmReview(item.id) : rejectReview(item.id)).then((res) => {
+        if (action === 'confirm' && res?.message) toast.success(res.message);
+      }).catch((err) => {
         setItems((prev) => {
           if (!prev) return prev;
           const next = [...prev];
@@ -159,14 +167,35 @@ function QueueTab({ onPending }: { onPending: (n: number | null) => void }) {
     if (selectedId) cardRefs.current.get(selectedId)?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
   }, [selectedId]);
 
+  const dayBar = (
+    <div className="flex flex-wrap items-center gap-2">
+      <DatePicker value={day} onChange={(value) => setDay(value || today)} max={today} size="sm" />
+      {day === today ? (
+        <Button size="sm" variant="ghost" onClick={() => setDay(addDays(today, -1))}>
+          Kechagi qolganlar
+        </Button>
+      ) : (
+        <Button size="sm" variant="ghost" onClick={() => setDay(today)}>
+          Bugunga qaytish
+        </Button>
+      )}
+    </div>
+  );
+
   if (error) return <ErrorState message={error} onRetry={reload} />;
-  if (items === null) return <SkeletonCards />;
+  if (items === null) return <>{dayBar}<SkeletonCards /></>;
   if (items.length === 0) {
-    return <EmptyState icon={UserCheck} tone="success" title="Navbat bo‘sh" description="Tekshiriladigan yuz yo‘q." />;
+    return (
+      <>
+        {dayBar}
+        <EmptyState icon={UserCheck} tone="success" title="Navbat bo‘sh" description="Bu kun uchun tekshiriladigan yuz yo‘q." />
+      </>
+    );
   }
 
   return (
     <>
+      {dayBar}
       <div className="flex flex-wrap items-center justify-between gap-2 text-[12px] text-muted">
         <span>
           <b className="text-fg tabular-nums">{pending ?? items.length}</b> ta kutilmoqda ·{' '}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BellRing, History, Pencil, Plus, Radio, Send, Trash2 } from 'lucide-react';
+import { BellRing, History, Pencil, Plus, Radio, Trash2 } from 'lucide-react';
 import {
   Button,
   CodeText,
@@ -46,7 +46,7 @@ export default function NotificationsPage() {
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [testOpen, setTestOpen] = useState(false);
   const [logRefresh, setLogRefresh] = useState(0);
-  const [logFilters, setLogFilters] = useState<LogFilters>({ search: '', status: '', channel: '', kind: '' });
+  const [logFilters, setLogFilters] = useState<LogFilters>({ search: '', status: '', channel: '', kind: '', from: '', to: '' });
 
   const tabs = useMemo<readonly TabItem<Tab>[]>(
     () => [
@@ -214,9 +214,6 @@ export default function NotificationsPage() {
       breadcrumbs={[{ label: 'Sozlamalar' }, { label: 'Bildirishnomalar' }]}
       actions={
         <>
-          <Button icon={Send} onClick={() => setTestOpen(true)} disabled={!status}>
-            Sinov xabari
-          </Button>
           <Button variant="primary" icon={Plus} onClick={openCreate}>
             Yangi qoida
           </Button>

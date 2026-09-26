@@ -12,6 +12,10 @@ export interface PassFilters {
   direction: '' | PassDirection;
   /** "YYYY-MM-DD". */
   date: string;
+  /** Ism yoki karta raqami bo'yicha qidiruv. */
+  search?: string;
+  /** '' — hammasi; rad — rad etilgan o'tishlar; nomalum — egasi topilmagan karta. */
+  result?: '' | 'rad' | 'nomalum';
 }
 
 export const PASS_DIRECTION_OPTIONS: { value: PassDirection; label: string }[] = [
@@ -26,6 +30,9 @@ export function passQuery(filters: PassFilters): Record<string, string | undefin
     direction: filters.direction || undefined,
     from: filters.date || undefined,
     to: filters.date || undefined,
+    search: filters.search?.trim() || undefined,
+    granted: filters.result === 'rad' ? 'false' : undefined,
+    matched: filters.result === 'nomalum' ? 'false' : undefined,
   };
 }
 

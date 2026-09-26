@@ -330,7 +330,7 @@ async def unit_resolver(db: AsyncSession, type_: str) -> Callable[[str | None], 
 
 async def people_info(db: AsyncSession, type_: str, ids: Iterable[uuid.UUID] | None = None) -> list[tuple]:
     """(id, F.I.Sh., group_or_position, rasm kaliti, tasdiqlanganmi)."""
-    stmt = select(StudentStaff.id, StudentStaff.full_name, StudentStaff.group_or_position,
+    stmt = select(StudentStaff.id, StudentStaff.full_name, svc.unit_source(),
                   StudentStaff.biometric_photo_key, enrolled_flag()).where(population(type_))
     if ids is not None:
         stmt = stmt.where(StudentStaff.id.in_(list(ids)))

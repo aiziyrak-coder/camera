@@ -76,3 +76,29 @@ def test_hand_typed_positions_are_normalised():
         assert canonical_position(text) == expected, text
     assert canonical_position("1-son TTJ boshligʻi") == "1-son TTJ boshligʻi"
     assert position_group("Фаррош") == "texnik" and position_group("Assisent") == "oqituvchi"
+
+
+def test_unit_catalog_prefers_hemis_units():
+    """Kafedralar sahifasi: HEMIS bo'linmasiga bog'langan xodim o'sha bo'linmada;
+    bog'lanmagan xodim eski matn bo'yicha, lekin nomi mos bo'lsa HEMIS bo'linmasiga."""
+    from app.services import situation as svc
+
+    anatomy, rector, dorm = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    a, b, c, d = (uuid.uuid4() for _ in range(4))
+    catalog = svc.build_catalog(
+        [svc.DepartmentInfo(uuid.uuid4(), "Anatomiya kafedrasi", "A bino")],
+        [(a, f"org:{anatomy}"), (b, "Anatomiya kafedrasi"), (c, f"org:{rector}"), (d, "Farrosh")],
+        [svc.OrgUnitInfo(anatomy, "Anatomiya kafedrasi", "kafedra"), svc.OrgUnitInfo(rector, "Rektorat", "rektorat"),
+         svc.OrgUnitInfo(dorm, "1-talabalar turar joyi", "turar_joy")],
+    )
+    assert catalog.unit_id(f"org:{anatomy}") == str(anatomy)
+    assert catalog.unit_id("Anatomiya kafedrasi") == str(anatomy)
+    assert catalog.units[str(anatomy)].building == "A bino"
+    assert catalog.units[str(rector)].kind == "bolim"
+    # Xodimi yo'q turar joy ko'rinmaydi, noma'lum org kaliti — biriktirilmagan.
+    assert str(dorm) not in catalog.units
+    assert catalog.unit_id(f"org:{uuid.uuid4()}") == svc.UNASSIGNED_KAFEDRA_ID
+    assert sorted(catalog.staff_ids(str(anatomy))) == sorted([a, b])
+    assert catalog.staff_ids(svc.UNASSIGNED_KAFEDRA_ID) == [d]
+    # Bir xil nomli Department alohida qator bo'lib qolmaydi.
+    assert [u.name for u in catalog.units.values()].count("Anatomiya kafedrasi") == 1

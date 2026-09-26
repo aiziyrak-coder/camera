@@ -104,7 +104,7 @@ export default function ScheduleBoard() {
 
   async function exportExcel() {
     try {
-      const blob = await api.blob(`/api/jadval/kun.xlsx?sana=${day}`, token);
+      const blob = await api.blob(`/api/jadval/kun.xlsx?sana=${day}&hozir=${nowOnly && isToday}`, token);
       downloadBlob(blob, `jadval-davomat-${day}.xlsx`);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Yuklab bo'lmadi");

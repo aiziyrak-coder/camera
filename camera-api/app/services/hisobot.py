@@ -92,7 +92,7 @@ async def population(db: AsyncSession, kind: str) -> list[Member]:
 
     async def load() -> list[Member]:
         rows = await db.execute(
-            select(StudentStaff.id, StudentStaff.full_name, StudentStaff.group_or_position, StudentStaff.faculty_id,
+            select(StudentStaff.id, StudentStaff.full_name, svc.unit_source(), StudentStaff.faculty_id,
                    StudentStaff.biometric_photo_key, StudentStaff.biometrics_status == "tasdiqlangan")
             .where(StudentStaff.type == kind)
             .where(StudentStaff.active.is_(True))

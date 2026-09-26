@@ -384,7 +384,9 @@ async def kafedra_detail(
         people = (
             await db.execute(
                 select(
-                    StudentStaff.id, StudentStaff.full_name, StudentStaff.group_or_position,
+                    StudentStaff.id, StudentStaff.full_name,
+                    # HEMIS lavozimi ("Dotsent", "Farrosh"); bo'lmasa eski matn.
+                    func.coalesce(StudentStaff.position, StudentStaff.group_or_position),
                     StudentStaff.biometric_photo_key, StudentStaff.biometrics_status,
                     AttendanceRecord.status, AttendanceRecord.check_in, AttendanceRecord.check_out,
                 )
@@ -553,7 +555,8 @@ async def person_profile(
     department = None
     if person.type == "xodim":
         catalog = await svc.unit_catalog(db)
-        department = catalog.units.get(catalog.unit_id(person.group_or_position))
+        key = f"{svc.ORG_PREFIX}{person.org_unit_id}" if person.org_unit_id else person.group_or_position
+        department = catalog.units.get(catalog.unit_id(key))
         if department is not None and department.unassigned:
             department = None
 
@@ -563,6 +566,7 @@ async def person_profile(
         faculty_id=str(person.faculty_id) if person.faculty_id else None,
         faculty=person.faculty.name if person.faculty else (NO_FACULTY_LABEL if person.type == "talaba" else None),
         unit=person.group_or_position, group=group or None, course=course,
+        position=person.position if person.type == "xodim" else None,
         department_id=department.id if department else None,
         department=department.name if department else None,
         biometrics_status=person.biometrics_status, parent_notify=person.parent_notify_enabled,
@@ -996,11 +1000,12 @@ async def people_status_pdf(
     position_group: Annotated[Literal["oqituvchi", "mamuriy", "texnik"] | None, Query(alias="positionGroup")] = None,
     position: Annotated[str | None, Query(max_length=200)] = None,
     search: Annotated[str | None, Query(max_length=100)] = None,
+    department_id: Annotated[str | None, Query(alias="departmentId", max_length=100)] = None,
 ) -> Response:
     """people-status bilan bir xil filtrlar — natija PDF jadval (5000 qatorgacha)."""
     result = await people_by_status(
         db, user, date=date, status_=status_, type_=type_, faculty_id=faculty_id, course=course, group=group,
-        department_id=None, org_unit_id=org_unit_id, position_group=position_group, position=position,
+        department_id=department_id, org_unit_id=org_unit_id, position_group=position_group, position=position,
         search=search, page=1, page_size=5000,
     )
     staff = type_ == "xodim"

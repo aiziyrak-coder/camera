@@ -291,6 +291,8 @@ export interface PersonInfo {
   facultyId: string | null;
   faculty: string | null;
   unit: string;
+  /** HEMIS lavozimi (xodim). */
+  position?: string | null;
   group: string | null;
   course: number | null;
   departmentId: string | null;

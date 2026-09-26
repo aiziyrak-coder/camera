@@ -31,7 +31,7 @@ from datetime import date as date_type, datetime, time as time_type, timedelta, 
 from typing import Any, NamedTuple
 
 from fastapi import HTTPException, status
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import String, and_, case, cast, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -45,6 +45,7 @@ from app.models import (
     Faculty,
     LessonAttendance,
     LessonSession,
+    OrgUnit,
     PresenceVisit,
     StudentGroup,
     StudentStaff,
@@ -275,6 +276,22 @@ def students_data_available(students: Counts) -> bool:
 
 # ─────────────────────────────────────────── birliklar (asosiy agregat)
 
+#: HEMIS tuzilmasiga bog'langan xodimning bo'linma kaliti ("org:<uuid>").
+ORG_PREFIX = "org:"
+
+
+def unit_source():
+    """Bo'linma/guruh manbai ustuni: talaba — group_or_position (kurs, guruh);
+    xodim — HEMIS bo'linmasi bo'lsa "org:<uuid>", bo'lmasa eski matn."""
+    return case(
+        (
+            and_(StudentStaff.type == "xodim", StudentStaff.org_unit_id.is_not(None)),
+            literal(ORG_PREFIX) + cast(StudentStaff.org_unit_id, String),
+        ),
+        else_=StudentStaff.group_or_position,
+    )
+
+
 class UnitRow(NamedTuple):
     type: str
     faculty_id: uuid.UUID | None
@@ -289,7 +306,7 @@ async def unit_rows(db: AsyncSession, day: date_type) -> list[UnitRow]:
         enrolled = (StudentStaff.biometrics_status == "tasdiqlangan").label("enrolled")
         stmt = (
             select(
-                StudentStaff.type, StudentStaff.faculty_id, StudentStaff.group_or_position, enrolled,
+                StudentStaff.type, StudentStaff.faculty_id, unit_source().label("unit"), enrolled,
                 AttendanceRecord.status, func.count(),
             )
             .select_from(StudentStaff)
@@ -298,8 +315,7 @@ async def unit_rows(db: AsyncSession, day: date_type) -> list[UnitRow]:
                 and_(AttendanceRecord.student_staff_id == StudentStaff.id, AttendanceRecord.date == day),
             )
             .where(StudentStaff.active.is_(True))
-            .group_by(StudentStaff.type, StudentStaff.faculty_id, StudentStaff.group_or_position, enrolled,
-                      AttendanceRecord.status)
+            .group_by(StudentStaff.type, StudentStaff.faculty_id, "unit", enrolled, AttendanceRecord.status)
         )
         return [UnitRow(*row) for row in (await db.execute(stmt)).all()]
 
@@ -474,6 +490,9 @@ class UnitCatalog:
     aliases: dict[str, str] = field(default_factory=dict)
 
     def unit_id(self, raw: str | None) -> str:
+        if raw and raw.startswith(ORG_PREFIX):
+            unit = raw[len(ORG_PREFIX):]
+            return unit if unit in self.units else UNASSIGNED_KAFEDRA_ID
         key = unit_key(raw)
         return self.by_key.get(self.aliases.get(key, key), UNASSIGNED_KAFEDRA_ID)
 
@@ -491,24 +510,50 @@ async def departments(db: AsyncSession) -> list[DepartmentInfo]:
 
 
 async def staff_units(db: AsyncSession) -> list[tuple[uuid.UUID, str | None]]:
-    """Faol xodimlar (id, group_or_position) — ~800 qator."""
+    """Faol xodimlar (id, bo'linma kaliti — unit_source) — ~900 qator."""
     rows = await db.execute(
-        select(StudentStaff.id, StudentStaff.group_or_position)
+        select(StudentStaff.id, unit_source())
         .where(StudentStaff.type == "xodim")
         .where(StudentStaff.active.is_(True))
     )
     return [tuple(r) for r in rows.all()]
 
 
-def build_catalog(deps: list[DepartmentInfo], staff: list[tuple[uuid.UUID, str | None]]) -> UnitCatalog:
-    """Department yozuvlari + xodimlar matni -> bo'linmalar (sof funksiya).
+#: HEMIS bo'linma turi (org_units.kind) -> sahifadagi guruh.
+ORG_KIND_TO_UNIT = {"kafedra": "kafedra", "fakultet": "dekanat"}
 
-    Department bilan nomi mos matn Department.id ni oladi; qolgan har xil
-    matn (norm_name bo'yicha) — alohida bo'linma, nomi eng ko'p uchragan
-    yozilishi. Sof lavozim matnlari bo'linma bo'lmaydi."""
+
+@dataclass
+class OrgUnitInfo:
+    id: uuid.UUID
+    name: str
+    kind: str
+
+
+def build_catalog(deps: list[DepartmentInfo], staff: list[tuple[uuid.UUID, str | None]],
+                  org_units: list[OrgUnitInfo] | None = None) -> UnitCatalog:
+    """HEMIS bo'linmalari + Department yozuvlari + xodimlar matni -> bo'linmalar (sof funksiya).
+
+    Asosiy manba — HEMIS tuzilmasi (org_units): xodim unga org_unit_id
+    orqali bog'langan (kalit "org:<uuid>"). Bog'lanmagan xodimlar uchun
+    eski yo'l: Department bilan nomi mos matn Department.id ni oladi; qolgan
+    har xil matn (norm_name bo'yicha) — alohida bo'linma. HEMIS bo'linmasi
+    bilan bir xil nomli Department/matn o'sha HEMIS bo'linmasiga qo'shiladi.
+    Sof lavozim matnlari bo'linma bo'lmaydi."""
     units: dict[str, UnitInfo] = {}
     by_key: dict[str, str] = {}
-    aliases = canonical_map([raw for _pid, raw in staff])
+    aliases = canonical_map([raw for _pid, raw in staff if not (raw or "").startswith(ORG_PREFIX)])
+    dep_building = {unit_key(dep.name): dep.building for dep in deps}
+    linked = Counter(raw[len(ORG_PREFIX):] for _pid, raw in staff if (raw or "").startswith(ORG_PREFIX))
+    for org in org_units or []:
+        oid = str(org.id)
+        kind = ORG_KIND_TO_UNIT.get(org.kind, "bolim")
+        # Xodimi yo'q bo'lim/markaz ro'yxatni to'ldirmasin; kafedra va dekanat doim ko'rinadi.
+        if not linked.get(oid) and kind == "bolim":
+            continue
+        key = unit_key(org.name)
+        units[oid] = UnitInfo(oid, org.name, kind, dep_building.get(key))
+        by_key.setdefault(key, oid)
     for dep in deps:
         key = unit_key(dep.name)
         if key in by_key:  # bir xil nomli ikkinchi Department — birinchisi yutadi
@@ -542,9 +587,16 @@ def build_catalog(deps: list[DepartmentInfo], staff: list[tuple[uuid.UUID, str |
     return UnitCatalog(catalog, by_key, staff, aliases)
 
 
+async def org_units_info(db: AsyncSession) -> list[OrgUnitInfo]:
+    rows = await db.execute(
+        select(OrgUnit.id, OrgUnit.name, OrgUnit.kind).where(OrgUnit.active.is_(True)).order_by(OrgUnit.name)
+    )
+    return [OrgUnitInfo(*row) for row in rows.all()]
+
+
 async def unit_catalog(db: AsyncSession) -> UnitCatalog:
     async def load() -> UnitCatalog:
-        return build_catalog(await departments(db), await staff_units(db))
+        return build_catalog(await departments(db), await staff_units(db), await org_units_info(db))
 
     return await cached(("unit_catalog",), load)
 

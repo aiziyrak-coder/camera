@@ -49,6 +49,7 @@ import {
 import { useLiveAttendance, type LiveAttendanceMessage } from '../../lib/realtime';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { useViewDate } from '../../lib/viewDate';
+import PdfButton from '../../components/situation/PdfButton';
 import { LessonDrawer, LessonList } from '../../components/students/LessonViews';
 import { StatusFilterTiles, type FilterTile } from '../../components/students/StatusFilterTiles';
 import { StudentDrawer } from '../../components/students/StudentDrawer';
@@ -309,6 +310,7 @@ export default function GroupPage() {
               Yangilandi {group.updatedAt.toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tashkent' })}
             </span>
           )}
+          {data && <PdfButton path="/api/situation/pdf/group" params={{ name: groupName, date }} filename={`${groupName}-${date}.pdf`} />}
           <IconButton icon={RefreshCw} label="Yangilash" variant="secondary" onClick={group.reload} loading={group.refreshing} />
         </>
       }

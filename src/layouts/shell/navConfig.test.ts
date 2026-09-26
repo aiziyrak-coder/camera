@@ -38,7 +38,7 @@ describe('navConfig', () => {
 
   it('shows the date picker only on attendance pages', () => {
     expect(usesViewDate('/')).toBe(true);
-    expect(usesViewDate('/shaxs/12')).toBe(true);
+    expect(usesViewDate('/shaxs/12')).toBe(false);
     expect(usesViewDate('/hodisalar')).toBe(false);
   });
 });

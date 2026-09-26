@@ -68,10 +68,12 @@ export default function FacultiesPage() {
   const reloadTimer = useRef(0);
   useEffect(() => {
     if (!live.length || reloadTimer.current) return;
+    // 30 s: ertalabki oqimda har ochiq varaq serverdan har 5 s da
+    // umumiy agregatni so'ramasin (server keshi baribir 15 s).
     reloadTimer.current = window.setTimeout(() => {
       reloadTimer.current = 0;
       reload();
-    }, 5_000);
+    }, 30_000);
   }, [live, reload]);
   useEffect(
     () => () => {
@@ -173,7 +175,7 @@ export default function FacultiesPage() {
           {overview.error && <StaleNote message={overview.error} onRetry={overview.reload} />}
 
           {faculties.length === 0 ? (
-            <EmptyState title="Fakultetlar kiritilmagan" description="Ular «Tashkiliy tuzilma» bo'limida qo'shiladi." />
+            <EmptyState title="Fakultetlar hali kelmagan" description="Fakultetlar HEMIS'dan avtomatik olinadi — «Tizim holati» sahifasida HEMIS sinxronlashini tekshiring." />
           ) : (
             <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_20rem]">
               <IntelPanel title="Fakultetlar" code={`${faculties.length} ta`}>

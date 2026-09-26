@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { KeyRound, Pencil, PlugZap, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import {
   Button,
@@ -32,6 +33,7 @@ import {
   type AccessDevice,
   type AccessEventItem,
   type AccessSummary,
+  type UnmatchedCredential,
 } from '../../lib/integrationsApi';
 import {
   DEVICE_LAMP,
@@ -58,7 +60,12 @@ export default function AccessPage() {
   const { token } = useAuth();
   const toast = useToast();
   const visible = usePageVisible();
-  const today = todayInTashkent();
+  // Ish kuni 06:00 da almashadi — sahifa ochiq turib qolsa ham "bugun" yangilanadi.
+  const [today, setToday] = useState(todayInTashkent);
+  useEffect(() => {
+    const timer = window.setInterval(() => setToday(todayInTashkent()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const [devices, setDevices] = useState<AccessDevice[]>([]);
   const [devicesLoading, setDevicesLoading] = useState(true);
@@ -69,7 +76,22 @@ export default function AccessPage() {
   const [testingId, setTestingId] = useState<string | null>(null);
   const [newKey, setNewKey] = useState<{ name: string; apiKey: string; webhookPath: string } | null>(null);
 
-  const [filters, setFilters] = useState<PassFilters>({ deviceId: '', direction: '', date: today });
+  const [filters, setFilters] = useState<PassFilters>({ deviceId: '', direction: '', date: today, search: '', result: '' });
+  const [searchDraft, setSearchDraft] = useState('');
+  useEffect(() => {
+    const timer = window.setTimeout(() => setFilters((f) => (f.search === searchDraft ? f : { ...f, search: searchDraft })), 350);
+    return () => window.clearTimeout(timer);
+  }, [searchDraft]);
+  // Kun almashganda bugunni kuzatib turgan jurnal yangi kunga o'tadi.
+  const previousToday = useRef(today);
+  useEffect(() => {
+    if (previousToday.current === today) return;
+    const wasToday = previousToday.current;
+    previousToday.current = today;
+    setFilters((f) => (f.date === wasToday ? { ...f, date: today } : f));
+  }, [today]);
+  const [unmatched, setUnmatched] = useState<UnmatchedCredential[] | null>(null);
+  const [showUnmatched, setShowUnmatched] = useState(false);
   const [summary, setSummary] = useState<AccessSummary | null>(null);
 
   const loadDevices = useCallback(async () => {
@@ -105,15 +127,26 @@ export default function AccessPage() {
   const live = isLiveDay(filters.date, today) && visible;
   useEffect(() => {
     if (!live) return;
+    let ticks = 0;
     const timer = window.setInterval(() => {
       // Birinchi sahifada — yangi o'tishlar tepada paydo bo'ladi; orqa
       // sahifani varaqlayotgan operator ostidan ro'yxat siljimasin.
       if (eventsPage === 1) reloadEvents();
       void loadSummary();
-      void loadDevices();
+      // Qurilma holati sekin o'zgaradi — daqiqada bir marta yetarli.
+      ticks += 1;
+      if (ticks % 4 === 0) void loadDevices();
     }, LIVE_REFRESH_MS);
     return () => window.clearInterval(timer);
   }, [live, eventsPage, reloadEvents, loadSummary, loadDevices]);
+
+  useEffect(() => {
+    if (!showUnmatched || unmatched !== null) return;
+    integrationsApi
+      .unmatched(7, token)
+      .then(setUnmatched)
+      .catch(() => setUnmatched([]));
+  }, [showUnmatched, unmatched, token]);
 
   function refreshAll() {
     reloadEvents();
@@ -248,7 +281,13 @@ export default function AccessPage() {
         const person = passPerson(e);
         return (
           <div className="min-w-0">
-            <p className={`truncate text-[13px] ${person.known ? 'font-medium text-fg' : 'text-muted'}`}>{person.label}</p>
+            {e.personId ? (
+              <Link to={`/shaxs/${e.personId}`} className="block truncate text-[13px] font-medium text-fg hover:text-primary hover:underline">
+                {person.label}
+              </Link>
+            ) : (
+              <p className={`truncate text-[13px] ${person.known ? 'font-medium text-fg' : 'text-muted'}`}>{person.label}</p>
+            )}
             {e.personUnit && <p className="truncate text-[12px] text-subtle">{e.personUnit}</p>}
           </div>
         );
@@ -264,6 +303,15 @@ export default function AccessPage() {
         return <StatusLamp status={result.status} label={result.label} />;
       },
     },
+  ];
+
+  const unmatchedColumns: DataTableColumn<UnmatchedCredential>[] = [
+    { key: 'card', header: 'Karta', cell: (u) => <CodeText className="text-[12px] text-fg">{u.cardNumber ?? '—'}</CodeText> },
+    { key: 'emp', header: 'Tabel raqami', cell: (u) => <CodeText className="text-[12px] text-fg">{u.employeeNo ?? '—'}</CodeText> },
+    { key: 'count', header: "O'tish", align: 'right', cell: (u) => u.count, sortValue: (u) => u.count },
+    { key: 'denied', header: 'Rad', align: 'right', cell: (u) => u.deniedCount, sortValue: (u) => u.deniedCount },
+    { key: 'last', header: 'Oxirgi', cell: (u) => <span className="whitespace-nowrap text-[12px] text-muted">{passTime(u.lastSeen)}</span> },
+    { key: 'device', header: 'Qurilma', hideOnMobile: true, cell: (u) => <span className="text-[12px] text-muted">{u.lastDeviceName ?? '—'}</span> },
   ];
 
   return (
@@ -306,9 +354,13 @@ export default function AccessPage() {
         </IntelPanel>
 
         <FilterBar
-          onReset={() => setFilters({ deviceId: '', direction: '', date: today })}
+          onReset={() => {
+            setSearchDraft('');
+            setFilters({ deviceId: '', direction: '', date: today, search: '', result: '' });
+          }}
           end={live ? <StatusLamp status="ok" label="Jonli" pulse /> : undefined}
           fields={[
+            { kind: 'search', value: searchDraft, onChange: setSearchDraft, placeholder: 'Ism yoki karta raqami…', ariaLabel: "O'tishlarni qidirish" },
             {
               kind: 'custom',
               active: filters.date !== today,
@@ -339,6 +391,17 @@ export default function AccessPage() {
               placeholder: "Ikkala yo'nalish",
               ariaLabel: "Yo'nalish",
             },
+            {
+              kind: 'select',
+              value: filters.result ?? '',
+              onChange: (result: string) => setFilters((f) => ({ ...f, result: result as PassFilters['result'] })),
+              options: [
+                { value: 'rad', label: 'Rad etilgan' },
+                { value: 'nomalum', label: "Egasi noma'lum" },
+              ],
+              placeholder: 'Barcha natijalar',
+              ariaLabel: 'Natija',
+            },
           ]}
         />
 
@@ -346,9 +409,35 @@ export default function AccessPage() {
           <Readout label="Kirish" value={summary ? String(summary.entries) : '—'} />
           <Readout label="Chiqish" value={summary ? String(summary.exits) : '—'} />
           <Readout label="Odamlar" value={summary ? String(summary.people) : '—'} />
-          <Readout label="Rad etildi" value={summary ? String(summary.denied) : '—'} />
-          <Readout label="Noma'lum" value={summary ? String(summary.unmatched) : '—'} />
+          <button type="button" className="text-left hover:opacity-80" title="Faqat rad etilganlarni ko'rsatish" onClick={() => setFilters((f) => ({ ...f, result: f.result === 'rad' ? '' : 'rad' }))}>
+            <Readout label="Rad etildi" value={summary ? String(summary.denied) : '—'} />
+          </button>
+          <button type="button" className="text-left hover:opacity-80" title="Egasi topilmagan o'tishlar" onClick={() => setFilters((f) => ({ ...f, result: f.result === 'nomalum' ? '' : 'nomalum' }))}>
+            <Readout label="Noma'lum" value={summary ? String(summary.unmatched) : '—'} />
+          </button>
+          <Button size="sm" variant="ghost" className="ms-auto" onClick={() => setShowUnmatched((v) => !v)}>
+            {showUnmatched ? 'Egasiz kartalarni yopish' : 'Egasiz kartalar (7 kun)'}
+          </Button>
         </div>
+
+        {showUnmatched && (
+          <IntelPanel title="Egasiz kartalar — 7 kun" right={<MicroLabel>{unmatched ? `${unmatched.length} ta` : '—'}</MicroLabel>}>
+            <DataTable
+              columns={unmatchedColumns}
+              rows={unmatched ?? []}
+              rowKey={(u) => `${u.cardNumber ?? ''}|${u.employeeNo ?? ''}`}
+              loading={unmatched === null}
+              loadingRows={3}
+              emptyTitle="Hamma karta egasi bilan bog'langan"
+              ariaLabel="Egasiz kartalar"
+              maxHeight="22rem"
+              dense
+            />
+            <p className="border-t border-border px-3 py-2 text-[12px] text-muted">
+              Bu kartalar reestrdagi hech kimga bog'lanmagan. Karta yoki tabel raqamini «Shaxslar reestri»da tegishli odamga yozing — o'tishlari davomatga tusha boshlaydi.
+            </p>
+          </IntelPanel>
+        )}
 
         <IntelPanel title="O'tishlar" right={<MicroLabel>{events.loading && events.items.length === 0 ? '—' : `${events.total} ta`}</MicroLabel>}>
           <DataTable

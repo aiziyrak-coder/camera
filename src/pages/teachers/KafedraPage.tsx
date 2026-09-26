@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { BarChart3, BookOpen, CalendarCheck, Rows3, Table2, Users } from 'lucide-react';
+import PdfButton from '../../components/situation/PdfButton';
 import {
   Avatar,
   Badge,
@@ -56,7 +57,8 @@ const SORT_OPTIONS: { value: TeacherSort; label: string }[] = [
   { value: 'onTime', label: 'Darsga kam kirgan' },
   { value: 'name', label: 'Ism' },
 ];
-const REFRESH_MS = 60_000;
+// 30 kunlik dars/davomat yig'indisi og'ir — 5 daqiqada bir yetarli.
+const REFRESH_MS = 300_000;
 
 /** Xodimning davr bo'yicha ishga kelish foizi — maxraj YOZUV BOR kunlar
  *  (kelgan + kelmagan). Dam olish va yozuvsiz kunlar hukmga kirmaydi. */
@@ -213,6 +215,11 @@ export default function KafedraPage() {
             }
           >
             <SearchInput value={search} onChange={setSearch} placeholder="Ism bo'yicha…" ariaLabel="O'qituvchini qidirish" />
+            <PdfButton
+              path="/api/situation/pdf/people"
+              params={{ type: 'xodim', departmentId, date, search: search || undefined }}
+              filename={`${title}-${date}.pdf`}
+            />
             <Select value={effectiveSort} onChange={(v) => setSort(v as TeacherSort)} options={sortOptions} label="Tartib:" ariaLabel="Tartiblash" />
             {!presentation && <DateRangePicker value={period} onChange={setPeriod} presets={PERIOD_PRESETS} size="sm" showSummary={false} />}
           </Toolbar>

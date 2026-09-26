@@ -1,18 +1,17 @@
 import { useSearchParams } from 'react-router-dom';
-import { AlertTriangle, BarChart3, Building2, Clock, Trophy } from 'lucide-react';
+import { AlertTriangle, BarChart3, Building2, Trophy } from 'lucide-react';
 import { Page, formatUzDate, relativeDayLabel, useUrlTab, type TabItem } from '../../ui';
 import { AnalyticsTab } from '../../components/teachers/AnalyticsTab';
 import { ChronicTab } from '../../components/teachers/ChronicTab';
-import { DayTrackingTab } from '../../components/teachers/DayTrackingTab';
 import { RankingTab } from '../../components/teachers/RankingTab';
 import { UnitsTab } from '../../components/teachers/UnitsTab';
 import { useLoader } from '../../components/teachers/useLoader';
 import { getKafedras } from '../../lib/situationApi';
 import { useViewDate } from '../../lib/viewDate';
 
-type TabId = 'bolinmalar' | 'tahlil' | 'reyting' | 'surunkali' | 'kuzatuv';
+type TabId = 'bolinmalar' | 'tahlil' | 'reyting' | 'surunkali';
 
-const TAB_IDS: readonly TabId[] = ['bolinmalar', 'tahlil', 'reyting', 'surunkali', 'kuzatuv'];
+const TAB_IDS: readonly TabId[] = ['bolinmalar', 'tahlil', 'reyting', 'surunkali'];
 const REFRESH_MS = 60_000;
 
 /** Xodimlar va o'qituvchilar: bo'linmalar, tahlil, reyting, takror
@@ -37,7 +36,6 @@ export default function KafedrasPage() {
     { id: 'tahlil', label: 'Davr tahlili', icon: BarChart3 },
     { id: 'reyting', label: 'Reyting', icon: Trophy },
     { id: 'surunkali', label: 'Takror kechikkanlar', icon: AlertTriangle },
-    { id: 'kuzatuv', label: 'Kim qachon kelgan', icon: Clock },
   ];
   const [tab] = useUrlTab(tabs, { defaultTab: 'bolinmalar' });
   const dayLabel = relativeDayLabel(date, today) ?? formatUzDate(date, { weekday: true });
@@ -57,7 +55,6 @@ export default function KafedrasPage() {
       {tab === 'tahlil' && <AnalyticsTab />}
       {tab === 'reyting' && <RankingTab />}
       {tab === 'surunkali' && <ChronicTab />}
-      {tab === 'kuzatuv' && <DayTrackingTab date={date} />}
     </Page>
   );
 }

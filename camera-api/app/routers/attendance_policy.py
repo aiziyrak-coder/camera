@@ -15,6 +15,7 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_action
+from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_user, require_permission
 from app.models import AttendancePolicy, AttendanceRecord, StudentStaff
@@ -74,6 +75,14 @@ async def put_policy(
 ) -> dict:
     if body.work_end <= body.staff_start:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Ish tugash vaqti boshlanishidan keyin bo'lishi kerak")
+    # Ish kuni settings.day_start_hour (06:00) da almashadi — undan oldingi
+    # boshlanish kechagi ish kuniga tushib, hamma "kech keldi" bo'lardi.
+    earliest = time_type(settings.day_start_hour, 0)
+    if body.staff_start < earliest or body.student_start < earliest:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            f"Boshlanish vaqti {settings.day_start_hour:02d}:00 dan oldin bo'lishi mumkin emas — ish kuni shu soatda almashadi",
+        )
     row = await db.get(AttendancePolicy, 1)
     if row is None:
         row = AttendancePolicy(id=1)

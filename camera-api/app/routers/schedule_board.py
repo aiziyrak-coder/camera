@@ -88,9 +88,11 @@ async def export_day_board(
     db: Annotated[AsyncSession, Depends(get_db)],
     _: ReadDep,
     sana: Annotated[str | None, Query()] = None,
+    hozir: Annotated[bool, Query()] = False,
 ) -> Response:
     day = _day(sana)
-    data = board_workbook(day, await day_board(db, day))
+    now = local_now()
+    data = board_workbook(day, await day_board(db, day, at=now if hozir and day == business_date(now) else None))
     return Response(
         content=data,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

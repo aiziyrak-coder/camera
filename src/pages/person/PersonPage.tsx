@@ -421,7 +421,7 @@ export default function PersonPage() {
                     </>
                   ) : (
                     <>
-                      <Fact label="Kafedra">
+                      <Fact label="Bo'linma">
                         {person.departmentId ? (
                           <Link to={withDate(situationPaths.kafedra(person.departmentId))} className={linkClass}>
                             {person.department}
@@ -430,7 +430,7 @@ export default function PersonPage() {
                           'Biriktirilmagan'
                         )}
                       </Fact>
-                      <Fact label="Lavozim">{person.unit || "Ko'rsatilmagan"}</Fact>
+                      <Fact label="Lavozim">{person.position || person.unit || "Ko'rsatilmagan"}</Fact>
                     </>
                   )}
                   <Fact label="Bugun">

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
 import {
   Button,
@@ -13,6 +14,8 @@ import {
   RATE_RAG,
   Section,
   StatusLamp,
+  cn,
+  controlBase,
   rag,
   type DataTableColumn,
   type IntelStatus,
@@ -63,9 +66,12 @@ export interface LogFilters {
   status: string;
   channel: string;
   kind: string;
+  /** Sana oralig'i (YYYY-MM-DD), ish kuni bo'yicha. */
+  from: string;
+  to: string;
 }
 
-const EMPTY_LOG_FILTERS: LogFilters = { search: '', status: '', channel: '', kind: '' };
+const EMPTY_LOG_FILTERS: LogFilters = { search: '', status: '', channel: '', kind: '', from: '', to: '' };
 
 /** Jurnal filtrlari — sahifaning `toolbar` joyida (Jurnal tabi). */
 export function NotificationLogToolbar({
@@ -93,6 +99,32 @@ export function NotificationLogToolbar({
         { kind: 'select', value: filters.status, onChange: (v: string) => set('status', v), options: STATUS_OPTIONS, placeholder: 'Barcha holatlar', ariaLabel: 'Holat' },
         { kind: 'select', value: filters.channel, onChange: (v: string) => set('channel', v), options: CHANNEL_OPTIONS, placeholder: 'Barcha kanallar', ariaLabel: 'Kanal' },
         { kind: 'select', value: filters.kind, onChange: (v: string) => set('kind', v), options: KIND_FILTER_OPTIONS, placeholder: 'Barcha turlar', ariaLabel: 'Turi' },
+        {
+          kind: 'custom',
+          active: Boolean(filters.from || filters.to),
+          onClear: () => onChange({ ...filters, from: '', to: '' }),
+          render: (
+            <span className="flex flex-wrap items-center gap-1.5">
+              <input
+                type="date"
+                aria-label="Sanadan"
+                value={filters.from}
+                max={filters.to || undefined}
+                onChange={(e) => set('from', e.target.value)}
+                className={cn(controlBase, 'h-9 w-auto px-3 text-sm tabular-nums')}
+              />
+              <span className="text-muted" aria-hidden="true">–</span>
+              <input
+                type="date"
+                aria-label="Sanagacha"
+                value={filters.to}
+                min={filters.from || undefined}
+                onChange={(e) => set('to', e.target.value)}
+                className={cn(controlBase, 'h-9 w-auto px-3 text-sm tabular-nums')}
+              />
+            </span>
+          ),
+        },
       ]}
     />
   );
@@ -155,6 +187,8 @@ export default function NotificationLogTable({
       channel: filters.channel || undefined,
       kind: filters.kind || undefined,
       search: filters.search || undefined,
+      from: filters.from || undefined,
+      to: filters.to || undefined,
     },
     20,
   );
@@ -215,6 +249,16 @@ export default function NotificationLogTable({
                 { label: 'Kanal', value: <MicroLabel>{CHANNEL_LABELS[open.channel] ?? open.channel}</MicroLabel> },
                 { label: 'Qabul qiluvchi', value: <CodeText className="text-xs">{open.recipient}</CodeText> },
                 { label: 'Vaqt', value: <CodeText>{formatLogTime(open.createdAt)}</CodeText> },
+                ...(open.refId && (open.kind === 'event' || open.kind === 'event_overdue')
+                  ? [{
+                      label: 'Hodisa',
+                      value: (
+                        <Link to={`/hodisalar?id=${encodeURIComponent(open.refId)}`} className="font-medium text-primary hover:underline">
+                          Hodisani ochish
+                        </Link>
+                      ),
+                    }]
+                  : []),
               ]}
             />
             {open.error && (

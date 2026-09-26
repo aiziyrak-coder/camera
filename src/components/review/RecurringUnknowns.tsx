@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { calendarDateInTashkent } from '../../lib/uzDate';
 import { Check, EyeOff, RefreshCw, Search, UserPlus } from 'lucide-react';
 import { ApiError } from '../../lib/apiClient';
 import {
@@ -152,7 +153,7 @@ function RecurringCard({
           </div>
           <p className="line-clamp-2 text-[12px] text-muted">{item.cameras.join(', ') || '—'}</p>
           <p className="text-[11px] text-subtle">
-            Oxirgi: {item.lastSeenAt.slice(0, 10)} {sightingTime(item.lastSeenAt)}
+            Oxirgi: {calendarDateInTashkent(new Date(item.lastSeenAt)).split('-').reverse().join('.')} {sightingTime(item.lastSeenAt)}
           </p>
           {rest.length > 0 && (
             <div className="flex gap-1 pt-1">

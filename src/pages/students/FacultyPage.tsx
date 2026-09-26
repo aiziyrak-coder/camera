@@ -30,6 +30,7 @@ import { NO_FACULTY_ID, getFaculty, getGroups, situationPaths, type CourseBlock,
 import { courseLabel, enrolledPct, groupsToCourses, hasAttendanceData, normalizeText, sortGroups, sumCounts, type GroupSortKey } from '../../lib/studentAttendance';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { useViewDate } from '../../lib/viewDate';
+import PdfButton from '../../components/situation/PdfButton';
 import { useAsyncData } from '../../components/students/useAsyncData';
 import { EnrollmentCampaign } from '../../components/students/EnrollmentCampaign';
 
@@ -241,7 +242,14 @@ export default function FacultyPage() {
       title={title}
       subtitle={`${data ? `${groupCount} guruh · ` : ''}${formatUzDate(date, { weekday: true })}`}
       breadcrumbs={[{ label: 'Talabalar', to: withDate(situationPaths.faculties) }, { label: title }]}
-      actions={<IconButton icon={RefreshCw} label="Yangilash" variant="secondary" onClick={faculty.reload} loading={faculty.refreshing} />}
+      actions={
+        <>
+          {data && facultyId !== NO_FACULTY_ID && (
+            <PdfButton path="/api/situation/pdf/groups" params={{ facultyId, date }} filename={`${title}-${date}.pdf`} />
+          )}
+          <IconButton icon={RefreshCw} label="Yangilash" variant="secondary" onClick={faculty.reload} loading={faculty.refreshing} />
+        </>
+      }
       tabs={data ? VIEWS : undefined}
       defaultTab={defaultMode}
       tabParam={VIEW_PARAM}

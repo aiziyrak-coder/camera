@@ -326,6 +326,8 @@ class PersonInfoOut(CamelModel):
     faculty_id: str | None = None
     faculty: str | None = None
     unit: str  # group_or_position xom holda
+    # HEMIS lavozimi (xodim).
+    position: str | None = None
     group: str | None = None  # talaba guruhi
     course: int | None = None
     department_id: str | None = None  # xodim kafedrasi (nom bo'yicha topilgan)

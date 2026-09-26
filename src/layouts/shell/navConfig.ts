@@ -156,7 +156,8 @@ export function findActive(pathname: string): { section: NavSection; item: NavIt
 }
 
 /** Global sana tanlagichi ko'rinadigan (davomat) sahifalar. */
-const DATE_ROUTES = ['/', '/talabalar', '/oqituvchilar', '/shaxs'];
+// /shaxs — o'z davr tanlagichi bor (global sana u yerda ishlamaydi).
+const DATE_ROUTES = ['/', '/talabalar', '/oqituvchilar'];
 
 export function usesViewDate(pathname: string): boolean {
   return DATE_ROUTES.some((to) => matchesPath(pathname, to));

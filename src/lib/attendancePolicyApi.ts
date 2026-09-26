@@ -1,3 +1,4 @@
+import { DAY_START_HOUR } from './uzDate';
 import { api, type CallOptions } from './apiClient';
 
 /** Kelib-ketish qoidalari (camera-api/app/routers/attendance_policy.py). */
@@ -61,6 +62,10 @@ export function validateAttendancePolicy(form: AttendancePolicyInput): Attendanc
 
   if (staff === null) errors.staffStart = "Ish boshlanish vaqtini kiriting (masalan 08:30)";
   if (student === null) errors.studentStart = "Dars boshlanish vaqtini kiriting (masalan 08:30)";
+  // Ish kuni 06:00 da almashadi: undan oldingi boshlanish kechagi kunga tushadi.
+  const dayStart = DAY_START_HOUR * 60;
+  if (staff !== null && staff < dayStart) errors.staffStart = `Ish ${DAY_START_HOUR}:00 dan oldin boshlana olmaydi — kun ${DAY_START_HOUR}:00 da almashadi`;
+  if (student !== null && student < dayStart) errors.studentStart = `Dars ${DAY_START_HOUR}:00 dan oldin boshlana olmaydi — kun ${DAY_START_HOUR}:00 da almashadi`;
   if (end === null) errors.workEnd = "Ish tugash vaqtini kiriting (masalan 17:00)";
 
   if (!Number.isInteger(form.graceMinutes) || form.graceMinutes < 0 || form.graceMinutes > 180) {
