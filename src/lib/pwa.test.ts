@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildId, serviceWorkerUrl, shouldRegisterServiceWorker } from './pwa';
+import { buildId, entryScript, serviceWorkerUrl, shouldRegisterServiceWorker } from './pwa';
 
 describe('serviceWorkerUrl', () => {
   it('build identifikatorini manzilga qo\'shadi', () => {
@@ -33,5 +33,12 @@ describe('shouldRegisterServiceWorker', () => {
 
   it('brauzer qo\'llab-quvvatlamasa — yo\'q', () => {
     expect(shouldRegisterServiceWorker({ ...ok, supported: false })).toBe(false);
+  });
+});
+
+describe('entryScript', () => {
+  it('index.html dan asosiy skript nomini oladi (yangi versiyani aniqlash)', () => {
+    expect(entryScript('<script type="module" crossorigin src="/app/index-BmaYk3B2.js"></script>')).toBe('/app/index-BmaYk3B2.js');
+    expect(entryScript('<html></html>')).toBeNull();
   });
 });

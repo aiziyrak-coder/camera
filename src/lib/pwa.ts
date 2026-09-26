@@ -71,3 +71,48 @@ export function registerServiceWorker(): void {
   if (document.readyState === 'complete') register();
   else window.addEventListener('load', register, { once: true });
 }
+
+// ─────────────────────────────── Yangi versiya — avtomatik yangilanish
+
+/** Yangi deploy shu oraliqda tekshiriladi. */
+export const VERSION_CHECK_MS = 60_000;
+
+/** index.html dagi asosiy skript nomi (Vite hashi bilan) — versiya belgisi. */
+export function entryScript(html: string): string | null {
+  const match = html.match(/\/app\/index-[A-Za-z0-9_-]+\.js/);
+  return match ? match[0] : null;
+}
+
+function currentEntry(): string | null {
+  const script = document.querySelector<HTMLScriptElement>('script[type="module"][src*="/app/index-"]');
+  return script ? new URL(script.src, window.location.href).pathname : null;
+}
+
+/**
+ * Sahifa uzoq ochiq turadi (Nazorat ekrani): yangi versiya chiqqanda o'zi
+ * qayta yuklanadi. Filtrlar URL'da — yo'qolmaydi. Foydalanuvchi matn
+ * yozayotgan bo'lsa (input fokusda) — kutadi.
+ */
+export function watchForNewVersion(): void {
+  if (typeof window === 'undefined' || !import.meta.env.PROD) return;
+  const mine = currentEntry();
+  if (!mine) return;
+  const check = async () => {
+    if (document.hidden) return;
+    try {
+      const res = await fetch('/index.html', { cache: 'no-store' });
+      if (!res.ok) return;
+      const latest = entryScript(await res.text());
+      if (!latest || latest === mine) return;
+      const active = document.activeElement;
+      if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
+      window.location.reload();
+    } catch {
+      /* tarmoq yo'q — keyingi safar */
+    }
+  };
+  window.setInterval(check, VERSION_CHECK_MS);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) void check();
+  });
+}

@@ -7,7 +7,7 @@ import { AuthProvider } from './lib/auth.tsx'
 import { PermissionsProvider } from './lib/permissions.tsx'
 import ErrorBoundary from './components/ErrorBoundary.tsx'
 import { ToastProvider } from './components/ui/Toast.tsx'
-import { registerServiceWorker } from './lib/pwa.ts'
+import { registerServiceWorker, watchForNewVersion } from './lib/pwa.ts'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -27,3 +27,4 @@ createRoot(document.getElementById('root')!).render(
 
 // O'rnatiladigan ilova (PWA) — faqat production build'da.
 registerServiceWorker()
+watchForNewVersion()
