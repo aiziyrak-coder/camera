@@ -1217,6 +1217,10 @@ class Settings(BaseSettings):
     # Ish kuni shu soatda (institut vaqti) almashadi — kunlik davomat,
     # "bugun" statistikasi va hisobot kunlari (app/timezone.py business_*).
     day_start_hour: int = 6
+    # Hisobotlar bo'limi paroli (app/routers/report_lock.py): pbkdf2 xesh, .env da.
+    # Bo'sh — qulf o'chiq.
+    report_password_hash: str = ""
+    report_unlock_hours: int = 8
     org_system_name: str = "Situatsion Markaz"
 
     # Bildirishnomalar (app/services/notifications). Token bo'sh — Telegram

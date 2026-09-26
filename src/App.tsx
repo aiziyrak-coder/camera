@@ -1,3 +1,4 @@
+import ReportGate from './components/hisobot/ReportGate';
 import { Suspense } from 'react';
 import { Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import AppShell from './layouts/AppShell';
@@ -164,7 +165,7 @@ export default function App() {
                 <Route path="/turniketlar" element={<AccessPage />} />
               </Route>
               <Route element={<RequirePermission permission="viewReports" />}>
-                <Route path="/hisobotlar" element={<HisobotPage />} />
+                <Route path="/hisobotlar" element={<ReportGate><HisobotPage /></ReportGate>} />
               </Route>
               <Route element={<RequirePermission permission="registerPeople" />}>
                 <Route path="/reestr" element={<StudentsStaffPage />} />

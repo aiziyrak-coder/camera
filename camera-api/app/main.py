@@ -2,13 +2,14 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Response, status
+from fastapi import Depends, FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 
 from app.config import settings
+from app.routers.report_lock import require_report_unlock
 from app.database import SessionLocal, engine
 from app.jobs.attendance_ai import attendance_ai_loop, stop_entrance_watchers
 from app.jobs.camera_health import camera_health_loop
@@ -46,6 +47,7 @@ from app.routers import (
     face_review,
     archive,
     room_suggestions,
+    report_lock,
     schedule_board,
     presence,
     person_locator,
@@ -317,9 +319,12 @@ app.include_router(metrics.router)
 app.include_router(privacy.router)
 app.include_router(situation.router)
 app.include_router(situation_analytics.router)
-app.include_router(hisobot.router)
-app.include_router(hisobot_jadval.router)
-app.include_router(kpi.router)
+# Hisobotlar — alohida parol bilan (app/routers/report_lock.py).
+_report_gate = [Depends(require_report_unlock)]
+app.include_router(report_lock.router)
+app.include_router(hisobot.router, dependencies=_report_gate)
+app.include_router(hisobot_jadval.router, dependencies=_report_gate)
+app.include_router(kpi.router, dependencies=_report_gate)
 app.include_router(attendance_policy.router)
 app.include_router(wall_views.router)
 

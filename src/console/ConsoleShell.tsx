@@ -5,7 +5,7 @@ import { ChartColumn, Search } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { usePermissions } from '../lib/permissions';
 import { homeForRole, isPathAllowedForRole } from '../layouts/shell/navConfig';
-import { ConsoleSectionsMenu, ConsoleUserMenu } from './ConsoleNav';
+import { ConsoleUserMenu } from './ConsoleNav';
 import { cn } from '../ui';
 import { useLiveAttendance, useLiveEvents } from '../lib/realtime';
 import { signalAlarm } from '../lib/alarmSignal';
@@ -177,7 +177,6 @@ function Console() {
             <span className={cn('h-1.5 w-1.5 rounded-full bg-current', live && 'live-dot')} aria-hidden="true" />
             <span className="text-[11px] font-semibold !text-current">{live ? 'Jonli' : isToday ? 'Aloqa yo‘q' : 'Arxiv'}</span>
           </span>
-          <ConsoleSectionsMenu />
           {canReports && (
             <Link
               to="/hisobotlar"

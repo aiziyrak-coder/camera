@@ -15,8 +15,8 @@ services:
   api:
     environment:
       AI_ROLE: api
-      # Video arxiv — 100 GB byudjet: barcha kameralar oxirgi 4 soat (2026-09-24).
-      RECORDING_ENABLED: "true"
+      # Video arxiv O'CHIRILGAN (2026-09-26): yozuvlar NVR'ning o'zida saqlanadi.
+      RECORDING_ENABLED: "false"
       RECORDING_RETENTION_HOURS: "4"
     # HTTP + miniatyura/jonli video uchun ffmpeg. AI endi bu yerda emas.
     cpus: 10
@@ -30,7 +30,7 @@ services:
       - .env
     environment:
       AI_ROLE: worker
-      RECORDING_ENABLED: "true"
+      RECORDING_ENABLED: "false"
       RECORDING_RETENTION_HOURS: "4"
       # Bitta jarayon: AI baribir bitta leader'da ishlaydi, ikkinchi
       # jarayon faqat xotira (modellar ~2-3 GB) sarflardi.

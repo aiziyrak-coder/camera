@@ -1,4 +1,5 @@
 import { config } from './config';
+import { reportToken } from './reportLock';
 
 export class ApiError extends Error {
   status: number;
@@ -124,6 +125,11 @@ async function request<T>(
   const headers: Record<string, string> = {};
   const authToken = token ?? getAuthToken?.() ?? null;
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
+  // Hisobotlar paroli bilan olingan kalit (lib/reportLock.ts) — faqat hisobot so'rovlariga.
+  if (/^\/api\/(hisobot|kpi)/.test(path)) {
+    const unlock = reportToken();
+    if (unlock) headers['X-Report-Token'] = unlock;
+  }
   if (body !== undefined && !isForm) headers['Content-Type'] = 'application/json';
 
   // Chaqiruvchining bekor qilishi (filtr o'zgardi) va vaqt chegarasi —
