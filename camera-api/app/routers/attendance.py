@@ -13,7 +13,7 @@ import uuid
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date as date_type
-from datetime import datetime
+from datetime import datetime, timedelta
 from datetime import time as time_type
 from typing import Annotated
 
@@ -172,7 +172,8 @@ def _month_summary(
     present = sum(r.status == "keldi" for r in counted)
     late = sum(r.status == "kech_keldi" for r in counted)
     attended = [r for r in counted if r.status in PRESENT_STATUSES]
-    arrivals = [_minutes(r.check_in) for r in attended if r.check_in]
+    # Daqiqa aniqligida (soniyasiz) — "Institut holati" va hisobot bilan bir xil o'rtacha.
+    arrivals = [r.check_in.hour * 60 + r.check_in.minute for r in attended if r.check_in]
     stays = [
         _minutes(r.check_out) - _minutes(r.check_in)
         for r in attended
@@ -329,7 +330,12 @@ async def record_attendance(
         db, request, current_user.id, f"Davomat qayd etdi: {person.full_name} ({body.date})", "Talabalar"
     )
     await db.commit()
-    return _to_out(record)
+    # Kalendar (GET) bilan bir xil javob: "erta ketdi" hukmi shu kungi
+    # ko'rinishlarga tayanadi — ularsiz saqlangan kun qayta yuklanguncha
+    # boshqacha ko'rinardi.
+    await load_policy(db)
+    seen = await _sightings_by_day(db, person.id, record.date, record.date + timedelta(days=1))
+    return _to_out(record, seen.get(record.date))
 
 
 @router.delete("/{student_staff_id}/{date}", status_code=status.HTTP_204_NO_CONTENT)

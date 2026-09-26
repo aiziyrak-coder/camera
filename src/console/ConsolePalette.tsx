@@ -2,12 +2,11 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { Building2, Cctv, CornerDownLeft, Search, SearchX, UserRound, type LucideIcon } from 'lucide-react';
-import { searchPeople } from '../lib/teachersApi';
 import { api, buildQuery, isAbortError, type Page as ApiPage } from '../lib/apiClient';
 import { isBackendConfigured } from '../lib/config';
 import { highlight, matchText, rankItems, type MatchRange } from '../lib/search';
 import { useDebouncedValue } from '../lib/useDebouncedValue';
-import type { KafedraStat } from '../lib/situationApi';
+import { searchPeopleByName, type KafedraStat } from '../lib/situationApi';
 import { cn } from '../ui';
 import { useDialog } from '../ui/internal/useDialog';
 import { EASE, reducedMotion } from './motion';
@@ -113,7 +112,7 @@ function Dialog({ onClose, units, onOpen, people = false, cameras: withCameras =
   const cameras = useRemote(withCameras && remoteQ ? `c:${remoteQ}` : null, (signal) =>
     api.get<ApiPage<PublicCamera>>(`/api/public/cameras${buildQuery({ search: remoteQ, pageSize: 5 })}`, null, { signal }),
   );
-  const persons = useRemote(people && remoteQ ? `p:${remoteQ}` : null, (signal) => searchPeople(remoteQ, 6, { signal }));
+  const persons = useRemote(people && remoteQ ? `p:${remoteQ}` : null, (signal) => searchPeopleByName(remoteQ, { limit: 6 }, { signal }));
 
   const rows: Row[] = useMemo(() => {
     const q = query.trim();
@@ -134,7 +133,7 @@ function Dialog({ onClose, units, onOpen, people = false, cameras: withCameras =
 
     out.push(
       ...(persons.data ?? []).map((person) =>
-        mk('person', person.id, person.fullName, { panel: 'person', id: person.id }, person.groupOrPosition),
+        mk('person', person.id, person.fullName, { panel: 'person', id: person.id }, person.groupOrPosition ?? undefined),
       ),
     );
 

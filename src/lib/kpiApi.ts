@@ -201,7 +201,7 @@ export interface ScheduleSendResult {
 }
 
 export const SCHEDULE_KIND_OPTIONS: { value: ScheduleKind; label: string }[] = [
-  { value: 'kunlik', label: 'Kunlik (har kuni 19:00, o‘sha kun uchun)' },
+  { value: 'kunlik', label: 'Kunlik (har kuni 21:00, o‘sha kun uchun)' },
   { value: 'haftalik', label: 'Haftalik (dushanba 08:00)' },
   { value: 'oylik', label: 'Oylik (1-sana 08:00)' },
 ];

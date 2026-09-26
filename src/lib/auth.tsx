@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode, useRef } from 'react';
 import { ApiError, api, setAuthTokenGetter, setUnauthorizedHandler } from './apiClient';
 import { isBackendConfigured } from './config';
+import { clearReportToken } from './reportLock';
 
 export type Role = 'super-admin' | 'admin' | 'kamera-masuli';
 
@@ -282,6 +283,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   function logout() {
     const outgoingToken = state.token;
     setTwoFactorRequired(false);
+    // Hisobot kaliti shu foydalanuvchiniki — keyingi kirgan odamga qolmasin.
+    clearReportToken();
     const next: AuthState = { role: null, userName: null, token: null };
     setState(next);
     localStorage.removeItem(STORAGE_KEY);

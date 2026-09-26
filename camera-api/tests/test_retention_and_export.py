@@ -50,3 +50,27 @@ async def test_personal_data_export_needs_its_own_permission(client: AsyncClient
     assert (await client.get("/api/students-staff/export", headers=admin)).status_code == 403
     super_admin = await auth_headers(client, "admin", "admin123")
     assert (await client.get("/api/students-staff/export", headers=super_admin)).status_code == 200
+
+
+async def test_post_export_and_events_pdf_need_export_permission(client: AsyncClient, seeded):
+    """POST /export ham JSHSHIR'li o'sha faylni beradi — huquq GET bilan bir xil."""
+    admin = await auth_headers(client, "operator", "operator123")
+    res = await client.post("/api/students-staff/export", headers=admin, json={"kind": "people"})
+    assert res.status_code == 403
+    assert (await client.get("/api/events/export.pdf", headers=admin)).status_code == 403
+    super_admin = await auth_headers(client, "admin", "admin123")
+    res = await client.post("/api/students-staff/export", headers=super_admin, json={"kind": "people"})
+    assert res.status_code == 200
+
+
+async def test_only_author_or_super_admin_deletes_a_report(client: AsyncClient, db_session, seeded):
+    from app.models import Report
+
+    report = Report(period="Kunlik", period_label="Sinov", summary="", body="", created_by="Boshqa Muallif")
+    db_session.add(report)
+    await db_session.commit()
+    admin = await auth_headers(client, "operator", "operator123")
+    res = await client.delete(f"/api/reports/{report.id}", headers=admin)
+    assert res.status_code == 403 and "muallif" in res.json()["detail"]
+    super_admin = await auth_headers(client, "admin", "admin123")
+    assert (await client.delete(f"/api/reports/{report.id}", headers=super_admin)).status_code == 204

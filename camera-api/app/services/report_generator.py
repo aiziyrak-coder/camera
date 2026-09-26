@@ -79,13 +79,16 @@ async def _attendance(db: AsyncSession, start: date, end: date) -> tuple[int, in
     rows = (
         await db.execute(
             select(AttendanceRecord.status, func.count())
+            .join(StudentStaff, StudentStaff.id == AttendanceRecord.student_staff_id)
+            .where(StudentStaff.active.is_(True))
             .where(AttendanceRecord.date.between(start, end))
             .group_by(AttendanceRecord.status)
         )
     ).all()
     by_status = {status: count for status, count in rows}
-    total = sum(by_status.values())
     present = by_status.get("keldi", 0) + by_status.get("kech_keldi", 0)
+    # dam_olish (bayram, ta'til) — o'lchanmagan kun, maxrajga kirmaydi.
+    total = present + by_status.get("kelmadi", 0)
     return total, present, by_status
 
 
@@ -162,8 +165,11 @@ async def generate_rule_based_report(db: AsyncSession, period: str, today: date 
         select(func.count())
         .select_from(StudentStaff)
         .where(StudentStaff.biometrics_status == "tasdiqlangan")
+        .where(StudentStaff.active.is_(True))
     )
-    population = await db.scalar(select(func.count()).select_from(StudentStaff)) or 0
+    population = (
+        await db.scalar(select(func.count()).select_from(StudentStaff).where(StudentStaff.active.is_(True))) or 0
+    )
     reliability_short, reliability_warnings = _attendance_reliability(
         total_records, present_records, attendance_by_status, enrolled or 0, population, _working_days(start, end)
     )

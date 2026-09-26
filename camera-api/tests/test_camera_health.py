@@ -256,3 +256,48 @@ class TestSharedFrameTimestamps:
         assert set(seen) == {"cam-a"}
         assert seen["cam-a"] >= int(before) - 1
         thumbnail_cache.reset_thumbnail_cache_for_tests()
+
+
+@pytest.mark.usefixtures("seeded")
+class TestStateSurvivesRestart:
+    """Holat xotirada edi: har deploydan keyin oflayn kameralar uchun
+    ogohlantirish qayta ketardi, tiklanganlar uchun esa xabar ketmasdi."""
+
+    async def test_old_open_outage_is_not_alerted_again_and_recovery_is_announced(
+        self, db_session, a_building, monkeypatch
+    ):
+        from app.jobs import camera_health
+        from app.models import CameraOutage
+
+        sent: list[bool] = []
+
+        async def fake_notify(camera, *, online, offline_since=None):
+            sent.append(online)
+
+        monkeypatch.setattr(camera_health, "notify_camera_status", fake_notify)
+        monkeypatch.setattr(settings, "camera_offline_alert_minutes", 5)
+
+        down = Camera(
+            name="Uzoq vaqt o'chiq", ip="192.0.2.56", port=554, building_id=a_building.id,
+            zone="Z", resolution="1080p", status="faol",
+        )
+        server = await asyncio.start_server(lambda r, w: None, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        back = Camera(
+            name="Qaytgan kamera", ip="127.0.0.1", port=port, building_id=a_building.id,
+            zone="Z", resolution="1080p", status="faol",
+        )
+        db_session.add_all([down, back])
+        await db_session.flush()
+        long_ago = datetime.now(timezone.utc) - timedelta(hours=2)
+        db_session.add_all([
+            CameraOutage(camera_id=down.id, started_at=long_ago, reason="tarmoq"),
+            CameraOutage(camera_id=back.id, started_at=long_ago, reason="tarmoq"),
+        ])
+        await db_session.commit()
+
+        async with server:
+            await run_camera_health_sweep_once(db_session)
+
+        # O'chiq kamera uchun qayta "o'chdi" xabari yo'q; qaytgani uchun "tiklandi".
+        assert sent == [True]

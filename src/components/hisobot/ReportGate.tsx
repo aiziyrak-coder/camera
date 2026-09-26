@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { LockKeyhole } from 'lucide-react';
-import { api, ApiError } from '../../lib/apiClient';
+import { api, ApiError, REPORT_LOCKED_EVENT } from '../../lib/apiClient';
 import { reportToken, saveReportToken } from '../../lib/reportLock';
 import { Button, Input } from '../../ui';
 
@@ -20,6 +20,12 @@ export default function ReportGate({ children }: { children: ReactNode }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const onLocked = () => setState('locked');
+    window.addEventListener(REPORT_LOCKED_EVENT, onLocked);
+    return () => window.removeEventListener(REPORT_LOCKED_EVENT, onLocked);
+  }, []);
 
   useEffect(() => {
     if (state !== 'checking') return;

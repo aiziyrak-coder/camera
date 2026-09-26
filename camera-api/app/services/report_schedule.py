@@ -46,8 +46,10 @@ REPORTS = {
     "jadval_davomat": "Jadval bo'yicha davomat",
 }
 SEND_HOUR = 8
-# Kunlik hisobot — o'sha kunning o'zi, darslar tugagach.
-DAILY_SEND_HOUR = 19
+# Kunlik hisobot — o'sha kunning o'zi, "kelmadi" belgilangandan KEYIN
+# (attendance_absence_mark_after, standart 20:00). Ilgari 19:00 da ketardi —
+# kelmaganlar hali yozilmagan, hisobotda doim "0 kelmadi" chiqardi.
+DAILY_SEND_HOUR = 21
 LOG_KIND = "report"
 
 

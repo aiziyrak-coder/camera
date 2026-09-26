@@ -256,7 +256,10 @@ async def _attendance(db: AsyncSession, data: Data, cond) -> None:
     today = svc.today()
     status = AttendanceRecord.status
     present = status.in_(PRESENT)
-    late_min = func.coalesce(func.sum(_minutes(AttendanceRecord.check_in) - start_min).filter(
+    # Pastki chegara 0: qo'lda kiritilgan yoki boshlanish vaqti keyin
+    # o'zgartirilgan "kech_keldi" yozuvi o'rtachani manfiyga tortmasin
+    # (Policy.late_minutes va kunlik jadval ham 0 dan past bermaydi).
+    late_min = func.coalesce(func.sum(func.greatest(_minutes(AttendanceRecord.check_in) - start_min, 0)).filter(
         and_(status == "kech_keldi", AttendanceRecord.check_in.is_not(None))), 0)
     # Erta ketish bu yerda SANALMAYDI: uning qoidasi ko'rinishlar tarixiga
     # tayanadi va SQL'da takrorlanmaydi — _early_leave() ga qarang.
@@ -465,7 +468,10 @@ async def collect(db: AsyncSession, kind: str, start: date_type, end: date_type,
         cond = and_(cond, StudentStaff.id.in_([m.id for m in members]) if members else StudentStaff.id.is_(None))
 
     await _attendance(db, data, cond)
-    await _early_leave(db, data, cond)
+    if kind == "xodim":
+        # "Erta ketganlar" mezoni faqat xodimlar uchun (CRITERIA). Talabalar
+        # uchun bu 10 000 kishi × yil bo'yi ko'rinishlarni xotiraga o'qirdi.
+        await _early_leave(db, data, cond)
     if kind == "talaba":
         await _student_lessons(db, data, cond)
         await _named_events(db, data, SLEEP_CODE)
@@ -1247,8 +1253,10 @@ def build_report(data: Data, key: str, group_title: str, group_of: Callable[[Mem
     if spec is None:  # forma
         rows = [{"id": name, "name": name, "value": n, "detail": None, "headcount": None}
                 for name, n in data.coat_buildings.most_common()]
+        # drill=False: qatorlar — binolar, bo'linma emas; ustiga bosish
+        # "bolinma=<bino nomi>" filtri bilan butun hisobotni bo'shatib qo'yardi.
         report["breakdown"] = {"title": "Binolar bo'yicha", "subtitle": "Qaysi binoda necha marta qayd etilgan",
-                               "unit": "ta", "better": "down", "rows": rows}
+                               "unit": "ta", "better": "down", "rows": rows, "drill": False}
         if not rows:
             report["empty"] = _empty_state(data, key)
         return report

@@ -143,8 +143,12 @@ export default function App() {
               {/* Eski institut holati alohida ekran emas. */}
               <Route path="/holat" element={<Navigate to="/" replace />} />
 
-              <Route element={<RequirePermission permission="manageAttendance" />}>
+              {/* Ko'rish — davomatni boshqaruvchi ham, hisobot ko'ruvchi ham (backend ReadDep bilan bir xil);
+                  tahrirlash tugmalari sahifa ichida manageAttendance bilan yopiq. */}
+              <Route element={<RequirePermission anyOf={['manageAttendance', 'viewReports', 'manageLessons']} />}>
                 <Route path="/dars-jadvali" element={<DarsJadvaliPage />} />
+              </Route>
+              <Route element={<RequirePermission anyOf={['manageAttendance', 'viewReports']} />}>
                 <Route path="/talabalar" element={<FacultiesPage />} />
                 <Route path="/talabalar/fakultet/:facultyId" element={<FacultyPage />} />
                 <Route path="/talabalar/guruh/:groupName" element={<GroupPage />} />

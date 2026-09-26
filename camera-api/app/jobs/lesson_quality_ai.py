@@ -138,6 +138,10 @@ async def _lesson_gallery(db: AsyncSession, session_row: LessonSession) -> Candi
         )
     ).all()
     gallery = await matrix_from_rows(rows)
+    # Eskirganlar olib tashlanadi: kaliti dars id'si, kuniga ~230 dars —
+    # tozalanmasa kesh jarayon qayta ishga tushguncha o'sib boraverardi.
+    for stale in [k for k, (at, _g) in _gallery_cache.items() if now - at >= GALLERY_TTL_SECONDS]:
+        del _gallery_cache[stale]
     _gallery_cache[key] = (now, gallery)
     return gallery
 
@@ -418,7 +422,12 @@ async def run_lesson_quality_ai_sweep_once(
         frames = await grab_frame_pair_for_camera(camera)
         if frames is None:
             return False
-        _last_sampled[str(session_row.id)] = time.monotonic()
+        stamp = time.monotonic()
+        _last_sampled[str(session_row.id)] = stamp
+        if len(_last_sampled) > 2000:
+            # Tugagan darslar (kaliti dars id'si) — bir kundan eskisi kerak emas.
+            for stale in [k for k, at in _last_sampled.items() if stamp - at > 86400]:
+                del _last_sampled[stale]
         frame_a, frame_b = frames
         async with camera_sweep_slot(), session_factory() as db:
             row = await db.get(LessonSession, session_row.id)

@@ -110,7 +110,7 @@ _WEEKEND_FILL = PatternFill("solid", fgColor="EDEDED")
 _HEADER_FILL = PatternFill("solid", fgColor="DCE6F1")
 _THIN = Side(style="thin", color="999999")
 _BOX = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
-_TOTAL_COLUMNS = [("present", "Keldi"), ("late", "Kech keldi"), ("absent", "Kelmadi"),
+_TOTAL_COLUMNS = [("present", "O'z vaqtida"), ("late", "Kech keldi"), ("absent", "Kelmadi"),
                   ("unknown", "Ma'lumot yo'q"), ("workDays", "Ish kunlari")]
 
 

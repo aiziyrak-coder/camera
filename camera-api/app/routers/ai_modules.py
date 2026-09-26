@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_action
 from app.database import get_db
+from app.services.access_scope import event_filter
 from app.dependencies import CurrentUser, require_permission
 from app.models import AIModuleConfig, Camera, Event, ModuleCameraSuppression, User
 from app.schemas.ai_module import AIModuleOut, AIModuleUpdateIn, ModuleSopIn, ModuleSopOut, ModuleSuppressionOut
@@ -38,6 +39,9 @@ router = APIRouter(prefix="/api/ai-modules", tags=["ai-modules"])
 
 PermDep = Annotated[CurrentUser, Depends(require_permission("configureAi"))]
 # Sinov namunasini Hodisalar sahifasidagi operator ham baholaydi.
+# Ro'yxatni o'qish: bildirishnoma qoidalari ham modul nomlari va ro'yxatini
+# ko'rsatadi (NotificationsPage) — faqat configureAi bilan u bo'sh qolardi.
+ListDep = Annotated[CurrentUser, Depends(require_permission("configureAi", "manageNotifications"))]
 TrialSampleDep = Annotated[CurrentUser, Depends(require_permission("reviewEvents", "configureAi"))]
 
 # Hodisa bermaydigan, davomat yozadigan mezonlar.
@@ -148,7 +152,7 @@ def _to_out(module: AIModuleConfig, camera_count: int, stats: tuple[int, int, in
 
 
 @router.get("", response_model=list[AIModuleOut])
-async def list_ai_modules(db: Annotated[AsyncSession, Depends(get_db)], _: PermDep) -> list[AIModuleOut]:
+async def list_ai_modules(db: Annotated[AsyncSession, Depends(get_db)], _: ListDep) -> list[AIModuleOut]:
     modules = (await db.execute(select(AIModuleConfig).order_by(AIModuleConfig.code))).scalars().all()
     stats = await _review_stats(db)
     counts = await camera_counts_by_module(db)
@@ -221,7 +225,7 @@ async def restore_suppression(
 async def trial_sample(
     code: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: TrialSampleDep,
+    current_user: TrialSampleDep,
     limit: Annotated[int, Query(ge=1, le=TRIAL_SAMPLE_MAX)] = 12,
 ) -> list[EventOut]:
     """Sinov signallaridan TASODIFIY, hali baholanmagan namuna.
@@ -236,6 +240,7 @@ async def trial_sample(
             .where(Event.is_trial == true())
             .where(Event.status == "yangi")
             .where(Event.occurred_at >= since)
+            .where(event_filter(current_user))
             .order_by(func.random())
             .limit(limit)
         )

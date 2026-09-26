@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.attendance_policy import AttendancePolicy, Holiday
-from app.timezone import business_date, local_now
+from app.timezone import business_date, business_seconds, local_now
 
 CACHE_SECONDS = 30.0
 
@@ -62,10 +62,12 @@ class Policy:
         if arrived is None or not self.is_work_day(day):
             return 0
         arrived = arrived.replace(second=0, microsecond=0)
-        if arrived <= self.late_after(person_type):
+        # Ish kuni 06:00 da boshlanadi: 01:00 dagi kelish — kunning oxiri
+        # (juda kech), "erta tong" emas (business_seconds).
+        if business_seconds(arrived) <= business_seconds(self.late_after(person_type)):
             return 0
         start = self.start_for(person_type)
-        return (arrived.hour * 60 + arrived.minute) - (start.hour * 60 + start.minute)
+        return (business_seconds(arrived) - business_seconds(start)) // 60
 
     def arrival_status(self, arrived: time_type, person_type: str | None, day: date_type | None = None) -> str:
         return "kech_keldi" if self.late_minutes(arrived, person_type, day) > 0 else "keldi"
@@ -147,16 +149,18 @@ def early_leave_verdict(
     if not rule.is_work_day(day):
         return EARLY_NA
     moment = now or local_now()
-    if day is not None and day >= business_date(moment) and moment.time() < rule.work_end:
+    work_end = business_seconds(rule.work_end)
+    if day is not None and day >= business_date(moment) and business_seconds(moment.time()) < work_end:
         # Kun hali tugamagan — odam binoda bo'lishi mumkin.
         return EARLY_NA
     if check_out is None or check_in is None:
         return EARLY_UNKNOWN
-    if check_out >= rule.work_end:
+    # Yarim tundan keyingi chiqish (01:30) ham shu ish kuniga tegishli —
+    # soatlar ish kuni boshidan (06:00) o'lchanadi.
+    if business_seconds(check_out) >= work_end:
         return EARLY_NO
     if last_seen is not None and day is not None:
-        exit_moment = datetime.combine(day, check_out)
-        if datetime.combine(day, last_seen) > exit_moment + EXIT_SIGHTING_TOLERANCE:
+        if business_seconds(last_seen) - business_seconds(check_out) > EXIT_SIGHTING_TOLERANCE.total_seconds():
             # Chiqishdan keyin ham ko'rilgan — ketmagan.
             return EARLY_NO
     # Qo'lda kiritilgan yozuvda kamera ko'rinishlari talab qilinmaydi:
@@ -164,9 +168,7 @@ def early_leave_verdict(
     # unga ham tegishli — 12:37-12:42 "erta ketdi" emas.
     if source != "qolda" and (sightings is None or sightings < MIN_SIGHTINGS_TO_JUDGE):
         return EARLY_UNKNOWN
-    presence_minutes = (
-        datetime.combine(date_type.min, check_out) - datetime.combine(date_type.min, check_in)
-    ).total_seconds() / 60
+    presence_minutes = (business_seconds(check_out) - business_seconds(check_in)) / 60
     if presence_minutes < settings.attendance_early_leave_min_presence_minutes:
         # Bir marta ko'rinib, qaytib ko'rinmagan odam — bu "erta ketdi"
         # emas, "kamera uni yo'qotdi".

@@ -11,12 +11,12 @@ from typing import Annotated, Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.dependencies import CurrentUser, require_permission
+from app.dependencies import CurrentUser, has_any_permission, require_permission
 from app.models import Event
 from app.routers.situation import _uuid_or_404
 from app.schemas.situation import (
@@ -36,6 +36,7 @@ from app.schemas.situation import (
     WallUnitOut,
 )
 from app.services import situation as svc, situation_analytics as an
+from app.services.access_scope import event_filter, is_restricted
 from app.services.event_scope import OPERATOR_EVENTS
 from app.services.event_status import OPEN_STATUSES
 from app.timezone import local_now
@@ -193,9 +194,36 @@ async def enrollment_missing(group_name: str, db: DbDep, _: ReadDep) -> EnrollMi
 # ─────────────────────────────────────────── g. devor ekrani
 
 @router.get("/wall", response_model=WallOut)
-async def wall(db: DbDep, _: ReadDep) -> WallOut:
-    """Devor ekrani uchun bitta ixcham javob (15–30 soniyada bir so'rov)."""
-    return await an.cached(("wall", svc.today()), lambda: _build_wall(db))
+async def wall(db: DbDep, current_user: ReadDep) -> WallOut:
+    """Devor ekrani uchun bitta ixcham javob (15–30 soniyada bir so'rov).
+
+    Kesh umumiy (davomat hamma uchun bir xil), lekin yuqori xavfli
+    hodisalar — faqat reviewEvents egasiga va uning bino doirasida."""
+    out = await an.cached(("wall", svc.today()), lambda: _build_wall(db))
+    if not await has_any_permission(db, current_user.role, ("reviewEvents",)):
+        return out.model_copy(update={"high_events": [], "high_open": 0})
+    if is_restricted(current_user):
+        events, high_open = await _high_events(db, current_user)
+        return out.model_copy(update={"high_events": events, "high_open": high_open})
+    return out
+
+
+async def _high_events(db: AsyncSession, user: CurrentUser | None) -> tuple[list[WallEventOut], int]:
+    scope = event_filter(user)
+    base = (
+        select(Event.id, Event.module_name, Event.camera_name, Event.building, Event.occurred_at, Event.status)
+        .where(OPERATOR_EVENTS)
+        .where(Event.status.in_(OPEN_STATUSES))
+        .where(Event.severity == "yuqori")
+        .where(scope)
+    )
+    rows = (await db.execute(base.order_by(Event.occurred_at.desc()).limit(5))).all()
+    total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
+    return [
+        WallEventOut(id=str(eid), module_name=module, camera_name=camera, building=building,
+                     time=svc.hm(occurred) or "", status=event_status)
+        for eid, module, camera, building, occurred, event_status in rows
+    ], int(total)
 
 
 # Devor ekranidagi reyting/"diqqat markazida" uchun eng kam o'lchangan

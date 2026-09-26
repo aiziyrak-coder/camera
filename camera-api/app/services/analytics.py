@@ -188,7 +188,9 @@ def _population_out(
                 keldi=keldi,
                 kech_keldi=kech,
                 kelmadi=kelmadi,
-                rate=_pct(keldi + kech, sum(counts.values())),
+                # Maxraj — o'lchangan ish kunlari (dam_olish kirmaydi), hisobot
+                # sahifasi va "Institut holati" bilan bir xil.
+                rate=_pct(keldi + kech, keldi + kech + kelmadi),
             )
         )
 
@@ -203,7 +205,10 @@ def _population_out(
                 total=sum(c.values()),
                 present=c.get("keldi", 0) + c.get("kech_keldi", 0),
                 late=c.get("kech_keldi", 0),
-                rate=_pct(c.get("keldi", 0) + c.get("kech_keldi", 0), sum(c.values())),
+                rate=_pct(
+                    c.get("keldi", 0) + c.get("kech_keldi", 0),
+                    c.get("keldi", 0) + c.get("kech_keldi", 0) + c.get("kelmadi", 0),
+                ),
             )
             for name, c in faculty_counts.items()
         ),
@@ -222,7 +227,7 @@ def _population_out(
         present=present,
         late=late,
         absent=totals["kelmadi"],
-        rate=_pct(present, records),
+        rate=_pct(present, present + totals["kelmadi"]),
         late_share=_pct(late, present),
         avg_arrival=_minutes_to_hhmm(avg_minutes) if avg_minutes is not None else None,
         by_day=by_day,
@@ -236,7 +241,8 @@ async def _attendance(
     db: AsyncSession, start: date, end: date, days: list[date], working_days: int
 ) -> tuple[AttendanceAnalyticsOut, dict[str, dict[str, int]]]:
     person = StudentStaff.id == AttendanceRecord.student_staff_id
-    in_range = AttendanceRecord.date.between(start, end)
+    # Faqat faol odamlar — hisobot, "Institut holati" va reyting bilan bir xil to'plam.
+    in_range = and_(AttendanceRecord.date.between(start, end), StudentStaff.active.is_(True))
 
     day_rows = (
         await db.execute(
@@ -273,9 +279,9 @@ async def _attendance(
     ).all()
     people_rows = (
         await db.execute(
-            select(StudentStaff.type, StudentStaff.biometrics_status, func.count()).group_by(
-                StudentStaff.type, StudentStaff.biometrics_status
-            )
+            select(StudentStaff.type, StudentStaff.biometrics_status, func.count())
+            .where(StudentStaff.active.is_(True))
+            .group_by(StudentStaff.type, StudentStaff.biometrics_status)
         )
     ).all()
 

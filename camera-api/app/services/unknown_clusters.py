@@ -175,7 +175,12 @@ async def _load_group(db: AsyncSession, sighting_ids: list[str]) -> list[Unknown
 
 
 async def assign_group(
-    db: AsyncSession, sighting_ids: list[str], person: StudentStaff, user_id: uuid.UUID | None
+    db: AsyncSession,
+    sighting_ids: list[str],
+    person: StudentStaff,
+    user_id: uuid.UUID | None,
+    *,
+    can_enroll: bool = False,
 ) -> tuple[str, int]:
     """Guruhni odamga biriktiradi. Qaytaradi: (asosiy|galereya, galereyaga
     qo'shilgan qo'shimcha namunalar soni). Commit — chaqiruvchida.
@@ -204,7 +209,7 @@ async def assign_group(
             raise ResolveError("Guruhdagi yuzlar bir odamniki emasga o'xshaydi — ularni alohida ko'rib chiqing")
     others = [(row, vectors[row.id]) for row in rows if row is not best]
 
-    kind = await assign_to_person(db, best, person, user_id)
+    kind = await assign_to_person(db, best, person, user_id, can_enroll=can_enroll)
     anchor_raw = person.biometric_embedding
     anchor = _unit(json.loads(anchor_raw)) if anchor_raw else None
     added = 0

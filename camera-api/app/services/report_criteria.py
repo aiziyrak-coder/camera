@@ -85,8 +85,19 @@ class Period:
     def bounds_utc(self) -> tuple[datetime, datetime]:
         """Mahalliy kun chegaralari UTC'da — tashriflar timestamp bo'yicha."""
         start = day_start(self.start)
-        end = datetime.combine(self.end, time.max, tzinfo=INSTITUTE_TZ)
+        # Ish kuni ertasi 06:00 gacha: 00:00–05:59 dagi kuzatuvlar ham shu davrniki.
+        end = day_start(self.end + timedelta(days=1)) - timedelta(microseconds=1)
         return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+
+
+def _working_days(period: Period) -> int:
+    """Davrdagi ish kunlari (bugungacha): yakshanba va bayramlar kirmaydi."""
+    from app.services.attendance_policy import current_policy
+
+    policy = current_policy()
+    last = min(period.end, business_today())
+    days = (last - period.start).days + 1
+    return sum(1 for i in range(max(0, days)) if policy.is_work_day(period.start + timedelta(days=i)))
 
 
 def resolve_period(key: str) -> Period:
@@ -119,7 +130,7 @@ async def _attendance_counts(db: AsyncSession, population: str, period: Period) 
         await db.execute(
             select(AttendanceRecord.status, func.count())
             .join(StudentStaff, StudentStaff.id == AttendanceRecord.student_staff_id)
-            .where(StudentStaff.type == population)
+            .where(StudentStaff.type == population, StudentStaff.active.is_(True))
             .where(AttendanceRecord.date.between(period.start, period.end))
             .group_by(AttendanceRecord.status)
         )
@@ -133,7 +144,9 @@ async def _seen_people(db: AsyncSession, population: str, period: Period) -> int
         await db.scalar(
             select(func.count(func.distinct(PresenceVisit.student_staff_id)))
             .join(StudentStaff, StudentStaff.id == PresenceVisit.student_staff_id)
-            .where(StudentStaff.type == population)
+            .where(StudentStaff.type == population, StudentStaff.active.is_(True))
+            # "Ko'rindi" + "Ko'rinmadi" = ro'yxatdan o'tganlar (ro'yxat bilan bir xil to'plam).
+            .where(StudentStaff.biometrics_status == "tasdiqlangan")
             .where(PresenceVisit.first_seen_at.between(start, end))
         )
     ) or 0
@@ -141,13 +154,13 @@ async def _seen_people(db: AsyncSession, population: str, period: Period) -> int
 
 async def _people_counts(db: AsyncSession, population: str) -> tuple[int, int]:
     total = (
-        await db.scalar(select(func.count()).select_from(StudentStaff).where(StudentStaff.type == population))
+        await db.scalar(select(func.count()).select_from(StudentStaff).where(StudentStaff.type == population, StudentStaff.active.is_(True)))
     ) or 0
     enrolled = (
         await db.scalar(
             select(func.count())
             .select_from(StudentStaff)
-            .where(StudentStaff.type == population)
+            .where(StudentStaff.type == population, StudentStaff.active.is_(True))
             .where(StudentStaff.biometrics_status == "tasdiqlangan")
         )
     ) or 0
@@ -356,7 +369,7 @@ def _people_base(population: str):
     return (
         select(StudentStaff)
         .options(selectinload(StudentStaff.faculty))
-        .where(StudentStaff.type == population)
+        .where(StudentStaff.type == population, StudentStaff.active.is_(True))
     )
 
 
@@ -364,7 +377,7 @@ async def _attendance_people_ids(db: AsyncSession, population: str, period: Peri
     stmt = (
         select(AttendanceRecord.student_staff_id)
         .join(StudentStaff, StudentStaff.id == AttendanceRecord.student_staff_id)
-        .where(StudentStaff.type == population)
+        .where(StudentStaff.type == population, StudentStaff.active.is_(True))
         .where(AttendanceRecord.date.between(period.start, period.end))
     )
     if bucket in ("keldi", "kech_keldi", "kelmadi"):
@@ -377,7 +390,8 @@ async def _visit_people_ids(db: AsyncSession, population: str, period: Period) -
     stmt = (
         select(PresenceVisit.student_staff_id)
         .join(StudentStaff, StudentStaff.id == PresenceVisit.student_staff_id)
-        .where(StudentStaff.type == population)
+        .where(StudentStaff.type == population, StudentStaff.active.is_(True))
+        .where(StudentStaff.biometrics_status == "tasdiqlangan")
         .where(PresenceVisit.first_seen_at.between(start, end))
         .distinct()
     )
@@ -589,7 +603,7 @@ async def person_detail(db: AsyncSession, person: StudentStaff, period: Period) 
         present_days=present,
         late_days=late,
         absent_days=absent,
-        working_days=period.days,
+        working_days=_working_days(period),
         visits=len(visits),
         cameras=len({visit.camera_id for visit in visits}),
         buildings=building_names,

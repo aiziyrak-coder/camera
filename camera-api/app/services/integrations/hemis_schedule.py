@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
-from sqlalchemy import and_, delete, exists, select
+from sqlalchemy import and_, delete, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -42,6 +42,9 @@ from app.services.name_matching import name_key
 from app.timezone import INSTITUTE_TZ, local_now
 
 logger = logging.getLogger("app.integrations.hemis_schedule")
+
+#: Shu maydonlardan biri o'zgarsa dars punktualligi qayta tekshiriladi.
+RECHECK_ATTRS = frozenset({"date", "scheduled_start_time", "camera_id", "teacher_id"})
 
 SCHEDULE_ENDPOINT = "schedule-list"
 
@@ -237,18 +240,42 @@ async def sync_schedule(
             db.add(LessonSession(hemis_id=hemis_id, **values))
             stats["created"] += 1
             continue
-        changed = False
+        changed_attrs = set()
         for attr, value in values.items():
             if getattr(row, attr) != value:
                 setattr(row, attr, value)
-                changed = True
-        if changed and ("scheduled_start_time" in values and row.punctuality_checked_at is not None):
-            # Vaqt/xona o'zgargan bo'lishi mumkin — punktuallik qayta tekshirilsin.
+                changed_attrs.add(attr)
+        changed = bool(changed_attrs)
+        if changed_attrs & RECHECK_ATTRS and row.punctuality_checked_at is not None:
+            # Vaqt, xona yoki o'qituvchi o'zgargan — punktuallik qayta tekshirilsin.
+            # Fan nomi yoki guruh matni o'zgarsa — yo'q: aks holda o'sha dars
+            # uchun "kelmadi" xabari ikkinchi marta ketardi.
             row.punctuality_checked_at = None
         stats["updated" if changed else "unchanged"] += 1
 
     # HEMIS'dan olib tashlangan KELAJAKDAGI darslar (davomati yo'q) — o'chiriladi.
     today = local_now().date()
+    upcoming = (
+        await db.execute(
+            select(func.count())
+            .select_from(LessonSession)
+            .where(
+                LessonSession.hemis_id.is_not(None),
+                LessonSession.date >= max(first, today),
+                LessonSession.date <= last,
+            )
+        )
+    ).scalar_one()
+    fetched_upcoming = sum(1 for lesson in lessons.values() if max(first, today) <= lesson.date <= last)
+    if upcoming >= 50 and fetched_upcoming < upcoming * 0.5:
+        # HEMIS javobi chala kelgan bo'lishi mumkin (bo'sh sahifa, uzilish):
+        # bir urinishda kelajakdagi jadvalning yarmidan ko'pini o'chirmaymiz.
+        logger.warning(
+            "schedule fetch looks partial — stale lessons not deleted",
+            extra={"stored": upcoming, "fetched": fetched_upcoming},
+        )
+        stats["deactivated"] = 0
+        return stats
     stale = (
         delete(LessonSession)
         .where(

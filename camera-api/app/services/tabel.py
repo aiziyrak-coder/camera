@@ -100,7 +100,9 @@ def build_cells(member: hisobot.Member, days: list[date_type], records: dict[dat
             cells.append(_cell(day, mark=MARK_OFF, title="dam olish kuni"))
             off += 1
             continue
-        if not member.enrolled:
+        if not member.enrolled and rec is None:
+            # Yuzsiz odamning ham turniket yoki qo'lda kiritilgan yozuvi bo'lishi
+            # mumkin — u bor bo'lsa hisobot sahifasi kabi hisobga olinadi.
             cells.append(_cell(day, mark=MARK_UNKNOWN, title="yuzi tizimga kiritilmagan"))
             unknown += 1
             continue

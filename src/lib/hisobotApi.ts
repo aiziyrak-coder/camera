@@ -81,6 +81,8 @@ export interface HisobotReport {
       unit: string;
       better: 'up' | 'down';
       rows: HisobotBreakdownRow[];
+      /** false — qatorlar bo'linma emas (masalan binolar), ustiga bosib filtrlanmaydi. */
+      drill?: boolean;
     } | null;
     columns: HisobotColumn[];
     people: HisobotPerson[];

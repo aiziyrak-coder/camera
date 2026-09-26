@@ -28,6 +28,7 @@ from app.schemas.person_locator import (
     RouteStopOut,
 )
 from app.services import face_matching, face_recognition
+from app.services.access_scope import camera_column_filter
 from app.services.person_search import VisitRow, group_stops, score_embeddings, top_people
 from app.timezone import INSTITUTE_TZ, local_now
 from app.timezone import business_today, day_start
@@ -44,7 +45,7 @@ def _initials(name: str) -> str:
 async def search_person_location(
     body: PersonLocationSearchIn,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: ReadDep,
+    current_user: ReadDep,
 ) -> list[PersonLocationOut]:
     """Ism bo'yicha faqat faol shaxslar va ularning eng so'nggi tashrifini qaytaradi."""
     latest = (
@@ -56,6 +57,8 @@ async def search_person_location(
             .over(partition_by=PresenceVisit.student_staff_id, order_by=PresenceVisit.last_seen_at.desc())
             .label("rank"),
         )
+        # Bino doirasi: cheklangan foydalanuvchi faqat o'z binolaridagi kuzatuvni ko'radi.
+        .where(camera_column_filter(current_user, PresenceVisit.camera_id))
         .subquery()
     )
     terms = [term for term in body.query.split() if term]
@@ -178,6 +181,7 @@ async def search_by_photo(
                 await db.execute(
                     select(PresenceVisit.student_staff_id, func.max(PresenceVisit.last_seen_at))
                     .where(PresenceVisit.student_staff_id.in_(ids))
+                    .where(camera_column_filter(current_user, PresenceVisit.camera_id))
                     .group_by(PresenceVisit.student_staff_id)
                 )
             ).all()
@@ -212,6 +216,7 @@ async def search_by_photo(
             )
             .outerjoin(Camera, Camera.id == UnknownSighting.camera_id)
             .where(UnknownSighting.day >= date_from, UnknownSighting.day <= date_to)
+            .where(camera_column_filter(current_user, UnknownSighting.camera_id))
         )
     ).all()
     scores = await asyncio.to_thread(score_embeddings, embedding, [row.embedding for row in rows])
@@ -253,7 +258,7 @@ async def search_by_photo(
 async def person_route(
     person_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: ReadDep,
+    current_user: ReadDep,
     sana: Annotated[str | None, Query()] = None,
 ) -> PersonRouteOut:
     """Odamning bir kunlik yo'li: kameralar bo'yicha to'xtashlar, vaqt tartibida."""
@@ -279,6 +284,7 @@ async def person_route(
                 PresenceVisit.student_staff_id == pid,
                 PresenceVisit.last_seen_at >= start,
                 PresenceVisit.first_seen_at < end,
+                camera_column_filter(current_user, PresenceVisit.camera_id),
             )
             .order_by(PresenceVisit.first_seen_at)
         )

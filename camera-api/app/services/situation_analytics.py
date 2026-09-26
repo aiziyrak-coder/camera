@@ -130,7 +130,9 @@ async def daily(db: AsyncSession, type_: str, start: date_type, end: date_type) 
         for d, p, l, a, off, s, n in rows.all()
     }
     today = svc.today()
-    if start <= today <= end:
+    # Dam olish kuni / bayram — hech kim "kutilmoqda" emas (situation.pending_state):
+    # aks holda yakshanba KPI maxrajiga ~700 xodim qo'shilib, foiz 0% bo'lardi.
+    if start <= today <= end and svc.pending_state(today) is True:
         # Bugun: yuzi tasdiqlangan, lekin hali yozuvi yo'qlar "kutilmoqda".
         no_record = ~(
             select(AttendanceRecord.id)

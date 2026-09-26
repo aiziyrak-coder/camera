@@ -257,7 +257,7 @@ function Console() {
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
         units={[]}
-        people={canAttendance}
+        people={canPeople}
         cameras={canLive}
         onOpen={openTarget}
       />

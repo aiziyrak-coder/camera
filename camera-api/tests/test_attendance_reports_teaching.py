@@ -251,7 +251,10 @@ class TestReports:
         # containers run in UTC, so between 19:00 and midnight UTC the
         # two dates differ and recording against date.today() would file
         # the record under a day the report does not cover.
-        today = local_now().date().isoformat()
+        # Ish kuni 06:00 da boshlanadi: 00:00–05:59 da kalendar sanasi ertangi kun.
+        from app.timezone import business_today
+
+        today = business_today().isoformat()
         await client.post(
             "/api/attendance",
             headers=headers,

@@ -93,13 +93,18 @@ function QueueTab({ onPending }: { onPending: (n: number | null) => void }) {
   const [day, setDay] = useState(today);
   const cardRefs = useRef<Map<string, HTMLElement>>(new Map());
 
+  const resolvedIds = useRef(new Set<string>());
   useEffect(() => {
     if (!isBackendConfigured) return;
     const controller = new AbortController();
     setItems(null);
     getReviewQueue({ sana: day, holat: 'kutilmoqda', limit: 100 }, { signal: controller.signal })
       .then((res) => {
-        setItems(res.items);
+        // Hal qilingan (yoki so'rovi hali yo'lda) kartalar qayta chiqmasin:
+        // oxirgi karta hal qilinganda navbat darhol qayta so'raladi, server
+        // esa hali POST'ni qayta ishlamagan bo'lishi mumkin.
+        const done = resolvedIds.current;
+        setItems(res.items.filter((row) => !done.has(row.id)));
         setPending(res.pending);
         setError(null);
       })
@@ -126,9 +131,11 @@ function QueueTab({ onPending }: { onPending: (n: number | null) => void }) {
         return next;
       });
       setPending((n) => (n === null ? n : Math.max(0, n - 1)));
+      resolvedIds.current.add(item.id);
       (action === 'confirm' ? confirmReview(item.id) : rejectReview(item.id)).then((res) => {
         if (action === 'confirm' && res?.message) toast.success(res.message);
       }).catch((err) => {
+        resolvedIds.current.delete(item.id);
         setItems((prev) => {
           if (!prev) return prev;
           const next = [...prev];

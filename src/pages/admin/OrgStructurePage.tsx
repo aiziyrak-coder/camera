@@ -408,6 +408,14 @@ export default function OrgStructurePage() {
       cell: (n) => <CodeText className="text-[12px] text-danger">{n.absent}</CodeText>,
     },
     {
+      key: 'notYet',
+      header: 'Kutilmoqda',
+      align: 'right',
+      width: '6.5rem',
+      hideOnMobile: true,
+      cell: (n) => <CodeText className="text-[12px] text-warning">{n.notYet}</CodeText>,
+    },
+    {
       key: 'noData',
       header: "Ma'lumot yo'q",
       align: 'right',

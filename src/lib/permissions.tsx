@@ -117,6 +117,9 @@ interface PermissionsContextValue {
 
 const PermissionsContext = createContext<PermissionsContextValue | null>(null);
 
+/** /api/permissions yuklanmasa — qayta urinish oraliqlari. */
+const PERMISSION_RETRY_MS = [2000, 5000, 15000, 30000];
+
 /**
  * Backend ulangan bo'lsa huquqlar matritsasi GET /api/permissions'dan olinadi
  * va tahrirlash PATCH /api/permissions/{key} orqali serverga yoziladi — bu
@@ -133,16 +136,36 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isBackendConfigured || !token) return;
     let cancelled = false;
-    api
-      .get<PermissionMatrix>('/api/permissions', token)
-      .then((res) => {
-        if (!cancelled) setRemoteMatrix(res);
-      })
-      .catch(() => {
-        /* ulanish muvaffaqiyatsiz — standart matritsa bilan davom etamiz */
-      });
+    let timer: number | undefined;
+    let attempt = 0;
+    // Bir martalik xato (timeout, qisqa uzilish) ilgari sahifa qayta
+    // yuklanguncha STANDART matritsani qoldirardi: sozlangan huquqlar
+    // o'rniga keraksiz tugmalar (403) ko'rinardi yoki kerakli bo'limlar
+    // yo'qolardi. Endi — kechikish bilan qayta urinish va oynaga qaytganda
+    // yangilash (Super Admin matritsani o'zgartirgan bo'lishi mumkin).
+    const load = () => {
+      window.clearTimeout(timer);
+      api
+        .get<PermissionMatrix>('/api/permissions', token)
+        .then((res) => {
+          if (cancelled) return;
+          attempt = 0;
+          setRemoteMatrix(res);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          const delay = PERMISSION_RETRY_MS[Math.min(attempt, PERMISSION_RETRY_MS.length - 1)];
+          attempt += 1;
+          timer = window.setTimeout(load, delay);
+        });
+    };
+    load();
+    const onFocus = () => load();
+    window.addEventListener('focus', onFocus);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
+      window.removeEventListener('focus', onFocus);
     };
   }, [token]);
 

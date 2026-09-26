@@ -28,6 +28,7 @@ from app.models import Camera, CameraOutage
 from app.schemas.base import CamelModel
 from app.services import camera_health_dashboard as dash
 from app.services import runtime_snapshot
+from app.services.access_scope import camera_filter, ensure_camera_allowed
 from app.services.recording import rec_path_name
 from app.services.video_gateway import _path_name
 
@@ -104,13 +105,17 @@ def _state(camera: Camera) -> CameraState:
 
 
 @router.get("", response_model=DashboardOut)
-async def camera_health_dashboard(_user: HealthDep, db: DbDep) -> DashboardOut:
+async def camera_health_dashboard(user: HealthDep, db: DbDep) -> DashboardOut:
     now = datetime.now(timezone.utc)
     week_ago = now - timedelta(days=7)
     day_ago = now - timedelta(days=1)
 
     cameras = (
-        (await db.execute(select(Camera).where(Camera.status == "faol").order_by(Camera.name))).scalars().unique().all()
+        (
+            await db.execute(
+                select(Camera).where(Camera.status == "faol").where(camera_filter(user)).order_by(Camera.name)
+            )
+        ).scalars().unique().all()
     )
     outages = (
         (
@@ -205,13 +210,14 @@ async def _safe_views() -> dict:
 @router.get("/{camera_id}/uzilishlar", response_model=OutageListOut)
 async def camera_outages(
     camera_id: uuid.UUID,
-    _user: HealthDep,
+    user: HealthDep,
     db: DbDep,
     days: Annotated[int, Query(alias="kun", ge=1, le=90)] = 30,
 ) -> OutageListOut:
     camera = await db.get(Camera, camera_id)
     if camera is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
+    ensure_camera_allowed(user, camera)
     now = datetime.now(timezone.utc)
     since = now - timedelta(days=days)
     result = await db.execute(

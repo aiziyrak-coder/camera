@@ -10,6 +10,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.routers.report_lock import require_report_unlock
+from app.dependencies import fresh_attendance_policy
 from app.database import SessionLocal, engine
 from app.jobs.attendance_ai import attendance_ai_loop, stop_entrance_watchers
 from app.jobs.camera_health import camera_health_loop
@@ -121,6 +122,10 @@ def _start_platform_loops(tasks: list[asyncio.Task]) -> None:
     """Bitta nusxada ishlashi kerak bo'lgan fon vazifalari (leader'da):
     Telegram bot, SLA ogohlantirish, HEMIS sinxronlash, turniket so'rovi."""
     for loop_coro in (
+        # Tozalash ham bitta nusxada: ilgari har jarayonda (api, ai-worker,
+        # har uvicorn worker) bir paytda ishga tushib, bir xil qatorlarni
+        # o'chirishga urinardi — qulf kutish va deadlock xavfi.
+        cleanup_loop(),
         telegram_bot_loop(),
         event_escalation_loop(),
         hemis_sync_loop(),
@@ -217,8 +222,8 @@ async def lifespan(app: FastAPI):
     # See app/jobs/leader_lock.py: with WEB_CONCURRENCY>1 (multiple
     # uvicorn worker processes), only one worker should run the AI sweep
     # loops — otherwise every camera gets swept once per worker, per
-    # interval, producing duplicate writes. cleanup_loop stays ungated
-    # (its deletes are idempotent; redundant runs are harmless).
+    # interval, producing duplicate writes. cleanup_loop ham leader'da
+    # (_start_platform_loops).
     # "api" rolidagi jarayon (AI alohida ai-worker konteynerida) qulfga
     # umuman urinmaydi.
     is_leader = settings.ai_role == "all" and await try_become_leader()
@@ -229,7 +234,6 @@ async def lifespan(app: FastAPI):
     # ochadi. Ilgari yopuvchi faqat leader'da ishlardi va productionda
     # ikkinchi jarayonda 66 ta ffmpeg abadiy ochiq turardi.
     tasks = [
-        asyncio.create_task(cleanup_loop()),
         asyncio.create_task(stream_cache_reaper_loop()),
         # Har jarayon o'z ffmpeg o'quvchilari sonini e'lon qiladi — panel yig'indini ko'rsatadi.
         asyncio.create_task(process_snapshot_loop()),
@@ -281,7 +285,15 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Frontend boshqa domenda (cam.fermi.uz -> camapi.fermi.uz): ro'yxatda
+    # yo'q javob sarlavhasini brauzer JS'ga umuman ko'rsatmaydi. Bular
+    # bo'lmasa "2FA majburiy" va "hisobot qulflangan" javoblarini frontend
+    # oddiy 403 dan ajrata olmasdi.
+    expose_headers=["X-2FA-Required", "X-Report-Locked", "Content-Disposition"],
 )
+
+# Ish kunlari/bayramlar qoidasi davomat hisoblaridan oldin yangilanadi.
+_fresh_policy = [Depends(fresh_attendance_policy)]
 
 app.include_router(auth.router)
 app.include_router(unknown_sightings.router)
@@ -297,13 +309,13 @@ app.include_router(camera_health.router)
 app.include_router(events.router)
 app.include_router(face.router)
 app.include_router(ai_modules.router)
-app.include_router(attendance.router)
+app.include_router(attendance.router, dependencies=_fresh_policy)
 app.include_router(lesson_sessions.router)
-app.include_router(reports.router, dependencies=[Depends(require_report_unlock)])
+app.include_router(reports.router, dependencies=[Depends(require_report_unlock), *_fresh_policy])
 app.include_router(system.router)
 app.include_router(public.router)
 app.include_router(enrollment.router)
-app.include_router(presence.router)
+app.include_router(presence.router, dependencies=_fresh_policy)
 app.include_router(person_locator.router)
 app.include_router(notifications.router)
 app.include_router(integrations.router)
@@ -312,14 +324,14 @@ app.include_router(ptz.router)
 app.include_router(xarita.router)
 app.include_router(metrics.router)
 app.include_router(privacy.router)
-app.include_router(situation.router)
-app.include_router(situation_analytics.router)
+app.include_router(situation.router, dependencies=_fresh_policy)
+app.include_router(situation_analytics.router, dependencies=_fresh_policy)
 # Hisobotlar — alohida parol bilan (app/routers/report_lock.py).
 _report_gate = [Depends(require_report_unlock)]
 app.include_router(report_lock.router)
-app.include_router(hisobot.router, dependencies=_report_gate)
+app.include_router(hisobot.router, dependencies=[*_report_gate, *_fresh_policy])
 app.include_router(hisobot_jadval.router, dependencies=_report_gate)
-app.include_router(kpi.router, dependencies=_report_gate)
+app.include_router(kpi.router, dependencies=[*_report_gate, *_fresh_policy])
 app.include_router(attendance_policy.router)
 app.include_router(wall_views.router)
 

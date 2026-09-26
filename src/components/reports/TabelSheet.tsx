@@ -23,7 +23,9 @@ interface TabelSheetProps {
 
 /** O'ngdagi jami ustunlari — qog'ozda ham, ekranda ham bir xil tartib. */
 const TOTAL_COLUMNS: { key: keyof TabelPerson['totals']; label: string; hint: string }[] = [
-  { key: 'present', label: 'Keldi', hint: 'Kelgan kunlar soni' },
+  // «Keldi» emas: bu ustun faqat o'z vaqtida kelganlar — hisobot sahifasidagi
+  // «Keldi» esa kech kelganlarni ham o'z ichiga oladi.
+  { key: 'present', label: 'O‘z vaqtida', hint: 'O‘z vaqtida kelgan kunlar (kech kelganlar alohida)' },
   { key: 'late', label: 'Kech', hint: 'Kech kelgan kunlar soni' },
   { key: 'absent', label: 'Kelmadi', hint: 'Kelmagan kunlar soni' },
   // Ustun nomi shartli belgilar ro'yxatidagi («·  Ma'lumot yo'q») va

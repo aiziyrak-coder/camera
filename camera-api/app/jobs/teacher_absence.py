@@ -25,6 +25,7 @@ from app.config import settings
 from app.database import SessionLocal
 from app.models import AttendanceRecord, LessonSession, StudentStaff
 from app.models.presence_visit import PresenceVisit
+from app.services.attendance_policy import load_policy
 from app.services.notifications import dispatcher
 from app.services.notifications.messages import Message
 from app.timezone import business_date, INSTITUTE_TZ, local_now
@@ -44,6 +45,9 @@ async def run_teacher_absence_once(now: datetime | None = None) -> int:
     after = timedelta(minutes=settings.teacher_absence_after_minutes)
     alerted = 0
     async with SessionLocal() as db:
+        # Dam olish kuni / bayram: HEMIS jadvalida dars tursa ham xabar yo'q.
+        if not (await load_policy(db)).is_work_day(business_date(now)):
+            return 0
         lessons = list(
             (
                 await db.execute(
@@ -73,7 +77,8 @@ async def run_teacher_absence_once(now: datetime | None = None) -> int:
                     select(AttendanceRecord.student_staff_id).where(
                         AttendanceRecord.date == business_date(now),
                         AttendanceRecord.student_staff_id.in_(teacher_ids),
-                        AttendanceRecord.status.in_(("keldi", "kech_keldi")),
+                        # dam_olish — ta'til/sababli (admin kiritgan): kelmadi emas.
+                        AttendanceRecord.status.in_(("keldi", "kech_keldi", "dam_olish")),
                     )
                 )
             ).scalars()
@@ -86,12 +91,18 @@ async def run_teacher_absence_once(now: datetime | None = None) -> int:
                 )
             ).scalars()
         )
+        to_send: list[tuple[LessonSession, StudentStaff]] = []
         for lesson in lessons:
             lesson.punctuality_checked_at = datetime.now(timezone.utc)
             teacher = teachers.get(lesson.teacher_id)
             if teacher is None or teacher.biometrics_status != "tasdiqlangan" or lesson.teacher_id in present:
                 continue
             lesson.teacher_on_time = False
+            to_send.append((lesson, teacher))
+        # Avval "tekshirildi" belgisi saqlanadi, keyin xabar ketadi: commit
+        # yiqilsa keyingi aylanishda xabar ikkinchi marta ketmasin.
+        await db.commit()
+        for lesson, teacher in to_send:
             alerted += 1
             start = lesson.scheduled_start_time.astimezone(INSTITUTE_TZ).strftime("%H:%M")
             message = Message(

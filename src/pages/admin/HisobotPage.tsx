@@ -178,7 +178,8 @@ export default function HisobotPage() {
   }, [board]);
 
 
-  const canDrill = data ? drillPatch(state, '_') !== null : false;
+  // Binolar kesimi (forma) bo'linma filtri emas — ustiga bosib bo'lmaydi.
+  const canDrill = data ? data.report.breakdown?.drill !== false && drillPatch(state, '_') !== null : false;
 
   const scope = kpi ? 'Butun institut' : tabel ? sheetData?.scope : data?.scope;
   const period = kpi

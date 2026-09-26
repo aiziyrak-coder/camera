@@ -49,6 +49,8 @@ _sweep_guard = SweepGuard("camera_health")
 _offline_since: dict[str, datetime] = {}
 # camera_ids that already received an alert for the current offline streak
 _alerted: set[str] = set()
+# Xotiradagi holat bazadagi ochiq uzilishlardan bir marta tiklanganmi.
+_state_restored = False
 
 
 def is_video_flowing(last_frame_at: datetime | None) -> bool:
@@ -118,6 +120,28 @@ async def _maybe_raise_offline_alert(db: AsyncSession, camera: Camera, offline_s
     await notify_camera_status(camera, online=False, offline_since=offline_since)
 
 
+async def _restore_state_once(db: AsyncSession, now: datetime) -> None:
+    """Qayta ishga tushgandan keyin holatni camera_outages'dan tiklaydi.
+
+    Holat faqat xotirada edi: har deploy/restartda allaqachon xabar
+    berilgan oflayn kameralar uchun Telegram ogohlantirishi QAYTA ketardi,
+    tiklangan kamera uchun esa "yana ishlayapti" xabari umuman ketmasdi."""
+    global _state_restored
+    if _state_restored:
+        return
+    alert_after = timedelta(minutes=max(settings.camera_offline_alert_minutes, 0))
+    rows = (await db.execute(select(CameraOutage).where(CameraOutage.ended_at.is_(None)))).scalars().all()
+    for outage in rows:
+        camera_id = str(outage.camera_id)
+        started = outage.started_at
+        if camera_id not in _offline_since or started < _offline_since[camera_id]:
+            _offline_since[camera_id] = started
+        if now - started >= alert_after:
+            _alerted.add(camera_id)
+    # Faqat muvaffaqiyatdan keyin: so'rov yiqilsa keyingi tekshiruvda yana urinadi.
+    _state_restored = True
+
+
 def _track_offline_camera(camera: Camera, now: datetime) -> datetime:
     camera_id = str(camera.id)
     if camera_id not in _offline_since:
@@ -138,6 +162,8 @@ def reset_camera_health_state_for_tests() -> None:
     """Tests only — clears in-memory offline streak tracking between cases."""
     _offline_since.clear()
     _alerted.clear()
+    global _state_restored
+    _state_restored = False
 
 
 async def _sync_outages(
@@ -214,6 +240,11 @@ async def run_camera_health_sweep_once(db: AsyncSession) -> int:
     cameras = result.scalars().all()
 
     now = datetime.now(timezone.utc)
+    try:
+        await _restore_state_once(db, now)
+    except Exception:
+        logger.exception("camera health state restore failed")
+        await db.rollback()
     results = await asyncio.gather(*(_check_one(camera) for camera in cameras), return_exceptions=True)
     seen_at = await frames_seen_at([str(camera.id) for camera in cameras])
 

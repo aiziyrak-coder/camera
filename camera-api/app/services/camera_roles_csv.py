@@ -132,7 +132,7 @@ def _parse_room_type(value: str) -> tuple[bool, str | None]:
     return (code is not None), code
 
 
-async def import_roles_csv(db: AsyncSession, raw: bytes, *, apply: bool) -> RolesImportResult:
+async def import_roles_csv(db: AsyncSession, raw: bytes, *, apply: bool, scope=None) -> RolesImportResult:
     """CSV'ni o'qiydi, o'zgarishlarni hisoblaydi va `apply` bo'lsa kameralarga
     yozadi (commit — chaqiruvchida, audit yozuvi bilan birga)."""
     result = RolesImportResult()
@@ -144,7 +144,11 @@ async def import_roles_csv(db: AsyncSession, raw: bytes, *, apply: bool) -> Role
         )
         return result
 
-    cameras = (await db.execute(select(Camera).options(selectinload(Camera.building)))).scalars().all()
+    query = select(Camera).options(selectinload(Camera.building))
+    if scope is not None:
+        # Bino doirasi: doiradan tashqaridagi kamera "topilmadi" bo'ladi.
+        query = query.where(scope)
+    cameras = (await db.execute(query)).scalars().all()
     by_id = {str(camera.id): camera for camera in cameras}
     by_ip: dict[str, list[Camera]] = {}
     for camera in cameras:

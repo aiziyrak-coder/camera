@@ -30,7 +30,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.config import settings
 from app.database import SessionLocal
@@ -73,7 +73,9 @@ async def run_unknown_rematch_once(now: datetime | None = None) -> dict[str, int
                     UnknownSighting.day >= since,
                     UnknownSighting.face_px >= settings.unknown_rematch_min_px,
                 )
-                .order_by(UnknownSighting.first_seen_at)
+                # Eng yangisi birinchi: bugungi kelishlar (davomat uchun eng
+                # muhimi) kechagi 1500 ta tanilmagan yuz ortida qolib ketmasin.
+                .order_by(UnknownSighting.day.desc(), UnknownSighting.first_seen_at.desc())
                 .limit(BATCH)
             )
         ).scalars().all()
@@ -93,27 +95,40 @@ async def run_unknown_rematch_once(now: datetime | None = None) -> dict[str, int
             margin=1.0,
             strict_margin=settings.unknown_rematch_margin,
         )
-        cameras: dict = {}
-        for (sighting, _), match in zip(usable, graded, strict=True):
-            if match.grade != "strict" or match.person_id is None:
-                continue
-            sighting.status = "talaba"
-            sighting.person_id = uuid.UUID(str(match.person_id))
-            sighting.resolved_by = None
-            sighting.resolved_at = datetime.now(timezone.utc)
-            stats["tanildi"] += 1
-            if sighting.camera_id is None:
-                continue
-            if sighting.camera_id not in cameras:
-                cameras[sighting.camera_id] = await db.get(Camera, sighting.camera_id)
-            camera = cameras[sighting.camera_id]
-            await record_visit(db, match.person_id, sighting.camera_id, sighting.first_seen_at, match.similarity)
-            if camera is not None and is_door_camera(camera):
-                await upsert_attendance_from_recognition(
-                    db, str(match.person_id), sighting.first_seen_at, camera, off_hours_module_active=False
+        # Oddiy qiymatlar oldindan olinadi: bitta yozuv yiqilib rollback
+        # bo'lsa, ORM obyektlari eskiradi — qolganlari baribir ishlashi kerak.
+        matched = [
+            (sighting.id, sighting.camera_id, sighting.first_seen_at, match)
+            for (sighting, _), match in zip(usable, graded, strict=True)
+            if match.grade == "strict" and match.person_id is not None
+        ]
+        for sighting_id, camera_id, seen_at, match in matched:
+            try:
+                await db.execute(
+                    update(UnknownSighting)
+                    .where(UnknownSighting.id == sighting_id, UnknownSighting.status == "kutilmoqda")
+                    .values(
+                        status="talaba",
+                        person_id=uuid.UUID(str(match.person_id)),
+                        resolved_by=None,
+                        resolved_at=datetime.now(timezone.utc),
+                    )
                 )
-                stats["davomat"] += 1
-        await db.commit()
+                stats["tanildi"] += 1
+                if camera_id is not None:
+                    camera = await db.get(Camera, camera_id)
+                    await record_visit(db, match.person_id, camera_id, seen_at, match.similarity)
+                    if camera is not None and is_door_camera(camera):
+                        await upsert_attendance_from_recognition(
+                            db, str(match.person_id), seen_at, camera, off_hours_module_active=False
+                        )
+                        stats["davomat"] += 1
+                await db.commit()
+            except Exception:
+                # Bitta buzuq yozuv (masalan, odam o'chirilgan) butun
+                # navbatni har safar to'xtatib qo'ymasin.
+                await db.rollback()
+                logger.exception("unknown sighting re-match item failed", extra={"sighting_id": str(sighting_id)})
     if stats["tanildi"]:
         logger.info("unknown sightings re-matched", extra={"event": "unknown_rematch", "stats": stats})
     return stats

@@ -18,6 +18,7 @@ from app.dependencies import CurrentUser, require_permission
 from app.models import AttendanceRecord, Camera, Event, FaceReviewItem, StudentStaff
 from app.schemas.base import CamelModel
 from app.services import face_review as svc
+from app.services.access_scope import allowed_camera_ids, camera_column_filter
 from app.services.event_status import CONFIRMED_STATUSES, OPEN_STATUSES, REJECTED_STATUSES
 from app.timezone import local_now
 from app.timezone import business_today
@@ -146,6 +147,7 @@ async def list_items(
         .join(StudentStaff, StudentStaff.id == FaceReviewItem.person_id)
         .outerjoin(Camera, Camera.id == FaceReviewItem.camera_id)
         .where(FaceReviewItem.day == day)
+        .where(camera_column_filter(current_user, FaceReviewItem.camera_id))
     )
     if holat != "hammasi":
         query = query.where(FaceReviewItem.status == holat)
@@ -162,6 +164,7 @@ async def list_items(
                 select(func.count())
                 .select_from(FaceReviewItem)
                 .where(FaceReviewItem.day == day, FaceReviewItem.status == svc.PENDING, ~_already_present())
+                .where(camera_column_filter(current_user, FaceReviewItem.camera_id))
             )
         ).scalar_one()
     )
@@ -289,13 +292,16 @@ async def accuracy(
     )
 
 
-async def _load(db: AsyncSession, item_id: str) -> FaceReviewItem:
+async def _load(db: AsyncSession, item_id: str, user: CurrentUser) -> FaceReviewItem:
     try:
         key = uuid.UUID(item_id)
     except ValueError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Yozuv topilmadi")
     row = await db.get(FaceReviewItem, key)
     if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Yozuv topilmadi")
+    allowed = await allowed_camera_ids(db, user)
+    if allowed is not None and row.camera_id not in allowed:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Yozuv topilmadi")
     return row
 
@@ -312,7 +318,7 @@ async def confirm_item(
     from app.jobs.attendance_ai import upsert_attendance_from_recognition
     from app.services.presence import record_visit
 
-    row = await _load(db, item_id)
+    row = await _load(db, item_id, current_user)
     try:
         added = await svc.confirm(db, row, current_user.id)
     except svc.ReviewError as error:
@@ -352,7 +358,7 @@ async def reject_item(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: ReviewDep,
 ) -> ResolveOut:
-    row = await _load(db, item_id)
+    row = await _load(db, item_id, current_user)
     try:
         svc.reject(row, current_user.id)
     except svc.ReviewError as error:

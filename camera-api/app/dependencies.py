@@ -127,6 +127,18 @@ async def require_monitoring_access(
     return await get_current_user(request, credentials, db)
 
 
+async def fresh_attendance_policy(db: Annotated[AsyncSession, Depends(get_db)]) -> None:
+    """Ish kunlari/bayramlar qoidasini (30 s kesh) so'rovdan oldin yangilaydi.
+
+    Qoida jarayon xotirasida: uni faqat ba'zi endpointlar yuklardi, qolgan
+    jarayonlar (WEB_CONCURRENCY=2) standart qiymatlarda — Du–Sha, bayramsiz —
+    qolib, bitta sahifa bayramni "dam olish", ikkinchisi "kutilmoqda" deb
+    ko'rsatardi. get_db so'rov ichida bitta — qo'shimcha ulanish yo'q."""
+    from app.services.attendance_policy import load_policy
+
+    await load_policy(db)
+
+
 # Rol qaysi ustundan o'qiladi (app/models/permission.py).
 _PERMISSION_COLUMN = {
     "super-admin": Permission.super_admin,

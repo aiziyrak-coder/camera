@@ -86,6 +86,11 @@ async def hemis_problem(db, now: datetime) -> str | None:
     return None
 
 
+#: Tekshiruvning o'zi yiqildi — holat noma'lum: oldingi holat saqlanadi
+#: ("tiklandi" deb ham, yangi ogohlantirish deb ham yuborilmaydi).
+CHECK_FAILED = "<tekshiruv-yiqildi>"
+
+
 async def collect_problems(db, now: datetime) -> dict[str, str]:
     problems: dict[str, str] = {}
     checks = (
@@ -97,6 +102,13 @@ async def collect_problems(db, now: datetime) -> dict[str, str]:
             text = await check()
         except Exception:
             logger.warning("system check failed", extra={"check": key}, exc_info=True)
+            # Yiqilgan SQL tranzaksiyani buzadi — keyingi tekshiruvlar ishlashi uchun.
+            try:
+                await db.rollback()
+            except Exception:
+                pass
+            if key in _active:
+                problems[key] = CHECK_FAILED
             continue
         if text:
             problems[key] = text
@@ -111,6 +123,8 @@ def plan_messages(problems: dict[str, str], *, now_mono: float) -> list[Message]
     repeat = settings.system_alerts_repeat_hours * 3600
     messages: list[Message] = []
     for key, text in problems.items():
+        if text == CHECK_FAILED:
+            continue
         last = _active.get(key)
         if last is None or now_mono - last >= repeat:
             _active[key] = now_mono

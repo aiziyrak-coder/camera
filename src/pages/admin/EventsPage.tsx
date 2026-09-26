@@ -1138,7 +1138,9 @@ export default function EventsPage() {
 
       {!trialView && summary && <EventKpis summary={summary} />}
 
-      {trialView ? renderTrialBody() : renderTable()}
+      {/* Teskari oraliqda so'rov yuborilmaydi — oldingi filtr natijasini
+          "Sana oralig'i teskari" xabari ostida ko'rsatib bo'lmaydi. */}
+      {trialView ? renderTrialBody() : rangeInvalid ? null : renderTable()}
 
       <EventDrawer
         event={drawerEvent}

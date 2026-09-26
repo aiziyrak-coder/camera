@@ -91,6 +91,12 @@ async def _upload_crop(data: bytes) -> str | None:
 # kunning barcha qatorlari (1500 tagacha) o'qilib, har birining JSON vektori
 # qayta ochilardi — har kameraning har aylanishida. Endi faqat yangi qatorlar.
 _DAY_CACHE: dict = {"day": None, "ids": [], "matrix": None}
+# Kirish kameralari parallel ishlaydi (har biri o'z vazifasida): kesh
+# (ids va matritsa) bitta yozuvchi tomonidan o'qilib-yozilishi kerak —
+# aks holda ular bir-biriga mos kelmay qolib, yuz boshqa qatorga
+# qo'shilardi. Qulf commit'gacha ushlanadi: boshqa vazifa hali ko'rinmas
+# (commit qilinmagan) qatorni "o'chirilgan" deb keshni tozalamasin.
+_DAY_LOCK = asyncio.Lock()
 
 
 async def _day_vectors(db: AsyncSession, day) -> tuple[list, "np.ndarray | None"]:
@@ -141,10 +147,16 @@ async def record_unknown_faces(
     sessiyasini ochadi)."""
     if not faces:
         return 0
+    async with _DAY_LOCK:
+        return await _record_locked(db, camera, frame_bytes, faces, closest, now)
+
+
+async def _record_locked(db, camera, frame_bytes, faces, closest, now) -> int:
     moment = now or datetime.now(timezone.utc)
     day = business_today() if now is None else business_date(moment)
 
     ids, matrix = await _day_vectors(db, day)
+    replaced: list[str] = []
 
     created = 0
     for index, face in enumerate(faces):
@@ -168,6 +180,8 @@ async def record_unknown_faces(
                 crop = crop_face(frame_bytes, face.bbox, settings.unknown_crop_margin)
                 key = await _upload_crop(crop) if crop else None
                 if key:
+                    if best_row.crop_key:
+                        replaced.append(best_row.crop_key)
                     best_row.crop_key = key
                     best_row.face_px = px
                     best_row.embedding = json.dumps([round(float(v), 6) for v in vector])
@@ -199,7 +213,17 @@ async def record_unknown_faces(
         _DAY_CACHE["matrix"] = matrix
         created += 1
 
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        # Qatorlar yozilmadi — kesh bazaga mos emas, keyingi chaqiriq qayta quradi.
+        reset_day_cache_for_tests()
+        raise
+    if replaced:
+        # Almashtirilgan eski rasmlar omborda yetim qolmasin.
+        from app.storage import delete_files_quietly
+
+        await delete_files_quietly(replaced)
     return created
 
 
@@ -228,10 +252,20 @@ async def _other_lookalike(db: AsyncSession, vector: np.ndarray, exclude: uuid.U
     return best
 
 
+#: Yuzi yo'q odamga notanish yuz registrga tekshiruv uchun tushganda.
+ASSIGN_REVIEW_REASON = "Notanish yuzlar ro'yxatidan biriktirildi — rasmni tekshirib tasdiqlang"
+
+
 async def assign_to_person(
-    db: AsyncSession, sighting: UnknownSighting, person: StudentStaff, user_id: uuid.UUID | None
+    db: AsyncSession,
+    sighting: UnknownSighting,
+    person: StudentStaff,
+    user_id: uuid.UUID | None,
+    *,
+    can_enroll: bool = False,
 ) -> str:
-    """Yuzni odamga biriktiradi. Qaytaradi: "galereya" yoki "asosiy".
+    """Yuzni odamga biriktiradi. Qaytaradi: "galereya", "asosiy" yoki
+    "tekshiruvda" (yuzi yo'q odam, biriktiruvchida registerPeople yo'q).
 
     * Odamning yuzi bor — kamera namunasi galereyaga qo'shiladi (asl
       rasmga yetarli o'xshashi sharti bilan: operator xato odamni
@@ -242,6 +276,8 @@ async def assign_to_person(
     """
     if sighting.status != "kutilmoqda":
         raise ResolveError("Bu yozuv allaqachon ko'rib chiqilgan")
+    if not person.active:
+        raise ResolveError(f"{person.full_name} faol emas — yuz biriktirilmaydi")
     vector = _unit(json.loads(sighting.embedding))
     if vector is None:
         raise ResolveError("Yuz ma'lumoti buzilgan")
@@ -271,10 +307,18 @@ async def assign_to_person(
         kind = "galereya"
     else:
         person.biometric_embedding = sighting.embedding
-        person.biometrics_status = "tasdiqlangan"
         if sighting.crop_key and not person.biometric_photo_key:
             person.biometric_photo_key = sighting.crop_key
-        kind = "asosiy"
+        if can_enroll:
+            person.biometrics_status = "tasdiqlangan"
+            kind = "asosiy"
+        else:
+            # Odam ro'yxatga olish huquqi yo'q (faqat hodisalarni ko'radi):
+            # yuz darhol "tasdiqlangan" bo'lmaydi — aks holda istalgan yuzni
+            # istalgan odam nomiga yozib, davomatni soxtalashtirish mumkin edi.
+            person.biometrics_status = "kutilmoqda"
+            person.biometrics_review_reason = ASSIGN_REVIEW_REASON
+            kind = "tekshiruvda"
 
     sighting.status = "talaba"
     sighting.person_id = person.id

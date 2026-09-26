@@ -37,7 +37,7 @@ from app.database import SessionLocal
 from app.models import AIModuleConfig, AttendanceRecord, StudentStaff
 from app.services.attendance_policy import current_policy, load_policy
 from app.services.notifications import notify_absences
-from app.timezone import business_date, day_start, local_now
+from app.timezone import business_date, business_seconds, day_start, local_now
 
 logger = logging.getLogger("app.absence_marker")
 
@@ -190,12 +190,14 @@ async def run_absence_marking_once(
 
     now = local_now()  # institute-local clock, not UTC — see app/timezone.py
     today = business_date(now)
-    if now.time() < _cutoff_time():
-        return 0
+    # Ish kuni boshidan (06:00) o'lchanadi: yarim tundan keyingi dum
+    # (00:00–05:59) ham shu kunniki, belgilash o'sha paytda ham ishlaydi.
+    past_cutoff = business_seconds(now.time()) >= business_seconds(_cutoff_time())
 
     async with session_factory() as db:
         await load_policy(db)  # ish kunlari — attendance_policy
-        if not is_working_day(today):
+        # O'tgan kunlar qayta to'ldirilmaydi (test_yesterdays_absences_are_not_backfilled).
+        if not past_cutoff or not is_working_day(today):
             return 0
         return await mark_absences_for_day(db, today)
 

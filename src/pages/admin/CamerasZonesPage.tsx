@@ -119,9 +119,13 @@ const CAMERA_TABS: TabItem<CameraTabId>[] = [
 ];
 
 export default function CamerasZonesPage() {
-  const [tab] = useUrlTab(CAMERA_TABS, { defaultTab: 'royxat' });
   const { role } = useAuth();
   const { can } = usePermissions();
+  // Tanish tashxisi davomat ma'lumoti (bugun kim tanildi) — kamera mas'uliga
+  // server uni bermaydi (403), shuning uchun tab ham ko'rinmaydi.
+  const canSeeRecognition = can('manageAttendance', role) || can('viewReports', role);
+  const cameraTabs = canSeeRecognition ? CAMERA_TABS : CAMERA_TABS.filter((t) => t.id !== 'tanish');
+  const [tab] = useUrlTab(cameraTabs, { defaultTab: 'royxat' });
   /** Kamera mas'uli faqat joylashuvni to'g'rilaydi: kamera qo'shish,
    * o'chirish, zona chizish va modul biriktirish unga ko'rinmaydi —
    * backend ham ularni rad etadi (editCameraLocation huquqi). */
@@ -498,7 +502,7 @@ export default function CamerasZonesPage() {
     <Page
       title="Kameralar"
       breadcrumbs={[{ label: 'Sozlamalar' }, { label: 'Kameralar' }]}
-      tabs={CAMERA_TABS}
+      tabs={cameraTabs}
       defaultTab="royxat"
       actions={
         tab === 'tanish' ? undefined : (

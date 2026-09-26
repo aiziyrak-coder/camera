@@ -15,8 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_action
 from app.database import get_db
-from app.dependencies import CurrentUser, require_permission
+from app.dependencies import CurrentUser, has_any_permission, require_permission
 from app.models import Camera, StudentStaff, UnknownSighting
+from app.services.access_scope import allowed_camera_ids, camera_column_filter
 from app.schemas.base import CamelModel
 from app.services.unknown_clusters import assign_group, dismiss_group, lookalikes, recurring_clusters
 from app.services.unknown_sightings import ResolveError, assign_to_person, dismiss, mark_stranger
@@ -122,6 +123,7 @@ async def list_sightings(
         .outerjoin(Camera, Camera.id == UnknownSighting.camera_id)
         .outerjoin(StudentStaff, StudentStaff.id == UnknownSighting.person_id)
         .where(UnknownSighting.day == day)
+        .where(camera_column_filter(current_user, UnknownSighting.camera_id))
     )
     if holat != "hammasi":
         query = query.where(UnknownSighting.status == holat)
@@ -129,7 +131,8 @@ async def list_sightings(
         await db.execute(query.order_by(UnknownSighting.hits.desc(), UnknownSighting.last_seen_at.desc()).limit(limit))
     ).all()
 
-    total_query = select(func.count()).select_from(UnknownSighting).where(UnknownSighting.day == day)
+    scope = camera_column_filter(current_user, UnknownSighting.camera_id)
+    total_query = select(func.count()).select_from(UnknownSighting).where(UnknownSighting.day == day, scope)
     if holat != "hammasi":
         total_query = total_query.where(UnknownSighting.status == holat)
     total = int((await db.execute(total_query)).scalar_one())
@@ -138,7 +141,7 @@ async def list_sightings(
             await db.execute(
                 select(func.count())
                 .select_from(UnknownSighting)
-                .where(UnknownSighting.day == day, UnknownSighting.status == "kutilmoqda")
+                .where(UnknownSighting.day == day, UnknownSighting.status == "kutilmoqda", scope)
             )
         ).scalar_one()
     )
@@ -214,6 +217,38 @@ def _crop_urls(rows: list[UnknownSighting], limit: int = 6) -> list[str]:
     return urls
 
 
+class PersonPickOut(CamelModel):
+    id: str
+    full_name: str
+    group_or_position: str
+    biometrics_status: str
+
+
+@router.get("/odamlar", response_model=list[PersonPickOut])
+async def pick_person(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: ReviewDep,
+    q: Annotated[str, Query(min_length=2, max_length=100)],
+    limit: Annotated[int, Query(ge=1, le=20)] = 8,
+) -> list[PersonPickOut]:
+    """Yuzni kimga biriktirish — ism bo'yicha qisqa qidiruv (faqat ism va
+    guruh). Reestr qidiruvi registerPeople talab qiladi; hodisalarni
+    ko'ruvchi operator u holda hech kimni topa olmasdi."""
+    stmt = select(StudentStaff).where(StudentStaff.active.is_(True))
+    for word in q.replace("’", "'").replace("ʻ", "'").split():
+        stmt = stmt.where(StudentStaff.full_name.ilike(f"%{word}%"))
+    rows = (await db.execute(stmt.order_by(StudentStaff.full_name).limit(limit))).scalars().all()
+    return [
+        PersonPickOut(
+            id=str(p.id),
+            full_name=p.full_name,
+            group_or_position=p.group_or_position or "",
+            biometrics_status=p.biometrics_status,
+        )
+        for p in rows
+    ]
+
+
 @router.get("/takroriy", response_model=ClusterListOut)
 async def list_recurring(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -225,6 +260,10 @@ async def list_recurring(
     """Takroriy notanishlar — bir odam bo'yicha guruhlangan, eng ko'p KUN
     ko'ringani birinchi (app/services/unknown_clusters.py)."""
     clusters = await recurring_clusters(db, days=kun, min_days=min_kun, limit=limit)
+    allowed = await allowed_camera_ids(db, current_user)
+    if allowed is not None:
+        # Guruhda doiradan tashqaridagi kamera yuzi bo'lsa — butun guruh ko'rsatilmaydi.
+        clusters = [c for c in clusters if all(row.camera_id in allowed for row in c.rows)]
     camera_ids = {row.camera_id for cluster in clusters for row in cluster.rows if row.camera_id}
     names = {}
     if camera_ids:
@@ -258,7 +297,10 @@ async def list_recurring(
     pending = int(
         (
             await db.execute(
-                select(func.count()).select_from(UnknownSighting).where(UnknownSighting.status == "kutilmoqda")
+                select(func.count())
+                .select_from(UnknownSighting)
+                .where(UnknownSighting.status == "kutilmoqda")
+                .where(camera_column_filter(current_user, UnknownSighting.camera_id))
             )
         ).scalar_one()
     )
@@ -282,8 +324,10 @@ async def assign_recurring(
         person = None
     if person is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Odam topilmadi")
+    await _ensure_group_in_scope(db, current_user, body.sighting_ids)
+    can_enroll = await has_any_permission(db, current_user.role, ("registerPeople",))
     try:
-        kind, added = await assign_group(db, body.sighting_ids, person, current_user.id)
+        kind, added = await assign_group(db, body.sighting_ids, person, current_user.id, can_enroll=can_enroll)
     except ResolveError as error:
         await db.rollback()
         raise HTTPException(status.HTTP_409_CONFLICT, str(error))
@@ -295,6 +339,11 @@ async def assign_recurring(
         "Xavfsizlik",
     )
     await db.commit()
+    if kind == "tekshiruvda":
+        return ClusterActionOut(
+            message=f"{person.full_name}: yuz registrga tekshiruvga yuborildi — tasdiqlangach kamera uni taniydi",
+            count=len(body.sighting_ids),
+        )
     first = "yuzi tizimga kiritildi" if kind == "asosiy" else "yangi yuz namunasi qo'shildi"
     extra = f", yana {added} ta burchak galereyaga" if added else ""
     return ClusterActionOut(
@@ -310,6 +359,7 @@ async def dismiss_recurring(
 ) -> ClusterActionOut:
     if not body.sighting_ids or len(body.sighting_ids) > 500:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Guruh bo'sh yoki juda katta")
+    await _ensure_group_in_scope(db, current_user, body.sighting_ids)
     try:
         count = await dismiss_group(db, body.sighting_ids, current_user.id)
     except ResolveError as error:
@@ -319,7 +369,7 @@ async def dismiss_recurring(
     return ClusterActionOut(message="O'tkazib yuborildi", count=count)
 
 
-async def _load(db: AsyncSession, sighting_id: str) -> UnknownSighting:
+async def _load(db: AsyncSession, sighting_id: str, user: CurrentUser) -> UnknownSighting:
     try:
         key = uuid.UUID(sighting_id)
     except ValueError:
@@ -327,7 +377,25 @@ async def _load(db: AsyncSession, sighting_id: str) -> UnknownSighting:
     row = await db.get(UnknownSighting, key)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Yozuv topilmadi")
+    allowed = await allowed_camera_ids(db, user)
+    if allowed is not None and row.camera_id not in allowed:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Yozuv topilmadi")
     return row
+
+
+async def _ensure_group_in_scope(db: AsyncSession, user: CurrentUser, sighting_ids: list[str]) -> None:
+    allowed = await allowed_camera_ids(db, user)
+    if allowed is None:
+        return
+    keys = []
+    for value in sighting_ids:
+        try:
+            keys.append(uuid.UUID(value))
+        except ValueError:
+            continue
+    cameras = (await db.execute(select(UnknownSighting.camera_id).where(UnknownSighting.id.in_(keys)))).scalars().all()
+    if any(camera_id not in allowed for camera_id in cameras):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Yozuv topilmadi")
 
 
 @router.post("/{sighting_id}/talaba", response_model=ResolveOut)
@@ -339,15 +407,16 @@ async def resolve_as_person(
     current_user: ReviewDep,
 ) -> ResolveOut:
     """Yuzni tanlangan odamga biriktiradi — keyingi safar kamera uni taniydi."""
-    row = await _load(db, sighting_id)
+    row = await _load(db, sighting_id, current_user)
     try:
         person = await db.get(StudentStaff, uuid.UUID(body.person_id))
     except ValueError:
         person = None
     if person is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Odam topilmadi")
+    can_enroll = await has_any_permission(db, current_user.role, ("registerPeople",))
     try:
-        kind = await assign_to_person(db, row, person, current_user.id)
+        kind = await assign_to_person(db, row, person, current_user.id, can_enroll=can_enroll)
     except ResolveError as error:
         raise HTTPException(status.HTTP_409_CONFLICT, str(error))
     await log_action(
@@ -355,11 +424,10 @@ async def resolve_as_person(
     )
     await db.commit()
     camera_name, person_name = await _names(db, row)
-    message = (
-        f"{person.full_name}: yuzi tizimga kiritildi — endi kamera uni taniydi"
-        if kind == "asosiy"
-        else f"{person.full_name}: yangi yuz namunasi qo'shildi"
-    )
+    message = {
+        "asosiy": f"{person.full_name}: yuzi tizimga kiritildi — endi kamera uni taniydi",
+        "tekshiruvda": f"{person.full_name}: yuz registrga tekshiruvga yuborildi — tasdiqlangach kamera uni taniydi",
+    }.get(kind, f"{person.full_name}: yangi yuz namunasi qo'shildi")
     return ResolveOut(item=_to_out(row, camera_name, person_name), message=message)
 
 
@@ -371,7 +439,7 @@ async def resolve_as_stranger(
     current_user: ReviewDep,
 ) -> ResolveOut:
     """Haqiqiy begona — #1 hodisa yaratiladi."""
-    row = await _load(db, sighting_id)
+    row = await _load(db, sighting_id, current_user)
     try:
         await mark_stranger(db, row, current_user.id)
     except ResolveError as error:
@@ -388,7 +456,7 @@ async def resolve_as_dismissed(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: ReviewDep,
 ) -> ResolveOut:
-    row = await _load(db, sighting_id)
+    row = await _load(db, sighting_id, current_user)
     try:
         dismiss(row, current_user.id)
     except ResolveError as error:

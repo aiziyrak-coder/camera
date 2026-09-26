@@ -86,6 +86,18 @@ export function dismissRecurring(sightingIds: string[]): Promise<GroupActionResu
   return api.post<GroupActionResult>('/api/notanishlar/takroriy/otkazish', { sightingIds });
 }
 
+/** Yuzni kimga biriktirish — reviewEvents bilan ishlaydigan qisqa qidiruv. */
+export interface PersonPick {
+  id: string;
+  fullName: string;
+  groupOrPosition: string;
+  biometricsStatus: string;
+}
+
+export function pickPeople(q: string, limit = 8, opts: CallOptions = {}): Promise<PersonPick[]> {
+  return api.get<PersonPick[]>(`/api/notanishlar/odamlar${buildQuery({ q, limit })}`, undefined, opts);
+}
+
 export function assignSighting(id: string, personId: string): Promise<ResolveResult> {
   return api.post<ResolveResult>(`/api/notanishlar/${encodeURIComponent(id)}/talaba`, { personId });
 }

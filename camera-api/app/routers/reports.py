@@ -338,6 +338,11 @@ async def delete_report(
     report_id: str, request: Request, db: Annotated[AsyncSession, Depends(get_db)], current_user: PermDep
 ) -> None:
     report = await _load(db, report_id)
+    # Ko'rish huquqi — o'chirish huquqi emas: faqat muallif yoki Super Admin.
+    if current_user.role != "super-admin":
+        author = await db.get(User, current_user.id)
+        if author is None or not report.created_by or report.created_by != author.full_name:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Faqat hisobot muallifi yoki Super Admin o'chira oladi")
     await log_action(db, request, current_user.id, f"Hisobotni o'chirdi: {report.period_label}", "Hisobotlar")
     await db.delete(report)
     await db.commit()

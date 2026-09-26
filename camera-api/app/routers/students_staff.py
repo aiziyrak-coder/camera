@@ -355,7 +355,10 @@ async def _coverage(db: AsyncSession, type: str | None) -> BiometricsCoverageOut
             )
         )
 
-    awaiting_stmt = select(func.count()).select_from(StudentStaff).where(AWAITING_APPROVAL)
+    # Faqat faol odamlar — ro'yxat (va "Ko'rib chiqish" tugmasi) bilan bir xil to'plam.
+    awaiting_stmt = (
+        select(func.count()).select_from(StudentStaff).where(AWAITING_APPROVAL).where(StudentStaff.active.is_(True))
+    )
     if type:
         awaiting_stmt = awaiting_stmt.where(StudentStaff.type == type)
     grand = sum(totals.values())
@@ -377,7 +380,7 @@ async def _course_rows(db: AsyncSession) -> list[BiometricsCourseRowOut]:
     staff_export.split_course bilan AYNAN bir xil qoidada ishlaydi."""
     stmt = (
         select(StudentStaff.group_or_position, StudentStaff.biometrics_status, func.count(StudentStaff.id))
-        .where(StudentStaff.type == "talaba")
+        .where(StudentStaff.type == "talaba", StudentStaff.active.is_(True))
         .group_by(StudentStaff.group_or_position, StudentStaff.biometrics_status)
     )
     buckets: dict[int | None, Bucket] = {}
@@ -406,6 +409,7 @@ async def _coverage_data(db: AsyncSession, type: str | None) -> CoverageData:
                func.count(StudentStaff.id))
         .select_from(StudentStaff)
         .outerjoin(Faculty, StudentStaff.faculty_id == Faculty.id)
+        .where(StudentStaff.active.is_(True))
         .group_by(Faculty.name, StudentStaff.group_or_position, StudentStaff.biometrics_status)
     )
     if type:
@@ -488,7 +492,8 @@ async def export_students_staff(
 async def export_students_staff_post(
     body: StudentStaffExportIn,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
+    # GET /export bilan bir xil fayl (JSHSHIR bor) — huquq ham bir xil.
+    _: Annotated[CurrentUser, Depends(require_permission("exportData"))],
 ) -> Response:
     """GET /export bilan bir xil fayl; filtr so'rov tanasida (URL'da JSHSHIR qolmaydi)."""
     return await _export_response(

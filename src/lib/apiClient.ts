@@ -1,5 +1,5 @@
 import { config } from './config';
-import { reportToken } from './reportLock';
+import { clearReportToken, reportToken } from './reportLock';
 
 export class ApiError extends Error {
   status: number;
@@ -176,6 +176,12 @@ async function request<T>(
     if (res.status === 403 && res.headers.get('X-2FA-Required') === '1' && typeof window !== 'undefined') {
       window.dispatchEvent(new Event(TWO_FACTOR_REQUIRED_EVENT));
     }
+    // Hisobot kaliti yaroqsiz (boshqa foydalanuvchiniki, muddati o'tgan yoki
+    // server kaliti almashgan) — kalit o'chiriladi va parol oynasi qaytadi.
+    if (res.status === 403 && res.headers.get('X-Report-Locked') === '1' && typeof window !== 'undefined') {
+      clearReportToken();
+      window.dispatchEvent(new Event(REPORT_LOCKED_EVENT));
+    }
 
     let detail = `So'rov muvaffaqiyatsiz tugadi (${res.status})`;
     try {
@@ -198,6 +204,8 @@ async function request<T>(
 
 /** Server "2FA majburiy" deganda chiqariladigan hodisa nomi. */
 export const TWO_FACTOR_REQUIRED_EVENT = 'camera:2fa-required';
+/** Server hisobot kalitini qabul qilmadi — ReportGate parolni qayta so'raydi. */
+export const REPORT_LOCKED_EVENT = 'camera:report-locked';
 
 export const api = {
   get: <T>(path: string, token?: string | null, opts: CallOptions = {}) =>

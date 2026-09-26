@@ -112,7 +112,11 @@ async def list_lesson_sessions(
     group: Annotated[str | None, Query()] = None,
     faculty: Annotated[str | None, Query()] = None,
 ) -> Page[LessonSessionOut]:
-    stmt = select(LessonSession).order_by(LessonSession.date.desc())
+    # id — barqaror tartib: bir sanada yuzlab dars bor, faqat sana bo'yicha
+    # sahifalashda qatorlar sahifalar orasida takrorlanar yoki tushib qolardi.
+    stmt = select(LessonSession).order_by(
+        LessonSession.date.desc(), LessonSession.scheduled_start_time.desc(), LessonSession.id.desc()
+    )
     if group:
         stmt = stmt.where(LessonSession.group_name == group)
     if faculty:

@@ -34,6 +34,7 @@ from app.schemas.presence import (
     VisitOut,
 )
 from app.services import runtime_snapshot
+from app.services.access_scope import camera_column_filter, camera_filter
 from app.services.camera_module_mapping import camera_allows_module_code
 from app.services.camera_roles import role_allows
 from app.services.staff_export import split_course
@@ -176,11 +177,15 @@ async def _lessons_on(db: AsyncSession, day: date_type) -> list[LessonSession]:
     return list(rows.scalars().unique().all())
 
 
-async def _visits_between(db: AsyncSession, start: datetime, end: datetime, person_ids=None) -> list[PresenceVisit]:
+async def _visits_between(
+    db: AsyncSession, start: datetime, end: datetime, person_ids=None, user: CurrentUser | None = None
+) -> list[PresenceVisit]:
     stmt = (
         select(PresenceVisit)
         .where(PresenceVisit.first_seen_at < end)
         .where(PresenceVisit.last_seen_at >= start)
+        # Bino doirasi — cheklangan foydalanuvchi boshqa binodagi kuzatuvni ko'rmaydi.
+        .where(camera_column_filter(user, PresenceVisit.camera_id))
         .order_by(PresenceVisit.first_seen_at)
     )
     if person_ids is not None:
@@ -216,7 +221,7 @@ def _buildings(visits: list[PresenceVisit]) -> list[str]:
 async def person_day(
     person_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: ReadDep,
+    current_user: ReadDep,
     date: Annotated[str | None, Query()] = None,
 ) -> PersonDayOut:
     """Bir odamning bir kuni: davomat, barcha tashriflari (qayerda, qachon)
@@ -233,7 +238,7 @@ async def person_day(
 
     day = _parse_day(date)
     start, end = _day_bounds(day)
-    visits = await _visits_between(db, start, end, [person.id])
+    visits = await _visits_between(db, start, end, [person.id], current_user)
     lessons = await _lessons_on(db, day)
     record = (
         await db.execute(
@@ -262,7 +267,7 @@ async def person_day(
 @router.get("/teachers", response_model=list[TeacherDaySummaryOut])
 async def teachers_day(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: ReadDep,
+    current_user: ReadDep,
     date: Annotated[str | None, Query()] = None,
     search: Annotated[str | None, Query(max_length=100)] = None,
 ) -> list[TeacherDaySummaryOut]:
@@ -300,7 +305,7 @@ async def teachers_day(
         return []
 
     visits_by_person: dict = defaultdict(list)
-    for visit in await _visits_between(db, start, end, [p.id for p in people]):
+    for visit in await _visits_between(db, start, end, [p.id for p in people], current_user):
         visits_by_person[visit.student_staff_id].append(visit)
     statuses = dict(
         (await db.execute(
@@ -394,7 +399,7 @@ def _diagnose(enabled: bool, online: bool, live, recognized: int, enrolled: int)
 @router.get("/cameras", response_model=AttendanceCamerasOut)
 async def attendance_cameras(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: ReadDep,
+    current_user: ReadDep,
 ) -> AttendanceCamerasOut:
     """Qaysi kameralar davomatda ishlaydi va hozir haqiqatan ishlayaptimi."""
     modules = dict(
@@ -406,7 +411,7 @@ async def attendance_cameras(
     staff_active = bool(modules.get(STAFF_ATTENDANCE_CODE))
     student_active = bool(modules.get(STUDENT_ATTENDANCE_CODE))
 
-    cameras = list((await db.execute(select(Camera))).scalars().unique().all())
+    cameras = list((await db.execute(select(Camera).where(camera_filter(current_user)))).scalars().unique().all())
     today_start, _today_end = _day_bounds(business_today())
     stats = {
         camera_id: (people, last)

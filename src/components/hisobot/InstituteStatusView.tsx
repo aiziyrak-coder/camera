@@ -72,14 +72,14 @@ export default function InstituteStatusView({ type }: { type: PersonType }) {
       .filter((u) => u.total > 0)
       .map((u) => {
         if (u.depth === 0) section = u.kindLabel;
-        return { value: u.id, label: u.name, present: u.present, absent: u.absent, noData: u.noData, indent: u.depth, section };
+        return { value: u.id, label: u.name, present: u.present, absent: u.absent + u.notYet, noData: u.noData, indent: u.depth, section };
       });
   }, [tree]);
   const positionOptions = useMemo<CountOption[]>(
     () =>
       (tree?.positions ?? [])
         .filter((p) => !positionGroup || p.group === positionGroup)
-        .map((p) => ({ value: p.name, label: p.name, present: p.present, absent: p.absent, noData: p.noData })),
+        .map((p) => ({ value: p.name, label: p.name, present: p.present, absent: p.absent + p.notYet, noData: p.noData })),
     [tree, positionGroup],
   );
 

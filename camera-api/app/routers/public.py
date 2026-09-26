@@ -192,11 +192,22 @@ async def get_public_stats(db: Annotated[AsyncSession, Depends(get_db)]) -> Publ
     start_of_today = day_start(business_today())
 
     total_students = (
-        await db.execute(select(func.count()).select_from(StudentStaff).where(StudentStaff.type == "talaba"))
+        await db.execute(
+            select(func.count())
+            .select_from(StudentStaff)
+            .where(StudentStaff.type == "talaba", StudentStaff.active.is_(True))
+        )
     ).scalar_one()
 
+    # "Talabalar" kartasi — faqat faol talabalar: ilgari keldi/kelmadi
+    # xodimlarni ham qo'shib, "10 000 talabadan 700 keldi" (asosan xodim) chiqardi.
     today_statuses = (
-        await db.execute(select(AttendanceRecord.status).where(AttendanceRecord.date == today))
+        await db.execute(
+            select(AttendanceRecord.status)
+            .join(StudentStaff, StudentStaff.id == AttendanceRecord.student_staff_id)
+            .where(AttendanceRecord.date == today)
+            .where(StudentStaff.type == "talaba", StudentStaff.active.is_(True))
+        )
     ).scalars().all()
     present = sum(1 for s in today_statuses if s in ("keldi", "kech_keldi"))
     late = sum(1 for s in today_statuses if s == "kech_keldi")

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { Download, RefreshCw } from 'lucide-react';
 import { api, ApiError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
@@ -70,6 +70,12 @@ export default function ScheduleBoard() {
   const [search, setSearch] = useState('');
   const isToday = day === todayTashkent();
 
+  // Boshqa kun yoki rejim tanlanganda eski jadval (va uning sonlari) yangi
+  // javob kelguncha ko'rinib turmasin — yuklanish holati ko'rsatiladi.
+  useEffect(() => {
+    setBoard(null);
+  }, [day, nowOnly]);
+
   useEffect(() => {
     const controller = new AbortController();
     setError(null);
@@ -77,10 +83,25 @@ export default function ScheduleBoard() {
       .get<Board>(`/api/jadval/kun?sana=${day}&hozir=${nowOnly && isToday}`, undefined, { signal: controller.signal })
       .then(setBoard)
       .catch((err) => {
-        if (!controller.signal.aborted) setError(err instanceof ApiError ? err.message : "Ma'lumotni olib bo'lmadi");
+        if (controller.signal.aborted) return;
+        setBoard(null);
+        setError(err instanceof ApiError ? err.message : "Ma'lumotni olib bo'lmadi");
       });
     return () => controller.abort();
   }, [day, nowOnly, isToday, reload]);
+
+  // Ekran "bugun"da ochiq qolsa — yarim tundan keyin ham bugunga o'tadi
+  // (aks holda "Faqat hozirgi darslar" kechagi kunda qotib qolardi).
+  const lastToday = useRef(todayTashkent());
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const current = todayTashkent();
+      if (current === lastToday.current) return;
+      setDay((shown) => (shown === lastToday.current ? current : shown));
+      lastToday.current = current;
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   // Hozirgi darslar — daqiqada bir yangilanadi (kamera ko'rganlar o'zgarib boradi).
   useEffect(() => {

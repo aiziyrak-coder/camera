@@ -151,17 +151,41 @@ async def _due_sessions(db: AsyncSession) -> list[LessonSession]:
             extra={"lessons": expired.rowcount, "window_minutes": settings.teacher_punctuality_check_window_minutes},
         )
 
+    # Dam olish kuni / bayram: jadvalda dars tursa ham bo'sh xona "kelmadi" emas.
+    from app.models import AttendanceRecord
+    from app.services.attendance_policy import load_policy
+    from app.timezone import business_date
+
+    today = business_date(now)
+    if not (await load_policy(db)).is_work_day(today):
+        return []
+
     result = await db.execute(
         select(LessonSession)
         .where(*unchecked)
         .where(LessonSession.scheduled_start_time <= started_before)
         .where(LessonSession.scheduled_start_time >= oldest_checkable)
     )
-    return [
+    rows = [
         row
         for row in result.scalars().unique().all()
         if row.camera is not None and PUNCTUALITY_MODULE_CODE not in (row.camera.excluded_module_codes or [])
     ]
+    if not rows:
+        return rows
+    # Ta'tildagi (admin "dam_olish" kiritgan) o'qituvchi darsi tekshirilmaydi.
+    on_leave = set(
+        (
+            await db.execute(
+                select(AttendanceRecord.student_staff_id).where(
+                    AttendanceRecord.date == today,
+                    AttendanceRecord.status == "dam_olish",
+                    AttendanceRecord.student_staff_id.in_({row.teacher_id for row in rows}),
+                )
+            )
+        ).scalars()
+    )
+    return [row for row in rows if row.teacher_id not in on_leave]
 
 
 async def _find_known_staff(db: AsyncSession, faces, *, exclude_id) -> tuple[StudentStaff, float] | None:

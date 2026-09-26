@@ -252,9 +252,25 @@ async def authorize_events_socket(token: str | None, session_factory=SessionLoca
             return WS_CLOSE_UNAUTHORIZED
         if user.needs_2fa_setup:
             return WS_CLOSE_FORBIDDEN
-        if not await has_any_permission(db, user.role, (REVIEW_PERMISSION,)):
+        # Davomatni ko'radiganlar ham ulanadi (jonli kelishlar), lekin ularga
+        # faqat davomat xabarlari boradi — hodisalar reviewEvents egalariga.
+        if not await has_any_permission(db, user.role, SOCKET_PERMISSIONS):
             return WS_CLOSE_FORBIDDEN
     return None
+
+
+#: /ws/events ga ulanish uchun yetarli huquqlardan biri.
+SOCKET_PERMISSIONS = (REVIEW_PERMISSION, "manageAttendance", "viewReports")
+
+
+async def socket_sees_events(token: str | None, session_factory=SessionLocal) -> bool:
+    """Ulanish hodisa xabarlarini ham oladimi (reviewEvents) yoki faqat davomatni."""
+    async with session_factory() as db:
+        try:
+            user = await user_from_token(token or "", db)
+        except HTTPException:
+            return False
+        return await has_any_permission(db, user.role, (REVIEW_PERMISSION,))
 
 
 async def socket_camera_scope(token: str | None, session_factory=SessionLocal) -> frozenset[str] | None:
@@ -293,7 +309,10 @@ async def events_websocket(websocket: WebSocket) -> None:
         await websocket.close(code=close_code)
         return
 
-    await manager.connect(websocket, await socket_camera_scope(websocket.query_params.get("token")))
+    token = websocket.query_params.get("token")
+    await manager.connect(
+        websocket, await socket_camera_scope(token), attendance_only=not await socket_sees_events(token)
+    )
     try:
         while True:
             await websocket.receive_text()  # no client->server protocol yet; just detect disconnects
@@ -556,6 +575,8 @@ async def _events_summary(db: AsyncSession, current_user: CurrentUser) -> EventS
 async def export_events_pdf(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: ReviewDep,
+    # Ismlar bilan 2000 tagacha hodisa — eksport huquqi (tugma ham shunga bog'liq).
+    _export: Annotated[CurrentUser, Depends(require_permission("exportData"))],
     severity: Annotated[str | None, Query()] = None,
     status_filter: Annotated[str | None, Query(alias="status")] = None,
     search: Annotated[str | None, Query(max_length=100)] = None,

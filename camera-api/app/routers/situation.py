@@ -868,6 +868,8 @@ class OrgNodeOut(CamelModel):
     total: int
     present: int
     absent: int
+    # Bugun, hali kelmagan (kun tugamagan) — "kelmadi" emas.
+    not_yet: int = 0
     no_data: int
 
 
@@ -877,6 +879,7 @@ class PositionOut(CamelModel):
     total: int
     present: int
     absent: int
+    not_yet: int = 0
     no_data: int
 
 
@@ -893,8 +896,11 @@ UNASSIGNED = "yoq"
 def _bucket(record_status: str | None, enrolled: bool, pending: bool) -> str:
     if record_status in svc.PRESENT_STATUSES:
         return "present"
-    if record_status == "kelmadi" or (enrolled and pending is True and record_status is None):
+    if record_status == "kelmadi":
         return "absent"
+    if enrolled and pending is True and record_status is None:
+        # Kun hali tugamagan — boshqa sahifalar kabi "kutilmoqda" (Counts.not_yet).
+        return "not_yet"
     return "no_data"
 
 
@@ -964,7 +970,8 @@ async def _org_tree(db, day) -> OrgTreeOut:
             out.append(OrgNodeOut(
                 id=str(item.id), name=item.name, kind=item.kind, kind_label=org.KIND_LABELS.get(item.kind, item.kind),
                 depth=depth, parent_id=str(item.parent_id) if item.parent_id else None, total=counts["total"],
-                present=counts["present"], absent=counts["absent"], no_data=counts["no_data"],
+                present=counts["present"], absent=counts["absent"], not_yet=counts["not_yet"],
+                no_data=counts["no_data"],
             ))
             emit(item.children, depth + 1)
 
@@ -974,14 +981,15 @@ async def _org_tree(db, day) -> OrgTreeOut:
         out.append(OrgNodeOut(
             id=UNASSIGNED, name="Tuzilmaga bog'lanmagan xodimlar", kind="boshqa", kind_label="Boshqa bo‘linmalar",
             depth=0, parent_id=None, total=counts["total"], present=counts["present"], absent=counts["absent"],
-            no_data=counts["no_data"],
+            not_yet=counts["not_yet"], no_data=counts["no_data"],
         ))
     return OrgTreeOut(
         date=day.isoformat(),
         units=out,
         positions=sorted(
             (PositionOut(name=name, group=org.position_group(name), total=c["total"], present=c["present"],
-                         absent=c["absent"], no_data=c["no_data"]) for name, c in positions.items()),
+                         absent=c["absent"], not_yet=c["not_yet"], no_data=c["no_data"])
+             for name, c in positions.items()),
             key=lambda p: (-p.total, p.name),
         ),
         position_groups=dict(groups),
@@ -1174,8 +1182,9 @@ async def org_tree_pdf(db: DbDep, user: ReadDep, date: DateQuery = None) -> Resp
     tree = await org_tree(db, user, date=date)
     cols = [pdf_export.PdfColumn("Bo'linma", 5), pdf_export.PdfColumn("Turi", 1.6), pdf_export.PdfColumn("Jami", 0.8, "RIGHT"),
             pdf_export.PdfColumn("Keldi", 0.8, "RIGHT"), pdf_export.PdfColumn("Kelmadi", 0.9, "RIGHT"),
-            pdf_export.PdfColumn("Ma'lumot yo'q", 1.1, "RIGHT")]
-    rows = [[("    " * u.depth) + u.name, u.kind_label, u.total, u.present, u.absent, u.no_data] for u in tree.units if u.total]
+            pdf_export.PdfColumn("Kutilmoqda", 1.0, "RIGHT"), pdf_export.PdfColumn("Ma'lumot yo'q", 1.1, "RIGHT")]
+    rows = [[("    " * u.depth) + u.name, u.kind_label, u.total, u.present, u.absent, u.not_yet, u.no_data]
+            for u in tree.units if u.total]
     roots = [u for u in tree.units if u.depth == 0]
     document = pdf_export.PdfDocument(
         title="Xodimlar — tuzilma bo'yicha davomat", columns=cols, rows=rows, filters=[("Sana", tree.date)],
@@ -1183,3 +1192,50 @@ async def org_tree_pdf(db: DbDep, user: ReadDep, date: DateQuery = None) -> Resp
                 ("Kelmadi", sum(u.absent for u in roots))],
     )
     return _pdf(pdf_export.render(document), pdf_export.filename("tuzilma", tree.date))
+
+
+# ─────────────────────────────────────────── ism bo'yicha qisqa qidiruv
+
+
+class PersonHitOut(CamelModel):
+    id: str
+    full_name: str
+    type: str
+    faculty: str | None
+    group_or_position: str | None
+    biometrics_status: str
+    biometric_photo_url: str | None
+
+
+@router.get("/odam-qidirish", response_model=list[PersonHitOut])
+async def search_people_by_name(
+    db: DbDep,
+    _: ReadDep,
+    q: Annotated[str, Query(min_length=2, max_length=100)],
+    type: Annotated[Literal["talaba", "xodim"] | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=20)] = 8,
+) -> list[PersonHitOut]:
+    """Davomat sahifalari va konsol palitrasi uchun: ism, bo'linma va yuz
+    holati. Reestr qidiruvi (registerPeople) — alohida, to'liq yozuv bilan;
+    davomatni ko'ruvchi foydalanuvchi u yerga kira olmasdi va qidiruv
+    jimgina bo'sh qaytardi."""
+    from sqlalchemy.orm import selectinload
+
+    stmt = select(StudentStaff).options(selectinload(StudentStaff.faculty)).where(StudentStaff.active.is_(True))
+    if type:
+        stmt = stmt.where(StudentStaff.type == type)
+    for word in q.replace("’", "'").replace("ʻ", "'").split():
+        stmt = stmt.where(StudentStaff.full_name.ilike(f"%{word}%"))
+    rows = (await db.execute(stmt.order_by(StudentStaff.full_name).limit(limit))).scalars().all()
+    return [
+        PersonHitOut(
+            id=str(p.id),
+            full_name=p.full_name,
+            type=p.type,
+            faculty=p.faculty.name if p.faculty else None,
+            group_or_position=p.group_or_position,
+            biometrics_status=p.biometrics_status,
+            biometric_photo_url=svc.photo_url(p.biometric_photo_key),
+        )
+        for p in rows
+    ]

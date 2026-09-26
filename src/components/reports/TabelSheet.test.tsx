@@ -139,7 +139,7 @@ describe('Oylik tabel — jadval', () => {
 
   it("o'ngdagi jami ustunlari har qator uchun chiqadi", () => {
     const { container } = renderSheet();
-    ['Keldi', 'Kech', 'Kelmadi', "Ma'lumot yo'q", 'Ish kuni'].forEach((label) => {
+    ['O‘z vaqtida', 'Kech', 'Kelmadi', "Ma'lumot yo'q", 'Ish kuni'].forEach((label) => {
       expect(screen.getByRole('columnheader', { name: new RegExp(`^${label}$`) })).toBeTruthy();
     });
     const first = container.querySelectorAll('[data-tabel-row]')[0];

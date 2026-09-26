@@ -6,11 +6,11 @@ import {
   assignRecurring,
   dismissRecurring,
   getRecurringUnknowns,
+  pickPeople,
   sightingTime,
+  type PersonPick,
   type RecurringUnknown,
 } from '../../lib/notanishlarApi';
-import { searchPeople } from '../../lib/teachersApi';
-import type { StudentStaffRecord } from '../../types';
 import { Button, Card, EmptyState, ErrorState, SkeletonCards, cn, useToast } from '../../ui';
 
 /**
@@ -197,21 +197,25 @@ function RecurringCard({
   );
 }
 
-function PersonSearch({ disabled, onPick }: { disabled: boolean; onPick: (person: StudentStaffRecord) => void }) {
+function PersonSearch({ disabled, onPick }: { disabled: boolean; onPick: (person: PersonPick) => void }) {
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<StudentStaffRecord[]>([]);
+  const [results, setResults] = useState<PersonPick[]>([]);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     const text = query.trim();
-    if (text.length < 2) {
-      setResults([]);
-      return;
-    }
+    // Yangi qidiruv boshlandi — oldingi natijalar (boshqa ism uchun) darhol
+    // olib tashlanadi: aks holda yuz eski ro'yxatdagi odamga biriktirilishi mumkin edi.
+    setResults([]);
+    setFailed(false);
+    if (text.length < 2) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      searchPeople(text, 6, { signal: controller.signal })
+      pickPeople(text, 6, { signal: controller.signal })
         .then(setResults)
-        .catch(() => undefined);
+        .catch(() => {
+          if (!controller.signal.aborted) setFailed(true);
+        });
     }, 250);
     return () => {
       window.clearTimeout(timer);
@@ -231,6 +235,7 @@ function PersonSearch({ disabled, onPick }: { disabled: boolean; onPick: (person
           className="h-8 min-w-0 flex-1 bg-transparent text-[13px] outline-none"
         />
       </label>
+      {failed && <p className="text-[11px] text-danger">Qidirib bo‘lmadi — qayta urinib ko‘ring</p>}
       {results.length > 0 && (
         <ul className="max-h-44 overflow-y-auto rounded-control border border-border">
           {results.map((person) => (

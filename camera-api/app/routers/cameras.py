@@ -38,7 +38,7 @@ from app.schemas.camera import (
     ModuleCameraAssignmentOut,
 )
 from app.schemas.camera_import import CameraImportResultOut
-from app.services.access_scope import camera_filter
+from app.services.access_scope import allowed_buildings, camera_filter, ensure_camera_allowed
 from app.services.camera_import import import_cameras_csv
 from app.services.camera_module_mapping import camera_allows_module_code, set_camera_module_enabled
 from app.services.camera_roles import ROOM_TYPE_LABELS, effective_room_type, normalize_room_code, role_allows
@@ -65,10 +65,13 @@ def _camera_uuid(camera_id: str) -> uuid.UUID:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi") from None
 
 
-async def _resolve_building(db: AsyncSession, name: str) -> Building:
+async def _resolve_building(db: AsyncSession, name: str, user: CurrentUser | None = None) -> Building:
     result = await db.execute(select(Building).where(Building.name == name))
     building = result.scalar_one_or_none()
-    if building is None:
+    allowed = allowed_buildings(user)
+    # Doiradan tashqaridagi bino — "topilmadi": cheklangan foydalanuvchi
+    # kamerani boshqa jamoa binosiga qo'sha yoki ko'chira olmaydi.
+    if building is None or (allowed is not None and building.id not in allowed):
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"'{name}' nomli bino topilmadi")
     return building
 
@@ -180,12 +183,19 @@ async def list_cameras(
 @router.get("/roles.csv")
 async def export_camera_roles(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: LocationDep,
+    current_user: LocationDep,
 ) -> Response:
     """Kamera rollari shabloni: admin `xona_turi` va `xona_raqami` ni Excel'da
     to'ldirib, POST /roles/import bilan qaytaradi (app/services/camera_roles_csv.py)."""
     cameras = (
-        (await db.execute(select(Camera).options(selectinload(Camera.building)).order_by(Camera.name))).scalars().all()
+        (
+            await db.execute(
+                select(Camera)
+                .options(selectinload(Camera.building))
+                .where(camera_filter(current_user))
+                .order_by(Camera.name)
+            )
+        ).scalars().all()
     )
     return Response(
         content=export_roles_csv(list(cameras)),
@@ -206,7 +216,7 @@ async def import_camera_roles(
     raw = await file.read()
     if len(raw) > 2 * 1024 * 1024:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "CSV hajmi 2 MB dan oshmasligi kerak")
-    result = await import_roles_csv(db, raw, apply=apply)
+    result = await import_roles_csv(db, raw, apply=apply, scope=camera_filter(current_user))
     if result.applied:
         cameras = len({change.camera_id for change in result.changes})
         await log_action(
@@ -250,7 +260,7 @@ async def list_camera_module_options(
     ]
 
 
-async def _module_assignments_out(db: AsyncSession, module_code: int) -> ModuleCameraAssignmentsOut:
+async def _module_assignments_out(db: AsyncSession, module_code: int, user: CurrentUser) -> ModuleCameraAssignmentsOut:
     module = (
         await db.execute(select(AIModuleConfig).where(AIModuleConfig.code == module_code))
     ).scalar_one_or_none()
@@ -258,7 +268,7 @@ async def _module_assignments_out(db: AsyncSession, module_code: int) -> ModuleC
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Modul topilmadi")
 
     result = await db.execute(
-        select(Camera).options(selectinload(Camera.building)).order_by(Camera.name)
+        select(Camera).options(selectinload(Camera.building)).where(camera_filter(user)).order_by(Camera.name)
     )
     cameras = result.scalars().all()
     return ModuleCameraAssignmentsOut(
@@ -284,10 +294,10 @@ async def _module_assignments_out(db: AsyncSession, module_code: int) -> ModuleC
 async def list_module_camera_assignments(
     module_code: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _: PermDep,
+    current_user: PermDep,
 ) -> ModuleCameraAssignmentsOut:
     """Reverse view: for one AI criterion, which cameras have it enabled."""
-    return await _module_assignments_out(db, module_code)
+    return await _module_assignments_out(db, module_code, current_user)
 
 
 @router.patch("/by-module/{module_code}/assignments", response_model=ModuleCameraAssignmentsOut)
@@ -308,6 +318,7 @@ async def patch_module_camera_assignments(
         camera = await db.get(Camera, item.camera_id)
         if camera is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Kamera topilmadi: {item.camera_id}")
+        ensure_camera_allowed(current_user, camera)
         set_camera_module_enabled(camera, module_code, item.enabled)
 
     await log_action(
@@ -318,7 +329,7 @@ async def patch_module_camera_assignments(
         "Kameralar",
     )
     await db.commit()
-    return await _module_assignments_out(db, module_code)
+    return await _module_assignments_out(db, module_code, current_user)
 
 
 @router.get("/summary", response_model=CameraSummaryOut)
@@ -389,7 +400,7 @@ async def create_camera(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: PermDep,
 ) -> CameraOut:
-    building = await _resolve_building(db, body.building)
+    building = await _resolve_building(db, body.building, current_user)
     department = await _resolve_department(db, body.department)
     camera = Camera(
         name=body.name,
@@ -461,7 +472,7 @@ async def update_camera(
     if camera is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
 
-    building = await _resolve_building(db, body.building)
+    building = await _resolve_building(db, body.building, current_user)
     camera.name = body.name
     camera.ip = body.ip
     camera.port = body.port
@@ -667,7 +678,7 @@ async def set_cameras_location(
         except ValueError:
             not_found.append(raw_id)
 
-    building = await _resolve_building(db, body.building) if body.building else None
+    building = await _resolve_building(db, body.building, current_user) if body.building else None
     cameras = (
         (await db.execute(select(Camera).where(Camera.id.in_(ids)).where(camera_filter(current_user))))
         .scalars()
@@ -762,7 +773,7 @@ async def update_camera_location(
         camera.name = body.name.strip()
         changes.append(f"nomi: {camera.name}")
     if body.building:
-        building = await _resolve_building(db, body.building)
+        building = await _resolve_building(db, body.building, current_user)
         if camera.building_id != building.id:
             camera.building_id = building.id
             changes.append(f"bino: {building.name}")

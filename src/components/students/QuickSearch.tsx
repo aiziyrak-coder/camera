@@ -3,10 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Loader2, Search, Users, X } from 'lucide-react';
 import { Avatar, ProgressRing, cn, controlBase, focusRing } from '../../ui';
 import { controlSizes } from '../../ui/cn';
-import { api, type Page as ApiPage } from '../../lib/apiClient';
-import { getGroups, situationPaths, type GroupStat } from '../../lib/situationApi';
+import { getGroups, searchPeopleByName, situationPaths, type GroupStat, type PersonHit } from '../../lib/situationApi';
 import { useDebouncedValue } from '../../lib/useDebouncedValue';
-import type { StudentStaffRecord } from '../../types';
 
 const MIN_QUERY = 2;
 const GROUP_LIMIT = 6;
@@ -14,7 +12,7 @@ const PEOPLE_LIMIT = 6;
 
 type Option =
   | { kind: 'group'; key: string; group: GroupStat }
-  | { kind: 'person'; key: string; person: StudentStaffRecord };
+  | { kind: 'person'; key: string; person: PersonHit };
 
 /**
  * Tez o'tish: guruh nomi yoki talaba ism-familiyasi (JSHSHIR ham) bo'yicha.
@@ -40,7 +38,7 @@ export function QuickSearch({
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const [groups, setGroups] = useState<GroupStat[]>([]);
-  const [people, setPeople] = useState<StudentStaffRecord[]>([]);
+  const [people, setPeople] = useState<PersonHit[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchedFor, setSearchedFor] = useState('');
   /** Ikkala so'rov ham yiqildi — "topilmadi" emas, xato ko'rsatiladi. */
@@ -64,16 +62,11 @@ export function QuickSearch({
     setSearching(true);
     Promise.allSettled([
       getGroups({ search: text, date }, { signal: controller.signal }),
-      api.post<ApiPage<StudentStaffRecord>>(
-        '/api/students-staff/search',
-        { search: text, pageSize: PEOPLE_LIMIT, type: 'talaba' },
-        undefined,
-        { signal: controller.signal },
-      ),
+      searchPeopleByName(text, { type: 'talaba', limit: PEOPLE_LIMIT }, { signal: controller.signal }),
     ]).then(([g, p]) => {
       if (controller.signal.aborted) return;
       setGroups(g.status === 'fulfilled' ? g.value.slice(0, GROUP_LIMIT) : []);
-      setPeople(p.status === 'fulfilled' ? p.value.items.slice(0, PEOPLE_LIMIT) : []);
+      setPeople(p.status === 'fulfilled' ? p.value.slice(0, PEOPLE_LIMIT) : []);
       setFailed(g.status === 'rejected' && p.status === 'rejected');
       setPartial(
         g.status === 'rejected' && p.status === 'fulfilled' ? 'group' : p.status === 'rejected' && g.status === 'fulfilled' ? 'person' : null,

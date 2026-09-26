@@ -770,6 +770,8 @@ export interface OrgNode {
   total: number;
   present: number;
   absent: number;
+  /** Bugun, hali kelmagan (kun tugamagan). */
+  notYet: number;
   noData: number;
 }
 
@@ -779,6 +781,8 @@ export interface OrgPosition {
   total: number;
   present: number;
   absent: number;
+  /** Bugun, hali kelmagan (kun tugamagan). */
+  notYet: number;
   noData: number;
 }
 
@@ -791,4 +795,24 @@ export interface OrgTree {
 
 export function getOrgTree(date?: string, opts?: CallOptions): Promise<OrgTree> {
   return api.get<OrgTree>(`${BASE}/tuzilma${buildQuery({ date })}`, undefined, opts);
+}
+
+
+/** Ism bo'yicha qisqa qidiruv — davomat huquqi yetarli (reestr qidiruvi registerPeople talab qiladi). */
+export interface PersonHit {
+  id: string;
+  fullName: string;
+  type: 'talaba' | 'xodim';
+  faculty: string | null;
+  groupOrPosition: string | null;
+  biometricsStatus: string;
+  biometricPhotoUrl: string | null;
+}
+
+export function searchPeopleByName(
+  q: string,
+  params: { type?: 'talaba' | 'xodim'; limit?: number } = {},
+  opts: CallOptions = {},
+): Promise<PersonHit[]> {
+  return api.get<PersonHit[]>(`${BASE}/odam-qidirish${buildQuery({ q, ...params })}`, undefined, opts);
 }

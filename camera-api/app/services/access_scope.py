@@ -74,6 +74,26 @@ def event_filter(user) -> ColumnElement[bool]:
     return Event.camera_id.in_(select(Camera.id).where(Camera.building_id.in_(ids)))
 
 
+def camera_column_filter(user, column) -> ColumnElement[bool]:
+    """Kamera ustuni bor istalgan jadval (tashriflar, notanish yuzlar,
+    yuz tekshiruvi...) uchun WHERE sharti. Kamerasi yo'q (NULL) qator
+    cheklangan foydalanuvchiga ko'rinmaydi."""
+    ids = allowed_buildings(user)
+    if ids is None:
+        return true()
+    return column.in_(select(Camera.id).where(Camera.building_id.in_(ids)))
+
+
+async def allowed_camera_ids(db, user) -> set[uuid.UUID] | None:
+    """None — cheklov yo'q; aks holda doiradagi kameralar id'lari."""
+    ids = allowed_buildings(user)
+    if ids is None:
+        return None
+    if not ids:
+        return set()
+    return set((await db.execute(select(Camera.id).where(Camera.building_id.in_(ids)))).scalars().all())
+
+
 def camera_allowed(user, camera: Camera) -> bool:
     ids = allowed_buildings(user)
     return ids is None or (camera.building_id is not None and camera.building_id in ids)

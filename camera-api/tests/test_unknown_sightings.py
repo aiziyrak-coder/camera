@@ -116,7 +116,7 @@ async def test_assign_to_person_without_face_enrolls_them(db_session, camera):
     await db_session.commit()
     row = await _sighting(db_session, camera, _vec(20))
 
-    kind = await svc.assign_to_person(db_session, row, student, None)
+    kind = await svc.assign_to_person(db_session, row, student, None, can_enroll=True)
     await db_session.commit()
 
     assert kind == "asosiy"
@@ -124,6 +124,32 @@ async def test_assign_to_person_without_face_enrolls_them(db_session, camera):
     assert student.biometrics_status == "tasdiqlangan"
     assert student.biometric_embedding == row.embedding
     assert row.status == "talaba" and row.person_id == student.id
+
+
+async def test_assign_without_enroll_right_goes_to_review(db_session, camera):
+    """Faqat hodisalarni ko'radigan operator istalgan yuzni istalgan odam
+    nomiga "tasdiqlangan" qilib yoza olmasin — registrga tekshiruvga tushadi."""
+    student = StudentStaff(full_name="Tekshiruv Talabasi", type="talaba", group_or_position="DI-2301")
+    db_session.add(student)
+    await db_session.commit()
+    row = await _sighting(db_session, camera, _vec(21))
+
+    kind = await svc.assign_to_person(db_session, row, student, None)
+    await db_session.commit()
+
+    assert kind == "tekshiruvda"
+    await db_session.refresh(student)
+    assert student.biometrics_status == "kutilmoqda"
+    assert student.biometrics_review_reason == svc.ASSIGN_REVIEW_REASON
+
+
+async def test_inactive_person_gets_no_face(db_session, camera):
+    student = StudentStaff(full_name="Ketgan Talaba", type="talaba", group_or_position="DI-2301", active=False)
+    db_session.add(student)
+    await db_session.commit()
+    row = await _sighting(db_session, camera, _vec(22))
+    with pytest.raises(svc.ResolveError):
+        await svc.assign_to_person(db_session, row, student, None, can_enroll=True)
 
 
 async def test_assign_to_person_with_face_adds_gallery_sample(db_session, camera):

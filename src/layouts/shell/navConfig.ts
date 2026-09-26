@@ -31,6 +31,8 @@ export interface NavItem {
    *  bandni raqamlab turadi (texnik ko'rsatkich kabi, uch harf). */
   code: string;
   permission?: PermissionKey;
+  /** Shulardan biri yetarli (backend ham shunday: o'qish endpointlari bir nechta huquqni qabul qiladi). */
+  anyOf?: PermissionKey[];
   /** Faqat aniq manzil (masalan "/" — boshqa hamma manzilning boshi). */
   end?: boolean;
 }
@@ -58,9 +60,9 @@ export const NAV_SECTIONS: NavSection[] = [
     id: 'davomat',
     label: 'Davomat',
     items: [
-      { to: '/talabalar', code: 'TLB', label: 'Talabalar', icon: GraduationCap, permission: 'manageAttendance' },
-      { to: '/oqituvchilar', code: 'XOD', label: 'Xodimlar', icon: BookUser, permission: 'manageAttendance' },
-      { to: '/dars-jadvali', code: 'DRS', label: 'Dars jadvali', icon: CalendarRange, permission: 'manageAttendance' },
+      { to: '/talabalar', code: 'TLB', label: 'Talabalar', icon: GraduationCap, anyOf: ['manageAttendance', 'viewReports'] },
+      { to: '/oqituvchilar', code: 'XOD', label: 'Xodimlar', icon: BookUser, anyOf: ['manageAttendance', 'viewReports'] },
+      { to: '/dars-jadvali', code: 'DRS', label: 'Dars jadvali', icon: CalendarRange, anyOf: ['manageAttendance', 'viewReports', 'manageLessons'] },
       { to: '/turniketlar', code: 'TRN', label: 'Turniketlar', icon: DoorOpen, permission: 'manageIntegrations' },
     ],
   },
@@ -138,7 +140,12 @@ export function isPathAllowedForRole(role: Role | null | undefined, pathname: st
 export function visibleSections(can: (key: PermissionKey) => boolean, role: Role | null | undefined): NavSection[] {
   return NAV_SECTIONS.map((section) => ({
     ...section,
-    items: section.items.filter((item) => (!item.permission || can(item.permission)) && isPathAllowedForRole(role, item.to)),
+    items: section.items.filter(
+      (item) =>
+        (!item.permission || can(item.permission)) &&
+        (!item.anyOf || item.anyOf.some((key) => can(key))) &&
+        isPathAllowedForRole(role, item.to),
+    ),
   })).filter((section) => section.items.length > 0);
 }
 

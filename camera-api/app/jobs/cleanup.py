@@ -207,8 +207,20 @@ async def _prune_unknown_sightings(db: AsyncSession, now: datetime) -> int:
             break
         await db.execute(delete(UnknownSighting).where(UnknownSighting.id.in_([row_id for row_id, _key in rows])))
         await db.commit()
+        # Odamga biriktirilgan notanish yuz rasmi uning asosiy surati bo'lib
+        # qolgan bo'lishi mumkin — bunday rasm o'chirilmaydi.
+        keys = [key for _id, key in rows if key]
+        in_use = set()
+        if keys:
+            in_use = set(
+                (
+                    await db.execute(
+                        select(StudentStaff.biometric_photo_key).where(StudentStaff.biometric_photo_key.in_(keys))
+                    )
+                ).scalars().all()
+            )
         # Qatorlar o'chgach — rasm o'chmasa ham tozalash orqaga qaytmaydi.
-        await delete_files_quietly([key for _id, key in rows if key])
+        await delete_files_quietly([key for key in keys if key not in in_use])
         removed += len(rows)
         if len(rows) < ROW_BATCH_SIZE:
             break
@@ -231,26 +243,35 @@ async def run_cleanup_once(db: AsyncSession) -> dict[str, int]:
     # deleted nothing knows those objects exist, and MinIO grows forever.
     # (Every purged event previously leaked its JPEG; delete_file() existed
     # in app/storage.py but had no caller anywhere in the codebase.)
-    expiring_keys = (
-        await db.execute(
-            select(Event.snapshot_key).where(
-                Event.occurred_at < event_cutoff, Event.snapshot_key.is_not(None)
-            )
-        )
-    ).scalars().all()
-    event_result = await db.execute(delete(Event).where(Event.occurred_at < event_cutoff))
     await db.commit()
-
-    # After the commit: the rows are gone regardless of whether object
-    # storage cooperates, and a failed object delete must not roll the
-    # purge back (see delete_files_quietly).
-    snapshots_deleted = await delete_files_quietly(expiring_keys)
+    # Partiyalab: uzoq to'xtashdan yoki muddat qisqartirilgandan keyin
+    # yuz minglab hodisani bitta tranzaksiyada o'chirish xotira va
+    # qulflarni band qilardi.
+    events_deleted = 0
+    snapshots_deleted = 0
+    for _ in range(MAX_BATCHES_PER_SWEEP):
+        rows = (
+            await db.execute(
+                select(Event.id, Event.snapshot_key).where(Event.occurred_at < event_cutoff).limit(ROW_BATCH_SIZE)
+            )
+        ).all()
+        if not rows:
+            break
+        await db.execute(delete(Event).where(Event.id.in_([row_id for row_id, _key in rows])))
+        await db.commit()
+        events_deleted += len(rows)
+        # After the commit: the rows are gone regardless of whether object
+        # storage cooperates, and a failed object delete must not roll the
+        # purge back (see delete_files_quietly).
+        snapshots_deleted += await delete_files_quietly([key for _id, key in rows if key])
+        if len(rows) < ROW_BATCH_SIZE:
+            break
 
     counts = {
         "revoked_tokens": revoked_result.rowcount or 0,
         "password_reset_tokens": reset_result.rowcount or 0,
         "audit_logs": audit_result.rowcount or 0,
-        "events": event_result.rowcount or 0,
+        "events": events_deleted,
         "event_snapshots": snapshots_deleted,
     }
 

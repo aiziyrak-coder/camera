@@ -63,7 +63,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import settings
 from app.database import SessionLocal
 from app.models import AttendanceRecord, LessonAttendance, LessonSession, StudentStaff
-from app.timezone import local_now, to_local
+from app.timezone import business_date, local_now, to_local
 
 logger = logging.getLogger("app.lesson_attendance")
 
@@ -248,15 +248,24 @@ async def _credit_day_attendance(db: AsyncSession, student: StudentStaff, row: L
     # bilan bir qoida). Ilgari darsga kechikish kunlik "kech keldi" ga ham
     # aylanardi — 13:00 dagi darsga 5 daqiqa kech qolgan talaba kun
     # bo'yicha 13:05 da "kech kelgan" bo'lib qolardi.
+    # Ish kuni 06:00 da boshlanadi (business_date) — kechki darsdan keyingi
+    # yarim tun oralig'i ham shu kunniki.
+    stmt = insert(AttendanceRecord).values(
+        student_staff_id=student.id,
+        date=business_date(local_seen),
+        status="keldi",
+        check_in=None,
+        source="kamera",
+    )
+    # Mavjud yozuv ustidan yozilmaydi — faqat "kelmadi" (20:00 dagi belgi)
+    # tuzatiladi: kechki darsda kamera tasdiqlagan talaba "kelmadi" bo'lib
+    # qolmasin. Qo'lda kiritilgani (qolda) hech qachon o'zgarmaydi.
     await db.execute(
-        insert(AttendanceRecord)
-        .values(
-            student_staff_id=student.id,
-            date=local_seen.date(),
-            status="keldi",
-            check_in=None,
+        stmt.on_conflict_do_update(
+            constraint="uq_attendance_person_date",
+            set_={"status": "keldi", "source": "kamera"},
+            where=(AttendanceRecord.status == "kelmadi") & AttendanceRecord.source.is_distinct_from("qolda"),
         )
-        .on_conflict_do_nothing(constraint="uq_attendance_person_date")
     )
 
 
