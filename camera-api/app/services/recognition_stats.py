@@ -33,6 +33,7 @@ from statistics import median
 
 from app.config import settings
 from app.timezone import local_now
+from app.timezone import business_today
 
 SIMILARITY_BUCKETS: tuple[tuple[str, float, float], ...] = (
     ("<0.30", -2.0, 0.30),
@@ -115,7 +116,7 @@ def _bucket(similarity: float) -> str:
 
 
 def _camera_stats(camera_id: str) -> CameraRecognitionStats:
-    today = local_now().date()
+    today = business_today()
     current = _stats.get(camera_id)
     if current is None or current.day != today:
         current = CameraRecognitionStats(day=today)
@@ -167,7 +168,7 @@ def is_face_blind(camera_id: str) -> bool:
     if not settings.face_blind_skip_enabled:
         return False
     stats = _stats.get(camera_id)
-    if stats is None or stats.day != local_now().date():
+    if stats is None or stats.day != business_today():
         return False
     if stats.faces < settings.face_blind_min_faces:
         return False
@@ -287,7 +288,7 @@ def note_strict_sighting(person_id: str) -> None:
 
 def snapshot(camera_id: str) -> CameraRecognitionStats | None:
     stats = _stats.get(camera_id)
-    if stats is None or stats.day != local_now().date():
+    if stats is None or stats.day != business_today():
         return None
     return stats
 
@@ -340,7 +341,7 @@ def _parse(value: str | None) -> datetime | None:
 
 def export_snapshot() -> dict[str, dict]:
     """Bugungi statistika — JSON'ga yaroqli ko'rinishda."""
-    today = local_now().date()
+    today = business_today()
     return {
         camera_id: {
             "day": s.day.isoformat(),
@@ -384,7 +385,7 @@ def view_from_dict(row: dict) -> RecognitionView | None:
         day = date.fromisoformat(row["day"])
     except (KeyError, TypeError, ValueError):
         return None
-    if day != local_now().date():
+    if day != business_today():
         return None
     return RecognitionView(
         day=day,

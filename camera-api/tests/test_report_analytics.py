@@ -120,9 +120,10 @@ class TestSecurity:
     async def test_local_days_heatmap_and_night(self, db_session, world):
         camera = world["camera"]
         db_session.add_all([
-            event(camera, local_moment(DAY, 1, 0), severity="yuqori"),            # tunda, dushanba 01:00
+            event(camera, local_moment(DAY, 22, 0), severity="yuqori"),           # kechasi, dushanba 22:00
             event(camera, local_moment(DAY, 14, 0), status="tasdiqlangan"),       # dushanba 14:00
             event(camera, local_moment(DAY - timedelta(days=1), 23, 30)),         # oldingi kun — kirmaydi
+            event(camera, local_moment(DAY, 5, 30)),                              # 05:30 — hali oldingi ish kuni
         ])
         await db_session.commit()
 
@@ -130,7 +131,7 @@ class TestSecurity:
         assert s.total == 2
         assert (s.by_day[0].yuqori, s.by_day[0].past) == (1, 1)
         assert s.serious == 1
-        assert s.heatmap[0][1] == 1 and s.heatmap[0][14] == 1 and s.heatmap_max == 1
+        assert s.heatmap[0][22] == 1 and s.heatmap[0][14] == 1 and s.heatmap_max == 1
         assert s.night == 1
         assert s.top_cameras[0].name == "Kirish-Sinov" and s.top_cameras[0].share == 100.0
 

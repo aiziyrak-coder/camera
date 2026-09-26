@@ -11,14 +11,19 @@ export const UZ_WEEKDAYS_SHORT = ['Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh', 'Ya'];
 
 const TASHKENT = 'Asia/Tashkent';
 
-/** Toshkent bo'yicha bugungi sana — institut kuni brauzer soatiga bog'liq emas. */
+/** Ish kuni shu soatda (Toshkent vaqti) almashadi — backenddagi
+ *  settings.day_start_hour bilan bir xil (camera-api/app/timezone.py). */
+export const DAY_START_HOUR = 6;
+
+/** Toshkent bo'yicha bugungi ISH KUNI — 06:00 gacha kechagi kun davom etadi.
+ *  Brauzer soat mintaqasiga bog'liq emas. */
 export function todayInTashkent(now: Date = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: TASHKENT,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(now);
+  }).format(new Date(now.getTime() - DAY_START_HOUR * 3_600_000));
 }
 
 export function parseIsoDate(iso: string): Date {

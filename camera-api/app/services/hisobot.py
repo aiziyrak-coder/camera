@@ -36,7 +36,8 @@ from app.services.attendance_policy import (EARLY_NA, EARLY_UNKNOWN, EARLY_YES, 
                                             load_policy)
 from app.services.event_status import REJECTED_STATUSES, fold_review_counts
 from app.services.staff_export import split_course
-from app.timezone import INSTITUTE_TZ, INSTITUTE_TZ_NAME
+from app.timezone import local_date, INSTITUTE_TZ, INSTITUTE_TZ_NAME
+from app.timezone import day_start
 
 KINDS = ("talaba", "xodim")
 PRESENT = ("keldi", "kech_keldi")
@@ -240,12 +241,12 @@ def _minutes(column):
 
 
 def _local_day(column):
-    return func.date(func.timezone(literal_column(f"'{INSTITUTE_TZ_NAME}'"), column))
+    return local_date(column)
 
 
 def _bounds(start: date_type, end: date_type) -> tuple[datetime, datetime]:
-    return (datetime.combine(start, time_type.min, tzinfo=INSTITUTE_TZ),
-            datetime.combine(end + timedelta(days=1), time_type.min, tzinfo=INSTITUTE_TZ))
+    return (day_start(start),
+            day_start(end + timedelta(days=1)))
 
 
 async def _attendance(db: AsyncSession, data: Data, cond) -> None:

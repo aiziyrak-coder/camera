@@ -37,7 +37,7 @@ from app.database import SessionLocal
 from app.models import AIModuleConfig, AttendanceRecord, StudentStaff
 from app.services.attendance_policy import current_policy, load_policy
 from app.services.notifications import notify_absences
-from app.timezone import local_now
+from app.timezone import business_date, local_now
 
 logger = logging.getLogger("app.absence_marker")
 
@@ -180,7 +180,7 @@ async def run_absence_marking_once(
         return 0
 
     now = local_now()  # institute-local clock, not UTC — see app/timezone.py
-    today = now.date()
+    today = business_date(now)
     if now.time() < _cutoff_time():
         return 0
 

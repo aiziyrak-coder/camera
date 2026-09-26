@@ -55,6 +55,7 @@ from app.services.report_generator import _attendance_reliability, _working_days
 from app.services.attendance_policy import load_policy
 from app.services.report_insights import WEAK_PRECISION, InsightInputs, build_insights
 from app.timezone import INSTITUTE_TZ, INSTITUTE_TZ_NAME, UZ_MONTHS, local_date, local_now
+from app.timezone import business_today, day_start
 
 MAX_RANGE_DAYS = 92
 MIN_REVIEWS_FOR_PRECISION = 10
@@ -124,8 +125,8 @@ def _day_label(d: date) -> str:
 
 def _utc_bounds(start: date, end: date) -> tuple[datetime, datetime]:
     """[start 00:00, end+1 00:00) institut vaqtida — timestamptz bilan solishtiriladi."""
-    lo = datetime.combine(start, time.min, tzinfo=INSTITUTE_TZ)
-    hi = datetime.combine(end + timedelta(days=1), time.min, tzinfo=INSTITUTE_TZ)
+    lo = day_start(start)
+    hi = day_start(end + timedelta(days=1))
     return lo, hi
 
 
@@ -763,7 +764,7 @@ async def get_analytics_cached(db: AsyncSession, start: date, end: date) -> Repo
     if hit is not None and hit[0] > now:
         return hit[1]
     result = await build_analytics(db, start, end)
-    ttl = CURRENT_TTL_SECONDS if end >= local_now().date() else PAST_TTL_SECONDS
+    ttl = CURRENT_TTL_SECONDS if end >= business_today() else PAST_TTL_SECONDS
     if len(_cache) > 64:
         _cache.clear()
     _cache[key] = (now + ttl, result)

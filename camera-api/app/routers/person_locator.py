@@ -30,6 +30,7 @@ from app.schemas.person_locator import (
 from app.services import face_matching, face_recognition
 from app.services.person_search import VisitRow, group_stops, score_embeddings, top_people
 from app.timezone import INSTITUTE_TZ, local_now
+from app.timezone import business_today, day_start
 
 router = APIRouter(prefix="/api/person-locator", tags=["person-locator"])
 ReadDep = Annotated[CurrentUser, Depends(require_permission("viewLive"))]
@@ -141,7 +142,7 @@ async def search_by_photo(
     if len(data) > MAX_SEARCH_PHOTO_BYTES:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Rasm 8 MB dan oshmasligi kerak")
 
-    date_to = _parse_date(gacha, "gacha") or local_now().date()
+    date_to = _parse_date(gacha, "gacha") or business_today()
     date_from = _parse_date(dan, "dan") or date_to - timedelta(days=DEFAULT_RANGE_DAYS - 1)
     if date_from > date_to:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Boshlanish sanasi tugashidan keyin")
@@ -259,10 +260,10 @@ async def person_route(
     person = await db.get(StudentStaff, pid)
     if person is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Shaxs topilmadi")
-    day = _parse_date(sana, "sana") or local_now().date()
+    day = _parse_date(sana, "sana") or business_today()
     # Kun chegarasi institut vaqtida: UTC bo'yicha olinsa, ertalabki
     # 5 soat oldingi kunga tushib qolardi (app/timezone.local_date).
-    start = datetime.combine(day, time.min, tzinfo=INSTITUTE_TZ)
+    start = day_start(day)
     end = start + timedelta(days=1)
 
     rows = (

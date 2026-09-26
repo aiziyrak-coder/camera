@@ -20,6 +20,7 @@ from app.schemas.base import CamelModel
 from app.services import face_review as svc
 from app.services.event_status import CONFIRMED_STATUSES, OPEN_STATUSES, REJECTED_STATUSES
 from app.timezone import local_now
+from app.timezone import business_today
 
 router = APIRouter(prefix="/api/tekshiruv", tags=["tekshiruv"])
 
@@ -109,7 +110,7 @@ def _ratio(part: int, whole: int) -> float | None:
 
 def _parse_day(value: str | None) -> date_type:
     if not value:
-        return local_now().date()
+        return business_today()
     try:
         return date_type.fromisoformat(value)
     except ValueError:
@@ -199,7 +200,7 @@ async def accuracy(
     hodisalar kirmaydi) va bazadagi qamrovdan. Hammasi bir nechta
     guruhlangan so'rov — jadval kattalashsa ham arzon."""
     since = datetime.now(timezone.utc) - timedelta(days=kun)
-    today = local_now().date()
+    today = business_today()
 
     event_rows = (
         await db.execute(

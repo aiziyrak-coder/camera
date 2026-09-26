@@ -25,6 +25,7 @@ from app.config import settings
 from app.models import Camera, FaceGalleryEmbedding, StudentStaff, UnknownSighting
 from app.services.face_matching import anchor_hash
 from app.timezone import INSTITUTE_TZ, local_now
+from app.timezone import business_date, business_today
 
 logger = logging.getLogger("app.unknown_sightings")
 
@@ -104,7 +105,7 @@ async def record_unknown_faces(
     if not faces:
         return 0
     moment = now or datetime.now(timezone.utc)
-    day = local_now().date() if now is None else moment.astimezone(INSTITUTE_TZ).date()
+    day = business_today() if now is None else business_date(moment)
 
     rows = list(
         (await db.execute(select(UnknownSighting).where(UnknownSighting.day == day))).scalars().all()

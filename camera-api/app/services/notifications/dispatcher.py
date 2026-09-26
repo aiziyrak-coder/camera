@@ -38,6 +38,7 @@ from app.services.notifications import messages, sms, telegram
 from app.services.notifications.messages import SEVERITY_ORDER, Message
 from app.services.notifications.telegram import SendResult
 from app.timezone import local_now
+from app.timezone import business_today
 
 logger = logging.getLogger("app.notifications")
 
@@ -564,7 +565,7 @@ async def notify_attendance(record: AttendanceRecord, person: StudentStaff | Non
             return
     except Exception:
         pass
-    today = local_now().date()
+    today = business_today()
     if day != today:
         # Kechagi yozuvni tuzatish yoki qayta ishlash — ota-onaga "keldi"
         # xabari endi kerak emas.

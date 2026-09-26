@@ -11,6 +11,7 @@ from datetime import date, datetime, time
 
 from app.config import settings
 from app.timezone import local_now, to_local
+from app.timezone import business_today
 
 SEVERITY_LABELS = {"past": "Past", "o'rta": "O'rta", "yuqori": "Yuqori"}
 SEVERITY_ORDER = {"past": 0, "o'rta": 1, "yuqori": 2}
@@ -199,7 +200,7 @@ def parent_absence_text(full_name: str, day: date) -> str:
     """Kelmaganlar kun oxirida (yoki ertasi tongda) belgilanadi — shuning
     uchun "bugun" faqat sana haqiqatan bugungi bo'lsa yoziladi."""
     stamp = day.strftime("%d.%m.%Y")
-    when = f"bugun ({stamp})" if day == local_now().date() else f"{stamp} kuni"
+    when = f"bugun ({stamp})" if day == business_today() else f"{stamp} kuni"
     return f"{settings.org_name}: Farzandingiz {full_name} {when} institutga kelmadi."
 
 

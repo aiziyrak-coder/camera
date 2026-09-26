@@ -7,11 +7,11 @@ describe('personLocator helpers', () => {
   });
 
   it('arxiv havolasi Toshkent sanasi va biroz oldingi vaqt bilan', () => {
-    // 2026-09-23 20:00 UTC = Toshkentda 24-sentabr 01:00.
+    // 2026-09-23 20:00 UTC = Toshkentda 24-sentabr 01:00 — ish kuni 06:00 da almashadi, demak 23-sentabr.
     const link = archiveLink('cam-1', '2026-09-23T20:00:00Z');
     const params = new URLSearchParams(link!.split('?')[1]);
     expect(params.get('kamera')).toBe('cam-1');
-    expect(params.get('sana')).toBe('2026-09-24');
+    expect(params.get('sana')).toBe('2026-09-23');
     expect(params.get('t')).toBe('2026-09-23T19:59:50.000Z');
     expect(archiveLink('cam-1', 'yaroqsiz')).toBeNull();
   });

@@ -3,6 +3,7 @@ import { Download, RefreshCw } from 'lucide-react';
 import { api, ApiError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { downloadBlob } from '../../lib/download';
+import { todayInTashkent } from '../../lib/uzDate';
 import { Badge, Button, DataTable, EmptyState, ErrorState, Readout, useToast, type DataTableColumn } from '../../ui';
 
 /**
@@ -54,7 +55,7 @@ export function clock(iso: string | null): string {
 }
 
 export function todayTashkent(): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date());
+  return todayInTashkent();
 }
 
 export default function ScheduleBoard() {

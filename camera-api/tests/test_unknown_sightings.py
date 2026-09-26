@@ -184,7 +184,9 @@ async def test_resolved_row_cannot_be_resolved_again(db_session, camera):
 # ─────────────────────────────────────────────── API
 
 async def test_api_list_and_resolve_flow(client: AsyncClient, db_session, camera, monkeypatch):
-    monkeypatch.setattr("app.routers.unknown_sightings.local_now", lambda: NOW)
+    from app.timezone import business_date
+
+    monkeypatch.setattr("app.routers.unknown_sightings.business_today", lambda: business_date(NOW))
     await svc.record_unknown_faces(db_session, camera, _frame(), [_face(_vec(70)), _face(_vec(71))], now=NOW)
     student = StudentStaff(full_name="Muhammadjonov Shoxruh", type="talaba", group_or_position="DI-2301")
     db_session.add(student)

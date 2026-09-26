@@ -47,6 +47,7 @@ from app.services.event_status import fold_review_counts
 from app.storage import presigned_url
 from app.timezone import INSTITUTE_TZ, UZ_WEEKDAYS, local_now
 from app.utils import compute_initials
+from app.timezone import business_date, business_today, day_start
 
 PRESENT = ("keldi", "kech_keldi")
 POPULATION_LABELS = {"xodim": "O'qituvchilar va xodimlar", "talaba": "Talabalar"}
@@ -83,13 +84,13 @@ class Period:
 
     def bounds_utc(self) -> tuple[datetime, datetime]:
         """Mahalliy kun chegaralari UTC'da — tashriflar timestamp bo'yicha."""
-        start = datetime.combine(self.start, time.min, tzinfo=INSTITUTE_TZ)
+        start = day_start(self.start)
         end = datetime.combine(self.end, time.max, tzinfo=INSTITUTE_TZ)
         return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
 
 
 def resolve_period(key: str) -> Period:
-    today = local_now().date()
+    today = business_today()
     if key == "kecha":
         day = today - timedelta(days=1)
         return Period("kecha", PERIOD_LABELS["kecha"], day, day)
@@ -543,7 +544,7 @@ async def person_detail(db: AsyncSession, person: StudentStaff, period: Period) 
         day_visits = [
             visit
             for visit in visits
-            if visit.first_seen_at.astimezone(INSTITUTE_TZ).date() == day
+            if business_date(visit.first_seen_at) == day
         ]
         per_day.append(
             ReportPersonDayOut(

@@ -27,7 +27,8 @@ from app.models import AttendanceRecord, LessonSession, StudentStaff
 from app.models.presence_visit import PresenceVisit
 from app.services.notifications import dispatcher
 from app.services.notifications.messages import Message
-from app.timezone import INSTITUTE_TZ, local_now
+from app.timezone import business_date, INSTITUTE_TZ, local_now
+from app.timezone import day_start
 
 logger = logging.getLogger("app.jobs.teacher_absence")
 
@@ -65,12 +66,12 @@ async def run_teacher_absence_once(now: datetime | None = None) -> int:
             row.id: row
             for row in (await db.execute(select(StudentStaff).where(StudentStaff.id.in_(teacher_ids)))).scalars()
         }
-        day_start = datetime.combine(now.date(), time(0, 0), INSTITUTE_TZ)
+        started = day_start(business_date(now))
         present = set(
             (
                 await db.execute(
                     select(AttendanceRecord.student_staff_id).where(
-                        AttendanceRecord.date == now.date(),
+                        AttendanceRecord.date == business_date(now),
                         AttendanceRecord.student_staff_id.in_(teacher_ids),
                         AttendanceRecord.status.in_(("keldi", "kech_keldi")),
                     )
@@ -80,7 +81,7 @@ async def run_teacher_absence_once(now: datetime | None = None) -> int:
             (
                 await db.execute(
                     select(PresenceVisit.student_staff_id).where(
-                        PresenceVisit.student_staff_id.in_(teacher_ids), PresenceVisit.first_seen_at >= day_start
+                        PresenceVisit.student_staff_id.in_(teacher_ids), PresenceVisit.first_seen_at >= started
                     )
                 )
             ).scalars()

@@ -29,6 +29,7 @@ from app.schemas.notifications import (
 )
 from app.services.notifications import dispatcher, sms, telegram
 from app.timezone import INSTITUTE_TZ, to_local
+from app.timezone import day_start
 
 router = APIRouter(tags=["notifications"])
 
@@ -205,10 +206,10 @@ async def list_log(
             or_(NotificationLog.recipient.ilike(pattern), NotificationLog.text.ilike(pattern), NotificationLog.error.ilike(pattern))
         )
     if date_from:
-        stmt = stmt.where(NotificationLog.created_at >= datetime.combine(date_from, time.min, tzinfo=INSTITUTE_TZ))
+        stmt = stmt.where(NotificationLog.created_at >= day_start(date_from))
     if date_to:
         stmt = stmt.where(
-            NotificationLog.created_at < datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=INSTITUTE_TZ)
+            NotificationLog.created_at < day_start(date_to + timedelta(days=1))
         )
     stmt = stmt.order_by(NotificationLog.created_at.desc(), NotificationLog.id)
     rows, total = await paginate(db, stmt, page_params)

@@ -56,6 +56,7 @@ from app.services.staff_export import NO_FACULTY_LABEL, split_course
 from app.services.unit_names import canonical_map, is_position, unit_key
 from app.storage import presigned_url
 from app.timezone import INSTITUTE_TZ, local_now, to_local
+from app.timezone import business_date, business_today, day_start
 
 SITUATION_CACHE_SECONDS = 15
 MAX_RANGE_DAYS = 366
@@ -116,7 +117,7 @@ def clear_cache() -> None:
 # ─────────────────────────────────────────── sana va vaqt
 
 def today() -> date_type:
-    return local_now().date()
+    return business_today()
 
 
 def parse_day(value: str | None, *, name: str = "date") -> date_type | None:
@@ -147,7 +148,7 @@ def resolve_range(
 
 
 def day_bounds(day: date_type) -> tuple[datetime, datetime]:
-    start = datetime.combine(day, time_type.min, tzinfo=INSTITUTE_TZ)
+    start = day_start(day)
     return start, start + timedelta(days=1)
 
 
@@ -640,7 +641,7 @@ async def day_lessons(db: AsyncSession, day: date_type) -> list[LessonRow]:
 def lesson_state(start: datetime | None, day: date_type, now: datetime) -> str:
     if start is None:
         # Vaqti kiritilmagan dars: faqat sanasi bo'yicha.
-        return "finished" if day < to_local(now).date() else "upcoming"
+        return "finished" if day < business_date(now) else "upcoming"
     if now < start:
         return "upcoming"
     if now < start + lesson_duration():
@@ -651,7 +652,7 @@ def lesson_state(start: datetime | None, day: date_type, now: datetime) -> str:
 def state_clause(state: str, now: datetime):
     """lesson_state() ning SQL shakli — sahifalash filtrdan keyin to'g'ri sanashi uchun."""
     start = LessonSession.scheduled_start_time
-    local_today = to_local(now).date()
+    local_today = business_date(now)
     if state == "upcoming":
         return or_(and_(start.is_not(None), start > now), and_(start.is_(None), LessonSession.date >= local_today))
     if state == "ongoing":

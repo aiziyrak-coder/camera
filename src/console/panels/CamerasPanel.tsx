@@ -50,6 +50,20 @@ import {
  */
 
 const MOSAIC_TILES = 4;
+/** Yig'ilgan mozaika shu oraliqda navbatdagi 4 ta kameraga o'tadi. */
+export const ROTATE_MS = 10_000;
+
+/** Aylanuvchi mozaika: tasvir uzatayotgan kameralar 4 tadan navbat bilan.
+ *  Kamera 4 tadan kam bo'lsa — aylanmaydi. */
+export function rotatingMosaic(cameras: readonly CameraFeed[], step: number, count = MOSAIC_TILES): CameraFeed[] {
+  const pool = rankCameras(cameras).filter(isStreaming);
+  if (pool.length <= count) return pickMosaic(cameras, count);
+  const pages = Math.ceil(pool.length / count);
+  const start = (step % pages) * count;
+  const page = pool.slice(start, start + count);
+  // Oxirgi sahifa to'lmasa — boshidan to'ldiriladi (katak bo'sh qolmaydi).
+  return page.length < count ? [...page, ...pool.slice(0, count - page.length)] : page;
+}
 
 /** Tashqaridan (Ctrl+K) "shu kamerani kattalashtir" so'rovi. */
 export interface FocusRequest {
@@ -73,7 +87,14 @@ export default function CamerasPanel({
 
   const stats = useMemo(() => cameraStats(cameras), [cameras]);
   const codes = useMemo(() => buildCameraCodes(cameras), [cameras]);
-  const mosaic = useMemo(() => pickMosaic(cameras, MOSAIC_TILES), [cameras]);
+  const [step, setStep] = useState(0);
+  const rotating = !expanded && pageVisible && cameras.filter(isStreaming).length > MOSAIC_TILES;
+  useEffect(() => {
+    if (!rotating) return;
+    const timer = window.setInterval(() => setStep((n) => n + 1), ROTATE_MS);
+    return () => window.clearInterval(timer);
+  }, [rotating]);
+  const mosaic = useMemo(() => rotatingMosaic(cameras, step), [cameras, step]);
 
   return (
     <Panel

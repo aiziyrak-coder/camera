@@ -38,6 +38,7 @@ from app.schemas.attendance import (
 from app.storage import presigned_url
 from app.timezone import INSTITUTE_TZ, INSTITUTE_TZ_NAME, local_now
 from app.utils import compute_initials
+from app.timezone import business_today, day_start
 
 router = APIRouter(prefix="/api/attendance", tags=["attendance"])
 
@@ -132,8 +133,8 @@ async def _sightings_by_day(
 
     Ko'rinishlar soni "erta ketdi" ni aytish uchun shart: bitta ko'rinish
     "o'sha paytda ketdi" degani emas, "bir marta ko'rindi" deganidir."""
-    start_at = datetime.combine(first, time_type.min, tzinfo=INSTITUTE_TZ)
-    end_at = datetime.combine(end, time_type.min, tzinfo=INSTITUTE_TZ)
+    start_at = day_start(first)
+    end_at = day_start(end)
     local_last_seen = func.timezone(INSTITUTE_TZ_NAME, PresenceVisit.last_seen_at)
     rows = await db.execute(
         select(func.date(local_last_seen), func.max(local_last_seen), func.sum(PresenceVisit.sightings))
@@ -241,7 +242,7 @@ async def get_attendance_summary(
     if person is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Talaba/xodim topilmadi")
 
-    current = local_now().date().replace(day=1)
+    current = business_today().replace(day=1)
     first = _add_months(current, -(months - 1))
     records = (
         await db.execute(

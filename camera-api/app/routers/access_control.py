@@ -41,6 +41,7 @@ from app.services.integrations.access_control import (
 )
 from app.services.integrations.hikvision_acs import DeviceError, fetch_device_info
 from app.timezone import INSTITUTE_TZ, to_local
+from app.timezone import business_today, day_start
 
 router = APIRouter(tags=["access-control"])
 
@@ -274,7 +275,7 @@ async def test_device(device_id: uuid.UUID, db: DbDep, _: ManageDep) -> DeviceTe
 
 
 def _local_day_start(day: date) -> datetime:
-    return datetime.combine(day, time.min, tzinfo=INSTITUTE_TZ)
+    return day_start(day)
 
 
 @router.get("/api/access/events", response_model=Page[AccessEventOut])
@@ -375,7 +376,7 @@ async def events_summary(
 ) -> AccessSummaryOut:
     """Bir kunlik sanoq (turniketlar sahifasining yuqori qatori). Jurnal
     sahifalangan — undan hisoblab bo'lmaydi, shuning uchun alohida."""
-    day = day or datetime.now(INSTITUTE_TZ).date()
+    day = day or business_today()
     stmt = select(
         func.count().label("total"),
         func.count().filter(AccessEvent.direction == "kirish").label("entries"),

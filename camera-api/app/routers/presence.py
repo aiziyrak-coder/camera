@@ -38,6 +38,7 @@ from app.services.camera_module_mapping import camera_allows_module_code
 from app.services.camera_roles import role_allows
 from app.services.staff_export import split_course
 from app.timezone import INSTITUTE_TZ, local_now, to_local
+from app.timezone import business_today, day_start
 
 router = APIRouter(prefix="/api/presence", tags=["presence"])
 
@@ -52,7 +53,7 @@ _APOSTROPHES = "‘’`ʻʼ´"
 
 def _parse_day(value: str | None) -> date_type:
     if not value:
-        return local_now().date()
+        return business_today()
     try:
         return date_type.fromisoformat(value)
     except ValueError as exc:
@@ -60,7 +61,7 @@ def _parse_day(value: str | None) -> date_type:
 
 
 def _day_bounds(day: date_type) -> tuple[datetime, datetime]:
-    start = datetime.combine(day, time_type.min, tzinfo=INSTITUTE_TZ)
+    start = day_start(day)
     return start, start + timedelta(days=1)
 
 
@@ -406,7 +407,7 @@ async def attendance_cameras(
     student_active = bool(modules.get(STUDENT_ATTENDANCE_CODE))
 
     cameras = list((await db.execute(select(Camera))).scalars().unique().all())
-    today_start, _today_end = _day_bounds(local_now().date())
+    today_start, _today_end = _day_bounds(business_today())
     stats = {
         camera_id: (people, last)
         for camera_id, people, last in (

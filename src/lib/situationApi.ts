@@ -693,3 +693,64 @@ export const situationPaths = {
 
 /** "Fakultetsiz" (id null) talabalar uchun URL segmenti. */
 export const NO_FACULTY_ID = 'fakultetsiz';
+
+// ───────────────────────────────────────────── Holat bo'yicha odamlar (sanoq ortidagi ro'yxat)
+
+/** kelgan = keldi + kech_keldi; yuzsiz — yuzi bazada yo'q (kamera tanimaydi). */
+export type PeopleStatusKey =
+  | 'hammasi' | 'kelgan' | 'keldi' | 'kech_keldi' | 'kelmadi' | 'kutilmoqda' | 'yuzsiz' | 'dam_olish' | 'malumot_yoq';
+
+export interface StatusPerson {
+  id: string;
+  fullName: string;
+  type: PersonType;
+  group: string;
+  course: number | null;
+  faculty: string | null;
+  status: AttendanceStatus;
+  checkIn: string | null;
+  biometricsStatus: BiometricsStatus;
+}
+
+export type StatusCounts = Record<
+  'hammasi' | 'kelgan' | 'keldi' | 'kechKeldi' | 'kelmadi' | 'kutilmoqda' | 'yuzsiz' | 'damOlish' | 'malumotYoq',
+  number
+>;
+
+export interface StatusPeoplePage {
+  date: string;
+  counts: StatusCounts;
+  total: number;
+  page: number;
+  pageSize: number;
+  items: StatusPerson[];
+}
+
+export interface StatusPeopleQuery {
+  date?: string;
+  status?: PeopleStatusKey;
+  type?: PersonType;
+  facultyId?: string;
+  course?: number;
+  group?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export function getPeopleStatus(params: StatusPeopleQuery = {}, opts?: CallOptions): Promise<StatusPeoplePage> {
+  return api.get<StatusPeoplePage>(`${BASE}/people-status${buildQuery({ ...params })}`, undefined, opts);
+}
+
+/** Holat kaliti -> counts maydoni. */
+export const STATUS_COUNT_KEY: Record<PeopleStatusKey, keyof StatusCounts> = {
+  hammasi: 'hammasi',
+  kelgan: 'kelgan',
+  keldi: 'keldi',
+  kech_keldi: 'kechKeldi',
+  kelmadi: 'kelmadi',
+  kutilmoqda: 'kutilmoqda',
+  yuzsiz: 'yuzsiz',
+  dam_olish: 'damOlish',
+  malumot_yoq: 'malumotYoq',
+};

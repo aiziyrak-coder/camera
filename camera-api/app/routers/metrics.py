@@ -40,6 +40,7 @@ from app.database import get_db
 from app.jobs.camera_health import is_reachable, is_video_flowing
 from app.models import AccessEvent, AttendanceRecord, Camera, Event, NotificationLog
 from app.timezone import INSTITUTE_TZ, local_now
+from app.timezone import business_today
 
 logger = logging.getLogger("app.metrics")
 
@@ -209,7 +210,7 @@ async def _event_families(db: AsyncSession, now: datetime) -> list:
 
 
 async def _attendance_families(db: AsyncSession) -> list:
-    today = local_now().date()
+    today = business_today()
     records = _gauge(
         "attendance_records_today",
         "Bugungi davomat yozuvlari holat va manba bo'yicha (Toshkent vaqti)",

@@ -27,6 +27,7 @@ from app.services.face_matching import CandidateMatrix, anchor_hash
 from app.services.face_recognition import face_quality_ok
 from app.services.unknown_sightings import crop_face
 from app.timezone import INSTITUTE_TZ
+from app.timezone import business_date
 
 logger = logging.getLogger("app.face_review")
 
@@ -125,7 +126,7 @@ async def queue_grey_matches(
     if not grey:
         return 0
     moment = now or datetime.now(timezone.utc)
-    day = moment.astimezone(INSTITUTE_TZ).date()
+    day = business_date(moment)
     person_ids = [uuid.UUID(pid) for _, pid, _, _ in grey]
 
     present = set(

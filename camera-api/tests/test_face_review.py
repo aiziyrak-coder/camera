@@ -217,7 +217,9 @@ async def test_camera_steward_is_forbidden(client: AsyncClient, db_session, seed
 
 
 async def test_accuracy_metrics(client: AsyncClient, db_session, world, monkeypatch):
-    monkeypatch.setattr("app.routers.face_review.local_now", lambda: NOW.astimezone(INSTITUTE_TZ))
+    from app.timezone import business_date
+
+    monkeypatch.setattr("app.routers.face_review.business_today", lambda: business_date(NOW))
 
     def event(code, status, trial=False):
         return Event(camera_name="Kirish-1", building="A", module_code=code, module_name=f"Modul {code}",

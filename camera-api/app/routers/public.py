@@ -54,7 +54,8 @@ from app.services.sweep_result_cache import get_camera_sweep
 from app.services.thumbnail_cache import ensure_thumbnail
 
 logger = logging.getLogger("app.public")
-from app.timezone import local_now
+from app.timezone import day_start, local_now
+from app.timezone import business_today
 
 # Himoya BUTUN router darajasida: endpointlarga birma-bir qo'shilsa,
 # keyin qo'shiladigan yangi endpoint ochiq qolib ketishi mumkin edi —
@@ -187,8 +188,8 @@ async def get_public_stats(db: Annotated[AsyncSession, Depends(get_db)]) -> Publ
     # AttendanceRecord.date (see app/timezone.py's module docstring), and
     # avoids "today's" stats reading as yesterday's during the institute's
     # early-morning local hours.
-    today = local_now().date()
-    start_of_today = local_now().replace(hour=0, minute=0, second=0, microsecond=0)
+    today = business_today()
+    start_of_today = day_start(business_today())
 
     total_students = (
         await db.execute(select(func.count()).select_from(StudentStaff).where(StudentStaff.type == "talaba"))
@@ -550,7 +551,7 @@ async def get_campus(db: Annotated[AsyncSession, Depends(get_db)], viewer: Viewe
         )
     ).all()
 
-    start_of_today = local_now().replace(hour=0, minute=0, second=0, microsecond=0)
+    start_of_today = day_start(business_today())
     event_rows = (
         await db.execute(
             select(Camera.building_id, Camera.floor, func.count())

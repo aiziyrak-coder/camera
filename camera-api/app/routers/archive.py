@@ -36,6 +36,7 @@ from app.schemas.base import CamelModel
 from app.services import recording
 from app.services.access_scope import ensure_camera_allowed
 from app.timezone import INSTITUTE_TZ, local_now
+from app.timezone import business_today, day_start
 
 router = APIRouter(prefix="/api/arxiv", tags=["arxiv"])
 
@@ -117,8 +118,8 @@ async def archive_day(
     sana: Annotated[date_type | None, Query()] = None,
 ) -> DayOut:
     camera = await _camera(db, camera_id, current_user)
-    day = sana or local_now().date()
-    start = datetime.combine(day, time_type.min, tzinfo=INSTITUTE_TZ)
+    day = sana or business_today()
+    start = day_start(day)
     end = start + timedelta(days=1)
     ranges = await recording.list_segments(camera_id, start, end) if settings.recording_enabled else []
     rows = (

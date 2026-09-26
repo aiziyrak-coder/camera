@@ -20,6 +20,7 @@ from app.dependencies import CurrentUser, get_current_user, require_permission
 from app.models import AttendancePolicy, AttendanceRecord, StudentStaff
 from app.services.attendance_policy import from_row, load_policy, set_cached
 from app.timezone import local_now
+from app.timezone import business_today
 
 router = APIRouter(prefix="/api/attendance-policy", tags=["attendance"])
 
@@ -86,7 +87,7 @@ async def put_policy(
     await db.flush()
     policy = from_row(row)
 
-    since = local_now().date() - timedelta(days=RECOMPUTE_DAYS)
+    since = business_today() - timedelta(days=RECOMPUTE_DAYS)
     rows = (
         await db.execute(
             select(AttendanceRecord.id, AttendanceRecord.date, AttendanceRecord.check_in, AttendanceRecord.status, StudentStaff.type)

@@ -52,8 +52,9 @@ from app.services.event_status import (
 )
 from app.services.notifications import notify_user
 from app.storage import delete_files_quietly
-from app.timezone import INSTITUTE_TZ, local_now, to_local
+from app.timezone import business_today, INSTITUTE_TZ, local_now, to_local
 from app.ws import manager
+from app.timezone import day_start
 
 logger = logging.getLogger("app.events")
 
@@ -87,7 +88,7 @@ def _to_out(
 
 
 def _local_day_start(day: date) -> datetime:
-    return datetime.combine(day, time.min, tzinfo=INSTITUTE_TZ)
+    return day_start(day)
 
 
 def _iso(moment: datetime) -> str:
@@ -384,7 +385,7 @@ async def list_events(
         # see app/timezone.py's module docstring for why that distinction
         # is a real bug, not pedantry (near-midnight local time, a plain
         # UTC "today" is off by a day).
-        start_of_today = local_now().replace(hour=0, minute=0, second=0, microsecond=0)
+        start_of_today = day_start(business_today())
         stmt = stmt.where(Event.occurred_at >= start_of_today)
     # Sana oralig'i institut kunlari bo'yicha: [from 00:00, to+1 00:00).
     if date_from:
@@ -430,7 +431,7 @@ async def events_summary(
             )
         ).all()
     )
-    start_of_today = local_now().replace(hour=0, minute=0, second=0, microsecond=0)
+    start_of_today = day_start(business_today())
     today_row = (
         await db.execute(
             select(func.count(), func.count().filter(Event.severity.in_(SERIOUS)))

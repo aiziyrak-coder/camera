@@ -84,7 +84,7 @@ from app.services.camera_roles import face_roi_box
 from app.services.motion_gate import MotionGate, compose_roi
 from app.services.notifications import notify_attendance
 from app.services.presence import record_visit
-from app.timezone import local_now, to_local
+from app.timezone import business_date, local_now, to_local
 from app.ws import manager
 
 logger = logging.getLogger("app.attendance_ai")
@@ -268,7 +268,7 @@ async def upsert_attendance_from_recognition(
     (app/models/presence_visit.py, app/routers/presence.py)."""
     policy = await load_policy(db)
     local_occurred_at = to_local(occurred_at)
-    record_date = local_occurred_at.date()
+    record_date = business_date(occurred_at)
     occurred_time = local_occurred_at.time().replace(microsecond=0)
     # Kirayotganlarning yuzini ko'radigan kamera ketishni qayd etmaydi.
     # ATTENDANCE_ARRIVAL_ONLY: ketish vaqti umuman yozilmaydi.

@@ -1214,6 +1214,9 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # Tashkilot nomi — sarlavhalar, bildirishnomalar va hisobotlarda.
     org_name: str = "Farg'ona JSSTI"
+    # Ish kuni shu soatda (institut vaqti) almashadi — kunlik davomat,
+    # "bugun" statistikasi va hisobot kunlari (app/timezone.py business_*).
+    day_start_hour: int = 6
     org_system_name: str = "Situatsion Markaz"
 
     # Bildirishnomalar (app/services/notifications). Token bo'sh — Telegram

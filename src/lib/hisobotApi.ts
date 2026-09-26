@@ -110,7 +110,7 @@ export interface HisobotFilterOptions {
 /** Uch ko'rinish: holat taxtasi (rahbar uchun), ro'yxat (batafsil) va
  *  oylik tabel (imzolanadigan hujjat). Eski havolalardagi `tahlil`
  *  taxtaga tushadi. */
-export type HisobotView = 'taxta' | 'royxat' | 'tabel' | 'kpi';
+export type HisobotView = 'holat' | 'taxta' | 'royxat' | 'tabel' | 'kpi';
 
 /** URL'dagi holat — havola bilan ulashiladi, "orqaga" ishlaydi. */
 export interface HisobotState {
@@ -134,6 +134,7 @@ function readView(raw: string | null): HisobotView {
   if (raw === 'tabel') return 'tabel';
   if (raw === 'royxat') return 'royxat';
   if (raw === 'kpi') return 'kpi';
+  if (raw === 'holat') return 'holat';
   return 'taxta'; // 'tahlil' — eski nom, shu yerga tushadi
 }
 
@@ -342,7 +343,7 @@ export function drillPatch(state: HisobotState, rowId: string): Partial<HisobotS
 /** Tashkilot kodi — boshqa muassasaga o'rnatishda almashtiriladi. */
 export const DOCUMENT_ORG_CODE = 'FERMI';
 
-const DOCUMENT_VIEW_CODE: Record<HisobotView, string> = { tabel: 'TBL', taxta: 'HLT', royxat: 'RYX', kpi: 'KPI' };
+const DOCUMENT_VIEW_CODE: Record<HisobotView, string> = { tabel: 'TBL', taxta: 'HLT', royxat: 'RYX', kpi: 'KPI', holat: 'JHL' };
 const DOCUMENT_SECTION_CODE: Record<HisobotSection, string> = { xodimlar: 'XDM', talabalar: 'TLB' };
 
 /** Tanlovdan deterministik 4 xonali tartib raqami (0002–9999).

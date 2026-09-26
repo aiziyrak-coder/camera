@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import AttendanceRecord, Camera, Event, StudentStaff
 from app.services.event_status import fold_review_counts
 from app.timezone import local_date, local_now
+from app.timezone import business_today
 
 VALID_PERIODS = ("Kunlik", "Haftalik", "Oylik")
 
@@ -148,7 +149,7 @@ async def generate_rule_based_report(db: AsyncSession, period: str, today: date 
 
     # local_now(), not date.today(): the container clock is UTC, so before
     # 05:00 local "today" would be yesterday.
-    today = today or local_now().date()
+    today = today or business_today()
     start, end, period_label = _date_range(period, today)
 
     occurred_on = local_date(Event.occurred_at)

@@ -21,6 +21,7 @@ from app.schemas.base import CamelModel
 from app.services.unknown_clusters import assign_group, dismiss_group, lookalikes, recurring_clusters
 from app.services.unknown_sightings import ResolveError, assign_to_person, dismiss, mark_stranger
 from app.timezone import local_now
+from app.timezone import business_today
 
 router = APIRouter(prefix="/api/notanishlar", tags=["notanishlar"])
 
@@ -95,7 +96,7 @@ async def _names(db: AsyncSession, row: UnknownSighting) -> tuple[str | None, st
 
 def _parse_day(value: str | None) -> date_type:
     if not value:
-        return local_now().date()
+        return business_today()
     try:
         return date_type.fromisoformat(value)
     except ValueError:

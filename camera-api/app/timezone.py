@@ -15,10 +15,10 @@ and 2:00 PM was silently misclassified in one direction or the other).
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func
+from sqlalchemy import func, literal_column
 from sqlalchemy.sql.elements import ColumnElement
 
 INSTITUTE_TZ_NAME = "Asia/Tashkent"
@@ -34,6 +34,39 @@ def to_local(moment: datetime) -> datetime:
     clock time — use this before extracting .date()/.time() to compare
     against a config setting like attendance_ai_late_cutoff."""
     return moment.astimezone(INSTITUTE_TZ)
+
+
+# ── Ish kuni ────────────────────────────────────────────────────────────────
+# Institutda kun yarim tunda emas, settings.day_start_hour (06:00) da
+# almashadi: 00:00-05:59 dagi ko'rinishlar (tungi navbatchi, kechki
+# mashg'ulotdan keyin ketayotganlar) OLDINGI kunga tegishli. "Bugun",
+# kunlik davomat sanasi, statistikalar va hisobotlarning kun chegaralari
+# shu funksiyalar orqali hisoblanadi.
+
+
+def _day_shift() -> timedelta:
+    from app.config import settings
+
+    return timedelta(hours=settings.day_start_hour)
+
+
+def business_date(moment: datetime) -> date:
+    """Payt qaysi ish kuniga tegishli (05:30 — kechagi kun)."""
+    return (to_local(moment) - _day_shift()).date()
+
+
+def business_today() -> date:
+    return business_date(datetime.now(timezone.utc))
+
+
+def day_start(day: date) -> datetime:
+    """Ish kunining boshlanishi (institut vaqtida, masalan 06:00)."""
+    return datetime.combine(day, time.min, tzinfo=INSTITUTE_TZ) + _day_shift()
+
+
+def day_bounds(day: date) -> tuple[datetime, datetime]:
+    start = day_start(day)
+    return start, day_start(day + timedelta(days=1))
 
 
 UZ_MONTHS = (
@@ -79,5 +112,14 @@ def local_date(column: ColumnElement) -> ColumnElement:
     between local midnight and 05:00 belongs to the previous UTC date, so
     the first five hours of each day were silently missing. Opened before
     05:00 local, the same report was labelled with YESTERDAY's date.
+
+    Ish kuni settings.day_start_hour da boshlanadi (business_date bilan bir xil).
     """
-    return func.date(func.timezone(INSTITUTE_TZ_NAME, column))
+    # Ikkalasi ham SQL matnining o'zida (bog'langan parametr emas): aks holda
+    # SELECT va GROUP BY dagi bir xil ifoda Postgres uchun har xil bo'lib qoladi.
+    from app.config import settings
+
+    hours = int(settings.day_start_hour)
+    return func.date(
+        func.timezone(literal_column(f"'{INSTITUTE_TZ_NAME}'"), column) - literal_column(f"interval '{hours} hours'")
+    )

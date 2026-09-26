@@ -10,7 +10,8 @@ from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.schemas.base import CamelModel
 from app.services.schedule_presence import board_workbook, day_board
-from app.timezone import local_now
+from app.timezone import business_date, local_now
+from app.timezone import business_today
 
 router = APIRouter(prefix="/api/jadval", tags=["dars-jadvali"])
 ReadDep = Annotated[CurrentUser, Depends(require_permission("manageLessons", "manageAttendance", "viewReports"))]
@@ -44,7 +45,7 @@ class BoardOut(CamelModel):
 
 def _day(sana: str | None) -> date:
     if not sana:
-        return local_now().date()
+        return business_today()
     try:
         return date.fromisoformat(sana)
     except ValueError:
@@ -62,7 +63,7 @@ async def get_day_board(
     `hozir=true` — faqat hozir davom etayotgan darslar (bugun)."""
     day = _day(sana)
     now = local_now()
-    rows = await day_board(db, day, at=now if hozir and day == now.date() else None)
+    rows = await day_board(db, day, at=now if hozir and day == business_date(now) else None)
     return BoardOut(
         day=day.isoformat(),
         now=hozir,

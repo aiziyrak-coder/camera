@@ -40,6 +40,7 @@ from app.services.camera_roles import is_door_camera
 from app.services.face_matching import load_candidate_matrix_cached
 from app.services.presence import record_visit
 from app.timezone import local_now
+from app.timezone import business_today
 
 logger = logging.getLogger("app.jobs.unknown_rematch")
 
@@ -59,7 +60,7 @@ async def run_unknown_rematch_once(now: datetime | None = None) -> dict[str, int
     stats = {"tekshirildi": 0, "tanildi": 0, "davomat": 0}
     if not settings.unknown_rematch_enabled:
         return stats
-    today = local_now().date() if now is None else now.date()
+    today = business_today() if now is None else now.date()
     since = today - timedelta(days=max(0, settings.unknown_rematch_days - 1))
     from app.jobs.attendance_ai import upsert_attendance_from_recognition
 

@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.attendance_policy import AttendancePolicy
-from app.timezone import local_now
+from app.timezone import business_date, local_now
 
 CACHE_SECONDS = 30.0
 
@@ -143,7 +143,7 @@ def early_leave_verdict(
     if not rule.is_work_day(day):
         return EARLY_NA
     moment = now or local_now()
-    if day is not None and day >= moment.date() and moment.time() < rule.work_end:
+    if day is not None and day >= business_date(moment) and moment.time() < rule.work_end:
         # Kun hali tugamagan — odam binoda bo'lishi mumkin.
         return EARLY_NA
     if check_out is None or check_in is None:

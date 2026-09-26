@@ -36,6 +36,7 @@ from app.services.report_criteria import (
 )
 from app.services.event_status import STATUS_LABELS as EVENT_STATUS_LABELS, bucket_statuses
 from app.timezone import to_local
+from app.timezone import business_date
 
 HEADER_FILL = PatternFill("solid", fgColor="E0E7FF")
 HEADER_FONT = Font(bold=True, color="1E1B4B")
@@ -115,7 +116,7 @@ async def _first_cameras(db: AsyncSession, person_ids: list, period: Period) -> 
         )
     ).all()
     for person_id, seen_at, camera_name in rows:
-        first.setdefault((person_id, to_local(seen_at).date()), camera_name)
+        first.setdefault((person_id, business_date(seen_at)), camera_name)
     return first
 
 

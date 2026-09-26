@@ -48,7 +48,15 @@ describe('yordamchilar', () => {
   });
 
   it('Toshkent sanasi brauzer mintaqasiga bog\'liq emas', () => {
-    // 2026-09-14 20:30 UTC = 2026-09-15 01:30 Toshkent
-    expect(todayInTashkent(new Date(Date.UTC(2026, 8, 14, 20, 30)))).toBe('2026-09-15');
+    // 2026-09-15 01:30 UTC = 2026-09-15 06:30 Toshkent — yangi ish kuni
+    expect(todayInTashkent(new Date(Date.UTC(2026, 8, 15, 1, 30)))).toBe('2026-09-15');
+  });
+
+  it('ish kuni 06:00 da almashadi', () => {
+    // 2026-09-14 20:30 UTC = 2026-09-15 01:30 Toshkent — hali kechagi ish kuni
+    expect(todayInTashkent(new Date(Date.UTC(2026, 8, 14, 20, 30)))).toBe('2026-09-14');
+    // 00:59 UTC = 05:59 Toshkent — kechagi; 01:00 UTC = 06:00 — bugungi
+    expect(todayInTashkent(new Date(Date.UTC(2026, 8, 15, 0, 59)))).toBe('2026-09-14');
+    expect(todayInTashkent(new Date(Date.UTC(2026, 8, 15, 1, 0)))).toBe('2026-09-15');
   });
 });

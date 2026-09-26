@@ -29,6 +29,7 @@ from app.models import AttendanceRecord, Event, StudentStaff, UnknownSighting
 from app.services import situation as svc, situation_analytics as sa
 from app.services.event_status import CONFIRMED_STATUSES, OPEN_STATUSES, REJECTED_STATUSES
 from app.timezone import INSTITUTE_TZ
+from app.timezone import day_start
 
 # Kamera tanigan deb hisoblanadigan manbalar. Qo'lda kiritilgan va turniket
 # yozuvi "yuz tanildi" degani emas; manbasi yo'q eski yozuvlar kamera
@@ -37,8 +38,8 @@ RECOGNISED_SOURCES = ("kamera", "dars")
 
 
 def _bounds(start: date_type, end: date_type) -> tuple[datetime, datetime]:
-    lo = datetime.combine(start, time.min, tzinfo=INSTITUTE_TZ)
-    hi = datetime.combine(end + timedelta(days=1), time.min, tzinfo=INSTITUTE_TZ)
+    lo = day_start(start)
+    hi = day_start(end + timedelta(days=1))
     return lo, hi
 
 

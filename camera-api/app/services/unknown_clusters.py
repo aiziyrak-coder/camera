@@ -32,6 +32,7 @@ from app.models import FaceGalleryEmbedding, StudentStaff, UnknownSighting
 from app.services.face_matching import anchor_hash, load_candidate_matrix_cached
 from app.services.unknown_sightings import ResolveError, _unit, assign_to_person, dismiss
 from app.timezone import local_now
+from app.timezone import business_today
 
 
 @dataclass
@@ -84,7 +85,7 @@ def cluster_vectors(vectors: list[np.ndarray], threshold: float) -> list[list[in
 
 
 async def recurring_clusters(db: AsyncSession, *, days: int, min_days: int = 1, limit: int = 60) -> list[Cluster]:
-    since = local_now().date() - timedelta(days=max(0, days - 1))
+    since = business_today() - timedelta(days=max(0, days - 1))
     rows = (
         await db.execute(
             select(UnknownSighting)

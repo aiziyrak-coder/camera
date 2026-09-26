@@ -52,12 +52,11 @@ async def add_event(db_session, camera, when: datetime, *, module_code: int = 17
 
 @pytest.mark.usefixtures("seeded")
 class TestLocalDayBoundaries:
-    async def test_an_event_just_after_local_midnight_counts_for_that_day(self, db_session, a_camera):
-        """01:00 Tashkent is 20:00 the previous day in UTC. Grouped by UTC
-        date it lands in yesterday's report and today's shows one fewer —
-        which is how a fifth of every day went missing."""
+    async def test_an_event_just_after_the_day_starts_counts_for_that_day(self, db_session, a_camera):
+        """06:30 Tashkent is 01:30 UTC. Ish kuni 06:00 da boshlanadi — hodisa
+        o'sha kunning hisobotiga tushadi (UTC sanasi bo'yicha emas)."""
         today = date(2026, 9, 4)
-        await add_event(db_session, a_camera, local_moment(today, 1, 0))
+        await add_event(db_session, a_camera, local_moment(today, 6, 30))
 
         report = await generate_rule_based_report(db_session, "Kunlik", today=today)
         assert report.stats[1] == {"label": "AI signallar", "value": "1"}
@@ -65,6 +64,8 @@ class TestLocalDayBoundaries:
     async def test_an_event_late_the_previous_evening_does_not_leak_in(self, db_session, a_camera):
         today = date(2026, 9, 4)
         await add_event(db_session, a_camera, local_moment(today - timedelta(days=1), 23, 30))
+        # 05:30 — hali kechagi ish kuni (kun 06:00 da almashadi).
+        await add_event(db_session, a_camera, local_moment(today, 5, 30))
 
         report = await generate_rule_based_report(db_session, "Kunlik", today=today)
         assert report.stats[1]["value"] == "0"
@@ -79,7 +80,7 @@ class TestLocalDayBoundaries:
     async def test_day_and_night_are_split_on_local_hours(self, db_session, a_camera):
         today = date(2026, 9, 4)
         await add_event(db_session, a_camera, local_moment(today, 10))  # working hours
-        await add_event(db_session, a_camera, local_moment(today, 2))   # empty building
+        await add_event(db_session, a_camera, local_moment(today, 22))  # empty building
 
         report = await generate_rule_based_report(db_session, "Kunlik", today=today)
         timing = next(s for s in report.sections if "vaqt bo'yicha" in s.title)

@@ -29,6 +29,7 @@ from app.models import (
     StudentStaff,
 )
 from app.pagination import PageParams, paginate
+from app.schemas.base import CamelModel
 from app.schemas.situation import (
     ArrivalOut,
     CalendarDayOut,
@@ -61,6 +62,7 @@ from app.schemas.situation import (
 from app.services import situation as svc
 from app.services.staff_export import NO_FACULTY_LABEL, course_label
 from app.timezone import local_now, to_local
+from app.timezone import business_date
 
 router = APIRouter(prefix="/api/situation", tags=["situation"])
 
@@ -660,7 +662,7 @@ async def person_profile(
     ).all()
     recent_visits = [
         PersonVisitOut(
-            id=str(vid), date=to_local(first).date().isoformat(), camera=camera or "O'chirilgan kamera",
+            id=str(vid), date=business_date(first).isoformat(), camera=camera or "O'chirilgan kamera",
             building=building, zone=zone, first_seen=svc.hm(first), last_seen=svc.hm(last),
             duration_minutes=max(0, round((last - first).total_seconds() / 60)), sightings=sightings,
         )
@@ -670,4 +672,121 @@ async def person_profile(
     return PersonProfileOut(
         person=info, date_from=start.isoformat(), date_to=end.isoformat(), calendar=calendar, totals=totals,
         lessons=lessons_out, recent_visits=recent_visits,
+    )
+
+
+# ─────────────────────────────────────────── Holat bo'yicha odamlar ro'yxati
+
+PeopleStatus = Literal["hammasi", "kelgan", "keldi", "kech_keldi", "kelmadi", "kutilmoqda", "yuzsiz", "dam_olish", "malumot_yoq"]
+
+
+class StatusPersonOut(CamelModel):
+    id: str
+    full_name: str
+    type: str
+    group: str
+    course: int | None
+    faculty: str | None
+    status: str
+    check_in: str | None
+    biometrics_status: str
+
+
+class StatusCountsOut(CamelModel):
+    hammasi: int = 0
+    kelgan: int = 0
+    keldi: int = 0
+    kech_keldi: int = 0
+    kelmadi: int = 0
+    kutilmoqda: int = 0
+    yuzsiz: int = 0
+    dam_olish: int = 0
+    malumot_yoq: int = 0
+
+
+class StatusPeopleOut(CamelModel):
+    date: str
+    counts: StatusCountsOut
+    total: int
+    page: int
+    page_size: int
+    items: list[StatusPersonOut]
+
+
+@router.get("/people-status", response_model=StatusPeopleOut)
+async def people_by_status(
+    db: DbDep,
+    _: ReadDep,
+    date: DateQuery = None,
+    status_: Annotated[PeopleStatus, Query(alias="status")] = "hammasi",
+    type_: Annotated[Literal["talaba", "xodim"], Query(alias="type")] = "talaba",
+    faculty_id: Annotated[str | None, Query(alias="facultyId")] = None,
+    course: Annotated[int | None, Query(ge=1, le=12)] = None,
+    group: Annotated[str | None, Query(max_length=100)] = None,
+    search: Annotated[str | None, Query(max_length=100)] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(alias="pageSize", ge=1, le=500)] = 100,
+) -> StatusPeopleOut:
+    """Sanoq ortidagi odamlar (kelgan = keldi + kech_keldi): "kech kelganlar 37" -> aynan kimlar. Filtrlar
+    (fakultet/kurs/guruh/qidiruv) bilan; `counts` — shu filtrlardagi har
+    holat soni (status filtrisiz), ya'ni sanoqlar va ro'yxat bir-biriga mos.
+
+    Holatlar: keldi (vaqtida), kech_keldi, kelmadi, kutilmoqda (bugun,
+    yuzi bor, hali ko'rinmagan), yuzsiz (yuzi bazada yo'q — kamera tanimaydi),
+    dam_olish, malumot_yoq."""
+    day = svc.resolve_day(date)
+    fid = _uuid_or_404(faculty_id, "Fakultet topilmadi") if faculty_id else None
+    stmt = (
+        select(
+            StudentStaff.id, StudentStaff.full_name, StudentStaff.type, StudentStaff.group_or_position,
+            StudentStaff.faculty_id, StudentStaff.biometrics_status, AttendanceRecord.status, AttendanceRecord.check_in,
+        )
+        .outerjoin(
+            AttendanceRecord,
+            and_(AttendanceRecord.student_staff_id == StudentStaff.id, AttendanceRecord.date == day),
+        )
+        .where(StudentStaff.type == type_, StudentStaff.active.is_(True))
+        .order_by(StudentStaff.full_name)
+    )
+    if fid:
+        stmt = stmt.where(StudentStaff.faculty_id == fid)
+    if group:
+        stmt = stmt.where(svc.member_prefilter(group))
+    rows = (await db.execute(stmt)).all()
+    names = await svc.faculty_names(db)
+    needle = svc.norm_name(search) if search else ""
+
+    counts = StatusCountsOut()
+    matched: list[StatusPersonOut] = []
+    for pid, name, ptype, unit, faculty, bio, record_status, check_in in rows:
+        if group and not svc.is_member(unit, group):
+            continue
+        person_course, group_name = svc.student_group(unit) if ptype == "talaba" else (None, unit or "")
+        if course and person_course != course:
+            continue
+        if needle and needle not in svc.norm_name(name):
+            continue
+        enrolled = bio == "tasdiqlangan"
+        state = svc.person_status(record_status, enrolled, day)
+        buckets = {"hammasi", state}
+        if state in svc.PRESENT_STATUSES:
+            buckets.add("kelgan")
+        if not enrolled:
+            buckets.add("yuzsiz")
+        for bucket in buckets:
+            setattr(counts, bucket, getattr(counts, bucket) + 1)
+        if status_ in buckets:
+            matched.append(
+                StatusPersonOut(
+                    id=str(pid), full_name=name, type=ptype, group=group_name or "", course=person_course,
+                    faculty=names.get(faculty) if faculty else None, status=state,
+                    check_in=svc.hm(check_in), biometrics_status=bio,
+                )
+            )
+    if status_ in ("kelgan", "keldi", "kech_keldi"):
+        matched.sort(key=lambda p: p.check_in or "99:99")
+    start = (page - 1) * page_size
+    return StatusPeopleOut(
+        date=day.isoformat(), counts=counts, total=len(matched), page=page, page_size=page_size,
+        items=matched[start:start + page_size],
     )

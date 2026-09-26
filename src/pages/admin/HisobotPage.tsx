@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { CalendarDays, Download, Gauge, LayoutGrid, List, Printer, Send, TriangleAlert } from 'lucide-react';
+import { Activity, CalendarDays, Download, Gauge, LayoutGrid, List, Printer, Send, TriangleAlert } from 'lucide-react';
 import {
   Button,
   CodeText,
@@ -21,6 +21,7 @@ import { RAG_LETTER, RAG_TEXT, RATE_RAG, rag } from '../../ui/rag';
 import CriteriaStrip from '../../components/hisobot/CriteriaStrip';
 import KpiStrip from '../../components/hisobot/KpiStrip';
 import KpiView from '../../components/hisobot/KpiView';
+import InstituteStatusView from '../../components/hisobot/InstituteStatusView';
 import ReportSchedulesDialog from '../../components/hisobot/ReportSchedulesDialog';
 import PeopleTable from '../../components/hisobot/PeopleTable';
 import { RagLegend, StatusBoard, boardRag, type BoardItem } from '../../components/hisobot/board';
@@ -69,6 +70,7 @@ const SECTIONS: TabItem<HisobotSection>[] = [
 ];
 
 const VIEWS: TabItem<HisobotView>[] = [
+  { id: 'holat', label: 'Umumiy holat', icon: Activity },
   { id: 'taxta', label: 'Holat taxtasi', icon: LayoutGrid },
   { id: 'royxat', label: "Ro'yxat", icon: List },
   { id: 'tabel', label: 'Oylik tabel', icon: CalendarDays },
@@ -100,8 +102,10 @@ export default function HisobotPage() {
   const tabel = state.view === 'tabel';
   // KPI butun institut bo'yicha: bo'lim, mezon va aholi filtrlari unga tegishli emas.
   const kpi = state.view === 'kpi';
-  const options = useApiResource<HisobotFilterOptions>(kpi ? null : hisobotPaths.filters(kind));
-  const report = useApiResource<HisobotReport>(tabel || kpi ? null : hisobotPaths.report(state));
+  // Umumiy holat — o'z filtrlari va jonli ma'lumoti bilan (InstituteStatusView).
+  const holat = state.view === 'holat';
+  const options = useApiResource<HisobotFilterOptions>(kpi || holat ? null : hisobotPaths.filters(kind));
+  const report = useApiResource<HisobotReport>(tabel || kpi || holat ? null : hisobotPaths.report(state));
   const sheet = useApiResource<TabelReport>(tabel ? tabelPaths.data(state) : null);
 
   // Bo'lim almashganda oldingi bo'limning ma'lumoti ko'rinib qolmasin.
@@ -126,8 +130,8 @@ export default function HisobotPage() {
   const criterion = data?.criterion ?? state.criterion;
   const reference = useMemo(() => documentReference(state), [state]);
   const generatedAt = useMemo(stamp, [state, data, sheetData]);
-  const ready = kpi || (tabel ? Boolean(sheetData) : Boolean(data));
-  const loading = kpi ? false : tabel ? sheet.loading : report.loading;
+  const ready = kpi || holat || (tabel ? Boolean(sheetData) : Boolean(data));
+  const loading = kpi || holat ? false : tabel ? sheet.loading : report.loading;
 
   async function exportExcel() {
     if (exporting) return;
@@ -290,7 +294,7 @@ export default function HisobotPage() {
               className="sm:ms-auto"
             />
           </div>
-          {!tabel && !kpi && (
+          {!tabel && !kpi && !holat && (
             <CriteriaStrip
               criteria={data?.criteria ?? null}
               value={criterion}
@@ -298,7 +302,7 @@ export default function HisobotPage() {
               loading={report.loading}
             />
           )}
-          <div className="px-3 pb-2">
+          {!holat && <div className="px-3 pb-2">
             {kpi ? (
               <DateRangePicker
                 value={{ preset: state.preset, from: state.from, to: state.to }}
@@ -309,11 +313,13 @@ export default function HisobotPage() {
             ) : (
               <ReportFilters state={state} options={options.data} onChange={update} onReset={reset} />
             )}
-          </div>
+          </div>}
         </div>
 
         {/* 3. Javob. */}
-        {kpi ? (
+        {holat ? (
+          <InstituteStatusView type={kind} />
+        ) : kpi ? (
           <KpiView from={state.from} to={state.to} />
         ) : tabel ? (
           sheet.error && !sheetData ? (

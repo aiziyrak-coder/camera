@@ -57,6 +57,7 @@ from app.services.attendance_policy import current_policy, load_policy
 from app.services.notifications import notify_access_denied, notify_attendance
 from app.timezone import INSTITUTE_TZ, local_now, to_local
 from app.ws import manager
+from app.timezone import business_today
 
 logger = logging.getLogger("app.integrations.access")
 
@@ -503,7 +504,7 @@ async def _announce(record: AttendanceRecord, person: StudentStaff, device: Acce
         logger.warning("attendance announcement failed", exc_info=True)
     # Ota-onaga "keldi" xabari faqat bugungi kun uchun: kechikib so'ralgan
     # kechagi hodisa uchun hozir xabar yuborish chalg'itadi.
-    if record.date == local_now().date():
+    if record.date == business_today():
         await notify_attendance(record, person, None)
 
 

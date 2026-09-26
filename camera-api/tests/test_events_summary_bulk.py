@@ -133,7 +133,7 @@ class TestFilters:
     async def test_modules_building_search_dates_and_severity_sort(self, client: AsyncClient, db_session, cameras):
         entrance, corridor = cameras
         db_session.add_all([
-            make(entrance, when=local_moment(DAY, 1, 0), severity="past", code=21),
+            make(entrance, when=local_moment(DAY, 7, 0), severity="past", code=21),
             make(entrance, when=local_moment(DAY, 12, 0), severity="yuqori", code=19),
             make(corridor, when=local_moment(DAY, 13, 0), severity="o'rta", code=20, building="2-bino",
                  person="Soxtaov Xodim"),

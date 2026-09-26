@@ -40,6 +40,7 @@ from app.services.report_export import build_analytics_workbook
 from app.services.report_generator import _date_range, generate_rule_based_report
 from app.services.staff_export import XLSX_MIME
 from app.timezone import local_now, to_local
+from app.timezone import business_today
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -208,7 +209,7 @@ async def generate_report(
     """Eski "Kunlik/Haftalik/Oylik generatsiya" — moslik uchun qoldirilgan.
     Endi u ham to'liq tahlil ma'lumotini saqlaydi."""
     generated = await generate_rule_based_report(db, body.period)
-    start, end, _label = _date_range(body.period, local_now().date())
+    start, end, _label = _date_range(body.period, business_today())
     analytics = await build_analytics(db, start, end)
     author = await db.get(User, current_user.id)
     report = Report(

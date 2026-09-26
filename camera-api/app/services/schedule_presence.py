@@ -30,6 +30,7 @@ from app.models import AttendanceRecord, Camera, LessonSession, StudentStaff
 from app.models.presence_visit import PresenceVisit
 from app.services.room_inference import group_of
 from app.timezone import INSTITUTE_TZ
+from app.timezone import day_start
 
 DEFAULT_LESSON = timedelta(minutes=80)
 PRESENT = ("keldi", "kech_keldi")
@@ -100,7 +101,7 @@ async def day_board(db: AsyncSession, day: date, *, at: datetime | None = None) 
             )
         ).scalars()
     )
-    start_utc = datetime.combine(day, time(0, 0), INSTITUTE_TZ)
+    start_utc = day_start(day)
     end_utc = start_utc + timedelta(days=1)
     visits: dict[uuid.UUID, list[tuple[uuid.UUID, datetime, datetime]]] = defaultdict(list)
     seen_today: set[uuid.UUID] = set()

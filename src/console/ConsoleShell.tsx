@@ -9,22 +9,23 @@ import { ConsoleSectionsMenu, ConsoleUserMenu } from './ConsoleNav';
 import { cn } from '../ui';
 import { useLiveAttendance, useLiveEvents } from '../lib/realtime';
 import { signalAlarm } from '../lib/alarmSignal';
-import { getKafedras, getOverview, type KafedraStat, type Overview } from '../lib/situationApi';
 import { useCommandPaletteHotkey } from '../layouts/shell/useCommandPaletteHotkey';
-import AlertsPanel from './panels/AlertsPanel';
 import CamerasPanel from './panels/CamerasPanel';
-import PeoplePanel from './panels/PeoplePanel';
-import UnitsPanel from './panels/UnitsPanel';
-import VerdictPanel from './panels/VerdictPanel';
-import VitalsPanel from './panels/VitalsPanel';
-import UnknownPanel from './panels/UnknownPanel';
+import GroupTablePanel from './panels/GroupTablePanel';
+import GroupStatsPanel from './panels/GroupStatsPanel';
 import ConsolePalette, { type PaletteTarget } from './ConsolePalette';
-import ConsoleFilterBar from './ConsoleFilterBar';
 import { useConsoleFilter } from './consoleFilter';
+import { useNazoratSelection } from './nazoratSelection';
+import { useGroupLive } from './useGroupLive';
 import { EASE } from './motion';
 
 /**
  * NAZORAT — institutning jonli kamera oynasi.
+ *
+ * Tartib (2026-09-26, foydalanuvchi talabi): chapda guruh/talabalar jadvali
+ * (filtr, holat, hozirgi dars, yuzi bazadami), o'ngda 4 ta aylanuvchi
+ * kamera (har 10 s) va tanlangan guruh / institut bo'yicha jonli sanoqlar.
+ * Har son bosiladi — kimligi ko'rinadi. Boshqa panellar olib tashlandi.
  *
  * Bitta ekran, siljishsiz: yon menyu yo'q, sahifadan sahifaga
  * o'tilmaydi. Joy yetmasa panel KATTALASHADI (Panel.tsx), ya'ni
@@ -84,39 +85,15 @@ function Console() {
   const canAttendance = can('manageAttendance', role);
   const canReports = can('viewReports', role);
   const filter = useConsoleFilter();
-  const { date, isToday, scope } = filter;
+  const { date, isToday } = filter;
+  const selection = useNazoratSelection();
   const now = useClock();
   const [expanded, setExpanded] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
 
-  const [overview, setOverview] = useState<Overview | null>(null);
-  const [units, setUnits] = useState<KafedraStat[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [pulse, setPulse] = useState(0);
-
-  const load = useCallback(
-    async (signal?: AbortSignal) => {
-      try {
-        const [data, kafedras] = await Promise.all([
-          getOverview(date, { signal }),
-          getKafedras(date, { signal }),
-        ]);
-        setOverview(data);
-        setUnits(kafedras);
-        setError(null);
-      } catch (err) {
-        if ((err as { name?: string }).name === 'AbortError') return;
-        setError((err as Error).message);
-      }
-    },
-    [date],
-  );
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [load, pulse]);
+  const canPeople = canAttendance || canReports;
+  const groupLive = useGroupLive(canPeople ? selection.group : '', date, isToday, pulse);
 
   // Jonli xabar kelganda raqamlar yangilanadi. Ulanish HOLATI hodisalar
   // kanalidan olinadi — davomat kanali holat qaytarmaydi. O'tgan kunni
@@ -162,7 +139,6 @@ function Console() {
     return () => window.removeEventListener('keydown', onKey);
   }, [expanded]);
 
-  const arrivals = overview?.lastArrivals ?? [];
 
   return (
     <LayoutGroup>
@@ -214,83 +190,50 @@ function Console() {
         </span>
       </motion.header>
 
-      {/* Filtr satri — uchala davomat paneli shu tanlovga bo'ysunadi. */}
-      <ConsoleFilterBar filter={filter} />
-
-      {/* Panellar maydoni — siljish yo'q, hammasi shu yerda. */}
+      {/* Panellar: chapda jadval, o'ngda kameralar va jonli sanoqlar. */}
       <motion.main
-        className="console-grid relative z-10 grid min-h-0 flex-1 auto-rows-[minmax(260px,auto)] grid-cols-1 gap-2.5 px-3 pb-3 sm:grid-cols-2 lg:auto-rows-fr lg:grid-cols-4 lg:grid-rows-3"
+        className="console-grid relative z-10 mt-2.5 grid min-h-0 flex-1 auto-rows-[minmax(300px,auto)] grid-cols-1 gap-2.5 px-3 pb-3 lg:auto-rows-fr lg:grid-cols-4 lg:grid-rows-3"
       >
+        {canPeople && (
+          <GroupTablePanel
+            selection={selection}
+            live={groupLive}
+            date={date}
+            setDate={filter.setDate}
+            isToday={isToday}
+            pulse={pulse}
+            expanded={expanded === 'groups'}
+            onExpand={setExpanded}
+            area="min-h-[420px] lg:min-h-0 lg:col-span-2 lg:row-span-3"
+          />
+        )}
+
         {canLive && (
           <CamerasPanel
             focusRequest={target?.panel === 'cameras' ? target : null}
             expanded={expanded === 'cameras'}
             onExpand={setExpanded}
-            area="min-h-[340px] sm:col-span-2 lg:min-h-0 lg:col-span-2 lg:row-span-2"
+            area={cn('min-h-[340px] lg:min-h-0 lg:col-span-2', canPeople ? 'lg:row-span-2' : 'lg:row-span-3')}
           />
         )}
 
-        {canAttendance && <PeoplePanel
-          arrivals={arrivals}
-          scope={scope}
-          date={date}
-          live={live}
-          expanded={expanded === 'people'}
-          onExpand={setExpanded}
-          area="lg:col-span-1 lg:row-span-2"
-        />}
-
-        <AlertsPanel
-          overview={overview}
-          failed={Boolean(error)}
-          pulse={pulse}
-          live={live}
-          expanded={expanded === 'alerts'}
-          onExpand={setExpanded}
-          area="lg:col-span-1"
-        />
-
-        {canAttendance && <VerdictPanel
-          overview={overview}
-          scope={scope}
-          date={date}
-          live={live}
-          failed={Boolean(error)}
-          expanded={expanded === 'verdict'}
-          onExpand={setExpanded}
-          area="lg:col-span-1"
-        />}
-
-        {canAttendance && <UnitsPanel
-          openRequest={target?.panel === 'units' ? target : null}
-          units={units}
-          faculties={overview?.byFaculty ?? null}
-          scope={scope}
-          setScope={filter.setScope}
-          date={date}
-          expanded={expanded === 'units'}
-          onExpand={setExpanded}
-          area="sm:col-span-2 lg:col-span-2"
-        />}
-
-        {/* Tizim o'lchovlari — yoyilganda tizim holati kartalari. */}
-        <VitalsPanel expanded={expanded === 'vitals'} onExpand={setExpanded} area="lg:col-span-1" />
-
-        {/* Begona shaxs — kunduzgi notanish yuzlar (signal emas, ro'yxat). */}
-        <UnknownPanel
-          date={date}
-          pulse={pulse}
-          expanded={expanded === 'unknown'}
-          onExpand={setExpanded}
-          area="lg:col-span-1"
-        />
-
+        {canPeople && (
+          <GroupStatsPanel
+            selection={selection}
+            live={groupLive}
+            date={date}
+            isToday={isToday}
+            pulse={pulse}
+            expanded={expanded === 'group-stats'}
+            onExpand={setExpanded}
+            area="lg:col-span-2 lg:row-span-1"
+          />
+        )}
       </motion.main>
 
       <footer className="relative z-10 flex shrink-0 items-center gap-3 px-5 pb-2 text-subtle">
         <span className="text-[10px] font-medium">{date}</span>
-        {error && <span className="text-[10px] font-semibold !text-danger">Ma’lumot olinmadi</span>}
-        <span className="ms-auto hidden text-[10px] font-medium lg:inline">Kamerani bosing — kattalashadi · Ctrl+K — qidiruv · Esc — yopadi</span>
+        <span className="ms-auto hidden text-[10px] font-medium lg:inline">Sonni bosing — kimligi · kamerani bosing — kattalashadi · Ctrl+K — qidiruv · Esc — yopadi</span>
       </footer>
 
       <div role="status" aria-live="assertive" className="sr-only">{announcement}</div>
@@ -298,7 +241,7 @@ function Console() {
       <ConsolePalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
-        units={canAttendance ? (units ?? []) : []}
+        units={[]}
         people={canAttendance}
         cameras={canLive}
         onOpen={openTarget}
