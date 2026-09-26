@@ -81,10 +81,13 @@ class TestPerson:
         assert len(calendar) == 30
         assert calendar[-1] == {"date": world.today.isoformat(), "status": "keldi", "checkIn": "08:05", "checkOut": None}
         assert calendar[-2]["status"] == "keldi" and calendar[-2]["checkIn"] == "08:15"
-        assert calendar[0]["status"] == "malumot_yoq"
+        # Yozuvsiz kunlar: ish kuni — "ma'lumot yo'q", yakshanba (ish kuni emas) — "dam olish".
+        first = world.today - timedelta(days=29)
+        assert calendar[0]["status"] == ("dam_olish" if first.isoweekday() == 7 else "malumot_yoq")
+        sundays = sum(1 for i in range(28) if (first + timedelta(days=i)).isoweekday() == 7)
         assert body["totals"] == {
-            "days": 30, "present": 2, "late": 0, "absent": 0, "dayOff": 0, "noData": 28, "rate": 100.0,
-            "avgArrival": "08:10",
+            "days": 30, "present": 2, "late": 0, "absent": 0, "dayOff": sundays, "noData": 28 - sundays,
+            "rate": 100.0, "avgArrival": "08:10",
         }
 
         lessons = body["lessons"]
