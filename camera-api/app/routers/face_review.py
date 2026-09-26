@@ -318,6 +318,8 @@ async def confirm_item(
     except svc.ReviewError as error:
         raise HTTPException(status.HTTP_409_CONFLICT, str(error))
     person = await db.get(StudentStaff, row.person_id)
+    if person is None or not person.active:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Bu odam faol emas — davomat yozilmaydi")
     camera = await db.get(Camera, row.camera_id) if row.camera_id else None
     await log_action(
         db,

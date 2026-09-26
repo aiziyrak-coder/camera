@@ -32,12 +32,24 @@ export function clockTime(ms: number | null | undefined): string | null {
   if (ms === null || ms === undefined || !Number.isFinite(ms)) return null;
   const date = new Date(ms);
   if (Number.isNaN(date.getTime())) return null;
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  return new Intl.DateTimeFormat('ru-RU', { timeZone: 'Asia/Tashkent', hour: '2-digit', minute: '2-digit', hour12: false }).format(date);
 }
 
 /** "2026-09-20 14:03:22" yoki ISO → "20.09.2026 14:03". Tanib bo'lmasa o'zicha. */
 export function formatServerTime(value: string | null | undefined, withSeconds = false): string | null {
   if (!value) return null;
+  // Mintaqasi ko'rsatilgan vaqt (UTC "Z" yoki "+05:00") — Toshkentga o'giriladi;
+  // ilgari UTC qatorlar 5 soat orqada ko'rinardi.
+  if (/(Z|[+-]\d{2}:?\d{2})$/.test(value)) {
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) {
+      const parts = new Intl.DateTimeFormat('ru-RU', {
+        timeZone: 'Asia/Tashkent', year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: withSeconds ? '2-digit' : undefined, hour12: false,
+      }).format(date);
+      return parts.replace(',', '');
+    }
+  }
   const match = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/.exec(value);
   if (!match) return value;
   const [, y, m, d, hh, mm, ss] = match;

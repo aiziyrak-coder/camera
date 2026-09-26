@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { calendarDateInTashkent } from '../../lib/uzDate';
 import { useHref, useSearchParams } from 'react-router-dom';
 import {
   ChevronLeft,
@@ -316,7 +317,7 @@ export default function VideoWall({
   }
 
   function exportViews() {
-    const stamp = new Date().toISOString().slice(0, 10);
+    const stamp = calendarDateInTashkent();
     downloadBlob(new Blob([serializeViews(views)], { type: 'application/json' }), `videodevor-korinishlar-${stamp}.json`);
   }
 

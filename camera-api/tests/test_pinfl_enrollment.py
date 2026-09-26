@@ -41,7 +41,7 @@ class TestLookupByPinfl:
         resp = await client.post("/api/public/enrollment/lookup", json={"code": ENROLL_CODE, "pinfl": PINFL})
         assert resp.status_code == 200
         body = resp.json()
-        assert body["fullName"] == "Sinovov Sardor Aliyevich"
+        assert body["fullName"] == "S*** Sardor A***"
         assert body["typeLabel"] == "Xodim"
         assert body["alreadyEnrolled"] is False
 
@@ -53,7 +53,7 @@ class TestLookupByPinfl:
             "/api/public/enrollment/lookup", json={"code": ENROLL_CODE, "pinfl": " 3000-0000 0000-47 "}
         )
         assert resp.status_code == 200
-        assert resp.json()["fullName"] == "Sinovov Sardor Aliyevich"
+        assert resp.json()["fullName"] == "S*** Sardor A***"
 
     async def test_an_unknown_pinfl_is_not_found(self, client: AsyncClient, a_staff_member):
         resp = await client.post("/api/public/enrollment/lookup", json={"code": ENROLL_CODE, "pinfl": "99999999999999"})
@@ -79,7 +79,7 @@ class TestLookupByPinfl:
             json={"code": ENROLL_CODE, "passportSeries": "AD", "passportNumber": "1234567"},
         )
         assert resp.status_code == 200
-        assert resp.json()["fullName"] == "Eski Foydalanuvchi"
+        assert resp.json()["fullName"] == "E*** Foydalanuvchi"
 
 
 @pytest.mark.usefixtures("seeded")

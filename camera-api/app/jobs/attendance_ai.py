@@ -84,7 +84,7 @@ from app.services.camera_roles import face_roi_box
 from app.services.motion_gate import MotionGate, compose_roi
 from app.services.notifications import notify_attendance
 from app.services.presence import record_visit
-from app.timezone import business_date, local_now, to_local
+from app.timezone import business_date, business_seconds, local_now, to_local
 from app.ws import manager
 
 logger = logging.getLogger("app.attendance_ai")
@@ -198,6 +198,9 @@ def first_sighting_status(
     (app/services/attendance_policy.py: 08:00 + 10 daqiqadan keyin — kech)."""
     if settings.attendance_arrival_only:
         return current_policy().arrival_status(occurred_time, person_type, day), occurred_time
+    if day is not None and not current_policy().is_work_day(day):
+        # Dam olish kuni / bayram — kechikish yo'q.
+        return "keldi", occurred_time
     cutoff = time_type.fromisoformat(settings.attendance_ai_late_cutoff)
     if occurred_time < cutoff:
         return "keldi", occurred_time
@@ -327,23 +330,12 @@ async def upsert_attendance_from_recognition(
         else:
             wrote_something = True
             created = True
-    if not wrote_something and existing is not None and is_exit_sighting:
-        # populate_existing=True: without it, when this same day's row is
-        # already in the session's identity map, SQLAlchemy's ORM-enabled
-        # RETURNING silently keeps the stale cached object instead of
-        # applying the just-updated check_out.
-        stmt = (
-            update(AttendanceRecord)
-            .where(AttendanceRecord.id == existing.id)
-            .values(check_out=occurred_time)
-            .returning(AttendanceRecord)
-        )
-        record = (await db.execute(stmt.execution_options(populate_existing=True))).scalar_one()
-        wrote_something = True
-    elif (
+    if (
         not wrote_something
         and existing is not None
-        and settings.attendance_arrival_only
+        # "kelmadi" ni haqiqiy ko'rinish har qanday rejimda tuzatadi
+        # (yuz tekshiruvi va qayta moslash aynan shuning uchun bor).
+        and (settings.attendance_arrival_only or existing.status == "kelmadi")
         and _is_earlier_arrival(existing, occurred_time)
     ):
         # Kunning haqiqiy BIRINCHI ko'rinishi keyinroq yetib keldi:
@@ -363,10 +355,26 @@ async def upsert_attendance_from_recognition(
         stmt = (
             update(AttendanceRecord)
             .where(AttendanceRecord.id == existing.id)
+            # Qo'lda tuzatilgan yozuv SELECT va UPDATE orasida paydo bo'lsa ham tegilmaydi.
+            .where(AttendanceRecord.source.is_distinct_from("qolda"))
             .values(status=status, check_in=check_in, source="kamera")
             .returning(AttendanceRecord)
         )
-        record = (await db.execute(stmt.execution_options(populate_existing=True))).scalar_one()
+        record = (await db.execute(stmt.execution_options(populate_existing=True))).scalar_one_or_none() or existing
+        wrote_something = True
+    elif not wrote_something and existing is not None and is_exit_sighting and _is_later_sighting(existing, occurred_time, 0):
+        # populate_existing=True: without it, when this same day's row is
+        # already in the session's identity map, SQLAlchemy's ORM-enabled
+        # RETURNING silently keeps the stale cached object instead of
+        # applying the just-updated check_out.
+        stmt = (
+            update(AttendanceRecord)
+            .where(AttendanceRecord.id == existing.id)
+            .where(AttendanceRecord.source.is_distinct_from("qolda"))
+            .values(check_out=occurred_time)
+            .returning(AttendanceRecord)
+        )
+        record = (await db.execute(stmt.execution_options(populate_existing=True))).scalar_one_or_none() or existing
         wrote_something = True
     elif (
         not wrote_something
@@ -380,10 +388,11 @@ async def upsert_attendance_from_recognition(
         stmt = (
             update(AttendanceRecord)
             .where(AttendanceRecord.id == existing.id)
+            .where(AttendanceRecord.source.is_distinct_from("qolda"))
             .values(check_out=occurred_time)
             .returning(AttendanceRecord)
         )
-        record = (await db.execute(stmt.execution_options(populate_existing=True))).scalar_one()
+        record = (await db.execute(stmt.execution_options(populate_existing=True))).scalar_one_or_none() or existing
     elif not wrote_something:
         record = existing
 
@@ -422,6 +431,9 @@ async def upsert_attendance_from_recognition(
             at_entrance=camera.is_entrance and getattr(camera, "face_direction", None) != "chiqish",
         )
     ):
+        # Davomat yozuvi hodisadan mustaqil saqlanadi: raise_event chegara
+        # yoki sinov cheklovi tufayli hech narsa yozmay qaytishi mumkin.
+        await db.commit()
         await raise_event(
             db,
             camera=camera,
@@ -452,16 +464,19 @@ def _is_earlier_arrival(record: AttendanceRecord, occurred_time: time_type) -> b
         return False
     if record.status == "kelmadi" or record.check_in is None:
         return True
-    return occurred_time < record.check_in
+    # Ish kuni 06:00 dan: tungi 01:30 kunduzgi 09:30 dan KEYIN keladi.
+    return business_seconds(occurred_time) < business_seconds(record.check_in)
 
 
-def _is_later_sighting(record: AttendanceRecord, occurred_time: time_type) -> bool:
-    last = record.check_out or record.check_in
-    if last is None:
+def _is_later_sighting(record: AttendanceRecord, occurred_time: time_type, min_gap: int = 60) -> bool:
+    """Kunning oxirgi ko'rinishi (check_out) — kelishdan ham, avvalgi
+    ketishdan ham keyin bo'lsa. Qo'lda tuzatilgan yozuvga tegilmaydi."""
+    if record.source == "qolda":
         return False
-    return (occurred_time.hour * 3600 + occurred_time.minute * 60 + occurred_time.second) - (
-        last.hour * 3600 + last.minute * 60 + last.second
-    ) >= 60
+    marks = [business_seconds(t) for t in (record.check_in, record.check_out) if t is not None]
+    if not marks:
+        return min_gap == 0
+    return business_seconds(occurred_time) - max(marks) >= max(min_gap, 1)
 
 
 async def _announce_attendance(record: AttendanceRecord, person: StudentStaff | None, camera: Camera | None) -> None:

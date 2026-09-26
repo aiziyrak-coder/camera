@@ -28,6 +28,7 @@ from app.audit import log_action
 from app.database import get_db
 from app.dependencies import CurrentUser, has_any_permission, require_permission
 from app.models import Building, Camera, PresenceVisit
+from app.services.access_scope import allowed_buildings, camera_filter, ensure_camera_allowed
 from app.models.platform import FloorPlan
 from app.schemas.xarita import (
     XaritaBuildingOut,
@@ -138,9 +139,12 @@ def _camera_out(
     )
 
 
-async def _building(db: AsyncSession, building_id: str) -> Building:
+async def _building(db: AsyncSession, building_id: str, user=None) -> Building:
     building = await db.get(Building, _parse_uuid(building_id, "Bino topilmadi"))
-    if building is None:
+    allowed = allowed_buildings(user)
+    # Bino doirasi cheklangan foydalanuvchi boshqa binoni (va uning jonli
+    # oqim havolalarini) ko'rmaydi — mavjudligini ham oshkor qilmaymiz.
+    if building is None or (allowed is not None and building.id not in allowed):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Bino topilmadi")
     return building
 
@@ -158,6 +162,9 @@ async def list_buildings(db: DbDep, current_user: ViewDep) -> list[XaritaBuildin
     ham reja yuklash mumkin bo'lsin."""
     can_edit = await has_any_permission(db, current_user.role, ("editCameraLocation",))
     buildings = (await db.execute(select(Building).order_by(Building.sort_order, Building.name))).scalars().all()
+    allowed = allowed_buildings(current_user)
+    if allowed is not None:
+        buildings = [b for b in buildings if b.id in allowed]
     plans = (await db.execute(select(FloorPlan.building_id, FloorPlan.floor))).all()
     with_plan = {(b, f) for b, f in plans}
     counts = await plan_camera_counts(db)
@@ -189,7 +196,7 @@ async def list_buildings(db: DbDep, current_user: ViewDep) -> list[XaritaBuildin
 
 @router.get("/{building_id}/{floor}", response_model=XaritaFloorViewOut)
 async def floor_view(building_id: str, floor: FloorPath, db: DbDep, current_user: ViewDep) -> XaritaFloorViewOut:
-    building = await _building(db, building_id)
+    building = await _building(db, building_id, current_user)
     plan = await _plan(db, building.id, floor)
     cameras = (
         await db.execute(
@@ -205,7 +212,9 @@ async def floor_view(building_id: str, floor: FloorPath, db: DbDep, current_user
         # biriktirishning eng tez yo'li.
         probe = FloorPlan(building_id=building.id, floor=floor)
         rows = (
-            await db.execute(select(Camera).where(unassigned_candidate_filter(probe)).order_by(Camera.name))
+            await db.execute(
+                select(Camera).where(unassigned_candidate_filter(probe), camera_filter(current_user)).order_by(Camera.name)
+            )
         ).scalars().all()
         candidates = [_camera_out(c, {}, assigned=False) for c in rows]
 
@@ -230,7 +239,7 @@ async def upload_map_image(
 ) -> XaritaPlanOut:
     """Qavat rejasini yaratadi yoki rasmini almashtiradi. Kameralar
     joylashuvi nisbiy (0..1) — rasm almashganda ham saqlanadi."""
-    building = await _building(db, building_id)
+    building = await _building(db, building_id, current_user)
     if building.floors and floor > building.floors:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"{building.name} {building.floors} qavatli")
 
@@ -306,6 +315,7 @@ async def place_camera(
     camera = await db.get(Camera, _parse_uuid(camera_id, "Kamera topilmadi"))
     if camera is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kamera topilmadi")
+    ensure_camera_allowed(current_user, camera)
 
     assigned_now = False
     if body.building_id is not None and body.floor is not None:

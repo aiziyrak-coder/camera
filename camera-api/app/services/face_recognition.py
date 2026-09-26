@@ -245,6 +245,20 @@ class FaceCompareResult:
     faces_detected_b: int
 
 
+#: Ochiladigan rasmning eng katta o'lchami (telefon kamerasi ~50 MP gacha).
+MAX_DECODE_PIXELS = 50_000_000
+PNG_SIGNATURE = bytes([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+
+
+def _declared_dimensions(data: bytes) -> tuple[int, int] | None:
+    """JPEG yoki PNG sarlavhasidagi (eni, bo'yi); aniqlanmasa None."""
+    from app.services.image_size import jpeg_dimensions
+
+    if data[:8] == PNG_SIGNATURE and len(data) >= 24:
+        return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+    return jpeg_dimensions(data)
+
+
 def _decode_image(image_bytes: bytes) -> np.ndarray:
     """JPEG baytlarini rasmga aylantiradi yoki NoFaceDetectedError tashlaydi.
 
@@ -260,6 +274,12 @@ def _decode_image(image_bytes: bytes) -> np.ndarray:
     """
     if not image_bytes:
         raise NoFaceDetectedError("Rasm bo'sh")
+    # Kichik fayl juda katta o'lcham e'lon qilishi mumkin (masalan 2 MB JPEG
+    # "60000×60000") — ochishdan oldin sarlavhadagi o'lcham tekshiriladi,
+    # aks holda bitta ochiq so'rov gigabaytlab xotira egallardi.
+    dims = _declared_dimensions(image_bytes)
+    if dims is not None and dims[0] * dims[1] > MAX_DECODE_PIXELS:
+        raise NoFaceDetectedError("Rasm juda katta — 50 megapikselgacha rasm yuboring")
     arr = np.frombuffer(image_bytes, dtype=np.uint8)
     try:
         img = cv2.imdecode(arr, cv2.IMREAD_COLOR)

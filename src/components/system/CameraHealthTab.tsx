@@ -314,7 +314,7 @@ function CameraOutageDrawer({ camera, onClose }: { camera: CameraHealthRow | nul
                   <li key={o.id} className="flex items-center gap-3 px-1 py-1.5 text-[13px]">
                     <StatusDot tone={o.endedAt ? 'neutral' : 'danger'} pulse={!o.endedAt} />
                     <span className="intel-code min-w-0 flex-1 truncate text-fg">
-                      {new Date(o.startedAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}
+                      {new Date(o.startedAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Tashkent' })}
                     </span>
                     <span className={cn('intel-code shrink-0', o.endedAt ? 'text-muted' : 'text-danger')}>
                       {o.endedAt ? formatDuration(o.durationSeconds) : `davom etmoqda · ${formatDuration(o.durationSeconds)}`}

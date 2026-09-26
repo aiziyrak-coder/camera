@@ -71,8 +71,12 @@ async def decide_status(db: AsyncSession, record: StudentStaff, embedding: list[
     Avtomatik tasdiqlash o'chirilgan bo'lsa — eski tartib: ro'yxatda bor
     odam darhol tasdiqlanadi, o'zini o'zi qo'shgan odam admin qaroriga
     qoladi. O'xshash yuz tekshiruvi esa har doim ishlaydi."""
-    if not settings.self_enrollment_auto_approve and record.self_registered:
-        return "kutilmoqda", None
+    if record.self_registered:
+        # Institut ro'yxatida (HEMIS) yo'q, o'zini o'zi qo'shgan odam — uni
+        # hech kim tasdiqlamagan. Avtomatik tasdiqlansa, istalgan begona
+        # o'zini ro'yxatdan o'tkazib "begona shaxs" tekshiruvidan chiqib
+        # ketardi. Har doim administrator qaroriga qoladi.
+        return "kutilmoqda", "institut ro'yxatida yo'q — administrator tasdig'i kerak"
     ids, names, matrix = await _confirmed_matrix(db)
     hit = lookalike(embedding, ids, names, matrix, record.id)
     if hit:
@@ -93,7 +97,10 @@ async def approve_pending(db: AsyncSession) -> tuple[int, int]:
     pending = (
         await db.execute(
             select(StudentStaff).where(
-                StudentStaff.biometrics_status == "kutilmoqda", StudentStaff.biometric_embedding.is_not(None)
+                StudentStaff.biometrics_status == "kutilmoqda",
+                StudentStaff.biometric_embedding.is_not(None),
+                # O'zini o'zi qo'shganlar faqat administrator qarori bilan.
+                StudentStaff.self_registered.is_(False),
             )
         )
     ).scalars().all()

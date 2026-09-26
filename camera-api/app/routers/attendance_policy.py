@@ -94,9 +94,11 @@ async def put_policy(
     row.work_end = body.work_end
     row.work_days = ",".join(str(d) for d in body.work_days)
     row.track_last_seen = body.track_last_seen
+    # Bayram kunlari saqlanadi — ular alohida jadvalda (holidays). Bu jarayon
+    # qoidani hali yuklamagan bo'lishi mumkin: bazadan yangidan o'qiladi.
+    holidays = (await load_policy(db, force=True)).holidays
     await db.flush()
-    # Bayram kunlari saqlanadi — ular alohida jadvalda (holidays).
-    policy = replace(from_row(row), holidays=current_policy().holidays)
+    policy = replace(from_row(row), holidays=holidays)
 
     since = business_today() - timedelta(days=RECOMPUTE_DAYS)
     rows = (

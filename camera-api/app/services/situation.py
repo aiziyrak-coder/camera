@@ -888,18 +888,22 @@ async def camera_summary(db: AsyncSession) -> dict:
 async def event_summary(db: AsyncSession, day: date_type) -> dict:
     start, end = day_bounds(day)
     now = datetime.now(timezone.utc)
-    is_open = Event.status.in_(OPEN_STATUSES)
-    row = (
+    # Ikki kichik so'rov: ochiq hodisalar (qisman indeks ix_events_open) va
+    # bugungilar (occurred_at indeksi). Ilgari bitta COUNT ... FILTER butun
+    # jadvalni (~180 kun) har 15 soniyada aylanib chiqardi.
+    open_row = (
         await db.execute(
             select(
-                func.count().filter(is_open),
-                func.count().filter(Event.occurred_at >= start, Event.occurred_at < end),
-                func.count().filter(is_open, Event.severity == "yuqori"),
-                func.count().filter(is_open, Event.due_at < now),
-            ).where(OPERATOR_EVENTS)
+                func.count(),
+                func.count().filter(Event.severity == "yuqori"),
+                func.count().filter(Event.due_at < now),
+            ).where(OPERATOR_EVENTS, Event.status.in_(OPEN_STATUSES))
         )
     ).one()
-    return {"open": row[0], "today": row[1], "high_open": row[2], "overdue": row[3]}
+    today_count = await db.scalar(
+        select(func.count()).where(OPERATOR_EVENTS, Event.occurred_at >= start, Event.occurred_at < end)
+    )
+    return {"open": open_row[0], "today": today_count or 0, "high_open": open_row[1], "overdue": open_row[2]}
 
 
 async def arrivals_by_hour(db: AsyncSession, day: date_type) -> list[dict]:

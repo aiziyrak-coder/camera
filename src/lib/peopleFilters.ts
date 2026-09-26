@@ -1,3 +1,4 @@
+import { calendarDateInTashkent } from './uzDate';
 /** "Talabalar va Xodimlar" sahifasi va uning yuklab olish oynasi uchun
  *  umumiy filtr qiymatlari — ikkalasi bir xil kalitlardan foydalanishi
  *  shart, aks holda fayl ekrandagi ro'yxatga mos kelmay qoladi. */
@@ -29,7 +30,7 @@ export type ExportKind = 'people' | 'stats';
 /** Fayl nomi brauzerda tuziladi: API boshqa domenda va Content-Disposition
  *  sarlavhasi CORS ruxsatisiz skriptga ko'rinmaydi. */
 export function exportFilename(kind: ExportKind, type: PersonType, course: number | null, status: StatusFilter): string {
-  const date = new Date().toLocaleDateString('sv-SE'); // YYYY-MM-DD, kompyuterning mahalliy sanasi
+  const date = calendarDateInTashkent(); // YYYY-MM-DD, Toshkent sanasi
   const base = type === 'talaba' ? 'talabalar' : 'xodimlar';
   if (kind === 'stats') return `${base}-statistika-${date}.xlsx`;
   const coursePart = type === 'talaba' && course ? `-${course}-kurs` : '';

@@ -18,6 +18,7 @@ uni turli burchakdan taniydi.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from dataclasses import dataclass, field
@@ -84,30 +85,42 @@ def cluster_vectors(vectors: list[np.ndarray], threshold: float) -> list[list[in
     return groups
 
 
+#: Guruhlashga olinadigan eng ko'p kadr (eng katta yuzlar).
+MAX_CLUSTER_ROWS = 2000
+
+
 async def recurring_clusters(db: AsyncSession, *, days: int, min_days: int = 1, limit: int = 60) -> list[Cluster]:
     since = business_today() - timedelta(days=max(0, days - 1))
     rows = (
         await db.execute(
             select(UnknownSighting)
             .where(UnknownSighting.status == "kutilmoqda", UnknownSighting.day >= since)
+            .where(UnknownSighting.face_px >= settings.unknown_cluster_min_px)
             .order_by(UnknownSighting.face_px.desc(), UnknownSighting.hits.desc())
+            # Eng aniq (katta) yuzlar birinchi — guruhlash O(N·K) va API
+            # jarayonida ishlaydi, shuning uchun hajm cheklangan.
+            .limit(MAX_CLUSTER_ROWS)
         )
     ).scalars().all()
-    kept: list[UnknownSighting] = []
-    vectors: list[np.ndarray] = []
-    for row in rows:
-        if (row.face_px or 0) < settings.unknown_cluster_min_px:
-            continue
-        try:
-            vector = _unit(json.loads(row.embedding))
-        except (ValueError, TypeError):
-            continue
-        if vector is None:
-            continue
-        kept.append(row)
-        vectors.append(vector)
+
+    def _vectors() -> tuple[list[UnknownSighting], list[np.ndarray], list[list[int]]]:
+        kept: list[UnknownSighting] = []
+        vectors: list[np.ndarray] = []
+        for row in rows:
+            try:
+                vector = _unit(json.loads(row.embedding))
+            except (ValueError, TypeError):
+                continue
+            if vector is None:
+                continue
+            kept.append(row)
+            vectors.append(vector)
+        return kept, vectors, cluster_vectors(vectors, settings.unknown_cluster_similarity)
+
+    # JSON o'qish va guruhlash — alohida oqimda: API ning boshqa so'rovlari kutib qolmasin.
+    kept, vectors, groups = await asyncio.to_thread(_vectors)
     clusters: list[Cluster] = []
-    for group in cluster_vectors(vectors, settings.unknown_cluster_similarity):
+    for group in groups:
         cluster = Cluster()
         for index in group:
             cluster.add(kept[index], vectors[index])

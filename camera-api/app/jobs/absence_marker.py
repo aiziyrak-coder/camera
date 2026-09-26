@@ -28,7 +28,7 @@ import asyncio
 import logging
 from datetime import date as date_type, time as time_type
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -37,7 +37,7 @@ from app.database import SessionLocal
 from app.models import AIModuleConfig, AttendanceRecord, StudentStaff
 from app.services.attendance_policy import current_policy, load_policy
 from app.services.notifications import notify_absences
-from app.timezone import business_date, local_now
+from app.timezone import business_date, day_start, local_now
 
 logger = logging.getLogger("app.absence_marker")
 
@@ -107,6 +107,14 @@ async def mark_absences_for_day(db: AsyncSession, day: date_type) -> int:
         await db.execute(
             select(StudentStaff.id, StudentStaff.type)
             .where(StudentStaff.biometrics_status == "tasdiqlangan")
+            # Yuzi shu kuni (yoki keyin) tasdiqlangan odamni ertalab kamera
+            # taniy olmasdi — uni "kelmadi" deyish yolg'on ayblov bo'lardi.
+            .where(
+                or_(
+                    StudentStaff.biometrics_confirmed_at.is_(None),
+                    StudentStaff.biometrics_confirmed_at < day_start(day),
+                )
+            )
             # Faol bo'lmagan (chetlatilgan/arxivlangan) odam — "kelmadi" emas.
             .where(StudentStaff.active.is_(True))
             .where(StudentStaff.type.in_(types))

@@ -38,7 +38,7 @@ from app.schemas.attendance import (
 from app.storage import presigned_url
 from app.timezone import INSTITUTE_TZ, INSTITUTE_TZ_NAME, local_now
 from app.utils import compute_initials
-from app.timezone import business_today, day_start
+from app.timezone import business_today, day_start, local_date
 
 router = APIRouter(prefix="/api/attendance", tags=["attendance"])
 
@@ -136,12 +136,14 @@ async def _sightings_by_day(
     start_at = day_start(first)
     end_at = day_start(end)
     local_last_seen = func.timezone(INSTITUTE_TZ_NAME, PresenceVisit.last_seen_at)
+    # Ish kuni (06:00 dan) bo'yicha: 00:00-05:59 dagi ko'rinish kechagi kunga tegishli.
+    business_day = local_date(PresenceVisit.last_seen_at)
     rows = await db.execute(
-        select(func.date(local_last_seen), func.max(local_last_seen), func.sum(PresenceVisit.sightings))
+        select(business_day, func.max(local_last_seen), func.sum(PresenceVisit.sightings))
         .where(PresenceVisit.student_staff_id == person_id)
         .where(PresenceVisit.last_seen_at >= start_at)
         .where(PresenceVisit.last_seen_at < end_at)
-        .group_by(func.date(local_last_seen))
+        .group_by(business_day)
     )
     return {
         day: DaySightings(moment.time().replace(microsecond=0), int(count or 0))

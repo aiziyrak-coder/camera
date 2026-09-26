@@ -63,7 +63,6 @@ from app.routers import (
     hisobot,
     hisobot_jadval,
     kpi,
-    floor_plans,
     xarita,
     integrations,
     lesson_sessions,
@@ -310,7 +309,6 @@ app.include_router(notifications.router)
 app.include_router(integrations.router)
 app.include_router(access_control.router)
 app.include_router(ptz.router)
-app.include_router(floor_plans.router)
 app.include_router(xarita.router)
 app.include_router(metrics.router)
 app.include_router(privacy.router)

@@ -1,4 +1,5 @@
 import { api, ApiError, type Page } from './apiClient';
+import { calendarDateInTashkent } from './uzDate';
 import { config } from './config';
 
 /** Maxfiylik sahifasi (/sozlamalar/maxfiylik) va uning API'si —
@@ -219,6 +220,6 @@ export function exportFilename(person: Pick<PrivacyPerson, 'fullName' | 'id'>, n
     .replace(/[ʻʼ'`‘’]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
-  const date = now.toISOString().slice(0, 10);
+  const date = calendarDateInTashkent(now);
   return `shaxsiy-malumot-${slug || person.id}-${date}.json`;
 }

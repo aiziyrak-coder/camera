@@ -200,8 +200,14 @@ async def groups_list(
     course: Annotated[int | None, Query(ge=1, le=12)] = None,
     search: Annotated[str | None, Query(max_length=100)] = None,
 ) -> list[GroupStatOut]:
-    """Barcha guruhlar tekis ro'yxatda (qidiruv / tez o'tish uchun), nom bo'yicha."""
+    """Barcha guruhlar tekis ro'yxatda (qidiruv / tez o'tish uchun), nom bo'yicha.
+    15 soniya keshlanadi (Nazorat konsoli va fakultet sahifalari tez-tez so'raydi)."""
     day = svc.resolve_day(date)
+    return await svc.cached(("groups_list", day, faculty_id, course, search),
+                            lambda: _groups_list(db, day, faculty_id, course, search))
+
+
+async def _groups_list(db, day, faculty_id, course, search) -> list[GroupStatOut]:
     pending = svc.pending_state(day)
     groups = svc.aggregate_groups(await svc.unit_rows(db, day), pending)
     names = await svc.faculty_names(db)
@@ -746,8 +752,23 @@ async def people_by_status(
 
     Holatlar: keldi (vaqtida), kech_keldi, kelmadi, kutilmoqda (bugun,
     yuzi bor, hali ko'rinmagan), yuzsiz (yuzi bazada yo'q — kamera tanimaydi),
-    dam_olish, malumot_yoq."""
+    dam_olish, malumot_yoq.
+
+    Natija 15 soniya keshlanadi: Nazorat konsoli ertalabki oqimda har
+    kelish xabarida qayta so'raydi, har so'rov esa ~10 000 qatorni o'qiydi."""
     day = svc.resolve_day(date)
+    key = ("people_status", day, status_, type_, faculty_id, course, group, department_id, org_unit_id,
+           position_group, position, search, page, page_size)
+    return await svc.cached(key, lambda: _people_by_status(
+        db, day, status_, type_, faculty_id, course, group, department_id, org_unit_id, position_group, position,
+        search, page, page_size,
+    ))
+
+
+async def _people_by_status(
+    db, day, status_, type_, faculty_id, course, group, department_id, org_unit_id, position_group, position,
+    search, page, page_size,
+) -> StatusPeopleOut:
     fid = _uuid_or_404(faculty_id, "Fakultet topilmadi") if faculty_id else None
     stmt = (
         select(
@@ -791,7 +812,9 @@ async def people_by_status(
     needle = svc.norm_name(search) if search else ""
 
     counts = StatusCountsOut()
-    matched: list[StatusPersonOut] = []
+    # Pydantic obyektlari faqat qaytariladigan sahifa uchun yasaladi
+    # (ilgari 10 000 ta yasalib, bittasi qaytardi).
+    matched: list[tuple] = []
     for pid, name, ptype, unit, faculty, bio, record_status, check_in, person_unit, person_position in rows:
         if group and not svc.is_member(unit, group):
             continue
@@ -812,20 +835,23 @@ async def people_by_status(
         for bucket in buckets:
             setattr(counts, bucket, getattr(counts, bucket) + 1)
         if status_ in buckets:
-            matched.append(
-                StatusPersonOut(
-                    id=str(pid), full_name=name, type=ptype, group=group_name or "", course=person_course,
-                    faculty=names.get(faculty) if faculty else None, status=state,
-                    check_in=svc.hm(check_in), biometrics_status=bio, position=person_position,
-                    unit=unit_names.get(person_unit) if person_unit else None,
-                )
-            )
+            matched.append((pid, name, ptype, group_name, person_course, faculty, state, check_in, bio,
+                            person_position, person_unit))
     if status_ in ("kelgan", "keldi", "kech_keldi"):
-        matched.sort(key=lambda p: p.check_in or "99:99")
+        matched.sort(key=lambda row: svc.hm(row[7]) or "99:99")
     start = (page - 1) * page_size
+    items = [
+        StatusPersonOut(
+            id=str(pid), full_name=name, type=ptype, group=group_name or "", course=person_course,
+            faculty=names.get(faculty) if faculty else None, status=state,
+            check_in=svc.hm(check_in), biometrics_status=bio, position=person_position,
+            unit=unit_names.get(person_unit) if person_unit else None,
+        )
+        for pid, name, ptype, group_name, person_course, faculty, state, check_in, bio, person_position, person_unit
+        in matched[start:start + page_size]
+    ]
     return StatusPeopleOut(
-        date=day.isoformat(), counts=counts, total=len(matched), page=page, page_size=page_size,
-        items=matched[start:start + page_size],
+        date=day.isoformat(), counts=counts, total=len(matched), page=page, page_size=page_size, items=items,
     )
 
 
@@ -893,11 +919,16 @@ async def org_tree(db: DbDep, _: ReadDep, date: DateQuery = None) -> OrgTreeOut:
     """Xodimlar filtri uchun institut tuzilmasi (HEMIS): rahbariyat,
     fakultetlar va ularning kafedralari, bo'limlar, markazlar, turar joylar —
     har biri bugungi sanoqlar bilan (ichki bo'linmalar bilan birga).
-    Shuningdek lavozimlar ro'yxati va toifalar (o'qituvchi/ma'muriy/texnik)."""
+    Shuningdek lavozimlar ro'yxati va toifalar (o'qituvchi/ma'muriy/texnik).
+    15 soniya keshlanadi."""
+    day = svc.resolve_day(date)
+    return await svc.cached(("org_tree", day), lambda: _org_tree(db, day))
+
+
+async def _org_tree(db, day) -> OrgTreeOut:
     from app.models import OrgUnit
     from app.services import org_structure as org
 
-    day = svc.resolve_day(date)
     pending = svc.pending_state(day)
     units = (await db.execute(select(OrgUnit).where(OrgUnit.active.is_(True)))).scalars().all()
     roots = org.build_tree(list(units))

@@ -1,7 +1,7 @@
 import { Wifi, WifiOff } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { branding } from '../../lib/branding';
-import { todayInTashkent } from '../../lib/uzDate';
+import { calendarDateInTashkent } from '../../lib/uzDate';
 import { MicroLabel, cn } from '../../ui';
 
 const WEEKDAYS = ['Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba'];
@@ -19,7 +19,8 @@ export function tashkentClock(now: Date): { hh: string; mm: string; ss: string; 
     hour12: false,
   }).formatToParts(now);
   const pick = (type: string) => parts.find((p) => p.type === type)?.value ?? '00';
-  const iso = todayInTashkent(now);
+  // Soat yonida kalendar sanasi (tungi 02:14 da ham bugungi sana).
+  const iso = calendarDateInTashkent(now);
   const [y, m, d] = iso.split('-').map(Number);
   const weekday = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
   return {

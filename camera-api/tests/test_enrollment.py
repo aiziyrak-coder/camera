@@ -81,7 +81,7 @@ class TestEnrollmentLookup:
         )
         assert resp.status_code == 200
         body = resp.json()
-        assert body["fullName"] == "Soyibnazarov Hojiakbar"
+        assert body["fullName"] == "S*** Hojiakbar"
         assert body["typeLabel"] == "Xodim"
         assert body["alreadyEnrolled"] is False
 
@@ -213,7 +213,7 @@ class TestSelfRegistration:
         )
         assert resp.status_code == 201
         body = resp.json()
-        assert body["fullName"] == "Yangi Talaba"
+        assert body["fullName"] == "Y*** Talaba"
         assert body["typeLabel"] == "Talaba"
         assert body["alreadyEnrolled"] is False
 
@@ -243,7 +243,7 @@ class TestSelfRegistration:
             json={"code": ENROLL_CODE, "passportSeries": "AB", "passportNumber": "1112223"},
         )
         assert resp.status_code == 200
-        assert resp.json()["fullName"] == "Qaytgan Talaba"
+        assert resp.json()["fullName"] == "Q*** Talaba"
 
     async def test_an_existing_passport_returns_that_record_instead_of_a_duplicate(
         self, client: AsyncClient, an_enrollable_record, db_session: AsyncSession

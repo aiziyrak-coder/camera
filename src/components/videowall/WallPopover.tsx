@@ -72,6 +72,8 @@ export default function WallPopover({
           aria-label={ariaLabel ?? title}
           className={cn(
             'absolute top-full z-50 mt-1 max-w-[calc(100vw-2rem)] animate-pop-in rounded-[2px] border border-border-strong bg-surface p-3 text-fg shadow-pop',
+            // Telefonda tugma o'ngda bo'lsa panel ekrandan chiqib ketardi.
+            'max-sm:fixed max-sm:inset-x-4 max-sm:top-auto max-sm:w-auto',
             widthClass,
             align === 'right' ? 'right-0' : 'left-0',
           )}

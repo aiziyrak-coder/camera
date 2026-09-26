@@ -366,7 +366,7 @@ export default function GroupTablePanel({
         />
         <SearchInput value={search} onChange={setSearch} placeholder="F.I.Sh. bo‘yicha qidirish" size="sm" className="w-52" />
         <span className="ms-auto">
-          <PdfButton {...pdfTarget} />
+          {status !== 'darsda' && status !== 'darsda_emas' && <PdfButton {...pdfTarget} />}
         </span>
       </div>
     </div>

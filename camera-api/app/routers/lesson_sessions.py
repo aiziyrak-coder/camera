@@ -48,6 +48,11 @@ router = APIRouter(prefix="/api/lesson-sessions", tags=["lesson-sessions"])
 # jadvalni kiritish, import qilish va o'chirish — faqat manageLessons bilan.
 ReadDep = Annotated[CurrentUser, Depends(require_permission("manageLessons", "viewReports"))]
 EditDep = Annotated[CurrentUser, Depends(require_permission("manageLessons"))]
+# Bitta darsdagi davomat — guruh, kafedra va shaxs sahifalarida ham ochiladi
+# (ular manageAttendance bilan), shuning uchun u ham yetarli.
+AttendanceReadDep = Annotated[
+    CurrentUser, Depends(require_permission("manageLessons", "viewReports", "manageAttendance"))
+]
 
 
 def _to_out(s: LessonSession) -> LessonSessionOut:
@@ -330,7 +335,7 @@ async def import_weekly_schedule(
 
 @router.get("/{session_id}/attendance", response_model=LessonAttendanceOut)
 async def lesson_attendance(
-    session_id: str, db: Annotated[AsyncSession, Depends(get_db)], _: ReadDep
+    session_id: str, db: Annotated[AsyncSession, Depends(get_db)], _: AttendanceReadDep
 ) -> LessonAttendanceOut:
     """Bitta darsning davomat ro'yxati — TT kriteriya 7/8 ning dars
     darajasidagi javobi (app/jobs/lesson_attendance.py to'ldiradi).

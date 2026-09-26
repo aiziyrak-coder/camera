@@ -32,6 +32,9 @@ async def record_visit(
             .where(PresenceVisit.student_staff_id == person_id)
             .where(PresenceVisit.camera_id == cam_id)
             .where(PresenceVisit.last_seen_at >= seen_at - gap)
+            # Kechikib kelgan eski ko'rinish (qayta moslash, yuz tekshiruvi)
+            # bugungi tashrifning boshini kechaga tortib ketmasin.
+            .where(PresenceVisit.first_seen_at <= seen_at + gap)
             .order_by(PresenceVisit.last_seen_at.desc())
             .limit(1)
         )

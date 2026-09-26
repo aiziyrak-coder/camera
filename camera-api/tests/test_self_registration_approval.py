@@ -185,10 +185,13 @@ class TestAdminDecides:
 
 @pytest.mark.usefixtures("seeded")
 class TestAutoApprove:
-    async def test_a_new_face_is_approved_and_recognised_at_once(self, client: AsyncClient, db_session):
+    async def test_a_self_registered_stranger_always_waits_for_an_admin(self, client: AsyncClient, db_session):
+        # Avtomatik tasdiqlash yoqilgan bo'lsa ham: institut ro'yxatida yo'q
+        # odamni hech kim tasdiqlamagan — u "begona shaxs" tekshiruvidan
+        # o'zini o'zi chiqarib yubora olmasin.
         result = await _register_and_submit(client)
-        assert result["biometricsStatus"] == "tasdiqlangan"
-        assert result["id"] in await _known_ids(db_session)
+        assert result["biometricsStatus"] == "kutilmoqda"
+        assert result["id"] not in await _known_ids(db_session)
 
     async def test_a_face_like_someone_already_known_waits_for_review(self, client: AsyncClient, db_session):
         import json
@@ -199,21 +202,25 @@ class TestAutoApprove:
         result = await _register_and_submit(client)
         assert result["biometricsStatus"] == "kutilmoqda"
 
-    async def test_startup_approves_everyone_waiting_except_duplicates(self, db_session):
+    async def test_startup_approves_listed_people_except_duplicates(self, db_session):
         import json
 
         from app.services.self_enrollment import approve_pending
 
-        a = StudentStaff(full_name="Kutuvchi Bir", type="talaba", group_or_position="DI-101", self_registered=True, biometrics_status="kutilmoqda",
+        a = StudentStaff(full_name="Kutuvchi Bir", type="talaba", group_or_position="DI-101", self_registered=False, biometrics_status="kutilmoqda",
                          biometric_embedding=json.dumps([1.0] + [0.0] * 511))
-        b = StudentStaff(full_name="Kutuvchi Ikki", type="talaba", group_or_position="DI-101", self_registered=True, biometrics_status="kutilmoqda",
+        b = StudentStaff(full_name="Kutuvchi Ikki", type="talaba", group_or_position="DI-101", self_registered=False, biometrics_status="kutilmoqda",
                          biometric_embedding=json.dumps([1.0, 0.01] + [0.0] * 510))
-        c = StudentStaff(full_name="Kutuvchi Uch", type="talaba", group_or_position="DI-101", self_registered=True, biometrics_status="kutilmoqda",
+        c = StudentStaff(full_name="Kutuvchi Uch", type="talaba", group_or_position="DI-101", self_registered=False, biometrics_status="kutilmoqda",
                          biometric_embedding=json.dumps([0.0, 1.0] + [0.0] * 510))
-        db_session.add_all([a, b, c])
+        stranger = StudentStaff(full_name="Begona Kutuvchi", type="talaba", group_or_position="DI-101", self_registered=True,
+                                biometrics_status="kutilmoqda", biometric_embedding=json.dumps([0.0, 0.0, 1.0] + [0.0] * 509))
+        db_session.add_all([a, b, c, stranger])
         await db_session.commit()
         approved, held = await approve_pending(db_session)
         assert (approved, held) == (2, 1)
+        # O'zini o'zi qo'shgan odamga ishga tushishdagi tasdiqlash tegmaydi.
+        assert stranger.biometrics_status == "kutilmoqda"
         # a va b — bitta yuz: bittasi tasdiqlanadi, takrori tekshiruvda qoladi.
         assert sorted([a.biometrics_status, b.biometrics_status]) == ["kutilmoqda", "tasdiqlangan"]
         assert c.biometrics_status == "tasdiqlangan"

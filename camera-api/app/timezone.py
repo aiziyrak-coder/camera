@@ -55,6 +55,16 @@ def business_date(moment: datetime) -> date:
     return (to_local(moment) - _day_shift()).date()
 
 
+def business_seconds(moment: time) -> int:
+    """Soat — ish kuni boshidan (06:00) necha soniya o'tgani. Kun ichidagi
+    vaqtlarni solishtirish uchun: 01:30 (tun) 09:30 dan KEYIN keladi, garchi
+    soat bo'yicha kichik bo'lsa ham."""
+    from app.config import settings
+
+    seconds = moment.hour * 3600 + moment.minute * 60 + moment.second
+    return (seconds - int(settings.day_start_hour) * 3600) % 86400
+
+
 def business_today() -> date:
     return business_date(datetime.now(timezone.utc))
 

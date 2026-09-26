@@ -23,12 +23,25 @@ export default function FaceMatchStep({
   useEffect(() => {
     let cancelled = false;
     setResult(null);
-    compareFaces(capturedFaceUrl, passportPhotoUrl, token).then((r) => {
-      if (!cancelled) {
-        setResult(r);
-        onResult(r.confidence, r.matched);
-      }
-    });
+    compareFaces(capturedFaceUrl, passportPhotoUrl, token)
+      .then((r) => {
+        if (!cancelled) {
+          setResult(r);
+          onResult(r.confidence, r.matched);
+        }
+      })
+      .catch((err: unknown) => {
+        // Tarmoq/server xatosi — "solishtirilmoqda..." abadiy aylanib qolmasin.
+        if (cancelled) return;
+        const failed: FaceMatchResult = {
+          confidence: 0,
+          matched: false,
+          method: 'remote-api',
+          message: err instanceof Error && err.message ? err.message : "Solishtirib bo'lmadi — tarmoqni tekshiring",
+        };
+        setResult(failed);
+        onResult(0, false);
+      });
     return () => {
       cancelled = true;
     };

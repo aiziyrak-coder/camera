@@ -328,12 +328,10 @@ class TestEnrollment:
         assert body["total"] == 5
         assert [m["fullName"] for m in body["missing"]] == ["Ergasheva Laylo"]
         assert body["missing"][0]["initials"] == "EL" and body["missing"][0]["biometricsStatus"] == "yoq"
-        # Kartadagi havola guruh kodini ham olib yuradi — telefonda uni
-        # qo'lda terish shart bo'lmasin (kodsiz topshirish qabul qilinmaydi).
-        assert len(body["enrollCode"]) == 6
-        assert body["enrollUrl"] == (
-            f"https://cam.example.uz/royxatdan-otish?guruh=DI-2301&kod={body['enrollCode']}"
-        )
+        # Guruh kodi tizimi olib tashlangan: havola faqat guruhni oldindan to'ldiradi,
+        # shaxs JSHSHIR bilan aniqlanadi.
+        assert body["enrollCode"] == ""
+        assert body["enrollUrl"].startswith("https://cam.example.uz/royxatdan-otish?guruh=DI-2301")
 
         empty = (await client.get("/api/situation/enrollment/groups/DI-2303/missing", headers=admin)).json()
         assert empty["total"] == 0 and empty["missing"] == []

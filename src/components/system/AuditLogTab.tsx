@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { calendarDateInTashkent } from '../../lib/uzDate';
 import { AlertCircle, AlertTriangle, CheckCircle2, Download } from 'lucide-react';
 import { api, buildQuery, type Page } from '../../lib/apiClient';
 import { exportRowsAsCsv } from '../../lib/csvExport';
@@ -153,7 +154,7 @@ export function AuditLogTab({ canExport }: { canExport: boolean }) {
       exportRowsAsCsv(
         ['Vaqt', 'Foydalanuvchi', 'Amal', 'Modul', 'Holat', 'IP manzil'],
         all.map((l) => [l.timestamp, l.user, l.action, l.module, STATUS[l.status]?.label ?? l.status, l.ip]),
-        `tizim-jurnali-${new Date().toISOString().slice(0, 10)}.csv`,
+        `tizim-jurnali-${calendarDateInTashkent()}.csv`,
       );
       if (truncated) toast.info(`Eksport ${formatNumber(MAX_EXPORT_ROWS)} ta yozuv bilan cheklandi — davrni filtrlab qayta yuklang`);
     } catch {

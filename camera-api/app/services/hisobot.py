@@ -303,15 +303,16 @@ async def _sightings(db: AsyncSession, data: Data, cond) -> dict[tuple[uuid.UUID
     kerak: bir marta ko'rinish "o'sha payt ketdi" degani emas."""
     start_at, end_at = _bounds(data.start, min(data.end, svc.today()))
     local_last = func.timezone(INSTITUTE_TZ_NAME, PresenceVisit.last_seen_at)
+    business_day = local_date(PresenceVisit.last_seen_at)
     rows = await db.execute(
-        select(PresenceVisit.student_staff_id, func.date(local_last), func.max(local_last),
+        select(PresenceVisit.student_staff_id, business_day, func.max(local_last),
                func.sum(PresenceVisit.sightings))
         .select_from(PresenceVisit)
         .join(StudentStaff, StudentStaff.id == PresenceVisit.student_staff_id)
         .where(cond)
         .where(PresenceVisit.last_seen_at >= start_at)
         .where(PresenceVisit.last_seen_at < end_at)
-        .group_by(PresenceVisit.student_staff_id, func.date(local_last))
+        .group_by(PresenceVisit.student_staff_id, business_day)
     )
     return {
         (pid, day): (moment.time().replace(microsecond=0), int(count or 0))

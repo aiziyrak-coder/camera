@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { LayoutGroup, motion } from 'motion/react';
 import { ChartColumn, Search } from 'lucide-react';
@@ -18,6 +18,8 @@ import { useConsoleFilter } from './consoleFilter';
 import { useNazoratSelection } from './nazoratSelection';
 import { useGroupLive } from './useGroupLive';
 import { EASE } from './motion';
+
+const PULSE_THROTTLE_MS = 10_000;
 
 /**
  * NAZORAT — institutning jonli kamera oynasi.
@@ -92,6 +94,19 @@ function Console() {
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   const [pulse, setPulse] = useState(0);
+  // Jonli xabarlar to'lqin bo'lib keladi (ertalab ~2/s): har biri 8-10 ta
+  // og'ir so'rov yuborardi. Endi 10 soniyada ko'pi bilan bir marta.
+  const pulseTimer = useRef<number | null>(null);
+  const bumpPulse = useCallback(() => {
+    if (pulseTimer.current !== null) return;
+    pulseTimer.current = window.setTimeout(() => {
+      pulseTimer.current = null;
+      setPulse((n) => n + 1);
+    }, PULSE_THROTTLE_MS);
+  }, []);
+  useEffect(() => () => {
+    if (pulseTimer.current !== null) window.clearTimeout(pulseTimer.current);
+  }, []);
   const canPeople = canAttendance || canReports;
   // Guruh ma'lumoti faqat talabalar uchun (xodimlarda `group` — kafedra id si).
   const groupLive = useGroupLive(canPeople && selection.who === 'talaba' ? selection.group : '', date, isToday, pulse);
@@ -99,7 +114,7 @@ function Console() {
   // Jonli xabar kelganda raqamlar yangilanadi. Ulanish HOLATI hodisalar
   // kanalidan olinadi — davomat kanali holat qaytarmaydi. O'tgan kunni
   // ko'rayotganda jonli yangilanish kerak emas — u kun o'zgarmaydi.
-  useLiveAttendance(() => isToday && setPulse((n) => n + 1), true);
+  useLiveAttendance(() => isToday && bumpPulse(), true);
   const canReview = can('reviewEvents', role);
   // Ekran o'quvchi uchun: yangi signal ovoz bilan birga matn sifatida ham e'lon qilinadi.
   const [announcement, setAnnouncement] = useState('');
@@ -108,7 +123,7 @@ function Console() {
       if (canReview && signalAlarm(event)) {
         setAnnouncement(`Yangi signal: ${event.moduleName}, ${event.cameraName}`);
       }
-      if (isToday) setPulse((n) => n + 1);
+      if (isToday) bumpPulse();
     }, true) === 'live' && isToday;
 
   // Ctrl/⌘+K — konsol palitrasi: bo'linma, shaxs, kamera va boshqaruv

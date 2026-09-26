@@ -39,15 +39,26 @@ export default function FaceCapture({ onConfirm }: FaceCaptureProps) {
         // hypothetical. Without this race, that leaves the user staring
         // at "Kamera ishga tushirilmoqda..." indefinitely with zero
         // feedback.
+        const request = navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: false,
+        });
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        let timedOut = false;
+        // Kutish muddati tugagach ruxsat berilsa ham kamera yonib qolmasin:
+        // kechikib kelgan oqim darhol to'xtatiladi.
+        request.then((late) => {
+          if (timedOut || cancelled) late.getTracks().forEach((t) => t.stop());
+        }).catch(() => undefined);
         const stream = await Promise.race([
-          navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-            audio: false,
+          request,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => {
+              timedOut = true;
+              reject(new CameraTimeoutError());
+            }, CAMERA_START_TIMEOUT_MS);
           }),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new CameraTimeoutError()), CAMERA_START_TIMEOUT_MS),
-          ),
-        ]);
+        ]).finally(() => clearTimeout(timer));
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
           return;

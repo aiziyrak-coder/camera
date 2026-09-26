@@ -87,6 +87,43 @@ async def _upload_crop(data: bytes) -> str | None:
     return key
 
 
+# Bugungi notanish yuzlar vektorlari (jarayon ichida). Ilgari har chaqiriqda
+# kunning barcha qatorlari (1500 tagacha) o'qilib, har birining JSON vektori
+# qayta ochilardi — har kameraning har aylanishida. Endi faqat yangi qatorlar.
+_DAY_CACHE: dict = {"day": None, "ids": [], "matrix": None}
+
+
+async def _day_vectors(db: AsyncSession, day) -> tuple[list, "np.ndarray | None"]:
+    current = list((await db.execute(select(UnknownSighting.id).where(UnknownSighting.day == day))).scalars().all())
+    cache = _DAY_CACHE
+    known = set(cache["ids"])
+    if cache["day"] != day or not known.issubset(set(current)):
+        # Yangi kun yoki qator o'chirilgan/qaytarilgan — boshidan.
+        cache.update(day=day, ids=[], matrix=None)
+        known = set()
+    missing = [row_id for row_id in current if row_id not in known]
+    if missing:
+        rows = (
+            await db.execute(
+                select(UnknownSighting.id, UnknownSighting.embedding).where(UnknownSighting.id.in_(missing))
+            )
+        ).all()
+        for row_id, raw in rows:
+            try:
+                vector = _unit(json.loads(raw))
+            except (ValueError, TypeError):
+                vector = None
+            if vector is None:
+                continue
+            cache["ids"].append(row_id)
+            cache["matrix"] = vector[None, :] if cache["matrix"] is None else np.vstack([cache["matrix"], vector])
+    return cache["ids"], cache["matrix"]
+
+
+def reset_day_cache_for_tests() -> None:
+    _DAY_CACHE.update(day=None, ids=[], matrix=None)
+
+
 async def record_unknown_faces(
     db: AsyncSession,
     camera: Camera,
@@ -107,15 +144,7 @@ async def record_unknown_faces(
     moment = now or datetime.now(timezone.utc)
     day = business_today() if now is None else business_date(moment)
 
-    rows = list(
-        (await db.execute(select(UnknownSighting).where(UnknownSighting.day == day))).scalars().all()
-    )
-    vectors = []
-    for row in rows:
-        try:
-            vectors.append(_unit(json.loads(row.embedding)))
-        except (ValueError, TypeError):
-            vectors.append(None)
+    ids, matrix = await _day_vectors(db, day)
 
     created = 0
     for index, face in enumerate(faces):
@@ -124,15 +153,14 @@ async def record_unknown_faces(
             continue
         px = _face_px(face)
 
-        best_row, best_sim = None, -1.0
-        for row, stored in zip(rows, vectors, strict=True):
-            if stored is None:
-                continue
-            sim = float(stored @ vector)
-            if sim > best_sim:
-                best_row, best_sim = row, sim
+        best_row, best_pos = None, -1
+        if matrix is not None and len(ids):
+            sims = matrix @ vector
+            best_pos = int(np.argmax(sims))
+            if float(sims[best_pos]) >= settings.unknown_merge_similarity:
+                best_row = await db.get(UnknownSighting, ids[best_pos])
 
-        if best_row is not None and best_sim >= settings.unknown_merge_similarity:
+        if best_row is not None:
             best_row.hits += 1
             best_row.last_seen_at = moment
             # Yirikroq yuz — aniqroq rasm va ishonchliroq vektor.
@@ -143,10 +171,10 @@ async def record_unknown_faces(
                     best_row.crop_key = key
                     best_row.face_px = px
                     best_row.embedding = json.dumps([round(float(v), 6) for v in vector])
-                    vectors[rows.index(best_row)] = vector
+                    matrix[best_pos] = vector
             continue
 
-        if len(rows) >= settings.unknown_daily_cap:
+        if len(ids) >= settings.unknown_daily_cap:
             logger.warning("unknown sightings daily cap reached", extra={"cap": settings.unknown_daily_cap})
             break
 
@@ -165,8 +193,10 @@ async def record_unknown_faces(
             status="kutilmoqda",
         )
         db.add(row)
-        rows.append(row)
-        vectors.append(vector)
+        await db.flush()  # id kerak — keshga shu bilan qo'shiladi
+        ids.append(row.id)
+        matrix = vector[None, :] if matrix is None else np.vstack([matrix, vector])
+        _DAY_CACHE["matrix"] = matrix
         created += 1
 
     await db.commit()

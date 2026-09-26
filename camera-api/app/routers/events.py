@@ -415,6 +415,14 @@ async def events_summary(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: ReviewDep,
 ) -> EventSummaryOut:
+    """~10 ta agregat — har ochiq Hodisalar varag'i har jonli hodisada so'raydi.
+    Foydalanuvchi bo'yicha 10 soniya keshlanadi ("menga tayinlangan" shaxsiy)."""
+    from app.services import situation as svc
+
+    return await svc.cached(("events_summary", current_user.id), lambda: _events_summary(db, current_user))
+
+
+async def _events_summary(db: AsyncSession, current_user: CurrentUser) -> EventSummaryOut:
     now = datetime.now(timezone.utc)
     # Bino doirasi bor foydalanuvchi sanoqlarda ham faqat o'z binolarini ko'radi.
     scope = event_filter(current_user)

@@ -307,3 +307,18 @@ async def test_floor_view_counts_people_seen_in_last_ten_minutes(client, db_sess
     by_name = {c["name"]: c for c in body["cameras"]}
     assert by_name["Zal"]["peopleNow"] == 2
     assert by_name["Bo'sh"]["peopleNow"] == 0
+
+
+async def test_building_scoped_user_cannot_open_other_buildings(client, db_session, building, other_building):
+    """Bitta binoga cheklangan foydalanuvchi boshqa binoning xaritasini (va
+    kameralarining jonli oqim havolalarini) ololmaydi."""
+    await _camera(db_session, "Begona bino kamerasi", other_building, 1)
+    user = User(login="scoped_map", password_hash=hash_password("scoped-pass-123"), full_name="Doirali",
+                role="admin", allowed_building_ids=[str(building.id)])
+    db_session.add(user)
+    await db_session.commit()
+    headers = await auth_headers(client, "scoped_map", "scoped-pass-123")
+
+    assert (await client.get(f"/api/xarita/{other_building.id}/1", headers=headers)).status_code == 404
+    listed = (await client.get("/api/xarita/binolar", headers=headers)).json()
+    assert all(b["id"] != str(other_building.id) for b in listed)

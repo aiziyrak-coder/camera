@@ -55,7 +55,7 @@ from app.jobs.attendance_ai import first_sighting_status
 from app.models import AccessDevice, AccessEvent, AttendanceRecord, AuditLog, StudentStaff
 from app.services.attendance_policy import current_policy, load_policy
 from app.services.notifications import notify_access_denied, notify_attendance
-from app.timezone import INSTITUTE_TZ, local_now, to_local
+from app.timezone import INSTITUTE_TZ, business_date, business_seconds, local_now, to_local
 from app.ws import manager
 from app.timezone import business_today
 
@@ -379,7 +379,8 @@ async def _apply_attendance(
     db: AsyncSession, person: StudentStaff, occurred_at: datetime, direction: str | None
 ) -> tuple[AttendanceRecord | None, bool]:
     local = to_local(occurred_at)
-    record_date = local.date()
+    # Ish kuni 06:00 da almashadi — kamera yo'li bilan bir xil sana.
+    record_date = business_date(occurred_at)
     moment = local.time().replace(microsecond=0)
     arrival_only = settings.attendance_arrival_only
     await load_policy(db)  # first_sighting_status va track_last_seen keshdan o'qiydi
@@ -431,12 +432,13 @@ async def _apply_attendance(
         await db.execute(
             update(AttendanceRecord)
             .where(AttendanceRecord.id == existing.id)
+            .where(AttendanceRecord.source.is_distinct_from("qolda"))
             .values(**values)
             .returning(AttendanceRecord)
             .execution_options(populate_existing=True)
         )
-    ).scalar_one()
-    return record, False
+    ).scalar_one_or_none()
+    return record or existing, False
 
 
 def _attendance_changes(
@@ -451,17 +453,21 @@ def _attendance_changes(
         def arrival(event_direction):
             return first_sighting_status(moment, _reader(event_direction))
 
-    if existing.status == "dam_olish":
+    if existing.status == "dam_olish" or existing.source == "qolda":
+        # Qo'lda tuzatilgan yozuv (operator qarori) turniketdan ustun.
         return {}
+    key = business_seconds
     if arrival_only:
         # Kelish — birinchi ko'rinish (istalgan yo'nalish), ketish — oxirgi
         # ko'rinish (track_last_seen), kamera yo'li bilan bir xil.
-        if existing.status == "kelmadi" or existing.check_in is None or moment < existing.check_in:
+        if existing.status == "kelmadi" or existing.check_in is None or key(moment) < key(existing.check_in):
             status, check_in = arrival(direction)
             return {"status": status, "check_in": check_in, "source": "turniket"}
         if not current_policy().track_last_seen:
             return {}
-        if moment <= existing.check_in or (existing.check_out is not None and moment <= existing.check_out):
+        if key(moment) <= key(existing.check_in) or (
+            existing.check_out is not None and key(moment) <= key(existing.check_out)
+        ):
             return {}
         return {"check_out": moment}
     if existing.status == "kelmadi":
@@ -470,14 +476,14 @@ def _attendance_changes(
         status, check_in = arrival(direction)
         return {"status": status, "check_in": check_in, "source": "turniket"}
     if direction == "kirish":
-        if existing.check_in is None or moment < existing.check_in:
+        if existing.check_in is None or key(moment) < key(existing.check_in):
             status, check_in = arrival(direction)
             return {"status": status, "check_in": check_in, "source": "turniket"}
         return {}
     # "chiqish" yoki yo'nalishi noma'lum qurilmadagi keyingi hodisa.
-    if existing.check_in is not None and moment <= existing.check_in:
+    if existing.check_in is not None and key(moment) <= key(existing.check_in):
         return {}
-    if existing.check_out is not None and moment <= existing.check_out:
+    if existing.check_out is not None and key(moment) <= key(existing.check_out):
         return {}
     return {"check_out": moment}
 

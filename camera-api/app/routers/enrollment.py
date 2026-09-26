@@ -64,6 +64,7 @@ from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.models import Faculty, OrgUnit, StudentGroup, StudentStaff
+from app.services.staff_export import split_course
 from app.rate_limit import limiter
 from app.schemas.enrollment import (
     EnrollmentFacultyOut,
@@ -191,12 +192,28 @@ async def _find_person(
     return None
 
 
+def mask_name(full_name: str) -> str:
+    """Ochiq sahifa uchun ism: odam o'zini taniydi, begona esa JSHSHIR
+    orqali to'liq ism-sharifni bilib ololmaydi. "Aliyev Anvar Valijon o'g'li"
+    -> "A*** Anvar V*** o***" (ikkinchi so'z — ism — ochiq)."""
+    words = full_name.split()
+    return " ".join(w if i == 1 else f"{w[0]}***" for i, w in enumerate(words))
+
+
+def _public_unit(record: StudentStaff) -> str:
+    """Talabaning faqat kursi (guruhi emas), xodimning lavozimi yo'q."""
+    if record.type == "talaba":
+        course, _group = split_course(record.group_or_position)
+        return f"{course}-kurs" if course else ""
+    return ""
+
+
 def _lookup_out(record: StudentStaff) -> EnrollmentLookupOut:
     return EnrollmentLookupOut(
         record_id=str(record.id),
-        full_name=record.full_name,
+        full_name=mask_name(record.full_name),
         type_label="Talaba" if record.type == "talaba" else "Xodim",
-        group_or_position=record.group_or_position,
+        group_or_position=_public_unit(record),
         already_enrolled=record.biometrics_status == "tasdiqlangan",
         awaiting_approval=record.awaiting_approval,
     )
@@ -607,7 +624,7 @@ async def submit_enrollment(
     if record.biometrics_status == "tasdiqlangan":
         await announce_roster_change()
     return EnrollmentSubmitOut(
-        full_name=record.full_name,
+        full_name=mask_name(record.full_name),
         biometrics_status=record.biometrics_status,
         awaiting_approval=record.awaiting_approval,
     )

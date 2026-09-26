@@ -156,6 +156,10 @@ async function request<T>(
     });
   } catch (err) {
     if (timedOut && !signal?.aborted) throw new ApiError(TIMEOUT_STATUS, TIMEOUT_MESSAGE);
+    // Tarmoq uzilishi: brauzer "Failed to fetch" (inglizcha) beradi — foydalanuvchiga tushunarli matn.
+    if (!signal?.aborted && err instanceof TypeError) {
+      throw new ApiError(0, "Serverga ulanib bo'lmadi — internet aloqasini tekshiring");
+    }
     throw err;
   } finally {
     if (timer !== undefined) clearTimeout(timer);
