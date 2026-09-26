@@ -13,6 +13,9 @@ from app.ws import ConnectionManager
 MONDAY = date(2026, 9, 21)
 
 
+pytestmark = pytest.mark.six_am_day
+
+
 class TestAfterMidnight:
     def test_arrival_after_midnight_is_late_not_on_time(self):
         policy = Policy()

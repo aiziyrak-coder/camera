@@ -19,6 +19,9 @@ DAY = date(2026, 9, 14)  # dushanba
 TASHKENT_OFFSET = timedelta(hours=5)
 
 
+pytestmark = pytest.mark.six_am_day
+
+
 def local_moment(day: date, hour: int, minute: int = 0) -> datetime:
     return datetime(day.year, day.month, day.day, hour, minute, tzinfo=timezone.utc) - TASHKENT_OFFSET
 

@@ -30,6 +30,7 @@ class TestArrivalOnly:
         assert first_sighting_status(time(8, 11), room) == ("kech_keldi", time(8, 11))
         assert first_sighting_status(time(17, 55), _camera(is_entrance=True)) == ("kech_keldi", time(17, 55))
 
+    @pytest.mark.default_policy
     def test_weekend_is_never_late(self, monkeypatch):
         from datetime import date
 

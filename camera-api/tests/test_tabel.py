@@ -103,6 +103,7 @@ async def test_shape_and_days(client, admin, world):
     assert {m["mark"] for m in data["legend"]} == {"+", "K", "–", "D", "·"}
 
 
+@pytest.mark.default_policy
 async def test_weekend_is_off_day(client, admin, world):
     data = await _get(client, admin, kind="talaba", oy=world["month"])
     sunday = next((d for d in world["days"] if d.isoweekday() == 7), None)

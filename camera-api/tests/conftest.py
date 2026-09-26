@@ -189,21 +189,50 @@ async def auth_headers(client: AsyncClient, login_name: str, password: str) -> d
 
 
 @pytest.fixture(autouse=True)
-def _today_is_a_work_day():
+def _calendar_day_is_the_business_day(request, monkeypatch):
+    """Ish kuni 06:00 da boshlanadi: 00:00–05:59 da "bugun" ikki xil —
+    business_today() kechagi, local_now().date() esa bugungi kalendar
+    sanasi. Testlar ikkalasini aralash ishlatadi va to'plam faqat tunda
+    yiqilardi. Shu oraliqda test uchun kun chegarasi 00:00 ga suriladi —
+    ikkala sana bir xil bo'ladi.
+
+    06:00 chegarasining o'zini tekshiradigan testlar (`six_am_day`)
+    doim haqiqiy 06:00 bilan ishlaydi: ular aniq sanalar bilan yozilgan,
+    joriy soatga bog'liq emas."""
+    from app.config import settings
+    from app.timezone import business_today, local_now
+
+    if request.node.get_closest_marker("six_am_day"):
+        monkeypatch.setattr(settings, "day_start_hour", 6)
+        return
+    if business_today() != local_now().date():
+        monkeypatch.setattr(settings, "day_start_hour", 0)
+
+
+@pytest.fixture(autouse=True)
+def _today_is_a_work_day(request, _calendar_day_is_the_business_day):
     """Ko'p testlar "bugun"ni ish kuni deb kutadi (kutilmoqda, kech keldi).
     Standart qoidada yakshanba — dam olish, shuning uchun yakshanba kuni
     ishga tushirilgan to'plam tasodifan yiqilardi. Bugun ish kuni bo'lmasa —
-    test davomida hamma kun ish kuni."""
-    from app.services.attendance_policy import Policy, current_policy, set_cached
+    test davomida hamma kun ish kuni.
+
+    `default_policy` belgili testlar standart qoidaning o'zini (yakshanba —
+    dam olish) tekshiradi — ularga tegilmaydi."""
+    from app.services import attendance_policy as ap
+    from app.services.attendance_policy import Policy, set_cached
     from app.timezone import business_today
 
-    if Policy().is_work_day(business_today()):
-        yield
-        return
-    before = current_policy()
-    set_cached(Policy(work_days=(1, 2, 3, 4, 5, 6, 7)))
+    # Har test toza keshdan boshlanadi: oldingi test o'rnatgan (yoki bazadan
+    # yuklagan) qoida keyingisiga o'tib, natija testlar tartibiga bog'liq
+    # bo'lib qolmasin. _loaded_at=0 — kerak bo'lsa load_policy bazadan o'qiydi.
+    ap._cached, ap._loaded_at = Policy(), 0.0
+    if request.node.get_closest_marker("default_policy"):
+        # Aynan standart qoida — bazadagi qator ham o'qilmaydi.
+        set_cached(Policy())
+    elif not Policy().is_work_day(business_today()):
+        set_cached(Policy(work_days=(1, 2, 3, 4, 5, 6, 7)))
     yield
-    set_cached(before)
+    ap._cached, ap._loaded_at = Policy(), 0.0
 
 
 @pytest.fixture(autouse=True)

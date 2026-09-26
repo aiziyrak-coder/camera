@@ -1,8 +1,12 @@
+import pytest
 """Ish kuni 06:00 da almashadi (app/timezone.py business_*)."""
 
 from datetime import date, datetime, timedelta, timezone
 
 from app.timezone import INSTITUTE_TZ, business_date, day_bounds, day_start
+
+
+pytestmark = pytest.mark.six_am_day
 
 
 def test_early_morning_belongs_to_the_previous_day():

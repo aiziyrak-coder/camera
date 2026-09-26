@@ -169,6 +169,7 @@ class TestInactiveAndPolicy:
 
 
 class TestWorkingDays:
+    @pytest.mark.default_policy
     def test_sunday_is_not_a_working_day_by_default(self):
         assert settings.attendance_working_weekdays == "1,2,3,4,5,6"
         assert is_working_day(date(2026, 9, 6)) is False  # Sunday
@@ -187,6 +188,7 @@ class TestRunAbsenceMarkingOnce:
 
         assert await run_absence_marking_once(session_factory=TestSessionLocal) == 0
 
+    @pytest.mark.default_policy
     async def test_does_nothing_on_a_non_working_day(self, db_session, monkeypatch):
         await _person(db_session, "Yakshanba Tekshiruvi", enrolled=True)
         sunday_evening = datetime.combine(

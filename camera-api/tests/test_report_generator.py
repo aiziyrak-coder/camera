@@ -21,6 +21,9 @@ from app.services.report_generator import generate_rule_based_report
 TASHKENT_OFFSET = timedelta(hours=5)
 
 
+pytestmark = pytest.mark.six_am_day
+
+
 def local_moment(day: date, hour: int, minute: int = 0) -> datetime:
     """A UTC instant that is `hour:minute` on `day` in Tashkent."""
     return datetime(day.year, day.month, day.day, hour, minute, tzinfo=timezone.utc) - TASHKENT_OFFSET

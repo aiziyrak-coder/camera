@@ -1,3 +1,4 @@
+import pytest
 """Davomatning chegaraviy holatlari: 06:00 dan boshlanadigan ish kunida tun
 yarmidan keyingi ko'rinish, qo'lda tuzatilgan yozuv va turniket sanasi."""
 
@@ -7,6 +8,9 @@ from types import SimpleNamespace
 from app.jobs.attendance_ai import _is_earlier_arrival, _is_later_sighting
 from app.services.integrations.access_control import _attendance_changes
 from app.timezone import business_date, business_seconds
+
+
+pytestmark = pytest.mark.six_am_day
 
 
 def rec(status="kech_keldi", check_in=time(9, 30), check_out=None, source="kamera"):

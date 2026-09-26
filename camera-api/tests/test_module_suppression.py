@@ -20,6 +20,9 @@ from app.timezone import INSTITUTE_TZ
 from tests.conftest import TestSessionLocal, auth_headers
 
 
+pytestmark = pytest.mark.six_am_day
+
+
 @pytest.fixture
 async def camera(db_session, seeded):
     building = (await db_session.execute(select(Building))).scalars().first()
@@ -100,6 +103,7 @@ class TestUnauthorizedContext:
             (datetime(2026, 9, 20, 12, 0, tzinfo=INSTITUTE_TZ), True),  # yakshanba — ish kuni emas
         ],
     )
+    @pytest.mark.default_policy
     def test_alert_window(self, moment, expected):
         assert is_unauthorized_alert_time(moment) is expected
 
