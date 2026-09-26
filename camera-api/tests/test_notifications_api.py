@@ -439,3 +439,34 @@ async def test_user_phone(client: AsyncClient, db_session, admin_headers):
 
     listed = (await client.get("/api/users", headers=admin_headers)).json()["items"]
     assert all("phone" in u for u in listed)
+
+
+async def test_resend_failed_message(client: AsyncClient, db_session, admin_headers, apis):
+    failed = NotificationLog(channel="telegram", recipient="555", kind="event", status="xato",
+                             text="Yong'in <signal>", error="timeout")
+    sent = NotificationLog(channel="telegram", recipient="555", kind="event", status="yuborildi", text="ok")
+    db_session.add_all([failed, sent])
+    await db_session.commit()
+
+    resp = await client.post(f"/api/notifications/log/{failed.id}/qayta", headers=admin_headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["ok"] is True
+    # Matn HTML sifatida xavfsiz ketadi va jurnalga yangi qator qo'shiladi.
+    assert apis.of("sendMessage")[-1].body["text"] == "Yong&#x27;in &lt;signal&gt;"
+    retry = await db_session.get(NotificationLog, resp.json()["id"])
+    assert retry.status == "yuborildi" and retry.kind == "event"
+
+    assert (await client.post(f"/api/notifications/log/{sent.id}/qayta", headers=admin_headers)).status_code == 409
+
+
+async def test_parent_coverage(client: AsyncClient, db_session, admin_headers, student):
+    student.parent_telegram_chat_id = "777"
+    student.parent_notify_enabled = True
+    db_session.add(StudentStaff(full_name="Soxta Ikkinchi", type="talaba", group_or_position="1-kurs, X", parent_phone="998900000000"))
+    db_session.add(NotificationLog(channel="telegram", recipient="777", kind="parent_arrival", status="yuborildi", text="keldi"))
+    db_session.add(NotificationLog(channel="sms", recipient="99890", kind="parent_absence", status="xato", text="kelmadi"))
+    await db_session.commit()
+    body = (await client.get("/api/notifications/ota-ona", headers=admin_headers)).json()
+    assert body["telegramLinked"] == 1 and body["phoneOnly"] == 1 and body["enabled"] == 1
+    assert body["students"] >= 2
+    assert (body["weekSent"], body["weekFailed"]) == (1, 1)

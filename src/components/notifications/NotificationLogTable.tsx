@@ -17,12 +17,14 @@ import {
   cn,
   controlBase,
   rag,
+  useToast,
   type DataTableColumn,
   type IntelStatus,
 } from '../../ui';
 import { RagChip } from '../hisobot/board';
 import { Notice, pagerFooter } from '../settings/kit';
 import { useServerPage } from '../../lib/useServerPage';
+import { ApiError, api } from '../../lib/apiClient';
 import {
   CHANNEL_LABELS,
   KIND_OPTIONS,
@@ -180,6 +182,8 @@ export default function NotificationLogTable({
   filters?: LogFilters;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
+  const toast = useToast();
   const { items, page, setPage, totalPages, total, pageSize, loading, error, reload } = useServerPage<NotificationLogEntry>(
     '/api/notifications/log',
     {
@@ -265,6 +269,27 @@ export default function NotificationLogTable({
               <Notice tone="danger" title="Xato sababi">
                 {open.error}
               </Notice>
+            )}
+            {open.status === 'xato' && open.text.trim() && (
+              <Button
+                icon={RefreshCw}
+                loading={resending}
+                onClick={async () => {
+                  setResending(true);
+                  try {
+                    const res = await api.post<{ ok: boolean; error: string | null }>(`/api/notifications/log/${open.id}/qayta`, {});
+                    if (res.ok) toast.success('Xabar qayta yuborildi');
+                    else toast.error(res.error ?? 'Yana yetmadi');
+                    reload();
+                  } catch (err) {
+                    toast.error(err instanceof ApiError ? err.message : 'Tarmoq xatosi');
+                  } finally {
+                    setResending(false);
+                  }
+                }}
+              >
+                Qayta yuborish
+              </Button>
             )}
             <Section title="Xabar matni">
               <p className="whitespace-pre-line break-words border border-border bg-surface-2 px-3 py-2.5 text-[13px] leading-5 text-fg">{open.text}</p>

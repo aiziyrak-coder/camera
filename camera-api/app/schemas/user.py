@@ -12,6 +12,8 @@ class AdminUserOut(CamelModel):
     login: str
     initials: str
     last_login: str
+    # Oxirgi kirishdan beri o'tgan kun (hech kirmagan — None).
+    last_login_days: int | None = None
     role: str  # "Super Admin" | "Admin" — display label, see models.RoleDisplayLabel
     email: str | None = None
     # Shaxsiy bildirishnomalar uchun (Telegram bog'lanmagan bo'lsa SMS).

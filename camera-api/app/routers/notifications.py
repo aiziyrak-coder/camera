@@ -216,6 +216,85 @@ async def list_log(
     return build_page([_log_out(r) for r in rows], total, page_params)
 
 
+@router.post("/api/notifications/log/{log_id}/qayta")
+async def resend_failed(log_id: uuid.UUID, request: Request, db: DbDep, current_user: ManageDep) -> dict:
+    """Xato bilan tugagan xabarni o'sha manzilga qayta yuboradi (matn o'zgarmaydi).
+    Natija jurnalga yangi qator bo'lib yoziladi — asl yozuv dalil sifatida qoladi."""
+    import html as html_lib
+
+    row = await db.get(NotificationLog, log_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Yozuv topilmadi")
+    if row.status != "xato":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Faqat xato bilan tugagan xabar qayta yuboriladi")
+    if not row.text.strip():
+        raise HTTPException(status.HTTP_409_CONFLICT, "Xabar matni saqlanmagan — qayta yuborib bo'lmaydi")
+    if row.channel == "telegram":
+        if not telegram.is_configured():
+            raise HTTPException(status.HTTP_409_CONFLICT, "Telegram bot sozlanmagan")
+        result = await telegram.send_message(row.recipient, html_lib.escape(row.text))
+    elif row.channel == "sms":
+        if not sms.is_configured():
+            raise HTTPException(status.HTTP_409_CONFLICT, "SMS sozlanmagan")
+        result = await sms.send_sms(row.recipient, row.text)
+    else:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"Noma'lum kanal: {row.channel}")
+    retry = NotificationLog(
+        channel=row.channel, recipient=row.recipient, kind=row.kind, text=row.text, ref_id=row.ref_id,
+        status="yuborildi" if result.ok else "xato", error=None if result.ok else (result.error or "Noma'lum xato")[:2000],
+    )
+    db.add(retry)
+    await log_action(
+        db, request, current_user.id,
+        f"Bildirishnomani qayta yubordi ({row.channel}): {'yuborildi' if result.ok else 'xato'}", AUDIT_MODULE,
+        status="muvaffaqiyatli" if result.ok else "ogohlantirish",
+    )
+    await db.commit()
+    return {"ok": result.ok, "error": None if result.ok else retry.error, "id": str(retry.id)}
+
+
+@router.get("/api/notifications/ota-ona")
+async def parent_coverage(db: DbDep, _: ManageDep) -> dict:
+    """Ota-onaga xabar: nechta talabaning ota-onasi bog'langan va so'nggi
+    7 kunda xabarlar qanchalik yetib borgan."""
+    from sqlalchemy import func
+
+    students = (StudentStaff.type == "talaba", StudentStaff.active.is_(True))
+    total, telegram_linked, phone, enabled = (
+        await db.execute(
+            select(
+                func.count(),
+                func.count().filter(StudentStaff.parent_telegram_chat_id.is_not(None)),
+                func.count().filter(
+                    StudentStaff.parent_phone.is_not(None), StudentStaff.parent_telegram_chat_id.is_(None)
+                ),
+                func.count().filter(StudentStaff.parent_notify_enabled.is_(True)),
+            ).where(*students)
+        )
+    ).one()
+    since = datetime.now(INSTITUTE_TZ) - timedelta(days=7)
+    rows = (
+        await db.execute(
+            select(NotificationLog.status, func.count())
+            .where(NotificationLog.kind.in_(("parent_arrival", "parent_absence")))
+            .where(NotificationLog.created_at >= since)
+            .group_by(NotificationLog.status)
+        )
+    ).all()
+    week = {status_: n for status_, n in rows}
+    return {
+        "students": total,
+        "telegramLinked": telegram_linked,
+        "phoneOnly": phone,
+        "enabled": enabled,
+        "arrivalEnabled": settings.parent_notify_arrival_enabled,
+        "absenceEnabled": settings.parent_notify_absence_enabled,
+        "weekSent": week.get("yuborildi", 0),
+        "weekFailed": week.get("xato", 0),
+        "weekSkipped": week.get("otkazildi", 0),
+    }
+
+
 @router.get("/api/notifications/status", response_model=NotificationStatusOut)
 async def notification_status(_: ManageDep) -> NotificationStatusOut:
     return NotificationStatusOut(

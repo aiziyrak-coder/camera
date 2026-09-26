@@ -733,6 +733,8 @@ export interface AdminUser {
   login: string;
   initials: string;
   lastLogin: string;
+  /** Oxirgi kirishdan beri kun (hech kirmagan — null). */
+  lastLoginDays?: number | null;
   role: 'Super Admin' | 'Admin' | "Kamera mas'uli";
   email?: string | null;
   /** Shaxsiy bildirishnomalar uchun (Telegram bog'lanmagan bo'lsa SMS). */

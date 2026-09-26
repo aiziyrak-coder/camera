@@ -18,6 +18,7 @@ import {
 import { Notice, Switch } from '../../components/settings/kit';
 import NotificationRuleModal from '../../components/notifications/NotificationRuleModal';
 import NotificationStatusCard from '../../components/notifications/NotificationStatusCard';
+import { ParentCoverageCard } from '../../components/notifications/ParentCoverageCard';
 import NotificationLogTable, { NotificationLogToolbar, type LogFilters } from '../../components/notifications/NotificationLogTable';
 import MyTelegramCard from '../../components/notifications/MyTelegramCard';
 import TestMessageModal from '../../components/notifications/TestMessageModal';
@@ -262,6 +263,7 @@ export default function NotificationsPage() {
           <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
             <NotificationStatusCard status={status} loading={statusLoading} error={statusError} onRetry={reloadStatus} onTest={() => setTestOpen(true)} />
             <MyTelegramCard />
+            <ParentCoverageCard />
           </div>
         )}
 

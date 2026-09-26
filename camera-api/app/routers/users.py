@@ -1,8 +1,9 @@
 import uuid
-from typing import Annotated
+from datetime import datetime, timedelta, timezone
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_action
@@ -25,6 +26,10 @@ from app.utils import compute_initials
 router = APIRouter(tags=["users"])
 
 
+#: Shuncha kundan beri kirmagan hisob — "eski" (o'chirish yoki bloklash nomzodi).
+STALE_LOGIN_DAYS = 90
+
+
 def _format_last_login(user: User) -> str:
     if user.last_login_at is None:
         return "Hali kirmagan"
@@ -38,6 +43,9 @@ def _to_admin_user_out(user: User) -> AdminUserOut:
         login=user.login,
         initials=compute_initials(user.full_name),
         last_login=_format_last_login(user),
+        last_login_days=(
+            (datetime.now(timezone.utc) - user.last_login_at).days if user.last_login_at is not None else None
+        ),
         role=role_display_label(user.role),
         email=user.email,
         phone=user.phone,
@@ -121,8 +129,24 @@ async def list_users(
     db: Annotated[AsyncSession, Depends(get_db)],
     _: Annotated[CurrentUser, Depends(require_permission("manageRoles"))],
     page_params: Annotated[PageParams, Depends()],
+    search: Annotated[str | None, Query(max_length=100)] = None,
+    role: Annotated[str | None, Query(max_length=40)] = None,
+    xavf: Annotated[Literal["kirmagan", "eski", "2fa_yoq"] | None, Query()] = None,
 ) -> Page[AdminUserOut]:
+    """Foydalanuvchilar: ism/login qidiruvi, rol va xavf filtri —
+    hech kirmagan, 90 kundan beri kirmagan, 2FA siz administrator."""
     stmt = select(User).order_by(User.created_at)
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        stmt = stmt.where(or_(User.full_name.ilike(term), User.login.ilike(term)))
+    if role:
+        stmt = stmt.where(User.role == role)
+    if xavf == "kirmagan":
+        stmt = stmt.where(User.last_login_at.is_(None))
+    elif xavf == "eski":
+        stmt = stmt.where(User.last_login_at < datetime.now(timezone.utc) - timedelta(days=STALE_LOGIN_DAYS))
+    elif xavf == "2fa_yoq":
+        stmt = stmt.where(User.role.in_(("super-admin", "admin"))).where(User.totp_enabled.is_(False))
     records, total = await paginate(db, stmt, page_params)
     items = [_to_admin_user_out(u) for u in records]
     return build_page(items, total, page_params)

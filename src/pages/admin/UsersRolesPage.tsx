@@ -7,6 +7,7 @@ import {
   CodeText,
   ConfirmDialog,
   DataTable,
+  FilterBar,
   IconButton,
   IntelPanel,
   MicroLabel,
@@ -57,6 +58,9 @@ export default function UsersRolesPage() {
   // — "teskarisiga o'zgartir" buyrug'i, shuning uchun ikki marta tez
   // bosilsa ikki marta aylanib, natija boshlang'ich holatga qaytardi.
   const [pendingPermissions, setPendingPermissions] = useState<PermissionKey[]>([]);
+  const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState('');
+  const [riskFilter, setRiskFilter] = useState('');
   const {
     items: users,
     page,
@@ -67,7 +71,7 @@ export default function UsersRolesPage() {
     loading,
     error,
     reload,
-  } = useServerPage<AdminUser>('/api/users', {}, PAGE_SIZE);
+  } = useServerPage<AdminUser>('/api/users', { search: search.trim() || undefined, role: roleFilter || undefined, xavf: riskFilter || undefined }, PAGE_SIZE);
 
   const canEdit = myRole === 'super-admin';
 
@@ -172,7 +176,8 @@ export default function UsersRolesPage() {
                 2FA
               </Badge>
             ) : (
-              <Badge tone="neutral" size="sm">
+              // Administrator hisobi faqat parol bilan — eng katta xavf.
+              <Badge tone={u.role === 'Super Admin' || u.role === 'Admin' ? 'danger' : 'neutral'} size="sm">
                 Faqat parol
               </Badge>
             )}
@@ -190,7 +195,14 @@ export default function UsersRolesPage() {
       header: 'Oxirgi kirish',
       sortValue: (u) => u.lastLogin,
       mono: true,
-      cell: (u) => <CodeText className="whitespace-nowrap text-[12px] text-muted">{u.lastLogin}</CodeText>,
+      cell: (u) => (
+        <span className="flex flex-col gap-0.5">
+          <CodeText className="whitespace-nowrap text-[12px] text-muted">{u.lastLogin}</CodeText>
+          {u.lastLoginDays != null && u.lastLoginDays >= 90 && (
+            <Badge tone="warning" size="sm">{`${u.lastLoginDays} kun kirmagan`}</Badge>
+          )}
+        </span>
+      ),
     },
     {
       key: 'actions',
@@ -308,6 +320,41 @@ export default function UsersRolesPage() {
       tabs={tabs}
     >
       {tab === 'foydalanuvchilar' ? (
+        <>
+        <FilterBar
+          onReset={() => {
+            setSearch('');
+            setRoleFilter('');
+            setRiskFilter('');
+          }}
+          fields={[
+            { kind: 'search', value: search, onChange: setSearch, placeholder: 'Ism yoki login…', ariaLabel: 'Foydalanuvchini qidirish' },
+            {
+              kind: 'select',
+              value: roleFilter,
+              onChange: setRoleFilter,
+              placeholder: 'Barcha rollar',
+              ariaLabel: 'Rol',
+              options: [
+                { value: 'super-admin', label: 'Super Admin' },
+                { value: 'admin', label: 'Admin' },
+                { value: 'kamera-masuli', label: "Kamera mas'uli" },
+              ],
+            },
+            {
+              kind: 'select',
+              value: riskFilter,
+              onChange: setRiskFilter,
+              placeholder: 'Xavfsizlik: hammasi',
+              ariaLabel: 'Xavfsizlik',
+              options: [
+                { value: '2fa_yoq', label: 'Administrator, 2FA yo‘q' },
+                { value: 'eski', label: '90 kundan beri kirmagan' },
+                { value: 'kirmagan', label: 'Hech kirmagan' },
+              ],
+            },
+          ]}
+        />
         <IntelPanel title="Foydalanuvchilar" right={<MicroLabel>{total} ta</MicroLabel>}>
         <DataTable
           dense
@@ -339,6 +386,7 @@ export default function UsersRolesPage() {
           }
         />
         </IntelPanel>
+        </>
       ) : (
         <div className="flex flex-col gap-3">
           {saveError && (
