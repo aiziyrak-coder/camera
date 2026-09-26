@@ -842,6 +842,11 @@ class Settings(BaseSettings):
     # almashtirishga sarflardi. Umumiy oqimlar ≈ concurrency × shu qiymat —
     # cpus chegarasidan (ffmpeg o'quvchilari ham shu konteynerda!) oshmasin.
     face_recognition_intra_op_threads: int = 2
+    # CPU'da INT8 modellar (app/services/face_recognition.py _int8_model_file):
+    # AVX'siz protsessorda ArcFace 1.75x, detektor 1.3x tez, vektorlar fp32
+    # bazasi bilan mos (cos ~0.994). GPU yoqilganda e'tiborga olinmaydi.
+    face_recognition_int8: bool = True
+    face_detection_int8: bool = True
     # Klassik OpenCV hisoblari (yong'in, optik oqim, xalat/niqob rangi) uchun
     # oqimlar soni — app/services/cpu_pool.py. Bular ilgari event loop'da
     # ketma-ket bajarilardi; havza ularni parallel qiladi, lekin CPU'ni

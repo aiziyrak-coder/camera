@@ -85,6 +85,38 @@ class InconsistentFacesError(Exception):
 # and enrollment jump ahead of background AI sweeps.
 
 
+def _int8_model_file(model_file: str, taskname: str) -> str:
+    """CPU'da INT8 (dinamik kvantlangan) model — AVX'siz protsessorda
+    (production: QEMU, faqat SSE4.2) butun sonli hisob tezroq.
+
+    O'lchov (2026-09-26, production CPU, 40 ta ro'yxat rasmi):
+      * ArcFace w600k_r50: 425 -> 243 ms/yuz; cos(fp32, int8) o'rtacha 0.994,
+        eng pasti 0.989; 40/40 o'zini topdi — mavjud yuz bazasi (fp32
+        vektorlar) qayta hisoblanmaydi;
+      * SCRFD det_10g 1280x736: 1657 -> 1286 ms; 24 jonli kadrda bir xil yuzlar.
+    Fayl model yonida bir marta yaratiladi; xato bo'lsa — asl fp32 model."""
+    wanted = (taskname == "recognition" and settings.face_recognition_int8) or (
+        taskname == "detection" and settings.face_detection_int8
+    )
+    if not wanted:
+        return model_file
+    target = model_file[:-5] + ".int8.onnx" if model_file.endswith(".onnx") else model_file + ".int8"
+    try:
+        import os
+
+        if not os.path.exists(target):
+            from onnxruntime.quantization import QuantType, quantize_dynamic
+
+            partial = target + ".part"
+            quantize_dynamic(model_file, partial, weight_type=QuantType.QUInt8)
+            os.replace(partial, target)
+            logger.info("INT8 model created", extra={"model": os.path.basename(target)})
+        return target
+    except Exception:
+        logger.warning("INT8 quantization failed — using fp32 model", extra={"model": model_file}, exc_info=True)
+        return model_file
+
+
 def _limit_session_threads(app: FaceAnalysis, providers: list[str]) -> None:
     """Har bir InsightFace modelining ONNX sessiyasini cheklangan oqimlar bilan
     qayta yaratadi (settings.face_recognition_intra_op_threads).
@@ -96,7 +128,8 @@ def _limit_session_threads(app: FaceAnalysis, providers: list[str]) -> None:
     kirish/chiqish nomlarini fayldan oladi — o'sha fayldan qayta yaratilgan
     sessiya bir xil ishlaydi."""
     threads = settings.face_recognition_intra_op_threads
-    if threads <= 0:
+    cpu_only = "CUDAExecutionProvider" not in providers
+    if threads <= 0 and not cpu_only:
         return
     import onnxruntime
 
@@ -104,9 +137,12 @@ def _limit_session_threads(app: FaceAnalysis, providers: list[str]) -> None:
         model_file = getattr(model, "model_file", None)
         if not model_file:
             continue
+        if cpu_only:
+            model_file = _int8_model_file(model_file, getattr(model, "taskname", ""))
         options = onnxruntime.SessionOptions()
-        options.intra_op_num_threads = threads
-        options.inter_op_num_threads = 1
+        if threads > 0:
+            options.intra_op_num_threads = threads
+            options.inter_op_num_threads = 1
         options.execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL
         model.session = onnxruntime.InferenceSession(model_file, sess_options=options, providers=providers)
     logger.info(
