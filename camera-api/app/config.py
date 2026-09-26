@@ -166,10 +166,10 @@ class Settings(BaseSettings):
     # detektorga yuz atrofidagi kontekst kerak.
     face_zoom_margin: float = 2.5
     # Bitta kamera asosiy oqimdan kadrni shundan tez-tez olmaydi.
-    face_zoom_interval_seconds: int = 60
+    face_zoom_interval_seconds: int = 15
     # Bir vaqtning o'zida shuncha kameragina 4K kadr oladi — tarmoq va
     # CPU yuklamasining asosiy chegarasi shu.
-    face_zoom_max_concurrent_cameras: int = 2
+    face_zoom_max_concurrent_cameras: int = 6
     # Asosiy oqimdan kadr kutish. Kalit kadr 4-8 s da bir keladi; shundan
     # keyin o'quvchi (ffmpeg) DARHOL yopiladi, ya'ni 4K ulanish faqat shu
     # necha soniya yashaydi.
@@ -598,15 +598,19 @@ class Settings(BaseSettings):
     archive_link_ttl_seconds: int = 3600
     pacing_enabled: bool = True
     pacing_idle_after: int = 3
-    pacing_idle_base_seconds: float = 20.0
-    pacing_idle_max_seconds: float = 150.0  # entrance_watcher_stall_seconds dan kichik
+    # 2026-09-26: 20/150 -> 5/20 s. Protsessor bo'sh (32 yadrodan ~4 tasi band),
+    # uzoq kutishda esa odam tahlilgacha kadrdan chiqib ketardi.
+    pacing_idle_base_seconds: float = 5.0
+    pacing_idle_max_seconds: float = 20.0  # entrance_watcher_stall_seconds dan kichik
     # Kutayotgan kamerada harakat paydo bo'lsa, kutish to'xtatiladi — odam
     # 150 s kutmasdan 1-3 s da tahlil qilinadi. Faqat bugun kamida bitta
     # yaroqli yuz bergan kamerada (orqa tomondan ko'radigan koridor harakat
     # tufayli uyg'onib, CPU'ni behuda yemasin) va eng ko'pi har
     # pacing_motion_min_seconds da bir marta.
     pacing_motion_wake: bool = True
-    pacing_motion_min_seconds: float = 3.0
+    pacing_motion_min_seconds: float = 1.5
+    # Harakat bilan uyg'onish barcha kameralarda (faqat yuz bergan kameralarda emas).
+    pacing_motion_wake_any: bool = True
     # Harakat hududida aniqlash (app/services/motion_gate.py, motion_box):
     # kadrning faqat o'zgargan qismi (+hoshiya) detektorga beriladi. Aniqlash
     # vaqti piksellar soniga mutanosib — odam kadrning 30% ida bo'lsa,

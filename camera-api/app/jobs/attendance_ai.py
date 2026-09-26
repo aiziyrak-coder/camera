@@ -1617,7 +1617,13 @@ async def _watch_entrance_camera(camera: Camera, watcher: _EntranceWatcher) -> N
     async def activity() -> bool:
         if await focused():
             return True
-        if not settings.pacing_motion_wake or _useful_face_total(key) <= 0:
+        if not settings.pacing_motion_wake:
+            return False
+        # pacing_motion_wake_any: harakat HAR kamerani uyg'otadi. Ilgari faqat
+        # bugun yaroqli yuz bergan kameralar uyg'onardi — bu hisob jarayon
+        # qayta ishga tushganda nolga tushib, kameralar 150 s kutib qolardi
+        # va odam tahlilgacha kadrdan chiqib ketardi (2026-09-26).
+        if not settings.pacing_motion_wake_any and _useful_face_total(key) <= 0:
             return False
         frame = peek_cached_frame(camera_video_source(camera))
         if frame is None:

@@ -86,6 +86,10 @@ class TestWatcherPacing:
         return sleeps, recognition_stats.export_snapshot().get(str(camera.id), {})
 
     async def test_room_without_faces_yields_its_turn(self, monkeypatch):
+        from app.config import settings
+
+        # Harakat bilan uyg'onish o'chiq (bu test faqat kutish jadvalini tekshiradi).
+        monkeypatch.setattr(settings, "pacing_motion_wake_any", False)
         room = _camera("xona-1", name="1-xona", is_entrance=False, is_exit=False)
         sleeps, stats = await self._run(monkeypatch, room, [0, 0, 0, 0])
         # 3- va 4-bo'sh kadrdan keyin kutadi (20 s, 40 s — 5 s lik bo'laklarda).

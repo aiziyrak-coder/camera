@@ -493,3 +493,4 @@ def test_diagnosis_flags_a_camera_that_misses_most_faces():
     assert _diagnose(True, True, fine, recognized=5, enrolled=100) is None
     few = SimpleNamespace(**base, faces=10, small_faces=10)
     assert _diagnose(True, True, few, recognized=5, enrolled=100) is None
+
