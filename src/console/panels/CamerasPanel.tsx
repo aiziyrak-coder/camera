@@ -80,7 +80,11 @@ export default function CamerasPanel({
 
   const stats = useMemo(() => cameraStats(cameras), [cameras]);
   const codes = useMemo(() => buildCameraCodes(cameras), [cameras]);
-  const pool = useMemo(() => rankCameras(cameras).filter(isStreaming), [cameras]);
+  // Karusel filtri (nom/zona/bino): katta kamera ham faqat filtrdagilar ichida almashadi.
+  const [pickFilter, setPickFilter] = useState<CameraFilter>(EMPTY_FILTER);
+  const pickBuildings = useMemo(() => buildingOptions(cameras), [cameras]);
+  const allLive = useMemo(() => rankCameras(cameras).filter(isStreaming), [cameras]);
+  const pool = useMemo(() => filterCameras(allLive, pickFilter), [allLive, pickFilter]);
   const poolIds = useMemo(() => pool.map((c) => c.id), [pool]);
   // Asosiy kamera: har ROTATE_MS da navbatdagisi; karuseldan bosilsa — o'sha
   // (va hisob shu paytdan qaytadan boshlanadi).
@@ -96,7 +100,7 @@ export default function CamerasPanel({
     const timer = window.setInterval(() => setStageId((current) => nextStage(poolIds, current)), ROTATE_MS);
     return () => window.clearInterval(timer);
   }, [rotating, poolIds, pickedAt]);
-  const stage = pool.find((c) => c.id === stageId) ?? pool[0] ?? null;
+  const stage = pool.find((c) => c.id === stageId) ?? allLive.find((c) => c.id === stageId) ?? pool[0] ?? allLive[0] ?? null;
   const pick = (id: string) => {
     setStageId(id);
     setPickedAt(Date.now());
@@ -110,6 +114,7 @@ export default function CamerasPanel({
       expanded={expanded}
       onExpand={onExpand}
       area={area}
+      clickToExpand={false}
       badge={
         <CodeText className="text-[11px] text-muted">
           {stats.total === 0 ? '—' : `${stats.flowing}/${stats.live}`}
@@ -157,7 +162,44 @@ export default function CamerasPanel({
               playing={pageVisible && !expanded}
               onStreamUnavailable={refreshStreams}
             />
-            <CameraCarousel cameras={pool} codes={codes} activeId={stage.id} onPick={pick} paused={expanded} />
+            <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-0.5 pt-0.5">
+              <label className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-control border border-border bg-surface px-2">
+                <Search size={13} aria-hidden="true" className="shrink-0 text-subtle" />
+                <input
+                  value={pickFilter.q}
+                  onChange={(event) => setPickFilter((f) => ({ ...f, q: event.target.value }))}
+                  placeholder="Kamera: nomi, xona yoki zona"
+                  aria-label="Kamerani qidirish"
+                  className="h-full min-w-0 flex-1 bg-transparent text-[12px] outline-none"
+                />
+                {pickFilter.q && (
+                  <button type="button" onClick={() => setPickFilter((f) => ({ ...f, q: '' }))} aria-label="Tozalash" className="text-subtle hover:text-fg">
+                    <X size={13} />
+                  </button>
+                )}
+              </label>
+              <select
+                value={pickFilter.building}
+                onChange={(event) => setPickFilter((f) => ({ ...f, building: event.target.value }))}
+                aria-label="Bino"
+                className="h-7 rounded-control border border-border bg-surface px-1.5 text-[12px]"
+              >
+                <option value="">Barcha binolar</option>
+                {pickBuildings.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+              <span className="text-[11px] tabular-nums text-muted">
+                {pool.length}/{allLive.length}
+              </span>
+            </div>
+            {pool.length === 0 ? (
+              <div className="flex h-[74px] shrink-0 items-center justify-center rounded-[4px] border border-dashed border-border text-[12px] text-muted">
+                Filtrga mos kamera yo‘q
+              </div>
+            ) : (
+              <CameraCarousel cameras={pool} codes={codes} activeId={stage.id} onPick={pick} paused={expanded} />
+            )}
           </div>
         )}
       </div>
