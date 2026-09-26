@@ -34,7 +34,8 @@ describe('Sidebar', () => {
       expect(screen.getByRole('link', { name: item.label })).toBeInTheDocument();
       expect(screen.queryByText(item.code)).not.toBeInTheDocument();
     }
-  });
+    // 20+ getByRole so'rovi — to'liq to'plam parallel ishlaganda 5 s yetmasdi.
+  }, 20_000);
 
   it('marks the active item for screen readers, not only by colour', () => {
     renderSidebar('/hodisalar');
