@@ -187,7 +187,10 @@ class TestTeachersList:
 
 
 class TestAttendanceCameras:
-    async def test_which_cameras_serve_attendance_and_what_they_saw(self, client: AsyncClient, db_session, place):
+    async def test_which_cameras_serve_attendance_and_what_they_saw(self, client: AsyncClient, db_session, place,
+                                                                     monkeypatch):
+        # Eski tartib: kunlik davomat faqat kirish kameralarida.
+        monkeypatch.setattr(settings, "attendance_any_camera", False)
         db_session.add(_visit(place.teacher, place.room, datetime.now(INSTITUTE_TZ) - timedelta(minutes=5),
                               datetime.now(INSTITUTE_TZ)))
         await db_session.commit()
@@ -206,6 +209,15 @@ class TestAttendanceCameras:
         assert cams["310-xona"]["attendanceEnabled"] is False
         assert body["peopleRecognizedToday"] == 1
         assert body["entrance"] == 1
+
+    async def test_any_camera_marks_arrival(self, client: AsyncClient, place, monkeypatch):
+        # Hozirgi tartib (attendance_any_camera): odamni birinchi ko'rgan
+        # istalgan faol kamera kelishni yozadi — xona kamerasi ham.
+        monkeypatch.setattr(settings, "attendance_any_camera", True)
+        headers = await auth_headers(client, "admin", "admin123")
+        cams = {c["name"]: c for c in (await client.get("/api/presence/cameras", headers=headers)).json()["cameras"]}
+        assert cams["205-xona"]["attendanceEnabled"] is True
+        assert cams["205-xona"]["disabledReason"] is None
 
     async def test_requires_login(self, client: AsyncClient):
         resp = await client.get("/api/presence/cameras")

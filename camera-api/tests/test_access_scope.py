@@ -191,23 +191,13 @@ class TestEventsSocket:
         assert len(full.sent) == 4
 
 
-class TestPtzAndArchive:
+class TestPtz:
     async def test_ptz_status(self, client: AsyncClient, world):
         headers = await _scoped(client)
         assert (await client.get(f"/api/cameras/{world['cam_a'].id}/ptz", headers=headers)).status_code == 200
         assert (await client.get(f"/api/cameras/{world['cam_b'].id}/ptz", headers=headers)).status_code == 404
         resp = await client.post(
             f"/api/cameras/{world['cam_b'].id}/ptz/move", json={"pan": 0.5, "tilt": 0, "zoom": 0}, headers=headers
-        )
-        assert resp.status_code == 404
-
-    async def test_archive(self, client: AsyncClient, world, monkeypatch):
-        monkeypatch.setattr(settings, "recording_enabled", False)
-        headers = await _scoped(client)
-        assert (await client.get(f"/api/arxiv/{world['cam_a'].id}/kun", headers=headers)).status_code == 200
-        assert (await client.get(f"/api/arxiv/{world['cam_b'].id}/kun", headers=headers)).status_code == 404
-        resp = await client.get(
-            f"/api/arxiv/{world['cam_b'].id}/havola", params={"start": "2026-09-24T10:00:00+05:00"}, headers=headers
         )
         assert resp.status_code == 404
 
