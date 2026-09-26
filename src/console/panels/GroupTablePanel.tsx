@@ -14,6 +14,7 @@ import {
 import { Button, DataTable, DatePicker, SearchInput, Select, StatusBadge, Tabs, cn, type DataTableColumn } from '../../ui';
 import StatusCounters, { COUNTER_META, type CounterKey } from '../../components/situation/StatusCounters';
 import StatusPeopleTable from '../../components/situation/StatusPeopleTable';
+import CountPicker, { type CountOption } from '../../components/situation/CountPicker';
 import Panel from '../Panel';
 import type { GroupLive } from '../useGroupLive';
 import type { NazoratSelection, Who } from '../nazoratSelection';
@@ -144,12 +145,23 @@ export default function GroupTablePanel({
       ),
     [groups, faculty, course],
   );
-  const groupOptions = useMemo(() => filteredGroups.map((g) => ({ value: g.name, label: g.name })), [filteredGroups]);
+  // Ochiluvchi ro'yxatda har guruh yonida: kelgan (yashil), kelmagan (qizil), ma'lumotsiz (kulrang).
+  const groupOptions = useMemo<CountOption[]>(
+    () =>
+      filteredGroups.map((g) => ({
+        value: g.name,
+        label: g.name,
+        present: g.present,
+        absent: g.absent + g.notYet,
+        noData: g.noData,
+      })),
+    [filteredGroups],
+  );
   const unitOptions = useMemo(
     () =>
       (units ?? [])
         .filter((u) => u.staffTotal > 0)
-        .map((u) => ({ value: u.id, label: `${u.name} (${u.staffTotal})` }))
+        .map((u) => ({ value: u.id, label: u.name, present: u.present, absent: u.absent + u.notYet, noData: u.noData }))
         .sort((a, b) => a.label.localeCompare(b.label)),
     [units],
   );
@@ -275,10 +287,10 @@ export default function GroupTablePanel({
                 <Select label="Kurs" value={course} onChange={setCourse} options={courseOptions} placeholder="hammasi" size="sm" highlightActive />
               </>
             )}
-            <Select label="Guruh" value={group} onChange={setGroup} options={groupOptions} placeholder="hammasi" size="sm" highlightActive />
+            <CountPicker label="Guruh" value={group} onChange={setGroup} options={groupOptions} />
           </>
         ) : (
-          <Select label="Kafedra / bo‘lim" value={group} onChange={setGroup} options={unitOptions} placeholder="hammasi" size="sm" highlightActive />
+          <CountPicker label="Kafedra / bo‘lim" value={group} onChange={setGroup} options={unitOptions} />
         )}
         <Select
           label="Holat"
@@ -307,7 +319,7 @@ export default function GroupTablePanel({
             loading={live.loading && !live.detail}
             error={live.error}
             emptyTitle={status === 'hammasi' ? 'Hech kim topilmadi' : `${COUNTER_META[status].label}: hech kim`}
-            maxHeight="100%"
+            fill
             dense
           />
         </div>
@@ -323,8 +335,9 @@ export default function GroupTablePanel({
           size="sm"
           className="shrink-0"
         />
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1">
           <StatusPeopleTable
+            fill
             query={peopleQuery}
             status={(status === 'darsda' || status === 'darsda_emas' ? 'hammasi' : status) as PeopleStatusKey}
             refreshKey={pulse}
@@ -344,7 +357,7 @@ export default function GroupTablePanel({
           loading={!groups && !loadError}
           error={loadError}
           emptyTitle="Guruh topilmadi"
-          maxHeight="100%"
+          fill
           defaultSort={{ key: 'name', dir: 'asc' }}
           dense
         />

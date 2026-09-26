@@ -8,7 +8,7 @@ import {
   type StatusPeoplePage,
   type StatusPerson,
 } from '../../lib/situationApi';
-import { Button, DataTable, StatusBadge, type DataTableColumn } from '../../ui';
+import { Button, DataTable, StatusBadge, cn, type DataTableColumn } from '../../ui';
 
 /**
  * Holat bo'yicha odamlar — butun institut yoki filtrlangan bo'lak.
@@ -23,12 +23,15 @@ export default function StatusPeopleTable({
   refreshKey = 0,
   onLoaded,
   maxHeight,
+  fill = false,
 }: {
   query: Omit<StatusPeopleQuery, 'status' | 'page' | 'pageSize'>;
   status: PeopleStatusKey;
   refreshKey?: number;
   onLoaded?: (page: StatusPeoplePage) => void;
   maxHeight?: string;
+  /** Ota balandligini to'ldiradi va ichida aylanadi. */
+  fill?: boolean;
 }) {
   const [page, setPage] = useState(1);
   const [data, setData] = useState<StatusPeoplePage | null>(null);
@@ -85,7 +88,7 @@ export default function StatusPeopleTable({
 
   const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
   return (
-    <div className="flex min-h-0 flex-col gap-2">
+    <div className={cn('flex min-h-0 flex-col gap-2', fill && 'h-full')}>
       <DataTable
         columns={columns}
         rows={data?.items ?? []}
@@ -94,6 +97,8 @@ export default function StatusPeopleTable({
         error={error}
         emptyTitle="Hech kim yo‘q"
         maxHeight={maxHeight}
+        fill={fill}
+        className={fill ? 'min-h-0 flex-1' : undefined}
         dense
       />
       {data && data.total > PAGE_SIZE && (

@@ -4,6 +4,7 @@ import { todayInTashkent } from '../../lib/uzDate';
 import { DatePicker, IntelPanel, SearchInput, Select } from '../../ui';
 import StatusCounters, { COUNTER_META, type CounterKey } from '../situation/StatusCounters';
 import StatusPeopleTable from '../situation/StatusPeopleTable';
+import CountPicker from '../situation/CountPicker';
 
 /**
  * Hisobot — institutning umumiy (jonli) holati. Nazoratdagi guruh ko'rinishi
@@ -65,7 +66,7 @@ export default function InstituteStatusView({ type }: { type: PersonType }) {
     () =>
       groups
         .filter((g) => g.total > 0 && (!faculty || g.facultyId === faculty) && (!course || String(g.course) === course))
-        .map((g) => ({ value: g.name, label: g.name })),
+        .map((g) => ({ value: g.name, label: g.name, present: g.present, absent: g.absent + g.notYet, noData: g.noData })),
     [groups, faculty, course],
   );
 
@@ -86,7 +87,7 @@ export default function InstituteStatusView({ type }: { type: PersonType }) {
           <>
             <Select value={faculty} onChange={(v) => { setFaculty(v); setGroup(''); }} options={facultyOptions} placeholder="Barcha fakultetlar" ariaLabel="Fakultet" size="sm" highlightActive />
             <Select value={course} onChange={(v) => { setCourse(v); setGroup(''); }} options={courseOptions} placeholder="Barcha kurslar" ariaLabel="Kurs" size="sm" highlightActive />
-            <Select value={group} onChange={setGroup} options={groupOptions} placeholder="Barcha guruhlar" ariaLabel="Guruh" size="sm" highlightActive />
+            <CountPicker label="Guruh" value={group} onChange={setGroup} options={groupOptions} />
           </>
         )}
         <SearchInput value={search} onChange={setSearch} placeholder="F.I.Sh. bo‘yicha" size="sm" className="w-48" />

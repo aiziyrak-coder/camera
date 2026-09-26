@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GroupStudent } from '../lib/situationApi';
-import { ROTATE_MS, nextTile } from './panels/CamerasPanel';
+import { ROTATE_MS, nextStage } from './panels/CamerasPanel';
 import { groupCounters, studentMatches } from './panels/GroupTablePanel';
 import { parseCounter } from './nazoratSelection';
 
@@ -12,15 +12,16 @@ function student(id: string, status: GroupStudent['status'], face = true): Group
 }
 
 describe('aylanuvchi kamera mozaikasi', () => {
-  it('kataklar navbat bilan: har safar bitta yangi, ko‘rinib turgani takrorlanmaydi', () => {
-    const pool = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6'];
-    expect(nextTile(['c1', 'c2', 'c3', 'c4'], pool, 4)).toEqual({ id: 'c5', cursor: 5 });
-    expect(nextTile(['c5', 'c2', 'c3', 'c4'], pool, 5)).toEqual({ id: 'c6', cursor: 6 });
-    // oxiriga yetgach boshidan, lekin ekrandagilarni o'tkazib yuboradi
-    expect(nextTile(['c5', 'c6', 'c3', 'c4'], pool, 6)).toEqual({ id: 'c1', cursor: 1 });
-    expect(nextTile(['c1', 'c2'], ['c1', 'c2'], 0)).toEqual({ id: null, cursor: 0 });
-    expect(ROTATE_MS).toBe(30_000);
+  it('asosiy kamera har daqiqada navbatdagisiga, oxiridan keyin boshidan', () => {
+    const pool = ['c1', 'c2', 'c3'];
+    expect(nextStage(pool, null)).toBe('c1');
+    expect(nextStage(pool, 'c1')).toBe('c2');
+    expect(nextStage(pool, 'c3')).toBe('c1');
+    expect(nextStage(pool, 'yoq')).toBe('c1');
+    expect(nextStage([], 'c1')).toBeNull();
+    expect(ROTATE_MS).toBe(60_000);
   });
+
 });
 
 describe('guruh sanoqlari va filtr', () => {

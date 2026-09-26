@@ -62,6 +62,10 @@ export interface DataTableProps<T> {
   manualSort?: boolean;
   /** Jadval ichida aylantirish balandligi — sarlavha yopishib turadi. 'none' — cheklovsiz. */
   maxHeight?: string;
+  /** Jadval ota elementining butun balandligini egallaydi va o'zi ichida
+   *  aylanadi (sarlavha yopishib turadi). Ota element balandligi aniq
+   *  bo'lishi kerak (masalan flex ichida `min-h-0 flex-1`). */
+  fill?: boolean;
   dense?: boolean;
   /**
    * ESKI: juft/toq qatorlar foni. Yangi ko'rinishda qatorlar fon bilan
@@ -128,6 +132,7 @@ export function DataTable<T>({
   defaultSort = null,
   manualSort = false,
   maxHeight = 'min(70vh, 48rem)',
+  fill = false,
   dense = false,
   mobile = 'cards',
   mobileTitleKey,
@@ -182,8 +187,8 @@ export function DataTable<T>({
   const tableView = (
     <div
       data-table-scroll=""
-      className={cn('overflow-auto', mobile === 'cards' && 'hidden md:block')}
-      style={maxHeight !== 'none' ? { maxHeight } : undefined}
+      className={cn('overflow-auto', fill && 'min-h-0 flex-1', mobile === 'cards' && 'hidden md:block')}
+      style={maxHeight !== 'none' && !fill ? { maxHeight } : undefined}
       onScroll={(event) => {
         const next = event.currentTarget.scrollTop > 0;
         if (next !== scrolled) setScrolled(next);
@@ -374,7 +379,7 @@ export function DataTable<T>({
   );
 
   return (
-    <div className={cn('min-w-0 overflow-hidden rounded-card border border-white/90 bg-surface shadow-card', className)}>
+    <div className={cn('min-w-0 overflow-hidden rounded-card border border-white/90 bg-surface shadow-card', fill && 'flex h-full flex-col', className)}>
       {error ? (
         <ErrorState variant="block" message={error} onRetry={onRetry} />
       ) : (

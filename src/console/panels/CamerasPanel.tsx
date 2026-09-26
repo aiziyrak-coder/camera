@@ -25,7 +25,6 @@ import {
   floorOptions,
   isStreaming,
   layoutColumns,
-  pickMosaic,
   rankCameras,
   type CameraFilter,
   type WallLayout,
@@ -49,23 +48,14 @@ import {
  *   varaq fonda — 0.
  */
 
-const MOSAIC_TILES = 4;
-/** Har katak shu oraliqda yangi kameraga o'tadi. Kataklar birdan emas,
- *  NAVBAT bilan almashadi: har ROTATE_MS / 4 da bittadan. */
-export const ROTATE_MS = 30_000;
+/** Asosiy (katta) kamera shu oraliqda karuseldagi navbatdagisiga o'tadi. */
+export const ROTATE_MS = 60_000;
 
-/** Katakdagi kamerani navbatdagisiga almashtiradi: pool dagi `cursor` dan
- *  boshlab hozir ko'rsatilmayotgan birinchi kamera. */
-export function nextTile(
-  shown: readonly string[],
-  pool: readonly string[],
-  cursor: number,
-): { id: string | null; cursor: number } {
-  for (let i = 0; i < pool.length; i += 1) {
-    const index = (cursor + i) % pool.length;
-    if (!shown.includes(pool[index])) return { id: pool[index], cursor: index + 1 };
-  }
-  return { id: null, cursor };
+/** Navbatdagi kamera (oxiridan keyin — boshidan). */
+export function nextStage(pool: readonly string[], current: string | null): string | null {
+  if (pool.length === 0) return null;
+  const index = current ? pool.indexOf(current) : -1;
+  return pool[(index + 1) % pool.length];
 }
 
 /** Tashqaridan (Ctrl+K) "shu kamerani kattalashtir" so'rovi. */
@@ -91,42 +81,26 @@ export default function CamerasPanel({
   const stats = useMemo(() => cameraStats(cameras), [cameras]);
   const codes = useMemo(() => buildCameraCodes(cameras), [cameras]);
   const pool = useMemo(() => rankCameras(cameras).filter(isStreaming), [cameras]);
-  const rotating = !expanded && pageVisible && pool.length > MOSAIC_TILES;
-  // Kataklar: har ROTATE_MS / 4 da BITTA katak navbatdagi kameraga o'tadi.
-  const [tiles, setTiles] = useState<{ ids: string[]; cursor: number; slot: number }>({ ids: [], cursor: 0, slot: 0 });
+  const poolIds = useMemo(() => pool.map((c) => c.id), [pool]);
+  // Asosiy kamera: har ROTATE_MS da navbatdagisi; karuseldan bosilsa — o'sha
+  // (va hisob shu paytdan qaytadan boshlanadi).
+  const [stageId, setStageId] = useState<string | null>(null);
+  const [pickedAt, setPickedAt] = useState(0);
   useEffect(() => {
-    // Yangi ro'yxat: mavjud kataklar saqlanadi, yo'qolgan kamera o'rni to'ldiriladi.
-    setTiles((current) => {
-      const poolIds = pool.map((c) => c.id);
-      let cursor = current.cursor;
-      const ids = current.ids.filter((id) => poolIds.includes(id)).slice(0, MOSAIC_TILES);
-      while (ids.length < Math.min(MOSAIC_TILES, poolIds.length)) {
-        const next = nextTile(ids, poolIds, cursor);
-        if (!next.id) break;
-        ids.push(next.id);
-        cursor = next.cursor;
-      }
-      return { ids, cursor, slot: current.slot };
-    });
-  }, [pool]);
+    if (poolIds.length === 0) return;
+    if (!stageId || !poolIds.includes(stageId)) setStageId(poolIds[0]);
+  }, [poolIds, stageId]);
+  const rotating = !expanded && pageVisible && poolIds.length > 1;
   useEffect(() => {
     if (!rotating) return;
-    const timer = window.setInterval(() => {
-      setTiles((current) => {
-        const next = nextTile(current.ids, pool.map((c) => c.id), current.cursor);
-        if (!next.id) return current;
-        const ids = [...current.ids];
-        ids[current.slot % ids.length] = next.id;
-        return { ids, cursor: next.cursor, slot: (current.slot + 1) % MOSAIC_TILES };
-      });
-    }, ROTATE_MS / MOSAIC_TILES);
+    const timer = window.setInterval(() => setStageId((current) => nextStage(poolIds, current)), ROTATE_MS);
     return () => window.clearInterval(timer);
-  }, [rotating, pool]);
-  const mosaic = useMemo(() => {
-    if (pool.length <= MOSAIC_TILES) return pickMosaic(cameras, MOSAIC_TILES);
-    const byId = new Map(pool.map((c) => [c.id, c]));
-    return tiles.ids.map((id) => byId.get(id)).filter((c): c is CameraFeed => Boolean(c));
-  }, [cameras, pool, tiles]);
+  }, [rotating, poolIds, pickedAt]);
+  const stage = pool.find((c) => c.id === stageId) ?? pool[0] ?? null;
+  const pick = (id: string) => {
+    setStageId(id);
+    setPickedAt(Date.now());
+  };
 
   return (
     <Panel
@@ -170,33 +144,21 @@ export default function CamerasPanel({
           </span>
         </div>
 
-        {mosaic.length === 0 ? (
+        {!stage ? (
           <div className="intel-grid m-1 flex flex-1 items-center justify-center rounded-[4px] border border-dashed border-border">
             <MicroLabel>{error ? 'Aloqa yo‘q' : loading ? 'Yuklanmoqda' : 'Kamera yo‘q'}</MicroLabel>
           </div>
         ) : (
-          <motion.div
-            variants={stagger}
-            initial="hidden"
-            animate="show"
-            className="grid min-h-0 flex-1 grid-cols-2 grid-rows-2 gap-1 p-1"
-          >
-            {mosaic.map((camera, index) => (
-              <CameraTile
-                key={camera.id}
-                camera={camera}
-                code={cameraCode(codes, camera.id)}
-                index={index}
-                dense
-                // Yoyilganda yig'ilgan nusxa ekranda qolsa ham (Panel uni
-                // shaffof qilib saqlaydi) oqimlar YOPILADI — aks holda
-                // devor ustiga yana 4 ta ulanish qo'shilardi.
-                dormant={expanded}
-                playing={pageVisible && !expanded && isStreaming(camera)}
-                onStreamUnavailable={refreshStreams}
-              />
-            ))}
-          </motion.div>
+          <div className="flex min-h-0 flex-1 flex-col gap-1 p-1">
+            <StageCamera
+              key={stage.id}
+              camera={stage}
+              code={cameraCode(codes, stage.id)}
+              playing={pageVisible && !expanded}
+              onStreamUnavailable={refreshStreams}
+            />
+            <CameraCarousel cameras={pool} codes={codes} activeId={stage.id} onPick={pick} paused={expanded} />
+          </div>
         )}
       </div>
     </Panel>
@@ -628,5 +590,107 @@ function StateLayer({ camera }: { camera: CameraFeed }) {
     <span className="pointer-events-none absolute start-1.5 top-1.5 z-[2] rounded-[3px] bg-black/60 px-1.5 py-0.5">
       <MicroLabel className="!text-white/75">{word}</MicroLabel>
     </span>
+  );
+}
+
+/** Asosiy (katta) kamera — jonli tasvir va yuz skaneri: kim tanildi, kim
+ *  notanish, nechta yuz ko'rinmoqda. Skaner faqat shu BITTA kamerada
+ *  (har so'rov serverda haqiqiy yuz tahlili). */
+function StageCamera({
+  camera,
+  code,
+  playing,
+  onStreamUnavailable,
+}: {
+  camera: CameraFeed;
+  code: string;
+  playing: boolean;
+  onStreamUnavailable: () => void;
+}) {
+  const holder = useRef<HTMLDivElement | null>(null);
+  const live = playing && isStreaming(camera);
+  const flow = useVideoFlow(holder, live);
+  const place = cameraPlaceCode(camera);
+  const [scan, setScan] = useState<LiveDetectionResult | null>(null);
+  const counts = scanCounts(scan);
+
+  return (
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[6px] bg-neutral-900">
+      <div ref={holder} className="relative min-h-0 flex-1">
+        {live ? (
+          <LiveVideoPlayer
+            streamUrl={camera.streamUrl}
+            priority
+            fit="contain"
+            cameraId={camera.id}
+            showDetections
+            onDetection={setScan}
+            onStreamUnavailable={onStreamUnavailable}
+          />
+        ) : (
+          <CameraThumbnail cameraId={camera.id} alt={camera.name} className="h-full w-full" refreshMs={10_000} />
+        )}
+        <DegradedLayer show={live && flow === 'stalled'} />
+        {!live && <StateLayer camera={camera} />}
+        {live && <ScanBadge counts={counts} />}
+      </div>
+      <div className="flex shrink-0 items-center gap-2 bg-black/70 px-3 py-1.5 text-white">
+        <LiveDot on={flow === 'flowing'} />
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{camera.name}</span>
+        {place && <CodeText className="text-[11px] text-white/60">{place}</CodeText>}
+        <CodeText className="text-[11px] text-white/60">{code}</CodeText>
+      </div>
+    </div>
+  );
+}
+
+/** Pastki karusel — barcha tasvir uzatayotgan kameralar kichik kadr bilan
+ *  (oqim emas: 99 ta oqim tarmoqni bo'g'ardi). Faol kamera ajratib
+ *  ko'rsatiladi va ko'rinishga suriladi; bosilsa — asosiyga chiqadi. */
+function CameraCarousel({
+  cameras,
+  codes,
+  activeId,
+  onPick,
+  paused,
+}: {
+  cameras: CameraFeed[];
+  codes: ReadonlyMap<string, string>;
+  activeId: string;
+  onPick: (id: string) => void;
+  paused: boolean;
+}) {
+  const strip = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (paused) return;
+    const active = strip.current?.querySelector<HTMLElement>(`[data-camera="${CSS.escape(activeId)}"]`);
+    active?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  }, [activeId, paused]);
+
+  return (
+    <div ref={strip} className="flex h-[74px] shrink-0 gap-1 overflow-x-auto pb-0.5" aria-label="Kameralar karuseli">
+      {cameras.map((camera) => {
+        const on = camera.id === activeId;
+        return (
+          <button
+            key={camera.id}
+            type="button"
+            data-camera={camera.id}
+            onClick={() => onPick(camera.id)}
+            aria-pressed={on}
+            title={camera.name}
+            className={cn(
+              'relative h-full w-[112px] shrink-0 overflow-hidden rounded-[4px] bg-neutral-900 ring-2 transition',
+              on ? 'ring-primary' : 'ring-transparent opacity-80 hover:opacity-100',
+            )}
+          >
+            {!paused && <CameraThumbnail cameraId={camera.id} alt={camera.name} className="h-full w-full" refreshMs={60_000} />}
+            <span className="absolute inset-x-0 bottom-0 truncate bg-black/65 px-1 text-left text-[9px] font-medium text-white">
+              {cameraCode(codes, camera.id)} · {camera.name}
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
