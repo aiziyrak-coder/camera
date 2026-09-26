@@ -1,10 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getGroups, type GroupStat, type PeopleStatusKey, type PersonType, type StatusCounts } from '../../lib/situationApi';
+import {
+  POSITION_GROUP_LABEL,
+  getGroups,
+  getOrgTree,
+  type GroupStat,
+  type OrgTree,
+  type PeopleStatusKey,
+  type PersonType,
+  type PositionGroup,
+  type StatusCounts,
+} from '../../lib/situationApi';
 import { todayInTashkent } from '../../lib/uzDate';
 import { DatePicker, IntelPanel, SearchInput, Select } from '../../ui';
 import StatusCounters, { COUNTER_META, type CounterKey } from '../situation/StatusCounters';
 import StatusPeopleTable from '../situation/StatusPeopleTable';
-import CountPicker from '../situation/CountPicker';
+import CountPicker, { type CountOption } from '../situation/CountPicker';
 
 /**
  * Hisobot — institutning umumiy (jonli) holati. Nazoratdagi guruh ko'rinishi
@@ -34,6 +44,10 @@ export default function InstituteStatusView({ type }: { type: PersonType }) {
   const [counts, setCounts] = useState<StatusCounts | null>(null);
   const [groups, setGroups] = useState<GroupStat[]>([]);
   const [tick, setTick] = useState(0);
+  const [tree, setTree] = useState<OrgTree | null>(null);
+  const [unit, setUnit] = useState('');
+  const [positionGroup, setPositionGroup] = useState<PositionGroup | ''>('');
+  const [position, setPosition] = useState('');
   const isToday = date === todayInTashkent();
   const students = type === 'talaba';
 
@@ -43,6 +57,30 @@ export default function InstituteStatusView({ type }: { type: PersonType }) {
     getGroups({ date }, { signal: controller.signal }).then(setGroups).catch(() => undefined);
     return () => controller.abort();
   }, [date, students]);
+
+  useEffect(() => {
+    if (students) return;
+    const controller = new AbortController();
+    getOrgTree(date, { signal: controller.signal }).then(setTree).catch(() => undefined);
+    return () => controller.abort();
+  }, [date, students]);
+
+  const unitOptions = useMemo<CountOption[]>(() => {
+    let section = '';
+    return (tree?.units ?? [])
+      .filter((u) => u.total > 0)
+      .map((u) => {
+        if (u.depth === 0) section = u.kindLabel;
+        return { value: u.id, label: u.name, present: u.present, absent: u.absent, noData: u.noData, indent: u.depth, section };
+      });
+  }, [tree]);
+  const positionOptions = useMemo<CountOption[]>(
+    () =>
+      (tree?.positions ?? [])
+        .filter((p) => !positionGroup || p.group === positionGroup)
+        .map((p) => ({ value: p.name, label: p.name, present: p.present, absent: p.absent, noData: p.noData })),
+    [tree, positionGroup],
+  );
 
   useEffect(() => {
     if (!isToday) return;
@@ -75,7 +113,10 @@ export default function InstituteStatusView({ type }: { type: PersonType }) {
     type,
     facultyId: faculty || undefined,
     course: course ? Number(course) : undefined,
-    group: group || undefined,
+    group: students ? group || undefined : undefined,
+    orgUnitId: !students ? unit || undefined : undefined,
+    positionGroup: !students ? positionGroup || undefined : undefined,
+    position: !students ? position || undefined : undefined,
     search: search.trim() || undefined,
   };
 
@@ -88,6 +129,24 @@ export default function InstituteStatusView({ type }: { type: PersonType }) {
             <Select value={faculty} onChange={(v) => { setFaculty(v); setGroup(''); }} options={facultyOptions} placeholder="Barcha fakultetlar" ariaLabel="Fakultet" size="sm" highlightActive />
             <Select value={course} onChange={(v) => { setCourse(v); setGroup(''); }} options={courseOptions} placeholder="Barcha kurslar" ariaLabel="Kurs" size="sm" highlightActive />
             <CountPicker label="Guruh" value={group} onChange={setGroup} options={groupOptions} />
+          </>
+        )}
+        {!students && (
+          <>
+            <CountPicker label="Tuzilma" value={unit} onChange={setUnit} options={unitOptions} />
+            <Select
+              label="Toifa"
+              value={positionGroup}
+              onChange={(v) => { setPositionGroup(v as PositionGroup | ''); setPosition(''); }}
+              options={(Object.keys(POSITION_GROUP_LABEL) as PositionGroup[]).map((k) => ({
+                value: k,
+                label: `${POSITION_GROUP_LABEL[k]} (${tree?.positionGroups[k] ?? 0})`,
+              }))}
+              placeholder="hammasi"
+              size="sm"
+              highlightActive
+            />
+            <CountPicker label="Lavozim" value={position} onChange={setPosition} options={positionOptions} />
           </>
         )}
         <SearchInput value={search} onChange={setSearch} placeholder="F.I.Sh. bo‘yicha" size="sm" className="w-48" />

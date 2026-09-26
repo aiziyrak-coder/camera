@@ -70,8 +70,15 @@ export default function StatusPeopleTable({
         </Link>
       ),
     },
-    { key: 'group', header: 'Guruh / lavozim', cell: (row) => row.group || '—' },
-    { key: 'faculty', header: 'Fakultet', cell: (row) => row.faculty ?? '—', hideOnMobile: true },
+    ...(query.type === 'xodim'
+      ? [
+          { key: 'position', header: 'Lavozim', cell: (row: StatusPerson) => row.position || '—' },
+          { key: 'unit', header: 'Bo‘linma', cell: (row: StatusPerson) => row.unit ?? row.group ?? '—', hideOnMobile: true },
+        ]
+      : [
+          { key: 'group', header: 'Guruh', cell: (row: StatusPerson) => row.group || '—' },
+          { key: 'faculty', header: 'Fakultet', cell: (row: StatusPerson) => row.faculty ?? '—', hideOnMobile: true },
+        ]),
     { key: 'status', header: 'Holat', cell: (row) => <StatusBadge status={row.status === 'malumot_yoq' ? 'nomalum' : row.status} /> },
     { key: 'checkIn', header: 'Kelgan', cell: (row) => row.checkIn ?? '—', mono: true },
     {

@@ -86,9 +86,9 @@ async def _erase(db: AsyncSession, person: StudentStaff) -> list[str]:
     """Yozuvdagi va undan tashqaridagi (galereya, biriktirilgan kadrlar)
     biometrikani tozalaydi; commit'dan keyin o'chiriladigan kalitlarni
     qaytaradi."""
-    photo_key = clear_biometrics(person)
+    photo_keys = clear_biometrics(person)
     extra = await erase_face_samples(db, [person.id])
-    return unique_keys([photo_key, *extra])
+    return unique_keys([*photo_keys, *extra])
 
 
 async def _get_person(db: AsyncSession, person_id: str) -> StudentStaff:

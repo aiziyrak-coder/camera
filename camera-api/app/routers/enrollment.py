@@ -522,9 +522,16 @@ async def submit_enrollment(
     # oldin o'chirilsa va yangisini saqlash (yoki commit) yiqilsa, odam
     # umuman rasmsiz qolardi — ya'ni bitta muvaffaqiyatsiz so'rov
     # birovning yuzini yo'q qilib yuborardi.
-    previous_key = record.biometric_photo_key
+    # Uchala tomon ham saqlanadi (LIVENESS_STEPS: to'g'ri, chap, o'ng) — keyin
+    # operator tekshirishi va qayta hisoblash uchun.
+    previous_keys = [record.biometric_photo_key, record.biometric_photo_left_key, record.biometric_photo_right_key]
     _file_id, key = await asyncio.to_thread(upload_file, frames[0], "face.jpg", "image/jpeg", "biometrics")
+    side_keys: list[str | None] = [None, None]
+    for index, name in ((1, "face-left.jpg"), (2, "face-right.jpg")):
+        if index < len(frames):
+            _fid, side_keys[index - 1] = await asyncio.to_thread(upload_file, frames[index], name, "image/jpeg", "biometrics")
     record.biometric_photo_key = key
+    record.biometric_photo_left_key, record.biometric_photo_right_key = side_keys
     record.biometric_embedding = json.dumps(embedding)
     if consent:
         record_consent(record, "royxatdan_otish")
@@ -551,10 +558,12 @@ async def submit_enrollment(
         # rasmga hech narsa tegmaydi. Yangi yuklangan fayl esa
         # ortiqcha bo'lib qoladi va o'sha o'chiriladi.
         await db.rollback()
-        await delete_files_quietly([key])
+        await delete_files_quietly([k for k in (key, *side_keys) if k])
         raise
-    if previous_key and previous_key != key:
-        await delete_files_quietly([previous_key])
+    new_keys = {key, *side_keys}
+    stale = [k for k in previous_keys if k and k not in new_keys]
+    if stale:
+        await delete_files_quietly(stale)
     logger.info(
         "self-service biometric enrollment completed",
         extra={"record_id": record_id, "biometrics_status": record.biometrics_status},

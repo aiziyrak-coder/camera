@@ -644,3 +644,32 @@ def test_namesakes_are_split_by_group_or_left_alone():
 def test_weak_twin_with_a_different_group_is_rejected():
     row = _row("Usarov Barkamol", group="3-kurs, 305")
     assert _match(_person("USAROV BARKAMOL BAXODIR O‘G‘LI", group="101"), [row]) is None
+
+
+async def test_sync_builds_org_tree_and_links_staff(hemis_settings):
+    from app.models import OrgUnit
+
+    async with TestSessionLocal() as db:
+        # HEMIS'da yo'q, avval qo'lda kiritilgan xodim — bo'lim nomi bo'yicha bog'lanadi.
+        db.add(StudentStaff(full_name="Qo'lda Kiritilgan", type="xodim", group_or_position="Anatomiya kafedrasi",
+                            biometrics_status="yoq"))
+        await db.commit()
+    set_transport_for_tests(httpx.MockTransport(_paged_handler(_datasets())))
+    run = await _run_sync()
+    assert run.status == "muvaffaqiyatli", run.error
+
+    async with TestSessionLocal() as db:
+        units = {u.name: u for u in (await db.execute(select(OrgUnit))).scalars().all()}
+        assert units["Pediatriya fakulteti"].kind == "fakultet"
+        assert units["Anatomiya kafedrasi"].kind == "kafedra"
+        assert units["Anatomiya kafedrasi"].parent_id == units["Pediatriya fakulteti"].id
+        assert units["Buxgalteriya"].kind == "rektorat"  # kod 16
+        people = {p.full_name: p for p in (await db.execute(select(StudentStaff))).scalars().all()}
+        employee = people["Qayumov G'anisher"]
+        assert employee.org_unit_id == units["Anatomiya kafedrasi"].id and employee.position == "Dotsent"
+        assert people["Qo'lda Kiritilgan"].org_unit_id == units["Anatomiya kafedrasi"].id
+
+    # Qayta ishga tushirish — bo'linmalar takrorlanmaydi.
+    await _run_sync()
+    async with TestSessionLocal() as db:
+        assert len((await db.execute(select(OrgUnit))).scalars().all()) == len(DEPARTMENTS)

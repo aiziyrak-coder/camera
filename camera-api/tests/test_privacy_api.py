@@ -140,6 +140,10 @@ class TestEnrollmentConsent:
         assert person.consent_given_at is not None
         assert person.consent_version == settings.consent_version
         assert person.consent_source == "royxatdan_otish"
+        # Uch tomonlama rasm ham saqlanadi: to'g'ri, chap, o'ng.
+        assert person.biometric_photo_key == "biometrics/1-face.jpg"
+        assert person.biometric_photo_left_key == "biometrics/1-face-left.jpg"
+        assert person.biometric_photo_right_key == "biometrics/1-face-right.jpg"
 
     async def test_consent_can_be_made_optional(self, client: AsyncClient, db_session, monkeypatch):
         monkeypatch.setattr(settings, "consent_required_for_enrollment", False)

@@ -44,7 +44,10 @@ COPY_FIELDS = (
     "consent_given_at", "consent_version", "consent_source",
 )
 UNIQUE_FIELDS = frozenset({"pinfl", "hemis_id", "card_number", "telegram_link_code"})
-BIOMETRIC_FIELDS = ("biometric_embedding", "biometric_photo_key", "biometrics_status", "biometrics_confirmed_at")
+BIOMETRIC_FIELDS = (
+    "biometric_embedding", "biometric_photo_key", "biometric_photo_left_key", "biometric_photo_right_key",
+    "biometrics_status", "biometrics_confirmed_at",
+)
 
 # (jadval, ustun) — shaxsga ishora qiluvchi, oddiy ko'chiriladigan havolalar.
 SIMPLE_REFS = (

@@ -74,17 +74,19 @@ def biometric_purge_at(person: StudentStaff) -> datetime | None:
     return start + timedelta(days=days)
 
 
-def clear_biometrics(person: StudentStaff) -> str | None:
+def clear_biometrics(person: StudentStaff) -> list[str]:
     """Yozuvdan biometrik ma'lumotni olib tashlaydi va rasm kalitini
     qaytaradi — obyektning o'zini chaqiruvchi COMMIT'dan KEYIN
     finish_erasure() bilan o'chiradi: ombordagi xato baza o'zgarishini
     orqaga qaytarmasligi kerak (app/storage.py, delete_files_quietly)."""
-    photo_key = person.biometric_photo_key
+    keys = [k for k in (person.biometric_photo_key, person.biometric_photo_left_key, person.biometric_photo_right_key) if k]
     person.biometric_photo_key = None
+    person.biometric_photo_left_key = None
+    person.biometric_photo_right_key = None
     person.biometric_embedding = None
     person.biometrics_status = "yoq"
     person.biometrics_confirmed_at = None
-    return photo_key
+    return keys
 
 
 async def erase_face_samples(db: AsyncSession, person_ids: Sequence[uuid.UUID]) -> list[str]:

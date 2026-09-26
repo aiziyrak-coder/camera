@@ -662,13 +662,19 @@ function CameraCarousel({
 }) {
   const strip = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (paused) return;
-    const active = strip.current?.querySelector<HTMLElement>(`[data-camera="${CSS.escape(activeId)}"]`);
-    active?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    // FAQAT karuselning o'zi suriladi. scrollIntoView ishlatilmaydi: u barcha
+    // aylanuvchi ota elementlarni ham suradi va butun konsol sahifasini
+    // yon tomonga siljitib yuborardi (2026-09-26, "yonga surilib qoldi").
+    const box = strip.current;
+    if (paused || !box) return;
+    const active = box.querySelector<HTMLElement>(`[data-camera="${CSS.escape(activeId)}"]`);
+    if (!active) return;
+    const left = active.offsetLeft - box.clientWidth / 2 + active.clientWidth / 2;
+    box.scrollTo?.({ left: Math.max(0, left), behavior: 'smooth' });
   }, [activeId, paused]);
 
   return (
-    <div ref={strip} className="flex h-[74px] shrink-0 gap-1 overflow-x-auto pb-0.5" aria-label="Kameralar karuseli">
+    <div ref={strip} className="relative flex h-[74px] min-w-0 shrink-0 gap-1 overflow-x-auto pb-0.5" aria-label="Kameralar karuseli">
       {cameras.map((camera) => {
         const on = camera.id === activeId;
         return (

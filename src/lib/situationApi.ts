@@ -710,6 +710,9 @@ export interface StatusPerson {
   status: AttendanceStatus;
   checkIn: string | null;
   biometricsStatus: BiometricsStatus;
+  /** Xodim: lavozimi va tuzilmadagi bo'linmasi. */
+  position?: string | null;
+  unit?: string | null;
 }
 
 export type StatusCounts = Record<
@@ -735,6 +738,10 @@ export interface StatusPeopleQuery {
   group?: string;
   /** Xodimlar: kafedra / bo'lim (getKafedras id). */
   departmentId?: string;
+  /** Xodimlar: tuzilmadagi bo'linma (ichki bo'linmalari bilan); 'yoq' — bog'lanmaganlar. */
+  orgUnitId?: string;
+  positionGroup?: PositionGroup;
+  position?: string;
   search?: string;
   page?: number;
   pageSize?: number;
@@ -756,3 +763,46 @@ export const STATUS_COUNT_KEY: Record<PeopleStatusKey, keyof StatusCounts> = {
   dam_olish: 'damOlish',
   malumot_yoq: 'malumotYoq',
 };
+
+// ───────────────────────────────────────────── Institut tuzilmasi (HEMIS)
+
+export type PositionGroup = 'oqituvchi' | 'mamuriy' | 'texnik';
+
+export const POSITION_GROUP_LABEL: Record<PositionGroup, string> = {
+  oqituvchi: 'Professor-o‘qituvchilar',
+  mamuriy: 'Ma’muriy xodimlar',
+  texnik: 'Texnik xodimlar',
+};
+
+export interface OrgNode {
+  id: string;
+  name: string;
+  kind: string;
+  kindLabel: string;
+  depth: number;
+  parentId: string | null;
+  total: number;
+  present: number;
+  absent: number;
+  noData: number;
+}
+
+export interface OrgPosition {
+  name: string;
+  group: PositionGroup | null;
+  total: number;
+  present: number;
+  absent: number;
+  noData: number;
+}
+
+export interface OrgTree {
+  date: string;
+  units: OrgNode[];
+  positions: OrgPosition[];
+  positionGroups: Record<string, number>;
+}
+
+export function getOrgTree(date?: string, opts?: CallOptions): Promise<OrgTree> {
+  return api.get<OrgTree>(`${BASE}/tuzilma${buildQuery({ date })}`, undefined, opts);
+}

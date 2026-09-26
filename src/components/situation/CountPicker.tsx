@@ -15,6 +15,10 @@ export interface CountOption {
   present: number;
   absent: number;
   noData: number;
+  /** Daraxt: ichki bo'linma chekinishi (0 — ildiz). */
+  indent?: number;
+  /** Bo'lim sarlavhasi — shu variantdan oldin chiqadi, agar oldingisidan farq qilsa. */
+  section?: string;
 }
 
 function Counts({ option }: { option: Pick<CountOption, 'present' | 'absent' | 'noData'> }) {
@@ -132,8 +136,13 @@ export default function CountPicker({
                 {allLabel}
               </button>
             </li>
-            {shown.map((option) => (
+            {shown.map((option, index) => (
               <li key={option.value}>
+                {option.section && option.section !== shown[index - 1]?.section && (
+                  <div className="mt-1 px-2.5 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-subtle">
+                    {option.section}
+                  </div>
+                )}
                 <button
                   type="button"
                   role="option"
@@ -144,7 +153,13 @@ export default function CountPicker({
                     option.value === value && 'bg-primary-soft',
                   )}
                 >
-                  <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                  <span
+                    className={cn('min-w-0 flex-1 truncate', !option.indent && option.section && 'font-medium')}
+                    style={option.indent ? { paddingInlineStart: `${option.indent * 14}px` } : undefined}
+                  >
+                    {option.indent ? '└ ' : ''}
+                    {option.label}
+                  </span>
                   <Counts option={option} />
                 </button>
               </li>

@@ -13,7 +13,7 @@ from app.models.unknown_sighting import UnknownSighting
 from app.models.lesson_attendance import LessonAttendance
 from app.models.lesson_session import LessonSession
 from app.models.module_suppression import ModuleCameraSuppression
-from app.models.org import Building, Department, Faculty, StudentGroup
+from app.models.org import Building, Department, Faculty, OrgUnit, StudentGroup
 from app.models.password_reset_token import PasswordResetToken
 from app.models.permission import Permission
 from app.models.platform import (
@@ -39,6 +39,7 @@ __all__ = [
     "User",
     "Permission",
     "Faculty",
+    "OrgUnit",
     "StudentGroup",
     "Building",
     "Department",

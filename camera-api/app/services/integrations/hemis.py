@@ -272,6 +272,8 @@ class HemisUnit:
     name: str
     kind: str | None  # 'fakultet' | 'kafedra' | None
     parent_id: str | None
+    # HEMIS structureType kodi (16 rektorat, 11 fakultet, 12 kafedra, 13 bo'lim, ...).
+    code: str | None = None
 
 
 @dataclass
@@ -297,6 +299,8 @@ class HemisPerson:
     main_employment: bool = True
     # HEMIS rasmi (image_full, bo'lmasa image) — yuzi yo'q odamni tanitish uchun.
     photo_url: str | None = None
+    # Xodim: HEMIS department.id (tuzilmadagi bo'linmasi).
+    department_id: str | None = None
 
     @property
     def group_or_position(self) -> str:
@@ -322,7 +326,11 @@ def map_department(item: dict) -> HemisUnit | None:
         return None
     parent = item.get("parent")
     parent_id = ref_id(parent) if parent not in (None, "", 0) else None
-    return HemisUnit(hemis_id=unit_id, name=name, kind=structure_kind(item), parent_id=parent_id or None)
+    structure = item.get("structureType") or item.get("structure_type")
+    return HemisUnit(
+        hemis_id=unit_id, name=name, kind=structure_kind(item), parent_id=parent_id or None,
+        code=ref_code(structure) or None,
+    )
 
 
 def map_group(item: dict) -> HemisGroup | None:
@@ -400,6 +408,7 @@ def map_employee(item: dict, units: dict[str, HemisUnit] | None = None) -> Hemis
         active=is_employee_active(item),
         main_employment=not employment or any(word in employment for word in _MAIN_EMPLOYMENT_WORDS),
         photo_url=photo_url(item),
+        department_id=ref_id(department.get("id")) if isinstance(department, dict) else None,
     )
 
 
@@ -734,6 +743,8 @@ class _HemisSync:
         self.step_errors: list[str] = []
         self.fatal_error: str | None = None
         self.units: dict[str, HemisUnit] = {}
+        # HEMIS department id -> OrgUnit.id (tuzilma; app/services/org_structure.py).
+        self.org_units: dict[str, uuid.UUID] = {}
         # HEMIS employee.id -> employee_id_number (dars jadvalidagi o'qituvchini topish uchun).
         self.employee_numbers: dict[str, str] = {}
         self.touched_faculty_ids: set[uuid.UUID] = set()
@@ -875,10 +886,35 @@ class _HemisSync:
                     self.db.add(department)
                 departments[key] = department
                 self.stats["departments"]["created"] += 1
-            else:
-                # Bo'lim, markaz va h.k. — tizimda mos model yo'q.
-                self.stats["departments"]["skipped"] += 1
+        await self._sync_org_units()
         await self.db.commit()
+
+    async def _sync_org_units(self) -> None:
+        """Butun tuzilma (rektorat, fakultet, kafedra, bo'lim, markaz, ...)
+        OrgUnit jadvaliga: hemis_id bo'yicha yangilanadi, ota bo'linma bog'lanadi,
+        HEMIS'dan yo'qolgani faolsizlantiriladi."""
+        from app.models import OrgUnit
+        from app.services.org_structure import org_kind
+
+        existing = {u.hemis_id: u for u in (await self.db.execute(select(OrgUnit))).scalars().all() if u.hemis_id}
+        for unit in self.units.values():
+            kind = org_kind(unit.code, unit.name)
+            row = existing.get(unit.hemis_id)
+            if row is None:
+                row = OrgUnit(hemis_id=unit.hemis_id, name=unit.name[:300], kind=kind, active=True)
+                self.db.add(row)
+                existing[unit.hemis_id] = row
+            else:
+                row.name, row.kind, row.active = unit.name[:300], kind, True
+        await self.db.flush()
+        for unit in self.units.values():
+            row = existing[unit.hemis_id]
+            parent = existing.get(unit.parent_id) if unit.parent_id else None
+            row.parent_id = parent.id if parent is not None and parent.id != row.id else None
+        for hemis_id, row in existing.items():
+            if hemis_id not in self.units:
+                row.active = False
+        self.org_units = {hemis_id: row.id for hemis_id, row in existing.items()}
 
     # ── guruhlar ──
     async def _sync_groups(self, client: HemisClient) -> None:
@@ -966,6 +1002,12 @@ class _HemisSync:
         # Bir odamning bir nechta lavozimi — xato emas, alohida hisoblanmaydi.
         people, _ = dedupe_people(people)
         await self._sync_people("employees", "xodim", people)
+        from app.services.org_structure import link_unassigned_staff
+
+        linked = await link_unassigned_staff(self.db)
+        if linked:
+            self.message(f"HEMIS'da yo'q {linked} xodim bo'lim nomi bo'yicha tuzilmaga bog'landi")
+        await self.db.commit()
 
     async def _sync_schedule(self, client: HemisClient) -> None:
         from app.services.integrations import hemis_schedule
@@ -1059,6 +1101,8 @@ class _HemisSync:
                         biometrics_status="yoq",
                         active=True,
                         hemis_photo_url=person.photo_url,
+                        org_unit_id=self.org_units.get(person.department_id or ""),
+                        position=(person.position or None) if person_type == "xodim" else None,
                     )
                     async with self.db.begin_nested():
                         self.db.add(record)
@@ -1185,6 +1229,12 @@ class _HemisSync:
         position = person.group_or_position[:300]
         if record.group_or_position != position:
             changes["group_or_position"] = position
+        if person.type == "xodim":
+            unit_id = self.org_units.get(person.department_id or "")
+            if unit_id is not None and record.org_unit_id != unit_id:
+                changes["org_unit_id"] = unit_id
+            if person.position and record.position != person.position[:300]:
+                changes["position"] = person.position[:300]
         if person.photo_url and record.hemis_photo_url != person.photo_url:
             # Yangi rasm — rasmdan tanitish qayta urinib ko'radi (app/jobs/hemis_photos.py).
             changes["hemis_photo_url"] = person.photo_url

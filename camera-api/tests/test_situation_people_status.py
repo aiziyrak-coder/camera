@@ -52,3 +52,47 @@ async def test_staff_filtered_by_department(client, world, admin):
     assert names and any("Yusupova" in n for n in names)
     assert body["counts"]["hammasi"] == len(names)
     assert (await client.get(URL, params={"type": "xodim", "departmentId": "yoq"}, headers=admin)).status_code == 404
+
+
+async def _org(db_session, world):
+    """Pediatriya fakulteti -> Anatomiya kafedrasi; Rektorat. Yusupova va Karimov
+    — Anatomiyada (dotsent/farrosh), Rahimov — rektoratda, Qodirova bog'lanmagan."""
+    from app.models import OrgUnit
+
+    fac = OrgUnit(name="Pediatriya fakulteti", kind="fakultet")
+    rek = OrgUnit(name="Rektorat", kind="rektorat")
+    db_session.add_all([fac, rek])
+    await db_session.flush()
+    kaf = OrgUnit(name="Anatomiya", kind="kafedra", parent_id=fac.id)
+    db_session.add(kaf)
+    await db_session.flush()
+    world.people.yusupova.org_unit_id, world.people.yusupova.position = kaf.id, "Dotsent"
+    world.people.karimov.org_unit_id, world.people.karimov.position = kaf.id, "Farrosh"
+    world.people.rahimov.org_unit_id, world.people.rahimov.position = rek.id, "Prorektor"
+    ids = {"fac": str(fac.id), "kaf": str(kaf.id), "rek": str(rek.id)}
+    await db_session.commit()
+    return ids
+
+
+async def test_org_tree_counts_roll_up_to_faculty(client, world, admin, db_session):
+    ids = await _org(db_session, world)
+    body = (await client.get("/api/situation/tuzilma", headers=admin)).json()
+    units = {u["id"]: u for u in body["units"]}
+    # Yusupova keldi, Karimov kech keldi — ikkalasi kelgan; fakultetga yig'iladi.
+    assert (units[ids["kaf"]]["present"], units[ids["kaf"]]["total"], units[ids["kaf"]]["depth"]) == (2, 2, 1)
+    assert units[ids["fac"]]["present"] == 2 and units[ids["fac"]]["kindLabel"] == "Fakultetlar"
+    assert [u["kind"] for u in body["units"]][:2] == ["rektorat", "fakultet"]  # rahbariyat birinchi
+    assert units["yoq"]["total"] == 1  # Qodirova
+    assert body["positionGroups"]["texnik"] == 1 and body["positionGroups"]["oqituvchi"] == 1
+
+
+async def test_people_filtered_by_org_unit_and_position_group(client, world, admin, db_session):
+    ids = await _org(db_session, world)
+    base = {"type": "xodim"}
+    fac = (await client.get(URL, params={**base, "orgUnitId": ids["fac"]}, headers=admin)).json()
+    assert sorted(p["position"] for p in fac["items"]) == ["Dotsent", "Farrosh"]
+    assert all(p["unit"] == "Anatomiya" for p in fac["items"])
+    tech = (await client.get(URL, params={**base, "positionGroup": "texnik"}, headers=admin)).json()
+    assert [p["position"] for p in tech["items"]] == ["Farrosh"]
+    loose = (await client.get(URL, params={**base, "orgUnitId": "yoq"}, headers=admin)).json()
+    assert [p["fullName"] for p in loose["items"]] == ["Qodirova Malika"]

@@ -116,7 +116,7 @@ export default function GroupStatsPanel({
   const students = who === 'talaba';
   // Talaba guruhi tanlangan — guruh ko'rinishi; aks holda (institut yoki kafedra) — server sanoqlari.
   const groupView = students && Boolean(group);
-  const departmentId = !students && group ? group : undefined;
+  const orgUnitId = !students && group ? group : undefined;
   const [counts, setCounts] = useState<StatusCounts | null>(null);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -127,7 +127,7 @@ export default function GroupStatsPanel({
     if (groupView) return;
     const controller = new AbortController();
     Promise.all([
-      getPeopleStatus({ date, type: who, departmentId, pageSize: 1 }, { signal: controller.signal }),
+      getPeopleStatus({ date, type: who, orgUnitId, pageSize: 1 }, { signal: controller.signal }),
       getOverview(date, { signal: controller.signal }),
     ])
       .then(([page, data]) => {
@@ -139,7 +139,7 @@ export default function GroupStatsPanel({
         if (!controller.signal.aborted) setError(err instanceof ApiError ? err.message : "Ma'lumotni olib bo'lmadi");
       });
     return () => controller.abort();
-  }, [groupView, who, departmentId, date, pulse]);
+  }, [groupView, who, orgUnitId, date, pulse]);
 
   const seen = lessonSeenIds(live);
   const info = live.detail?.group;
@@ -215,7 +215,7 @@ export default function GroupStatsPanel({
         title={listing ? `${students ? 'Talabalar' : 'O‘qituvchi va xodimlar'}: ${COUNTER_META[listing as CounterKey]?.label ?? listing}` : ''}
         description={date}
       >
-        {listing && <StatusPeopleTable query={{ date, type: who, departmentId }} status={listing} refreshKey={pulse} maxHeight="60vh" />}
+        {listing && <StatusPeopleTable query={{ date, type: who, orgUnitId }} status={listing} refreshKey={pulse} maxHeight="60vh" />}
       </Modal>
     </>
   );

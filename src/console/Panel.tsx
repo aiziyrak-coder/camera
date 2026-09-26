@@ -94,7 +94,7 @@ export default function Panel({
         aria-label={title}
         onClick={clickToExpand ? () => !expanded && onExpand(id) : undefined}
         className={cn(
-          'panel-enter glass relative flex min-h-0 flex-col overflow-hidden',
+          'panel-enter glass relative flex min-h-0 min-w-0 flex-col overflow-hidden',
           clickToExpand && 'glass-hover',
           clickToExpand && !expanded && 'cursor-pointer',
           expanded && 'pointer-events-none opacity-0',

@@ -33,6 +33,7 @@ from app.schemas.student_staff import (
 from app.schemas.base import CamelModel
 from app.schemas.student_staff_import import StudentStaffImportResultOut
 from app.services import person_dedupe
+from app.services.privacy import clear_biometrics
 from app.services.face_matching import announce_roster_change
 from app.services.name_matching import name_key, name_tokens, names_match
 from app.services.notifications.sms import normalize_phone
@@ -1065,17 +1066,13 @@ async def reject_self_enrollment(
     "yo'q" holatiga qaytadi (odam qayta yuborishi mumkin). Yozuvning
     o'zini butunlay o'chirish — DELETE."""
     record = await _awaiting_record(db, record_id)
-    photo_key = record.biometric_photo_key
-    record.biometric_photo_key = None
-    record.biometric_embedding = None
-    record.biometrics_status = "yoq"
-    record.biometrics_confirmed_at = None
+    photo_keys = clear_biometrics(record)
     await log_action(
         db, request, current_user.id, f"O'zi ro'yxatdan o'tgan odamning yuzini rad etdi: {record.full_name}", "Talabalar"
     )
     await db.commit()
-    if photo_key:
-        await delete_files_quietly([photo_key])
+    if photo_keys:
+        await delete_files_quietly(photo_keys)
     return _to_out(record, record.faculty.name if record.faculty else "")
 
 

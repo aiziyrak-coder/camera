@@ -99,7 +99,7 @@ async def _purge_inactive_biometrics(db: AsyncSession, now: datetime) -> int:
         )
         if not people:
             break
-        keys = [clear_biometrics(person) for person in people]
+        keys = [key for person in people for key in clear_biometrics(person)]
         # Galereya namunalari va biriktirilgan kamera kadrlari ham — faqat
         # asosiy rasm o'chib, qolgan yuz vektorlari qolib ketmasin.
         keys = unique_keys([*keys, *await erase_face_samples(db, [person.id for person in people])])

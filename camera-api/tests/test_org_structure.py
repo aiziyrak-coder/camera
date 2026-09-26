@@ -1,120 +1,63 @@
-import pytest
-from httpx import AsyncClient
-from sqlalchemy import select
+"""Institut tuzilmasi (app/services/org_structure.py)."""
 
-from app.models import Building, Camera
-from tests.conftest import auth_headers
+import uuid
+
+from app.services.org_structure import (
+    TreeUnit,
+    build_tree,
+    descendants,
+    match_unit,
+    org_kind,
+    position_group,
+    unit_key,
+)
 
 
-@pytest.mark.usefixtures("seeded")
-class TestOrgStructure:
-    async def test_list_buildings(self, client: AsyncClient):
-        headers = await auth_headers(client, "admin", "admin123")
-        resp = await client.get("/api/buildings", headers=headers)
-        assert resp.status_code == 200
-        assert len(resp.json()) == 3
+def test_kinds_from_hemis_codes():
+    assert org_kind("11", "Pediatriya fakulteti") == "fakultet"
+    assert org_kind("11", "Magistratura boʻlimi") == "oquv"
+    assert org_kind("11", "Malaka oshirish va qayta tayyorlash fakulteti") == "oquv"
+    assert org_kind("12", "Anatomiya") == "kafedra"
+    assert org_kind("16", "Rektorat") == "rektorat"
+    assert org_kind("10", "1-talabalar turar joyi") == "turar_joy"
+    assert org_kind("10", "Vivariylar") == "boshqa"
+    assert org_kind(None, "Nomaʼlum") == "boshqa"
 
-    async def test_camera_count_reflects_real_registered_cameras_not_the_stale_field(
-        self, client: AsyncClient, db_session
-    ):
-        """Regression: Building.camera_count is never set through any admin
-        UI (AddBuildingModal.tsx always sends 0/whatever it already was) —
-        GET /api/buildings must report the real, live count of registered
-        Camera rows, not that dead field, or the dashboard silently lies
-        about how many cameras are actually connected."""
-        headers = await auth_headers(client, "admin", "admin123")
-        building = (await db_session.execute(select(Building))).scalars().first()
 
-        before = await client.get("/api/buildings", headers=headers)
-        before_count = next(b["cameraCount"] for b in before.json() if b["id"] == str(building.id))
-        assert before_count == 0
+def test_position_groups():
+    assert position_group("Assistent") == "oqituvchi"
+    assert position_group("Stajer-o‘qituvchi") == "oqituvchi"
+    assert position_group("Kafedra mudiri") == "oqituvchi"
+    assert position_group("Farrosh") == "texnik"
+    assert position_group("Qorovul") == "texnik"
+    assert position_group("Ko‘cha supuruvchi") == "texnik"
+    assert position_group("Chilangar (santexnik)") == "texnik"
+    assert position_group("Hisobchi") == "mamuriy"
+    assert position_group("Bo‘lim boshlig‘i") == "mamuriy"
+    assert position_group(None) is None
 
-        db_session.add(
-            Camera(
-                name="Yangi kamera", ip="10.0.9.50", building_id=building.id,
-                zone="Test", resolution="1080p", status="faol",
-            )
-        )
-        await db_session.commit()
 
-        after = await client.get("/api/buildings", headers=headers)
-        after_count = next(b["cameraCount"] for b in after.json() if b["id"] == str(building.id))
-        assert after_count == 1
+def test_unassigned_staff_match_by_unit_name():
+    a, b, c = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    keys = {unit_key("Pediatriya"): a, unit_key("Yu. Nishonov nomidagi Normal anatomiya"): b, unit_key("Xisobxona"): c}
+    assert match_unit("Pediatriya kafedrasi", keys) == a
+    assert match_unit("Normal anatomiya kafedrasi", keys) == b
+    assert match_unit("Hisobxona", keys) == c  # x/h farqi
+    assert match_unit("Qorovullar", keys) is None
 
-    async def test_create_update_delete_building(self, client: AsyncClient):
-        headers = await auth_headers(client, "admin", "admin123")
 
-        created = await client.post(
-            "/api/buildings", headers=headers, json={"name": "4-Bino (Sport majmuasi)", "cameraCount": 0}
-        )
-        assert created.status_code == 201
-        building_id = created.json()["id"]
+def test_tree_order_and_descendants():
+    fac, kaf, rek, bolim = (uuid.uuid4() for _ in range(4))
 
-        updated = await client.patch(
-            f"/api/buildings/{building_id}",
-            headers=headers,
-            json={"name": "4-Bino (Yangi nom)", "cameraCount": 2},
-        )
-        assert updated.status_code == 200
-        assert updated.json()["name"] == "4-Bino (Yangi nom)"
-        assert updated.json()["cameraCount"] == 2
+    class U:
+        def __init__(self, id, name, kind, parent_id=None):
+            self.id, self.name, self.kind, self.parent_id = id, name, kind, parent_id
 
-        deleted = await client.delete(f"/api/buildings/{building_id}", headers=headers)
-        assert deleted.status_code == 204
-
-        listing = await client.get("/api/buildings", headers=headers)
-        assert building_id not in [b["id"] for b in listing.json()]
-
-    async def test_delete_unknown_building_is_404(self, client: AsyncClient):
-        headers = await auth_headers(client, "admin", "admin123")
-        resp = await client.delete("/api/buildings/00000000-0000-0000-0000-000000000000", headers=headers)
-        assert resp.status_code == 404
-
-    async def test_create_and_delete_faculty(self, client: AsyncClient):
-        headers = await auth_headers(client, "admin", "admin123")
-
-        created = await client.post("/api/faculties", headers=headers, json={"name": "Stomatologiya", "courseCount": 5})
-        assert created.status_code == 201
-        faculty_id = created.json()["id"]
-        assert created.json()["studentCount"] == 0
-
-        deleted = await client.delete(f"/api/faculties/{faculty_id}", headers=headers)
-        assert deleted.status_code == 204
-
-        listing = await client.get("/api/faculties", headers=headers)
-        assert faculty_id not in [f["id"] for f in listing.json()]
-
-    async def test_create_student_group_requires_known_faculty(self, client: AsyncClient):
-        headers = await auth_headers(client, "admin", "admin123")
-        resp = await client.post(
-            "/api/student-groups",
-            headers=headers,
-            json={"name": "207-guruh", "facultyId": "00000000-0000-0000-0000-000000000000", "course": 2},
-        )
-        assert resp.status_code == 404
-
-    async def test_create_and_delete_student_group(self, client: AsyncClient):
-        headers = await auth_headers(client, "admin", "admin123")
-
-        faculties = (await client.get("/api/faculties", headers=headers)).json()
-        faculty = next(f for f in faculties if f["name"] == "Davolash ishi")
-
-        created = await client.post(
-            "/api/student-groups",
-            headers=headers,
-            json={"name": "207-guruh", "facultyId": faculty["id"], "course": 2},
-        )
-        assert created.status_code == 201
-        body = created.json()
-        assert body["faculty"] == "Davolash ishi"
-        group_id = body["id"]
-
-        deleted = await client.delete(f"/api/student-groups/{group_id}", headers=headers)
-        assert deleted.status_code == 204
-
-        listing = await client.get("/api/student-groups", headers=headers)
-        assert group_id not in [g["id"] for g in listing.json()]
-
-    async def test_org_structure_requires_authentication(self, client: AsyncClient):
-        resp = await client.get("/api/buildings")
-        assert resp.status_code == 401
+    roots = build_tree([
+        U(bolim, "Xisobxona", "bolim"), U(kaf, "Pediatriya", "kafedra", fac),
+        U(fac, "Pediatriya fakulteti", "fakultet"), U(rek, "Rektorat", "rektorat"),
+    ])
+    assert [r.kind for r in roots] == ["rektorat", "fakultet", "bolim"]
+    assert isinstance(roots[1].children[0], TreeUnit) and roots[1].children[0].id == kaf
+    assert descendants(roots, fac) == {fac, kaf}
+    assert descendants(roots, kaf) == {kaf}

@@ -1269,7 +1269,10 @@ class Settings(BaseSettings):
     hemis_page_size: int = 200
     # HEMIS rasmidan tanitish (app/jobs/hemis_photos.py): har N soniyada bir
     # to'plam, fon navbatida (davomat kadrlaridan keyin).
-    hemis_photo_enrollment: bool = True
+    # O'CHIRILGAN (2026-09-26, institut qarori): HEMIS'dagi bitta portret
+    # tanish uchun yetarli emas — faqat havola orqali uch tomonlama
+    # ro'yxatdan o'tgan yuzlar ishlatiladi.
+    hemis_photo_enrollment: bool = False
     hemis_photo_batch: int = 60
     hemis_photo_interval_seconds: int = 300
     hemis_photo_busy_pause_seconds: int = 5

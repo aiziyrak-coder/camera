@@ -3,12 +3,14 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, GraduationCap, Users } from 'lucide-react';
 import { ApiError } from '../../lib/apiClient';
 import {
+  POSITION_GROUP_LABEL,
   getGroups,
-  getKafedras,
+  getOrgTree,
   type GroupStat,
   type GroupStudent,
-  type KafedraStat,
+  type OrgTree,
   type PeopleStatusKey,
+  type PositionGroup,
   type StatusCounts,
 } from '../../lib/situationApi';
 import { Button, DataTable, DatePicker, SearchInput, Select, StatusBadge, Tabs, cn, type DataTableColumn } from '../../ui';
@@ -24,7 +26,9 @@ import type { NazoratSelection, Who } from '../nazoratSelection';
  *
  * Tepada: Talabalar | O'qituvchi va xodimlar. Filtrlar aniq nomlangan:
  *   talabalar — fakultet, kurs, guruh, holat, F.I.Sh.;
- *   xodimlar  — kafedra/bo'lim, holat, F.I.Sh.
+ *   xodimlar  — tuzilma (HEMIS: rahbariyat, fakultet -> kafedralar, bo'limlar,
+ *               markazlar, turar joylar), lavozim toifasi (o'qituvchi /
+ *               ma'muriy / texnik), lavozim, holat, F.I.Sh.
  *
  * Talabalar, guruh tanlanmagan: holat va qidiruv bo'sh bo'lsa — guruhlar
  * jadvali (sanoqlar bosiladi); holat yoki F.I.Sh. berilsa — shu filtrdagi
@@ -106,7 +110,9 @@ export default function GroupTablePanel({
   const { who, group, status, setWho, setGroup, setStatus } = selection;
   const students = who === 'talaba';
   const [groups, setGroups] = useState<GroupStat[] | null>(null);
-  const [units, setUnits] = useState<KafedraStat[] | null>(null);
+  const [tree, setTree] = useState<OrgTree | null>(null);
+  const [positionGroup, setPositionGroup] = useState<PositionGroup | ''>('');
+  const [position, setPosition] = useState('');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [faculty, setFaculty] = useState('');
   const [course, setCourse] = useState('');
@@ -114,12 +120,16 @@ export default function GroupTablePanel({
   const [counts, setCounts] = useState<StatusCounts | null>(null);
 
   useEffect(() => setSearch(''), [who, group]);
+  useEffect(() => {
+    setPositionGroup('');
+    setPosition('');
+  }, [who]);
 
   useEffect(() => {
     const controller = new AbortController();
     const load = students
       ? getGroups({ date }, { signal: controller.signal }).then(setGroups)
-      : getKafedras(date, { signal: controller.signal }, 'all').then(setUnits);
+      : getOrgTree(date, { signal: controller.signal }).then(setTree);
     load
       .then(() => setLoadError(null))
       .catch((err) => {
@@ -146,25 +156,42 @@ export default function GroupTablePanel({
     [groups, faculty, course],
   );
   // Ochiluvchi ro'yxatda har guruh yonida: kelgan (yashil), kelmagan (qizil), ma'lumotsiz (kulrang).
-  const groupOptions = useMemo<CountOption[]>(
-    () =>
-      filteredGroups.map((g) => ({
+  // HEMIS guruhlari (kursi va fakulteti ma'lum) birinchi, o'zi ro'yxatdan
+  // o'tganda qo'lda yozilgan noaniq nomlar ("1", "20.26 gurux") — alohida pastda.
+  const groupOptions = useMemo<CountOption[]>(() => {
+    const known = (g: GroupStat) => Boolean(g.course && g.facultyId);
+    return [...filteredGroups]
+      .sort((a, b) => Number(known(b)) - Number(known(a)) || (a.course ?? 0) - (b.course ?? 0) || a.name.localeCompare(b.name))
+      .map((g) => ({
         value: g.name,
         label: g.name,
         present: g.present,
         absent: g.absent + g.notYet,
         noData: g.noData,
-      })),
-    [filteredGroups],
-  );
-  const unitOptions = useMemo(
+        section: known(g) ? `${g.course}-kurs` : 'Aniqlanmagan (qo‘lda yozilgan) guruhlar',
+      }));
+  }, [filteredGroups]);
+  // Tuzilma daraxti: ildiz turi bo'yicha bo'limlar, kafedralar fakultet ostida.
+  const unitOptions = useMemo<CountOption[]>(() => {
+    let section = '';
+    return (tree?.units ?? [])
+      .filter((u) => u.total > 0)
+      .map((u) => {
+        if (u.depth === 0) section = u.kindLabel;
+        return { value: u.id, label: u.name, present: u.present, absent: u.absent, noData: u.noData, indent: u.depth, section };
+      });
+  }, [tree]);
+  const positionOptions = useMemo<CountOption[]>(
     () =>
-      (units ?? [])
-        .filter((u) => u.staffTotal > 0)
-        .map((u) => ({ value: u.id, label: u.name, present: u.present, absent: u.absent + u.notYet, noData: u.noData }))
-        .sort((a, b) => a.label.localeCompare(b.label)),
-    [units],
+      (tree?.positions ?? [])
+        .filter((p) => !positionGroup || p.group === positionGroup)
+        .map((p) => ({ value: p.name, label: p.name, present: p.present, absent: p.absent, noData: p.noData })),
+    [tree, positionGroup],
   );
+  const positionGroupOptions = (Object.keys(POSITION_GROUP_LABEL) as PositionGroup[]).map((key) => ({
+    value: key,
+    label: `${POSITION_GROUP_LABEL[key]} (${tree?.positionGroups[key] ?? 0})`,
+  }));
 
   const seen = lessonSeenIds(live);
   const groupStudents = live.detail?.students ?? [];
@@ -263,7 +290,14 @@ export default function GroupTablePanel({
         course: course ? Number(course) : undefined,
         search: needle || undefined,
       }
-    : { date, type: 'xodim' as const, departmentId: group || undefined, search: needle || undefined };
+    : {
+        date,
+        type: 'xodim' as const,
+        orgUnitId: group || undefined,
+        positionGroup: positionGroup || undefined,
+        position: position || undefined,
+        search: needle || undefined,
+      };
 
   const filters = (
     <div className="flex shrink-0 flex-col gap-1.5">
@@ -290,7 +324,22 @@ export default function GroupTablePanel({
             <CountPicker label="Guruh" value={group} onChange={setGroup} options={groupOptions} />
           </>
         ) : (
-          <CountPicker label="Kafedra / bo‘lim" value={group} onChange={setGroup} options={unitOptions} />
+          <>
+            <CountPicker label="Tuzilma" value={group} onChange={setGroup} options={unitOptions} />
+            <Select
+              label="Toifa"
+              value={positionGroup}
+              onChange={(value) => {
+                setPositionGroup(value as PositionGroup | '');
+                setPosition('');
+              }}
+              options={positionGroupOptions}
+              placeholder="hammasi"
+              size="sm"
+              highlightActive
+            />
+            <CountPicker label="Lavozim" value={position} onChange={setPosition} options={positionOptions} />
+          </>
         )}
         <Select
           label="Holat"
@@ -373,7 +422,7 @@ export default function GroupTablePanel({
     </div>
   );
 
-  const unitName = !students && group ? units?.find((u) => u.id === group)?.name : null;
+  const unitName = !students && group ? tree?.units.find((u) => u.id === group)?.name : null;
   const title = students ? (group ? `Guruh ${group}` : 'Talabalar') : unitName ?? 'O‘qituvchi va xodimlar';
   const badge =
     students && group ? `${shownStudents.length}/${groupStudents.length}` : students && !peopleMode ? `${filteredGroups.length} guruh` : null;

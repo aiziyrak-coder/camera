@@ -687,6 +687,9 @@ class StatusPersonOut(CamelModel):
     group: str
     course: int | None
     faculty: str | None
+    # Xodim: lavozimi va tuzilmadagi bo'linmasi.
+    position: str | None = None
+    unit: str | None = None
     status: str
     check_in: str | None
     biometrics_status: str
@@ -724,6 +727,9 @@ async def people_by_status(
     course: Annotated[int | None, Query(ge=1, le=12)] = None,
     group: Annotated[str | None, Query(max_length=100)] = None,
     department_id: Annotated[str | None, Query(alias="departmentId", max_length=100)] = None,
+    org_unit_id: Annotated[str | None, Query(alias="orgUnitId", max_length=100)] = None,
+    position_group: Annotated[Literal["oqituvchi", "mamuriy", "texnik"] | None, Query(alias="positionGroup")] = None,
+    position: Annotated[str | None, Query(max_length=200)] = None,
     search: Annotated[str | None, Query(max_length=100)] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(alias="pageSize", ge=1, le=500)] = 100,
@@ -741,6 +747,7 @@ async def people_by_status(
         select(
             StudentStaff.id, StudentStaff.full_name, StudentStaff.type, StudentStaff.group_or_position,
             StudentStaff.faculty_id, StudentStaff.biometrics_status, AttendanceRecord.status, AttendanceRecord.check_in,
+            StudentStaff.org_unit_id, StudentStaff.position,
         )
         .outerjoin(
             AttendanceRecord,
@@ -757,14 +764,32 @@ async def people_by_status(
         # Kafedra / bo'lim (xodimlar) — /kafedras dagi bilan bir xil ro'yxat.
         _unit, staff_ids = await svc.department_staff_ids(db, department_id)
         stmt = stmt.where(StudentStaff.id.in_(staff_ids or [uuid.uuid4()]))
+    from app.models import OrgUnit
+    from app.services import org_structure as org
+
+    unit_names: dict = {}
+    if type_ == "xodim":
+        units = (await db.execute(select(OrgUnit).where(OrgUnit.active.is_(True)))).scalars().all()
+        unit_names = {u.id: u.name.strip() for u in units}
+        if org_unit_id == UNASSIGNED:
+            stmt = stmt.where(StudentStaff.org_unit_id.is_(None))
+        elif org_unit_id:
+            wanted = org.descendants(org.build_tree(list(units)), _uuid_or_404(org_unit_id, "Bo'linma topilmadi"))
+            if not wanted:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Bo'linma topilmadi")
+            stmt = stmt.where(StudentStaff.org_unit_id.in_(wanted))
+        if position:
+            stmt = stmt.where(func.coalesce(StudentStaff.position, "") == ("" if position == "Lavozim ko'rsatilmagan" else position))
     rows = (await db.execute(stmt)).all()
     names = await svc.faculty_names(db)
     needle = svc.norm_name(search) if search else ""
 
     counts = StatusCountsOut()
     matched: list[StatusPersonOut] = []
-    for pid, name, ptype, unit, faculty, bio, record_status, check_in in rows:
+    for pid, name, ptype, unit, faculty, bio, record_status, check_in, person_unit, person_position in rows:
         if group and not svc.is_member(unit, group):
+            continue
+        if position_group and org.position_group(person_position) != position_group:
             continue
         person_course, group_name = svc.student_group(unit) if ptype == "talaba" else (None, unit or "")
         if course and person_course != course:
@@ -785,7 +810,8 @@ async def people_by_status(
                 StatusPersonOut(
                     id=str(pid), full_name=name, type=ptype, group=group_name or "", course=person_course,
                     faculty=names.get(faculty) if faculty else None, status=state,
-                    check_in=svc.hm(check_in), biometrics_status=bio,
+                    check_in=svc.hm(check_in), biometrics_status=bio, position=person_position,
+                    unit=unit_names.get(person_unit) if person_unit else None,
                 )
             )
     if status_ in ("kelgan", "keldi", "kech_keldi"):
@@ -794,4 +820,132 @@ async def people_by_status(
     return StatusPeopleOut(
         date=day.isoformat(), counts=counts, total=len(matched), page=page, page_size=page_size,
         items=matched[start:start + page_size],
+    )
+
+
+# ─────────────────────────────────────────── Institut tuzilmasi (xodimlar filtri)
+
+
+class OrgNodeOut(CamelModel):
+    id: str
+    name: str
+    kind: str
+    kind_label: str
+    depth: int
+    parent_id: str | None
+    total: int
+    present: int
+    absent: int
+    no_data: int
+
+
+class PositionOut(CamelModel):
+    name: str
+    group: str | None
+    total: int
+    present: int
+    absent: int
+    no_data: int
+
+
+class OrgTreeOut(CamelModel):
+    date: str
+    units: list[OrgNodeOut]
+    positions: list[PositionOut]
+    position_groups: dict[str, int]
+
+
+UNASSIGNED = "yoq"
+
+
+def _bucket(record_status: str | None, enrolled: bool, pending: bool) -> str:
+    if record_status in svc.PRESENT_STATUSES:
+        return "present"
+    if record_status == "kelmadi" or (enrolled and pending and record_status is None):
+        return "absent"
+    return "no_data"
+
+
+async def _staff_rows(db: AsyncSession, day):
+    return (
+        await db.execute(
+            select(
+                StudentStaff.id, StudentStaff.org_unit_id, StudentStaff.position, StudentStaff.biometrics_status,
+                AttendanceRecord.status,
+            )
+            .outerjoin(
+                AttendanceRecord,
+                and_(AttendanceRecord.student_staff_id == StudentStaff.id, AttendanceRecord.date == day),
+            )
+            .where(StudentStaff.type == "xodim", StudentStaff.active.is_(True))
+        )
+    ).all()
+
+
+@router.get("/tuzilma", response_model=OrgTreeOut)
+async def org_tree(db: DbDep, _: ReadDep, date: DateQuery = None) -> OrgTreeOut:
+    """Xodimlar filtri uchun institut tuzilmasi (HEMIS): rahbariyat,
+    fakultetlar va ularning kafedralari, bo'limlar, markazlar, turar joylar —
+    har biri bugungi sanoqlar bilan (ichki bo'linmalar bilan birga).
+    Shuningdek lavozimlar ro'yxati va toifalar (o'qituvchi/ma'muriy/texnik)."""
+    from app.models import OrgUnit
+    from app.services import org_structure as org
+
+    day = svc.resolve_day(date)
+    pending = day >= svc.today()
+    units = (await db.execute(select(OrgUnit).where(OrgUnit.active.is_(True)))).scalars().all()
+    roots = org.build_tree(list(units))
+    parent_of = {u.id: u.parent_id for u in units}
+
+    direct: dict = defaultdict(lambda: Counter())
+    positions: dict[str, Counter] = defaultdict(Counter)
+    groups: Counter = Counter()
+    for _pid, unit_id, position, bio, record_status in await _staff_rows(db, day):
+        bucket = _bucket(record_status, bio == "tasdiqlangan", pending)
+        key = unit_id if unit_id in parent_of else UNASSIGNED
+        direct[key][bucket] += 1
+        direct[key]["total"] += 1
+        name = (position or "").strip() or "Lavozim ko'rsatilmagan"
+        positions[name][bucket] += 1
+        positions[name]["total"] += 1
+        groups[org.position_group(position) or "nomalum"] += 1
+
+    rolled: dict = defaultdict(Counter)
+    for unit_id, counts in direct.items():
+        node = unit_id
+        seen = set()
+        while node is not None and node not in seen:
+            seen.add(node)
+            rolled[node].update(counts)
+            node = parent_of.get(node) if node != UNASSIGNED else None
+
+    out: list[OrgNodeOut] = []
+
+    def emit(items, depth):
+        for item in items:
+            counts = rolled.get(item.id, Counter())
+            out.append(OrgNodeOut(
+                id=str(item.id), name=item.name, kind=item.kind, kind_label=org.KIND_LABELS.get(item.kind, item.kind),
+                depth=depth, parent_id=str(item.parent_id) if item.parent_id else None, total=counts["total"],
+                present=counts["present"], absent=counts["absent"], no_data=counts["no_data"],
+            ))
+            emit(item.children, depth + 1)
+
+    emit(roots, 0)
+    if UNASSIGNED in rolled:
+        counts = rolled[UNASSIGNED]
+        out.append(OrgNodeOut(
+            id=UNASSIGNED, name="Tuzilmaga bog'lanmagan xodimlar", kind="boshqa", kind_label="Boshqa bo‘linmalar",
+            depth=0, parent_id=None, total=counts["total"], present=counts["present"], absent=counts["absent"],
+            no_data=counts["no_data"],
+        ))
+    return OrgTreeOut(
+        date=day.isoformat(),
+        units=out,
+        positions=sorted(
+            (PositionOut(name=name, group=org.position_group(name), total=c["total"], present=c["present"],
+                         absent=c["absent"], no_data=c["no_data"]) for name, c in positions.items()),
+            key=lambda p: (-p.total, p.name),
+        ),
+        position_groups=dict(groups),
     )
