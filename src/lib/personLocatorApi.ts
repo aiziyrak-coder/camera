@@ -1,6 +1,4 @@
 import { api } from './apiClient';
-import { todayInTashkent } from './uzDate';
-import { ARCHIVE_ENABLED } from './archiveFlag';
 
 export interface PersonLocation {
   id: string;
@@ -98,20 +96,6 @@ export function locationText(person: PersonLocation): string | null {
  *  ham e'tiborsiz qolardi, shuning uchun havola faqat kamera bilan. */
 export function liveLink(cameraId: string): string {
   return `/videodevor?${new URLSearchParams({ kamera: cameraId }).toString()}`;
-}
-
-// Arxiv ko'rinish boshlanishidan biroz oldin ochiladi: odam kadrga
-// kirayotgan payt ham ko'rinsin.
-const ARCHIVE_LEAD_MS = 10_000;
-
-/** Arxivda shu paytga sakrash. Sana Toshkent bo'yicha: UTC satrning
- *  boshidan olinsa, ertalab 05:00 gacha bo'lgan payt oldingi kunga tushardi. */
-export function archiveLink(cameraId: string, at: string): string | null {
-  if (!ARCHIVE_ENABLED) return null;
-  const ms = Date.parse(at);
-  if (Number.isNaN(ms)) return null;
-  const start = new Date(ms - ARCHIVE_LEAD_MS);
-  return `/arxiv?${new URLSearchParams({ kamera: cameraId, sana: todayInTashkent(start), t: start.toISOString() }).toString()}`;
 }
 
 export function similarityPercent(value: number | null | undefined): string {

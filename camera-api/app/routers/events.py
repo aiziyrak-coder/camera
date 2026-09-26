@@ -9,6 +9,7 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
+    Response,
     WebSocket,
     WebSocketDisconnect,
     status,
@@ -538,6 +539,74 @@ async def events_summary(
         buildings=[EventFacetOut(value=name, label=name, count=count) for name, count in building_rows],
         trial_unreviewed=sum(count for _code, _name, count in trial_rows),
         trial_modules=[EventFacetOut(value=str(code), label=name, count=count) for code, name, count in trial_rows],
+    )
+
+
+@router.get("/api/events/export.pdf")
+async def export_events_pdf(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: ReviewDep,
+    severity: Annotated[str | None, Query()] = None,
+    status_filter: Annotated[str | None, Query(alias="status")] = None,
+    search: Annotated[str | None, Query(max_length=100)] = None,
+    module_codes: Annotated[str | None, Query(alias="moduleCodes")] = None,
+    building: Annotated[str | None, Query(max_length=200)] = None,
+    camera_id: Annotated[str | None, Query(alias="cameraId")] = None,
+    date_from: Annotated[date | None, Query(alias="from")] = None,
+    date_to: Annotated[date | None, Query(alias="to")] = None,
+    sort: Annotated[Literal["newest", "oldest", "severity", "due"], Query()] = "newest",
+    assigned_to: Annotated[str | None, Query(alias="assignedTo", max_length=64)] = None,
+    overdue: Annotated[bool, Query()] = False,
+) -> Response:
+    """Hodisalar jurnali PDF — ekrandagi filtr bilan (ko'pi bilan 2000 qator)."""
+    from app.services import pdf_export
+
+    filters = dict(
+        severity=severity, status_filter=status_filter, search=search, today=False, exclude_modules=None,
+        hide_rejected=False, module_codes=module_codes, building=building, camera_id=camera_id,
+        date_from=date_from, date_to=date_to, sort=sort, trial=False, exclude_suppressed=False,
+        assigned_to=assigned_to, overdue=overdue,
+    )
+    items: list[EventOut] = []
+    total = 0
+    for page_no in range(1, 5):
+        params = PageParams(page=page_no, page_size=500)
+        result = await list_events(db=db, current_user=current_user, page_params=params, **filters)
+        items.extend(result.items)
+        total = result.total
+        if page_no >= result.total_pages:
+            break
+    status_labels = {
+        "yangi": "Yangi", "jarayonda": "Jarayonda", "tasdiqlangan": "Tasdiqlangan",
+        "hal_qilindi": "Hal qilindi", "rad_etilgan": "Rad etilgan",
+    }
+    rows = [
+        [e.timestamp, e.module_name, e.person_name or "—", e.camera_name or "—", e.building or "—",
+         f"{e.confidence}%", e.severity, status_labels.get(e.status, e.status), e.assigned_to_name or "—"]
+        for e in items
+    ]
+    tones = {i: "danger" for i, e in enumerate(items) if e.severity == "yuqori" and e.status in OPEN_STATUSES}
+    applied = [
+        (label, value) for label, value in (
+            ("Muhimlik", severity), ("Holat", status_filter), ("Qidiruv", search), ("Bino", building),
+            ("Sanadan", date_from.isoformat() if date_from else None), ("Sanagacha", date_to.isoformat() if date_to else None),
+            ("Muddati o'tgan", "ha" if overdue else None),
+        ) if value
+    ]
+    document = pdf_export.PdfDocument(
+        title="Hodisalar jurnali",
+        columns=[
+            pdf_export.PdfColumn("Vaqt", 1.3), pdf_export.PdfColumn("Kriteriya", 2), pdf_export.PdfColumn("Shaxs", 1.6),
+            pdf_export.PdfColumn("Kamera", 1.6), pdf_export.PdfColumn("Bino", 1.2), pdf_export.PdfColumn("Ishonch", 0.7, "RIGHT"),
+            pdf_export.PdfColumn("Muhimlik", 0.8), pdf_export.PdfColumn("Holat", 1), pdf_export.PdfColumn("Mas'ul", 1.3),
+        ],
+        rows=rows, row_tones=tones, filters=applied,
+        counts=[("Jami", total), ("Faylda", len(rows))],
+        note=None if total <= len(rows) else f"Faylga birinchi {len(rows)} ta yozuv tushdi — sana oralig'ini toraytiring.",
+    )
+    return Response(
+        content=pdf_export.render(document), media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="hodisalar.pdf"'},
     )
 
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Check, History, ImageUp, Map as MapIcon, MonitorPlay, Pencil, Siren, Trash2, X } from 'lucide-react';
+import { Check, ImageUp, Map as MapIcon, MonitorPlay, Pencil, Siren, Trash2, X } from 'lucide-react';
 import { Button, ButtonLink, Card, EmptyState, ErrorState, IconButton, Page, Select, Skeleton, StatusDot, cn, useToast, type Tone } from '../../ui';
 import LiveVideoPlayer from '../../components/LiveVideoPlayer';
 import { ApiError, isAbortError } from '../../lib/apiClient';
@@ -20,7 +20,6 @@ import {
 } from '../../lib/xaritaApi';
 import FloorMapCanvas, { DRAG_MIME, STATUS_STYLE } from './FloorMapCanvas';
 import { normalizeAngle, type Point } from './mapGeometry';
-import { ARCHIVE_ENABLED } from '../../lib/archiveFlag';
 
 /**
  * XARITA — qavat rejasi ustida kameralar (Milestone Smart Map kabi).
@@ -295,10 +294,11 @@ export default function MapPage() {
   );
 }
 
-function EventsLink({ count }: { count: number }) {
+function EventsLink({ count, cameraId }: { count: number; cameraId?: string }) {
   if (!count) return null;
+  const to = cameraId ? `/hodisalar?korinish=navbat&kamera=${encodeURIComponent(cameraId)}` : '/hodisalar';
   return (
-    <Link to="/hodisalar" className="inline-flex items-center gap-1 text-[12px] font-semibold text-danger hover:underline">
+    <Link to={to} className="inline-flex items-center gap-1 text-[12px] font-semibold text-danger hover:underline">
       <Siren size={13} aria-hidden="true" />
       {count} ochiq hodisa
     </Link>
@@ -362,17 +362,10 @@ function CameraPanel({ camera, onClose }: { camera: MapCamera; onClose: () => vo
           <span className="grid h-full place-items-center text-[12px] text-white/60">Kamera oflayn</span>
         )}
       </div>
-      <EventsLink count={camera.openEvents} />
-      <div className="grid grid-cols-2 gap-2">
-        <ButtonLink size="sm" icon={MonitorPlay} to={`/videodevor?kamera=${id}`}>
-          Jonli
-        </ButtonLink>
-        {ARCHIVE_ENABLED && (
-          <ButtonLink size="sm" icon={History} to={`/arxiv?kamera=${id}`}>
-            Arxiv
-          </ButtonLink>
-        )}
-      </div>
+      <EventsLink count={camera.openEvents} cameraId={camera.id} />
+      <ButtonLink size="sm" icon={MonitorPlay} to={`/videodevor?kamera=${id}`}>
+        Videodevorda ochish
+      </ButtonLink>
     </div>
   );
 }

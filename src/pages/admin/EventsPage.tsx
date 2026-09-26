@@ -53,6 +53,7 @@ import EventsPager from '../../components/events/EventsPager';
 import ResolveDialog from '../../components/events/ResolveDialog';
 import ReviewCard, { EventThumb, cameraLabel } from '../../components/events/ReviewCard';
 import SlaBadge from '../../components/events/SlaBadge';
+import PdfButton from '../../components/situation/PdfButton';
 import { ApiError, api, buildQuery, isAbortError, type Page as ApiPage } from '../../lib/apiClient';
 import { exportRowsAsCsv } from '../../lib/csvExport';
 import { EVENT_CSV_HEADERS, eventCsvRow, eventsCsvFilename } from '../../components/events/eventCsv';
@@ -63,7 +64,7 @@ import { isEventUpdate, isOpenStatus } from '../../lib/eventWorkflow';
 import type { FixedPreset } from '../../lib/reportPeriods';
 import { useLiveEvents } from '../../lib/realtime';
 import { invalidateServerPageCache, useServerPage } from '../../lib/useServerPage';
-import { formatCount, relativeTime, todayInTashkent } from '../../lib/uzDate';
+import { calendarDateInTashkent, formatCount, relativeTime, todayInTashkent } from '../../lib/uzDate';
 import type { AIEvent, EventStatus, EventSummary } from '../../types';
 
 type View = 'navbat' | 'jurnal' | 'sinov';
@@ -163,12 +164,60 @@ function QuickChip({
   );
 }
 
-/** "2026-09-24 12:05" → bugun "12:05", boshqa kun "23.09 12:05". */
-export function shortEventTime(timestamp: string, today: string = todayInTashkent()): string {
+/** "2026-09-24 12:05" → bugun "12:05", boshqa kun "23.09 12:05".
+ *  Kalendar sanasi bilan solishtiriladi (ish kuni emas): 00:30 dagi
+ *  hodisa "00:30", kechagi 22:00 esa "25.09 22:00" bo'lib ko'rinadi. */
+export function shortEventTime(timestamp: string, today: string = calendarDateInTashkent()): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2})/.exec(timestamp);
   if (!match) return timestamp;
   const [, year, month, day, time] = match;
   return `${year}-${month}-${day}` === today ? time : `${day}.${month} ${time}`;
+}
+
+function hoursLabel(hours: number): string {
+  if (hours < 1) return `${Math.max(1, Math.round(hours * 60))} daq`;
+  if (hours < 48) return `${Math.round(hours)} soat`;
+  return `${Math.round(hours / 24)} kun`;
+}
+
+/** Ish sifati ko'rsatkichlari — /api/events/summary allaqachon hisoblaydi. */
+function EventKpis({ summary }: { summary: EventSummary }) {
+  const items: { label: string; value: string; hint: string; alert?: boolean }[] = [
+    { label: 'Bugun', value: formatCount(summary.today), hint: `jiddiy: ${formatCount(summary.todaySerious)}` },
+    {
+      label: "Ko'rilmagan eng eskisi",
+      value: summary.oldestUnreviewedHours === null ? '—' : hoursLabel(summary.oldestUnreviewedHours),
+      hint: 'navbatdagi eng eski hodisa',
+      alert: (summary.oldestUnreviewedHours ?? 0) > 24,
+    },
+    {
+      label: "Jiddiy, 24 soatdan ko'p",
+      value: formatCount(summary.staleSeriousUnreviewed),
+      hint: "ochiq qolgan yuqori/o'rta",
+      alert: summary.staleSeriousUnreviewed > 0,
+    },
+    {
+      label: "O'rtacha ko'rib chiqish",
+      value: summary.avgReviewMinutes === null ? '—' : summary.avgReviewMinutes < 60 ? `${Math.round(summary.avgReviewMinutes)} daq` : hoursLabel(summary.avgReviewMinutes / 60),
+      hint: 'hodisadan qarorgacha',
+    },
+    {
+      label: 'Aniqlik (30 kun)',
+      value: summary.recentPrecision === null ? '—' : `${summary.recentPrecision}%`,
+      hint: 'tasdiqlangan / ko‘rib chiqilgan',
+    },
+  ];
+  return (
+    <div className="grid grid-cols-2 gap-px border border-border bg-border sm:grid-cols-3 lg:grid-cols-5" aria-label="Hodisalar ko'rsatkichlari">
+      {items.map((item) => (
+        <div key={item.label} className="min-w-0 bg-surface px-3 py-2">
+          <MicroLabel className="block truncate">{item.label}</MicroLabel>
+          <span className={cn('intel-code block text-lg font-semibold', item.alert ? 'text-danger' : 'text-fg')}>{item.value}</span>
+          <span className="block truncate text-[11px] text-muted">{item.hint}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function EventsPage() {
@@ -208,7 +257,11 @@ export default function EventsPage() {
   const from = params.get('from') ?? '';
   const to = params.get('to') ?? '';
   const linkedId = params.get('id');
-  const [search, setSearch] = useState('');
+  const cameraId = params.get('kamera') ?? '';
+  // Qidiruv ham URL da — sahifa yangilanganda yoki havola ulashilganda yo'qolmaydi.
+  const search = params.get('q') ?? '';
+  const [searchDraft, setSearchDraft] = useState(search);
+  useEffect(() => setSearchDraft(search), [search]);
   const [customPeriod, setCustomPeriod] = useState(false);
 
   const setParam = useCallback(
@@ -228,6 +281,12 @@ export default function EventsPage() {
     [setParams],
   );
 
+  useEffect(() => {
+    if (searchDraft.trim() === search) return;
+    const timer = window.setTimeout(() => setParam({ q: searchDraft.trim() || null }), 400);
+    return () => window.clearTimeout(timer);
+  }, [searchDraft, search, setParam]);
+
   // TESKARI SANA ORALIG'I. "Sanadan" > "Sanagacha" bo'lsa (havoladan
   // kelgan ?from=&to=, yoki qo'lda yozilgan sana) server MANTIQAN bo'sh
   // ro'yxat qaytaradi — ekranda esa "Filtrlarga mos hodisa topilmadi"
@@ -235,7 +294,7 @@ export default function EventsPage() {
   // ma'nosiz so'rov umuman yuborilmaydi.
   const rangeInvalid = Boolean(from && to && from > to);
 
-  const activeQuery = eventQueryParams({ queue, severity, statusFilter, quick, moduleCode, building, from, to, search });
+  const activeQuery: Record<string, string | undefined> = { ...eventQueryParams({ queue, severity, statusFilter, quick, moduleCode, building, from, to, search }), cameraId: cameraId || undefined };
   // Saralash ham eksportga uzatiladi: ilgari fayldagi qatorlar tartibi
   // ekrandagidan boshqacha chiqardi (server standart tartibida).
   const listSort = quick === 'muddati' ? 'due' : queue ? 'severity' : undefined;
@@ -357,7 +416,7 @@ export default function EventsPage() {
 
   useEffect(() => {
     setSelected(new Set());
-  }, [page, view, severity, statusFilter, quick, moduleCode, building, from, to, search]);
+  }, [page, view, severity, statusFilter, quick, moduleCode, building, from, to, search, cameraId]);
 
   // Navbatdagi sahifa to'liq ko'rib chiqilsa, keyingisini yuklaymiz.
   useEffect(() => {
@@ -373,9 +432,23 @@ export default function EventsPage() {
     loadSummary();
   }, [reload, loadSummary]);
 
+  // Hodisalar to'lqin bo'lib kelganda xulosa (6 ta agregat so'rov) har
+  // xabarda emas, 3 soniyada bir marta qayta hisoblanadi.
+  const summaryTimer = useRef<number | null>(null);
+  const loadSummarySoon = useCallback(() => {
+    if (summaryTimer.current !== null) return;
+    summaryTimer.current = window.setTimeout(() => {
+      summaryTimer.current = null;
+      loadSummary();
+    }, 3000);
+  }, [loadSummary]);
+  useEffect(() => () => {
+    if (summaryTimer.current !== null) window.clearTimeout(summaryTimer.current);
+  }, []);
+
   useLiveEvents(
     (incoming) => {
-      loadSummary();
+      loadSummarySoon();
       if (trialView) return;
       if (isEventUpdate(incoming)) {
         // Mavjud hodisa o'zgardi (tayinlash, holat, izoh, muddat) — joyida yangilanadi.
@@ -617,7 +690,24 @@ export default function EventsPage() {
 
   const moduleOptions = (trialView ? summary?.trialModules : summary?.modules) ?? [];
   const filterFields: FilterFieldEntry[] = [
-    { kind: 'search', value: search, onChange: setSearch, placeholder: 'Kriteriya, kamera yoki shaxs…', ariaLabel: 'Hodisalarni qidirish' },
+    { kind: 'search', value: searchDraft, onChange: setSearchDraft, placeholder: 'Kriteriya, kamera yoki shaxs…', ariaLabel: 'Hodisalarni qidirish' },
+    // Xarita / kamera sahifasidan kelgan havola: faqat shu kamera hodisalari.
+    Boolean(cameraId) && {
+      kind: 'custom',
+      active: true,
+      onClear: () => setParam({ kamera: null }),
+      render: (
+        <button
+          type="button"
+          onClick={() => setParam({ kamera: null })}
+          className="inline-flex h-9 items-center gap-1.5 border border-primary/40 bg-primary-soft px-2.5 text-[13px] text-primary"
+          title="Kamera filtrini olib tashlash"
+        >
+          Kamera: {rows[0]?.cameraName || 'tanlangan'}
+          <X size={13} aria-hidden="true" />
+        </button>
+      ),
+    },
     {
       kind: 'select',
       label: 'Muhimlik',
@@ -703,11 +793,11 @@ export default function EventsPage() {
   const activeFilters = filterActiveCount(filterFields);
 
   function resetFilters() {
-    setSearch('');
+    setSearchDraft('');
     setCustomPeriod(false);
     // URL parametrlari bitta yozuvda tozalanadi (maydon-maydon emas) —
     // aks holda har biri alohida navigatsiya bo'lardi.
-    setParam({ muhimlik: null, holat: null, tez: null, modul: null, bino: null, from: null, to: null });
+    setParam({ muhimlik: null, holat: null, tez: null, modul: null, bino: null, from: null, to: null, q: null, kamera: null });
   }
 
   const quickFilters: { value: Exclude<Quick, ''>; label: string; count?: number; icon: LucideIcon; alert?: boolean }[] = [
@@ -996,6 +1086,13 @@ export default function EventsPage() {
                 : 'CSV'}
             </Button>
           )}
+          {!trialView && canExport && (
+            <PdfButton
+              path="/api/events/export.pdf"
+              params={{ ...activeQuery, sort: listSort }}
+              filename={`hodisalar-${todayInTashkent()}.pdf`}
+            />
+          )}
           <Button icon={RefreshCw} onClick={trialView ? () => setSampleNonce((n) => n + 1) : refreshAll} loading={!trialView && loading && rows.length > 0}>
             Yangilash
           </Button>
@@ -1038,6 +1135,8 @@ export default function EventsPage() {
           {pendingNew} ta yangi hodisa — ko&apos;rsatish
         </Button>
       )}
+
+      {!trialView && summary && <EventKpis summary={summary} />}
 
       {trialView ? renderTrialBody() : renderTable()}
 

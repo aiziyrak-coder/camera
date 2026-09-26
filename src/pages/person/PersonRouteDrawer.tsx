@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
-import { History, MonitorPlay, Route } from 'lucide-react';
+import { MonitorPlay, Route } from 'lucide-react';
 import { ButtonLink, DatePicker, Drawer, EmptyState, ErrorState, Skeleton } from '../../ui';
 import { isAbortError } from '../../lib/apiClient';
 import { todayInTashkent } from '../../lib/uzDate';
 import {
-  archiveLink,
   getPersonRoute,
   liveLink,
   similarityPercent,
@@ -72,7 +71,6 @@ function RouteBody({ target }: { target: RouteTarget }) {
           {stops.map((stop, index) => {
             const place = stopPlace(stop);
             const duration = stopDuration(stop);
-            const archive = stop.cameraId ? archiveLink(stop.cameraId, stop.startedAt) : null;
             return (
               <li key={`${stop.startedAt}-${index}`} className="relative pb-4 last:pb-0">
                 <span className="absolute -left-[23px] top-1 h-3 w-3 rounded-full border-2 border-surface bg-primary" aria-hidden="true" />
@@ -85,7 +83,6 @@ function RouteBody({ target }: { target: RouteTarget }) {
                 <p className="text-[11px] text-muted">{stop.count} marta · {similarityPercent(stop.bestSimilarity)}</p>
                 {stop.cameraId && (
                   <div className="mt-1.5 flex gap-1.5">
-                    {archive && <ButtonLink to={archive} icon={History} size="sm" variant="soft">Arxiv</ButtonLink>}
                     <ButtonLink to={liveLink(stop.cameraId)} icon={MonitorPlay} size="sm" variant="ghost">Jonli</ButtonLink>
                   </div>
                 )}

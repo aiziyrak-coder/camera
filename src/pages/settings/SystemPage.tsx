@@ -27,13 +27,13 @@ export default function SystemPage() {
 
   return (
     <Page
-      title="Tizim"
-      breadcrumbs={[{ label: 'Sozlamalar' }, { label: 'Tizim' }]}
+      title="Tizim holati"
+      breadcrumbs={[{ label: 'Sozlamalar' }, { label: 'Tizim holati' }]}
       tabs={TABS}
       actions={live ? <IconButton icon={RefreshCw} label="Yangilash" variant="secondary" size="sm" onClick={refreshNow} /> : undefined}
     >
       {tab === 'holat' ? (
-        <SystemHealthTab tick={tick} canResync={can('systemSettings', role)} />
+        <SystemHealthTab tick={tick} canResync={can('systemSettings', role)} canManageHemis={can('manageIntegrations', role)} />
       ) : tab === 'kameralar' ? (
         <CameraHealthTab tick={tick} />
       ) : (

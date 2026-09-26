@@ -67,8 +67,8 @@ describe('filters', () => {
     expect(filterCameras(ROWS, 'hammasi').map((r) => r.id)).toEqual(['a', 'b', 'c', 'd']);
     expect(filterCameras(ROWS, 'oflayn').map((r) => r.id)).toEqual(['b']);
     expect(filterCameras(ROWS, 'tasvirsiz').map((r) => r.id)).toEqual(['c']);
-    // null (MediaMTX noma'lum) yozuvsiz hisoblanmaydi
-    expect(filterCameras(ROWS, 'yozuvsiz').map((r) => r.id)).toEqual(['b']);
+    // Onlayn, lekin AI hech tekshirmagan (oflayn 'b' kirmaydi)
+    expect(filterCameras(ROWS, 'ai_yoq').map((r) => r.id)).toEqual(['a', 'd']);
   });
 
   it('searches name, ip and building', () => {
@@ -78,7 +78,7 @@ describe('filters', () => {
   });
 
   it('counts every chip', () => {
-    expect(filterCounts(ROWS)).toEqual({ hammasi: 4, oflayn: 1, tasvirsiz: 1, yozuvsiz: 1 });
+    expect(filterCounts(ROWS)).toEqual({ hammasi: 4, oflayn: 1, tasvirsiz: 1, ai_yoq: 2 });
   });
 });
 

@@ -26,6 +26,17 @@ export function todayInTashkent(now: Date = new Date()): string {
   }).format(new Date(now.getTime() - DAY_START_HOUR * 3_600_000));
 }
 
+/** Toshkent bo'yicha KALENDAR sanasi (06:00 siljishisiz) — vaqt
+ *  belgisini "bugun 12:05" ko'rinishida qisqartirish uchun. */
+export function calendarDateInTashkent(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: TASHKENT,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+}
+
 export function parseIsoDate(iso: string): Date {
   const [y, m, d] = iso.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d));

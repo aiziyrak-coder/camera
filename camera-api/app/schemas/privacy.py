@@ -101,6 +101,8 @@ class PrivacyBiometricsOut(CamelModel):
     person: PrivacyPersonOut
     # Asosiy yuz rasmi — imzolangan havola, bir soat amal qiladi.
     photo_url: str | None
+    photo_left_url: str | None = None
+    photo_right_url: str | None = None
     face_template_stored: bool
     biometrics_confirmed_at: datetime | None
     # Kamerada tanilgan kadrlardan olingan qo'shimcha yuz vektorlari.

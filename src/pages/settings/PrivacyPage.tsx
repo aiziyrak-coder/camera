@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Download, Power, Trash2, UserRound } from 'lucide-react';
+import { Download, FileCheck, Power, Trash2, UserRound } from 'lucide-react';
 import {
   Badge,
   Button,
@@ -33,7 +33,7 @@ import {
   fetchPersonBiometrics,
   fetchPrivacyOverview,
   formatRetentionDays,
-  formatRetentionHours,
+  recordConsent,
   formatUzDate,
   matchesConfirmation,
   searchPrivacyPeople,
@@ -67,8 +67,6 @@ function errorText(err: unknown, fallback: string): string {
 function RetentionPanel({ overview }: { overview: PrivacyOverview }) {
   const r = overview.retention;
   const items: KeyValueItem[] = [
-    { label: 'Video arxiv', value: formatRetentionHours(r.recordingRetentionHours) },
-    { label: 'Hodisa klipi', value: formatRetentionDays(r.eventClipRetentionDays) },
     { label: 'Hodisa surati', value: formatRetentionDays(r.snapshotRetentionDays, 'Hodisa bilan') },
     { label: 'Hodisalar', value: formatRetentionDays(r.eventRetentionDays) },
     { label: 'Audit jurnali', value: formatRetentionDays(r.auditLogRetentionDays) },
@@ -84,6 +82,10 @@ function RetentionPanel({ overview }: { overview: PrivacyOverview }) {
       <KeyValue items={items} />
       <p className="mt-2.5 border-t border-border pt-2 text-[12px] text-muted">
         {`Biometrikasi bor: ${overview.withBiometrics} · rozilik yo‘q: ${overview.biometricsWithoutConsent}`}
+        {overview.consentOutdated > 0 && ` · eski rozilik matni: ${overview.consentOutdated}`}
+        {overview.inactiveWithBiometrics > 0 && ` · faol emas, yuzi saqlangan: ${overview.inactiveWithBiometrics}`}
+        {overview.biometricPurgeOverdue > 0 && ` · o‘chirish muddati o‘tgan: ${overview.biometricPurgeOverdue}`}
+        {overview.nextBiometricPurgeAt && ` · keyingi avto-o‘chirish: ${formatUzDate(overview.nextBiometricPurgeAt)}`}
       </p>
     </IntelPanel>
   );
@@ -237,7 +239,7 @@ function PersonPanel({ personId, onChanged, toast }: { personId: string; onChang
   const [error, setError] = useState<string | null>(null);
   const [erasing, setErasing] = useState(false);
   const [typed, setTyped] = useState('');
-  const [busy, setBusy] = useState<'export' | 'active' | null>(null);
+  const [busy, setBusy] = useState<'export' | 'active' | 'consent' | null>(null);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -265,7 +267,11 @@ function PersonPanel({ personId, onChanged, toast }: { personId: string; onChang
         ? `${formatUzDate(person.consentGivenAt)} · ${CONSENT_SOURCE_LABELS[person.consentSource ?? ''] ?? person.consentSource ?? ''}`
         : undefined,
     },
-    { label: 'Yuz rasmi', value: data.photoUrl ? 'Bor' : 'Yo‘q' },
+    {
+      label: 'Yuz rasmlari (3 tomon)',
+      value: `${[data.photoUrl, data.photoLeftUrl, data.photoRightUrl].filter(Boolean).length} / 3`,
+      hint: data.photoUrl && !(data.photoLeftUrl && data.photoRightUrl) ? 'Havola orqali qayta ro‘yxatdan o‘tishi kerak' : undefined,
+    },
     { label: 'Yuz vektori', value: data.faceTemplateStored ? 'Bor' : 'Yo‘q' },
     { label: 'Kamera namunalari', value: data.gallerySamples },
     { label: 'Biriktirilgan kadrlar', value: data.linkedSightings },
@@ -288,9 +294,23 @@ function PersonPanel({ personId, onChanged, toast }: { personId: string; onChang
       link.href = url;
       link.download = exportFilename(person);
       link.click();
-      URL.revokeObjectURL(url);
+      // Darhol bekor qilinsa ayrim brauzerlarda yuklab olish uziladi.
+      window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
     } catch (err) {
       toast.error(errorText(err, 'Eksport qilib bo‘lmadi'));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function recordPaperConsent() {
+    setBusy('consent');
+    try {
+      await recordConsent(token, person.id, 'qogoz');
+      toast.success('Rozilik qayd etildi');
+      onChanged();
+    } catch (err) {
+      toast.error(errorText(err, 'Bajarib bo‘lmadi'));
     } finally {
       setBusy(null);
     }
@@ -325,18 +345,36 @@ function PersonPanel({ personId, onChanged, toast }: { personId: string; onChang
       right={!person.active ? <Badge tone="neutral">Faol emas</Badge> : undefined}
       bodyClassName="space-y-3 p-3"
     >
-      {data.photoUrl && (
-        <img
-          src={data.photoUrl}
-          alt={`${person.fullName} — ro‘yxatdagi yuz rasmi`}
-          className="h-28 w-28 rounded-control border border-border object-cover"
-        />
+      {(data.photoUrl || data.photoLeftUrl || data.photoRightUrl) && (
+        <div className="flex gap-2">
+          {(
+            [
+              ['Chap', data.photoLeftUrl],
+              ['Old', data.photoUrl],
+              ['O‘ng', data.photoRightUrl],
+            ] as const
+          ).map(([label, url]) => (
+            <figure key={label} className="flex flex-col items-center gap-0.5">
+              {url ? (
+                <img src={url} alt={`${person.fullName} — ${label}`} className="h-24 w-24 rounded-control border border-border object-cover" />
+              ) : (
+                <span className="grid h-24 w-24 place-items-center rounded-control border border-dashed border-border text-[11px] text-subtle">yo‘q</span>
+              )}
+              <figcaption className="text-[11px] text-muted">{label}</figcaption>
+            </figure>
+          ))}
+        </div>
       )}
       <KeyValue items={items} />
       <div className="flex flex-wrap gap-2 border-t border-border pt-3">
         <Button size="sm" icon={Download} loading={busy === 'export'} onClick={doExport}>
           Eksport
         </Button>
+        {(consent === 'missing' || consent === 'outdated') && (
+          <Button size="sm" icon={FileCheck} loading={busy === 'consent'} onClick={recordPaperConsent} title="Qog‘ozda imzolangan rozilikni qayd etish">
+            Rozilikni qayd etish
+          </Button>
+        )}
         <Button size="sm" icon={Power} loading={busy === 'active'} onClick={toggleActive}>
           {person.active ? 'Faolsizlantirish' : 'Faollashtirish'}
         </Button>

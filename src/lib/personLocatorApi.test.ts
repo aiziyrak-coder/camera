@@ -1,14 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { archiveLink, liveLink, similarityPercent, stopDuration, stopPlace, stopTimeRange } from './personLocatorApi';
+import { liveLink, similarityPercent, stopDuration, stopPlace, stopTimeRange } from './personLocatorApi';
 
 describe('personLocator helpers', () => {
   it('jonli havola faqat kamera parametrini beradi', () => {
     expect(liveLink('cam-1')).toBe('/videodevor?kamera=cam-1');
-  });
-
-  it('video arxiv o‘chirilgan — arxiv havolasi berilmaydi (yozuvlar NVR’da)', () => {
-    expect(archiveLink('cam-1', '2026-09-23T20:00:00Z')).toBeNull();
-    expect(archiveLink('cam-1', 'yaroqsiz')).toBeNull();
   });
 
 

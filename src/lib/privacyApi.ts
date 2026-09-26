@@ -54,6 +54,8 @@ export interface PrivacyPerson {
 export interface PrivacyBiometrics {
   person: PrivacyPerson;
   photoUrl: string | null;
+  photoLeftUrl?: string | null;
+  photoRightUrl?: string | null;
   faceTemplateStored: boolean;
   biometricsConfirmedAt: string | null;
   gallerySamples: number;

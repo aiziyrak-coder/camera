@@ -1,16 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, ExternalLink, FlaskConical, History, ImageOff, Lightbulb, MonitorPlay, Trash2, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, ExternalLink, FlaskConical, ImageOff, Lightbulb, MonitorPlay, Trash2, X } from 'lucide-react';
 import { Badge, Button, ButtonLink, Drawer, IconButton, KeyValue, StatusBadge, topDialogPanel, type KeyValueItem } from '../../ui';
 import EventActivity from './EventActivity';
 import { cameraLabel } from './ReviewCard';
 import EventWorkflowPanel from './EventWorkflowPanel';
 import EventSopChecklist from './EventSopChecklist';
 import { detailMetrics } from '../../lib/eventDetails';
-import { relativeTime, todayInTashkent } from '../../lib/uzDate';
+import { relativeTime } from '../../lib/uzDate';
 import type { AIEvent } from '../../types';
 import { useAuth } from '../../lib/auth';
 import { usePermissions } from '../../lib/permissions';
-import { ARCHIVE_ENABLED } from '../../lib/archiveFlag';
 
 type Decision = 'tasdiqlangan' | 'rad_etilgan';
 
@@ -163,31 +162,12 @@ export default function EventDrawer({
             )}
           </div>
 
-          {event.clipUrl && (
-            // Hodisa videosi: 15 s oldin — 25 s keyin (app/jobs/event_clips.py).
-            <video src={event.clipUrl} controls muted playsInline preload="metadata" className="aspect-video w-full rounded-card bg-black" />
-          )}
-
           {canLive && event.cameraId && (
             <div className="flex flex-wrap gap-2">
               {/* Kadr — bir lahza. Operator vaziyatni hozir ko'rishi kerak. */}
               <ButtonLink to={`/videodevor?kamera=${encodeURIComponent(event.cameraId)}`} icon={MonitorPlay} size="sm">
                 Kamerani jonli ko‘rish
               </ButtonLink>
-              {ARCHIVE_ENABLED && event.occurredAt && (
-                <ButtonLink
-                  to={`/arxiv?${new URLSearchParams({
-                    kamera: event.cameraId,
-                    // Toshkent sanasi: UTC satrning boshi 05:00 gacha oldingi kunni beradi.
-                    sana: todayInTashkent(new Date(event.occurredAt)),
-                    t: new Date(Date.parse(event.occurredAt) - 15_000).toISOString(),
-                  }).toString()}`}
-                  icon={History}
-                  size="sm"
-                >
-                  Arxivda ko‘rish
-                </ButtonLink>
-              )}
             </div>
           )}
 

@@ -438,8 +438,10 @@ async def attendance_cameras(
     for camera in cameras:
         allows_staff = camera_allows_module_code(camera.excluded_module_codes, STAFF_ATTENDANCE_CODE)
         allows_student = camera_allows_module_code(camera.excluded_module_codes, STUDENT_ATTENDANCE_CODE)
-        # Kunlik davomat faqat kirish kameralarida (app/services/camera_roles.py).
-        at_door = role_allows(camera, STAFF_ATTENDANCE_CODE)
+        # Kelish istalgan kamerada birinchi ishonchli ko'rinishda yoziladi
+        # (attendance_any_camera, app/jobs/unified_face_sweep.py); o'chirilgan
+        # bo'lsa — faqat kirish kameralarida (app/services/camera_roles.py).
+        at_door = settings.attendance_any_camera or role_allows(camera, STAFF_ATTENDANCE_CODE)
         enabled = (
             camera.status == "faol"
             and at_door

@@ -75,13 +75,13 @@ export function getCameraOutages(cameraId: string, kun = 30, opts: CallOptions =
 // Sof yordamchilar (testlanadi)
 // ---------------------------------------------------------------------------
 
-export type HealthFilter = 'hammasi' | 'oflayn' | 'tasvirsiz' | 'yozuvsiz';
+export type HealthFilter = 'hammasi' | 'oflayn' | 'tasvirsiz' | 'ai_yoq';
 
 export const HEALTH_FILTERS: readonly { id: HealthFilter; label: string }[] = [
   { id: 'hammasi', label: 'Hammasi' },
   { id: 'oflayn', label: 'Oflayn' },
   { id: 'tasvirsiz', label: 'Tasvirsiz' },
-  { id: 'yozuvsiz', label: 'Yozuvsiz' },
+  { id: 'ai_yoq', label: 'AI tekshirmayapti' },
 ];
 
 export const STATE_META: Record<CameraHealthState, { label: string; tone: Tone; rag: Rag }> = {
@@ -90,10 +90,16 @@ export const STATE_META: Record<CameraHealthState, { label: string; tone: Tone; 
   offline: { label: 'Oflayn', tone: 'danger', rag: 'qizil' },
 };
 
-/** Yozuv yo'li tayyor emas. null (MediaMTX noma'lum) — "yozuvsiz" emas:
- *  bilmagan narsamizni nosozlik deb ko'rsatmaymiz. */
-export function isWithoutRecording(row: CameraHealthRow): boolean {
-  return row.recordingReady === false;
+/** Onlayn kamerani AI 15 daqiqadan beri tekshirmagan (yoki hech qachon) —
+ *  video bor, lekin davomat yozilmaydi. Oflayn kamera bu ro'yxatga kirmaydi
+ *  (uning sababi boshqa). Video yozuv o'chirilgan: NVR saqlaydi. */
+export const AI_STALE_MS = 15 * 60_000;
+
+export function isAiStale(row: CameraHealthRow, now: number = Date.now()): boolean {
+  if (row.status !== 'online') return false;
+  if (!row.aiLastAnalyzedAt) return true;
+  const at = Date.parse(row.aiLastAnalyzedAt);
+  return Number.isNaN(at) || now - at > AI_STALE_MS;
 }
 
 export function matchesFilter(row: CameraHealthRow, filter: HealthFilter): boolean {
@@ -102,8 +108,8 @@ export function matchesFilter(row: CameraHealthRow, filter: HealthFilter): boole
       return row.status === 'offline';
     case 'tasvirsiz':
       return row.status === 'no_video';
-    case 'yozuvsiz':
-      return isWithoutRecording(row);
+    case 'ai_yoq':
+      return isAiStale(row);
     default:
       return true;
   }
@@ -119,7 +125,7 @@ export function filterCameras(rows: readonly CameraHealthRow[], filter: HealthFi
 }
 
 export function filterCounts(rows: readonly CameraHealthRow[]): Record<HealthFilter, number> {
-  const out: Record<HealthFilter, number> = { hammasi: 0, oflayn: 0, tasvirsiz: 0, yozuvsiz: 0 };
+  const out: Record<HealthFilter, number> = { hammasi: 0, oflayn: 0, tasvirsiz: 0, ai_yoq: 0 };
   for (const row of rows) {
     for (const f of HEALTH_FILTERS) if (matchesFilter(row, f.id)) out[f.id] += 1;
   }

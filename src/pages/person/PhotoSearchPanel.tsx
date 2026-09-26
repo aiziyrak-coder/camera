@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react';
-import { Link } from 'react-router-dom';
-import { History, ImagePlus, Route, ScanFace, X } from 'lucide-react';
+import { ImagePlus, Route, ScanFace, X } from 'lucide-react';
 import { Avatar, Button, Card, DateRangePicker, EmptyState, ErrorState, IconButton, Skeleton, cn, rangeForPreset, type DateRangeValue } from '../../ui';
 import { isAbortError } from '../../lib/apiClient';
 import {
-  archiveLink,
   clockTime,
   searchByPhoto,
   similarityPercent,
@@ -160,7 +158,6 @@ export function PhotoSearchPanel({ onRoute }: { onRoute: (target: RouteTarget) =
             ) : (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
                 {result.sightings.map((item) => {
-                  const archive = item.cameraId ? archiveLink(item.cameraId, item.firstSeenAt) : null;
                   return (
                     <Card key={item.id} padding="none" className="flex min-w-0 flex-col overflow-hidden">
                       <div className="relative aspect-square bg-surface-2">
@@ -172,11 +169,6 @@ export function PhotoSearchPanel({ onRoute }: { onRoute: (target: RouteTarget) =
                       <div className="flex flex-col gap-0.5 p-2">
                         <p className="truncate text-[12px] font-semibold text-fg">{item.cameraName ?? '—'}</p>
                         <p className="text-[11px] text-muted">{dayTime(item.firstSeenAt)}{item.hits > 1 ? ` · ${item.hits} marta` : ''}</p>
-                        {archive && (
-                          <Link to={archive} className="mt-1 inline-flex items-center gap-1 text-[12px] font-semibold text-primary hover:underline">
-                            <History size={12} aria-hidden="true" />Arxiv
-                          </Link>
-                        )}
                       </div>
                     </Card>
                   );

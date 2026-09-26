@@ -322,14 +322,19 @@ async def biometric_summary(db: AsyncSession, person: StudentStaff) -> dict:
             ).where(PresenceVisit.student_staff_id == person.id)
         )
     ).one()
-    photo_url = None
-    if person.biometric_photo_key:
+    def signed(key: str | None) -> str | None:
+        if not key:
+            return None
         try:
-            photo_url = presigned_url(person.biometric_photo_key)
+            return presigned_url(key)
         except Exception:
-            photo_url = None
+            return None
+
     return {
-        "photo_url": photo_url,
+        "photo_url": signed(person.biometric_photo_key),
+        # Ro'yxatdan o'tishdagi 3 tomon: chap va o'ng (old — photo_url).
+        "photo_left_url": signed(person.biometric_photo_left_key),
+        "photo_right_url": signed(person.biometric_photo_right_key),
         "face_template_stored": person.biometric_embedding is not None,
         "biometrics_confirmed_at": person.biometrics_confirmed_at,
         "gallery_samples": gallery,

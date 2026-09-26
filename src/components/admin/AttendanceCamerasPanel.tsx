@@ -123,6 +123,14 @@ export function AttendanceCamerasPanel() {
     return () => controller.abort();
   }, [nonce]);
 
+  // Tashxis jonli: har daqiqada yangilanadi (sahifa ko'rinib turganda).
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') setNonce((n) => n + 1);
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   if (error) return <ErrorState variant="block" message={error} onRetry={() => setNonce((n) => n + 1)} />;
   if (!data)
     return (
@@ -198,7 +206,7 @@ export function AttendanceCamerasPanel() {
         rowTone={(c) => (c.attendanceEnabled && c.diagnosis ? 'warning' : null)}
         defaultSort={{ key: 'attendance', dir: 'desc' }}
         emptyTitle="Davomat uchun sozlangan kamera yo'q"
-        emptyDescription="Kamera davomatni yozishi uchun «Sozlamalar → Kameralar» bo'limida unga kirish eshigi turi va davomat moduli biriktirilishi kerak."
+        emptyDescription="Faol kamera yo'q yoki davomat modullari (#6, #7) o'chirilgan. Har bir faol kamera odamni birinchi ko'rgan paytini kelish deb yozadi."
         ariaLabel="Davomat kameralari"
       />
       <p className="text-xs leading-relaxed text-muted">

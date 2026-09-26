@@ -66,7 +66,7 @@ const STATUS_OPTIONS: { value: CameraConfig['status']; label: string }[] = [
 const ROOM_FILTER_OPTIONS = [...ROOM_TYPE_OPTIONS, { value: 'none', label: 'Belgilanmagan' }];
 
 const UNASSIGNED_FLOOR = 'none';
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 25;
 
 /** Qator oxiridagi kichik amal tugmasi: ikonka rangi holatni bildiradi
  *  (masalan zona chizilgan — danger, modullar maxsus — warning). */

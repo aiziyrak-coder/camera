@@ -45,7 +45,6 @@ from app.storage import check_bucket
 from app.routers import (
     unknown_sightings,
     face_review,
-    archive,
     room_suggestions,
     report_lock,
     schedule_board,
@@ -288,7 +287,6 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(unknown_sightings.router)
 app.include_router(face_review.router)
-app.include_router(archive.router)
 app.include_router(room_suggestions.router)
 app.include_router(schedule_board.router)
 app.include_router(users.router)

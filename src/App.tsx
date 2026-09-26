@@ -4,9 +4,8 @@ import { Navigate, Route, Routes, useLocation, useSearchParams } from 'react-rou
 import AppShell from './layouts/AppShell';
 import MinimalLayout from './layouts/MinimalLayout';
 import { RequireAuth, RequirePermission } from './layouts/guards';
-import PreviewPage from './pages/dev/PreviewPage';
 import { legacyRedirect } from './layouts/legacyRoutes';
-import { ALL_NAV_ITEMS, homeForRole } from './layouts/shell/navConfig';
+import { ALL_NAV_ITEMS, homeForRole, isPathAllowedForRole } from './layouts/shell/navConfig';
 import LoginPage from './pages/admin/LoginPage';
 import ResetPasswordPage from './pages/admin/ResetPasswordPage';
 import { useAuth } from './lib/auth';
@@ -18,6 +17,7 @@ import { FileQuestion } from 'lucide-react';
 // Har sahifa alohida JS bo'lagi sifatida faqat ochilganda yuklanadi.
 // lazyPage deploydan keyin eskirgan bo'lak so'ralsa sahifani bir marta
 // qayta yuklaydi.
+const PreviewPage = lazyPage(() => import('./pages/dev/PreviewPage'));
 const EnrollmentPage = lazyPage(() => import('./pages/public/EnrollmentPage'));
 
 // Yangi sahifalar (2-bosqichda to'ldiriladi).
@@ -66,8 +66,13 @@ function VideoWallRoute() {
 function SettingsIndex() {
   const { role } = useAuth();
   const { can } = usePermissions();
-  const first = ALL_NAV_ITEMS.find((item) => item.to.startsWith('/sozlamalar/') && (!item.permission || can(item.permission, role)));
-  return <Navigate to={first?.to ?? '/'} replace />;
+  const first = ALL_NAV_ITEMS.find(
+    (item) =>
+      item.to.startsWith('/sozlamalar/') &&
+      (!item.permission || can(item.permission, role)) &&
+      isPathAllowedForRole(role, item.to),
+  );
+  return <Navigate to={first?.to ?? homeForRole(role)} replace />;
 }
 
 /** Mavjud bo'lmagan manzil.

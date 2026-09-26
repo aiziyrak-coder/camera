@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Archive, Camera, CameraOff, Film, Gauge, MonitorPlay, VideoOff } from 'lucide-react';
+import { Camera, CameraOff, Film, Gauge, MonitorPlay, VideoOff } from 'lucide-react';
 import {
   Badge,
   ButtonLink,
@@ -33,7 +33,6 @@ import {
 } from '../../lib/cameraHealthApi';
 import { relativeTime } from '../../lib/uzDate';
 import { useLiveResource } from '../situation/useLiveResource';
-import { ARCHIVE_ENABLED } from '../../lib/archiveFlag';
 
 interface Props {
   tick: number;
@@ -136,14 +135,9 @@ const COLUMNS: DataTableColumn<CameraHealthRow>[] = [
     cell: (row) => (
       <span className="inline-flex gap-2">
         <PathLamp ready={row.liveReady} label="Jonli" />
-        <PathLamp
-          ready={row.recordingReady}
-          label="Yozuv"
-          title={row.recordingMbps !== null ? `Yozuv: ${row.recordingMbps.toString().replace('.', ',')} Mbit/s` : undefined}
-        />
       </span>
     ),
-    sortValue: (row) => (row.liveReady ? 1 : 0) + (row.recordingReady ? 2 : 0),
+    sortValue: (row) => (row.liveReady ? 1 : 0),
   },
   {
     key: 'ai',
@@ -205,13 +199,6 @@ export function CameraHealthTab({ tick }: Props) {
           value={formatUptime(s?.avgUptimeDay)}
           icon={Gauge}
           rag={s?.avgUptimeDay != null ? uptimeRag(s.avgUptimeDay) : null}
-          hint={
-            res.data?.recordingEnabled
-              ? s?.recording != null
-                ? `Yozuv: ${s.recording}/${s.total}`
-                : "Yozuv: noma‘lum"
-              : undefined
-          }
           animate={false}
           loading={res.loading}
         />
@@ -219,7 +206,7 @@ export function CameraHealthTab({ tick }: Props) {
 
       {res.data && !res.data.mediamtxReachable && (
         <p role="status" className="border border-warning/40 bg-warning-soft px-3 py-2 text-[13px] text-fg">
-          MediaMTX javob bermadi — oqim va yozuv holati noma‘lum.
+          MediaMTX javob bermadi — jonli oqim holati noma‘lum.
         </p>
       )}
 
@@ -285,11 +272,6 @@ function CameraOutageDrawer({ camera, onClose }: { camera: CameraHealthRow | nul
             <ButtonLink to={`/videodevor?kamera=${encodeURIComponent(camera.id)}`} icon={Film} size="sm">
               Jonli
             </ButtonLink>
-            {ARCHIVE_ENABLED && (
-              <ButtonLink to={`/arxiv?kamera=${encodeURIComponent(camera.id)}`} icon={Archive} size="sm">
-                Arxiv
-              </ButtonLink>
-            )}
           </div>
         )
       }
@@ -311,16 +293,6 @@ function CameraOutageDrawer({ camera, onClose }: { camera: CameraHealthRow | nul
             <dd>{camera.lastSeenAt ? relativeTime(camera.lastSeenAt) : '—'}</dd>
             <dt className="text-muted">Oxirgi kadr</dt>
             <dd>{camera.lastFrameAt ? relativeTime(camera.lastFrameAt) : '—'}</dd>
-            <dt className="text-muted">Yozuv</dt>
-            <dd>
-              {camera.recordingReady === null
-                ? "noma‘lum"
-                : camera.recordingReady
-                  ? camera.recordingMbps !== null
-                    ? `${camera.recordingMbps.toString().replace('.', ',')} Mbit/s`
-                    : 'bor'
-                  : "yo‘q"}
-            </dd>
             <dt className="text-muted">AI tahlili</dt>
             <dd>
               {camera.aiLastAnalyzedAt ? relativeTime(camera.aiLastAnalyzedAt) : '—'}

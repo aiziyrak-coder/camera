@@ -215,3 +215,18 @@ async def resync_streams(
 ) -> StreamResyncOut:
     synced, failed = await sync_all_active_camera_streams(db)
     return StreamResyncOut(synced=synced, failed=failed)
+
+
+@router.get("/alerts")
+async def system_alerts(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: StatusDep,
+) -> list[dict[str, str]]:
+    """Hozir faol tizim muammolari — Telegramga ketadigan ogohlantirishlar bilan bir xil
+    (app/jobs/system_alerts.py): AI to'xtashi, disk, HEMIS."""
+    from datetime import datetime, timezone
+
+    from app.jobs.system_alerts import TITLES, collect_problems
+
+    problems = await collect_problems(db, datetime.now(timezone.utc))
+    return [{"key": key, "title": TITLES.get(key, key), "message": text} for key, text in problems.items()]
