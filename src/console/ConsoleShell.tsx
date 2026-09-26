@@ -93,7 +93,8 @@ function Console() {
 
   const [pulse, setPulse] = useState(0);
   const canPeople = canAttendance || canReports;
-  const groupLive = useGroupLive(canPeople ? selection.group : '', date, isToday, pulse);
+  // Guruh ma'lumoti faqat talabalar uchun (xodimlarda `group` — kafedra id si).
+  const groupLive = useGroupLive(canPeople && selection.who === 'talaba' ? selection.group : '', date, isToday, pulse);
 
   // Jonli xabar kelganda raqamlar yangilanadi. Ulanish HOLATI hodisalar
   // kanalidan olinadi — davomat kanali holat qaytarmaydi. O'tgan kunni

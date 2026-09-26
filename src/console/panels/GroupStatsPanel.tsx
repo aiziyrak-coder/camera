@@ -112,18 +112,22 @@ export default function GroupStatsPanel({
   onExpand: (id: string | null) => void;
   area?: string;
 }) {
-  const { group, status, setStatus } = selection;
+  const { who, group, status, setStatus } = selection;
+  const students = who === 'talaba';
+  // Talaba guruhi tanlangan — guruh ko'rinishi; aks holda (institut yoki kafedra) — server sanoqlari.
+  const groupView = students && Boolean(group);
+  const departmentId = !students && group ? group : undefined;
   const [counts, setCounts] = useState<StatusCounts | null>(null);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [listing, setListing] = useState<PeopleStatusKey | null>(null);
 
-  // Institut bo'yicha sanoqlar (guruh tanlanmaganda).
+  // Institut / kafedra bo'yicha sanoqlar (talaba guruhi tanlanmaganda).
   useEffect(() => {
-    if (group) return;
+    if (groupView) return;
     const controller = new AbortController();
     Promise.all([
-      getPeopleStatus({ date, type: 'talaba', pageSize: 1 }, { signal: controller.signal }),
+      getPeopleStatus({ date, type: who, departmentId, pageSize: 1 }, { signal: controller.signal }),
       getOverview(date, { signal: controller.signal }),
     ])
       .then(([page, data]) => {
@@ -135,12 +139,12 @@ export default function GroupStatsPanel({
         if (!controller.signal.aborted) setError(err instanceof ApiError ? err.message : "Ma'lumotni olib bo'lmadi");
       });
     return () => controller.abort();
-  }, [group, date, pulse]);
+  }, [groupView, who, departmentId, date, pulse]);
 
   const seen = lessonSeenIds(live);
   const info = live.detail?.group;
 
-  const body = group ? (
+  const body = groupView ? (
     <div className="flex h-full min-h-0 flex-col gap-2 overflow-y-auto px-3 pb-3">
       <div className="text-[12px] text-muted">
         {[info?.faculty, info?.course ? `${info.course}-kurs` : null].filter(Boolean).join(' · ') || '—'}
@@ -179,10 +183,12 @@ export default function GroupStatsPanel({
       <div className={cn('text-[12px]', error ? 'text-danger' : 'text-muted')}>
         {error ??
           (overview
-            ? `Hozir ${overview.lessons.ongoing} ta dars ketmoqda · o‘qituvchilar: ${overview.teachers.onTime} o‘z vaqtida, ${overview.teachers.late} kechikdi, ${overview.teachers.absent} kelmadi`
+            ? `Hozir ${overview.lessons.ongoing} ta dars ketmoqda · darsdagi o‘qituvchilar: ${overview.teachers.onTime} o‘z vaqtida, ${overview.teachers.late} kechikdi, ${overview.teachers.absent} kelmadi`
             : 'Yuklanmoqda…')}
       </div>
-      <p className="text-[11px] text-muted">Sonni bosing — kimligi ko‘rinadi. Guruh bo‘yicha batafsil — chapdagi jadvaldan guruhni tanlang.</p>
+      <p className="text-[11px] text-muted">
+        Sonni bosing — kimligi ko‘rinadi.{students ? ' Guruh bo‘yicha batafsil — chapdagi jadvaldan guruhni tanlang.' : ''}
+      </p>
     </div>
   );
 
@@ -190,11 +196,14 @@ export default function GroupStatsPanel({
     <>
       <Panel
         id="group-stats"
-        title={group ? `${group} — jonli holat` : 'Institut — talabalar, jonli'}
+        title={
+          groupView ? `${group} — jonli holat` : students ? 'Institut — talabalar, jonli' : 'O‘qituvchi va xodimlar — jonli'
+        }
         live={isToday}
         expanded={expanded}
         onExpand={onExpand}
         area={area}
+        clickToExpand={false}
         full={body}
       >
         {expanded ? null : body}
@@ -203,10 +212,10 @@ export default function GroupStatsPanel({
         open={listing !== null}
         onClose={() => setListing(null)}
         size="xl"
-        title={listing ? `Institut bo‘yicha: ${COUNTER_META[listing as CounterKey]?.label ?? listing}` : ''}
+        title={listing ? `${students ? 'Talabalar' : 'O‘qituvchi va xodimlar'}: ${COUNTER_META[listing as CounterKey]?.label ?? listing}` : ''}
         description={date}
       >
-        {listing && <StatusPeopleTable query={{ date, type: 'talaba' }} status={listing} refreshKey={pulse} maxHeight="60vh" />}
+        {listing && <StatusPeopleTable query={{ date, type: who, departmentId }} status={listing} refreshKey={pulse} maxHeight="60vh" />}
       </Modal>
     </>
   );

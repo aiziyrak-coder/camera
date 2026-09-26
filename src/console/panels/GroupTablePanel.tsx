@@ -1,23 +1,51 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, GraduationCap, Users } from 'lucide-react';
 import { ApiError } from '../../lib/apiClient';
-import { getGroups, type GroupStat, type GroupStudent } from '../../lib/situationApi';
-import { Button, DataTable, DatePicker, SearchInput, Select, StatusBadge, cn, type DataTableColumn } from '../../ui';
+import {
+  getGroups,
+  getKafedras,
+  type GroupStat,
+  type GroupStudent,
+  type KafedraStat,
+  type PeopleStatusKey,
+  type StatusCounts,
+} from '../../lib/situationApi';
+import { Button, DataTable, DatePicker, SearchInput, Select, StatusBadge, Tabs, cn, type DataTableColumn } from '../../ui';
 import StatusCounters, { COUNTER_META, type CounterKey } from '../../components/situation/StatusCounters';
+import StatusPeopleTable from '../../components/situation/StatusPeopleTable';
 import Panel from '../Panel';
 import type { GroupLive } from '../useGroupLive';
-import type { NazoratSelection } from '../nazoratSelection';
+import type { NazoratSelection, Who } from '../nazoratSelection';
 
 /**
  * NAZORAT — chap jadval.
  *
- * Guruh tanlanmagan: barcha guruhlar (fakultet/kurs filtri bilan) bugungi
- * sanoqlari bilan; qatorni bosish — guruhni ochadi, sanoqni bosish — o'sha
- * holatdagilar bilan ochadi.
- * Guruh tanlangan: talabalar ro'yxati — holati, kelgan vaqti, hozirgi
- * darsda ko'ringanmi va yuzi bazadami. Tepadagi sanoqlar filtr.
+ * Tepada: Talabalar | O'qituvchi va xodimlar. Filtrlar aniq nomlangan:
+ *   talabalar — fakultet, kurs, guruh, holat, F.I.Sh.;
+ *   xodimlar  — kafedra/bo'lim, holat, F.I.Sh.
+ *
+ * Talabalar, guruh tanlanmagan: holat va qidiruv bo'sh bo'lsa — guruhlar
+ * jadvali (sanoqlar bosiladi); holat yoki F.I.Sh. berilsa — shu filtrdagi
+ * talabalarning o'zi (butun institut / fakultet / kurs bo'yicha).
+ * Guruh tanlangan: guruh talabalari — holati, kelgan vaqti, hozirgi darsda
+ * ko'ringanmi, yuzi bazadami.
  */
+
+const WHO_TABS = [
+  { id: 'talaba' as const, label: 'Talabalar', icon: GraduationCap },
+  { id: 'xodim' as const, label: 'O‘qituvchi va xodimlar', icon: Users },
+];
+
+const DAY_KEYS: CounterKey[] = ['hammasi', 'kelgan', 'kech_keldi', 'kelmadi', 'kutilmoqda', 'yuzsiz'];
+const COUNT_FIELD: Record<string, keyof StatusCounts> = {
+  hammasi: 'hammasi',
+  kelgan: 'kelgan',
+  kech_keldi: 'kechKeldi',
+  kelmadi: 'kelmadi',
+  kutilmoqda: 'kutilmoqda',
+  yuzsiz: 'yuzsiz',
+};
 
 export function studentMatches(student: GroupStudent, key: CounterKey, lessonSeen: ReadonlySet<string> | null): boolean {
   switch (key) {
@@ -44,9 +72,13 @@ export function lessonSeenIds(live: GroupLive): Set<string> | null {
 }
 
 export function groupCounters(students: readonly GroupStudent[], seen: ReadonlySet<string> | null) {
-  const keys: CounterKey[] = ['hammasi', 'kelgan', 'kech_keldi', 'kelmadi', 'kutilmoqda', 'yuzsiz'];
+  const keys: CounterKey[] = [...DAY_KEYS];
   if (seen) keys.push('darsda', 'darsda_emas');
   return keys.map((key) => ({ key, value: students.filter((s) => studentMatches(s, key, seen)).length }));
+}
+
+function statusOptions(keys: readonly CounterKey[]) {
+  return keys.filter((k) => k !== 'hammasi').map((k) => ({ value: k, label: COUNTER_META[k].label }));
 }
 
 export default function GroupTablePanel({
@@ -70,25 +102,30 @@ export default function GroupTablePanel({
   onExpand: (id: string | null) => void;
   area?: string;
 }) {
-  const { group, status, setGroup, setStatus } = selection;
+  const { who, group, status, setWho, setGroup, setStatus } = selection;
+  const students = who === 'talaba';
   const [groups, setGroups] = useState<GroupStat[] | null>(null);
-  const [groupsError, setGroupsError] = useState<string | null>(null);
+  const [units, setUnits] = useState<KafedraStat[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [faculty, setFaculty] = useState('');
   const [course, setCourse] = useState('');
   const [search, setSearch] = useState('');
+  const [counts, setCounts] = useState<StatusCounts | null>(null);
+
+  useEffect(() => setSearch(''), [who, group]);
 
   useEffect(() => {
     const controller = new AbortController();
-    getGroups({ date }, { signal: controller.signal })
-      .then((rows) => {
-        setGroups(rows);
-        setGroupsError(null);
-      })
+    const load = students
+      ? getGroups({ date }, { signal: controller.signal }).then(setGroups)
+      : getKafedras(date, { signal: controller.signal }, 'all').then(setUnits);
+    load
+      .then(() => setLoadError(null))
       .catch((err) => {
-        if (!controller.signal.aborted) setGroupsError(err instanceof ApiError ? err.message : "Ma'lumotni olib bo'lmadi");
+        if (!controller.signal.aborted) setLoadError(err instanceof ApiError ? err.message : "Ma'lumotni olib bo'lmadi");
       });
     return () => controller.abort();
-  }, [date, pulse]);
+  }, [date, pulse, students]);
 
   const facultyOptions = useMemo(() => {
     const seen = new Map<string, string>();
@@ -100,25 +137,32 @@ export default function GroupTablePanel({
     for (const g of groups ?? []) if (g.course) seen.add(g.course);
     return [...seen].sort((a, b) => a - b).map((c) => ({ value: String(c), label: `${c}-kurs` }));
   }, [groups]);
-  const groupOptions = useMemo(
-    () => (groups ?? []).filter((g) => g.total > 0).map((g) => ({ value: g.name, label: g.name })),
-    [groups],
+  const filteredGroups = useMemo(
+    () =>
+      (groups ?? []).filter(
+        (g) => g.total > 0 && (!faculty || g.facultyId === faculty) && (!course || String(g.course) === course),
+      ),
+    [groups, faculty, course],
+  );
+  const groupOptions = useMemo(() => filteredGroups.map((g) => ({ value: g.name, label: g.name })), [filteredGroups]);
+  const unitOptions = useMemo(
+    () =>
+      (units ?? [])
+        .filter((u) => u.staffTotal > 0)
+        .map((u) => ({ value: u.id, label: `${u.name} (${u.staffTotal})` }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [units],
   );
 
-  const shownGroups = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    return (groups ?? []).filter(
-      (g) =>
-        g.total > 0 &&
-        (!faculty || g.facultyId === faculty) &&
-        (!course || String(g.course) === course) &&
-        (!needle || g.name.toLowerCase().includes(needle)),
-    );
-  }, [groups, faculty, course, search]);
-
   const seen = lessonSeenIds(live);
-  const students = live.detail?.students ?? [];
-  const shownStudents = students.filter((s) => studentMatches(s, status, seen));
+  const groupStudents = live.detail?.students ?? [];
+  const needle = search.trim().toLowerCase();
+  const shownStudents = groupStudents.filter(
+    (s) => studentMatches(s, status, seen) && (!needle || s.fullName.toLowerCase().includes(needle)),
+  );
+
+  // Talabalar, guruh tanlanmagan: holat/F.I.Sh. berilsa — odamlar ro'yxati, aks holda guruhlar.
+  const peopleMode = !students || (!group && (status !== 'hammasi' || needle.length > 0));
 
   const openGroup = (name: string, key: CounterKey = 'hammasi') => {
     setGroup(name);
@@ -133,7 +177,7 @@ export default function GroupTablePanel({
         openGroup(row.name, key);
       }}
       className={cn('tabular-nums font-semibold hover:underline', tone)}
-      title={`${row.name}: ${COUNTER_META[key].label.toLowerCase()}`}
+      title={`${row.name}: ${COUNTER_META[key].label.toLowerCase()} — ro‘yxat`}
     >
       {value}
     </button>
@@ -198,85 +242,139 @@ export default function GroupTablePanel({
     },
   ];
 
-  const content = (
-    <div className="flex h-full min-h-0 flex-col gap-2 px-3 pb-3">
-      <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-        {group ? (
-          <Button size="sm" icon={ArrowLeft} onClick={() => setGroup('')}>
-            Guruhlar
-          </Button>
-        ) : null}
-        <Select
-          value={group}
-          onChange={(value) => setGroup(value)}
-          options={groupOptions}
-          placeholder="Guruhni tanlang"
-          ariaLabel="Guruh"
-          size="sm"
-          highlightActive
-          className="min-w-[10rem]"
-        />
-        {!group && (
-          <>
-            <Select value={faculty} onChange={setFaculty} options={facultyOptions} placeholder="Barcha fakultetlar" ariaLabel="Fakultet" size="sm" highlightActive />
-            <Select value={course} onChange={setCourse} options={courseOptions} placeholder="Barcha kurslar" ariaLabel="Kurs" size="sm" highlightActive />
-            <SearchInput value={search} onChange={setSearch} placeholder="Guruh nomi" size="sm" className="w-36" />
-          </>
-        )}
+  const statusKeys: CounterKey[] = students && group && seen ? [...DAY_KEYS, 'darsda', 'darsda_emas'] : DAY_KEYS;
+  const peopleQuery = students
+    ? {
+        date,
+        type: 'talaba' as const,
+        facultyId: faculty || undefined,
+        course: course ? Number(course) : undefined,
+        search: needle || undefined,
+      }
+    : { date, type: 'xodim' as const, departmentId: group || undefined, search: needle || undefined };
+
+  const filters = (
+    <div className="flex shrink-0 flex-col gap-1.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <Tabs<Who> tabs={WHO_TABS} value={who} onChange={setWho} variant="segmented" size="sm" ariaLabel="Kimlar" />
         <span className="ms-auto">
           <DatePicker value={date} onChange={setDate} size="sm" quick stepper ariaLabel="Sana" />
         </span>
       </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {students && group && (
+          <Button size="sm" icon={ArrowLeft} onClick={() => setGroup('')}>
+            Barcha guruhlar
+          </Button>
+        )}
+        {students ? (
+          <>
+            {!group && (
+              <>
+                <Select label="Fakultet" value={faculty} onChange={setFaculty} options={facultyOptions} placeholder="hammasi" size="sm" highlightActive />
+                <Select label="Kurs" value={course} onChange={setCourse} options={courseOptions} placeholder="hammasi" size="sm" highlightActive />
+              </>
+            )}
+            <Select label="Guruh" value={group} onChange={setGroup} options={groupOptions} placeholder="hammasi" size="sm" highlightActive />
+          </>
+        ) : (
+          <Select label="Kafedra / bo‘lim" value={group} onChange={setGroup} options={unitOptions} placeholder="hammasi" size="sm" highlightActive />
+        )}
+        <Select
+          label="Holat"
+          value={status === 'hammasi' ? '' : status}
+          onChange={(value) => setStatus((value || 'hammasi') as CounterKey)}
+          options={statusOptions(statusKeys)}
+          placeholder="hammasi"
+          size="sm"
+          highlightActive
+        />
+        <SearchInput value={search} onChange={setSearch} placeholder="F.I.Sh. bo‘yicha qidirish" size="sm" className="w-52" />
+      </div>
+    </div>
+  );
 
-      {group ? (
-        <>
-          <StatusCounters items={groupCounters(students, seen)} active={status} onPick={setStatus} size="sm" className="shrink-0" />
-          <div className="min-h-0 flex-1">
-            <DataTable
-              columns={studentColumns}
-              rows={shownStudents}
-              rowKey={(r) => r.id}
-              loading={live.loading && !live.detail}
-              error={live.error}
-              emptyTitle={status === 'hammasi' ? 'Guruhda talaba yo‘q' : `${COUNTER_META[status].label}: hech kim`}
-              maxHeight="100%"
-              dense
-            />
-          </div>
-        </>
-      ) : (
+  let body;
+  if (students && group) {
+    body = (
+      <>
+        <StatusCounters items={groupCounters(groupStudents, seen)} active={status} onPick={setStatus} size="sm" className="shrink-0" />
         <div className="min-h-0 flex-1">
           <DataTable
-            columns={groupColumns}
-            rows={shownGroups}
-            rowKey={(r) => r.name}
-            onRowClick={(r) => openGroup(r.name)}
-            loading={!groups && !groupsError}
-            error={groupsError}
-            emptyTitle="Guruh topilmadi"
+            columns={studentColumns}
+            rows={shownStudents}
+            rowKey={(r) => r.id}
+            loading={live.loading && !live.detail}
+            error={live.error}
+            emptyTitle={status === 'hammasi' ? 'Hech kim topilmadi' : `${COUNTER_META[status].label}: hech kim`}
             maxHeight="100%"
-            defaultSort={{ key: 'name', dir: 'asc' }}
             dense
           />
         </div>
-      )}
+      </>
+    );
+  } else if (peopleMode) {
+    body = (
+      <>
+        <StatusCounters
+          items={DAY_KEYS.map((key) => ({ key, value: counts ? counts[COUNT_FIELD[key]] : null }))}
+          active={status}
+          onPick={setStatus}
+          size="sm"
+          className="shrink-0"
+        />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <StatusPeopleTable
+            query={peopleQuery}
+            status={(status === 'darsda' || status === 'darsda_emas' ? 'hammasi' : status) as PeopleStatusKey}
+            refreshKey={pulse}
+            onLoaded={(page) => setCounts(page.counts)}
+          />
+        </div>
+      </>
+    );
+  } else {
+    body = (
+      <div className="min-h-0 flex-1">
+        <DataTable
+          columns={groupColumns}
+          rows={filteredGroups}
+          rowKey={(r) => r.name}
+          onRowClick={(r) => openGroup(r.name)}
+          loading={!groups && !loadError}
+          error={loadError}
+          emptyTitle="Guruh topilmadi"
+          maxHeight="100%"
+          defaultSort={{ key: 'name', dir: 'asc' }}
+          dense
+        />
+      </div>
+    );
+  }
+
+  const content = (
+    <div className="flex h-full min-h-0 flex-col gap-2 px-3 pb-3">
+      {filters}
+      {body}
       {!isToday && <p className="shrink-0 text-[11px] text-muted">Arxiv: {date} holati</p>}
     </div>
   );
 
+  const unitName = !students && group ? units?.find((u) => u.id === group)?.name : null;
+  const title = students ? (group ? `Guruh ${group}` : 'Talabalar') : unitName ?? 'O‘qituvchi va xodimlar';
+  const badge =
+    students && group ? `${shownStudents.length}/${groupStudents.length}` : students && !peopleMode ? `${filteredGroups.length} guruh` : null;
+
   return (
     <Panel
       id="groups"
-      title={group ? `Guruh ${group}` : 'Talabalar — guruhlar'}
+      title={title}
       live={isToday}
       expanded={expanded}
       onExpand={onExpand}
       area={area}
-      badge={
-        <span className="text-[11px] tabular-nums text-muted">
-          {group ? `${shownStudents.length}/${students.length}` : `${shownGroups.length} guruh`}
-        </span>
-      }
+      clickToExpand={false}
+      badge={badge ? <span className="text-[11px] tabular-nums text-muted">{badge}</span> : undefined}
       full={content}
     >
       {expanded ? null : content}

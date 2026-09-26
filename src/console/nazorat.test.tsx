@@ -1,13 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { CameraFeed } from '../types';
 import type { GroupStudent } from '../lib/situationApi';
-import { rotatingMosaic } from './panels/CamerasPanel';
+import { ROTATE_MS, nextTile } from './panels/CamerasPanel';
 import { groupCounters, studentMatches } from './panels/GroupTablePanel';
 import { parseCounter } from './nazoratSelection';
-
-function camera(id: number): CameraFeed {
-  return { id: `c${id}`, name: `Kamera ${String(id).padStart(2, '0')}`, status: 'live', hasVideo: true, streamUrl: `/s/${id}` } as CameraFeed;
-}
 
 function student(id: string, status: GroupStudent['status'], face = true): GroupStudent {
   return {
@@ -17,17 +12,14 @@ function student(id: string, status: GroupStudent['status'], face = true): Group
 }
 
 describe('aylanuvchi kamera mozaikasi', () => {
-  const cams = Array.from({ length: 10 }, (_, i) => camera(i + 1));
-
-  it('har qadamda navbatdagi 4 ta, oxiri boshidan to‘ldiriladi', () => {
-    expect(rotatingMosaic(cams, 0).map((c) => c.id)).toEqual(['c1', 'c2', 'c3', 'c4']);
-    expect(rotatingMosaic(cams, 1).map((c) => c.id)).toEqual(['c5', 'c6', 'c7', 'c8']);
-    expect(rotatingMosaic(cams, 2).map((c) => c.id)).toEqual(['c9', 'c10', 'c1', 'c2']);
-    expect(rotatingMosaic(cams, 3).map((c) => c.id)).toEqual(['c1', 'c2', 'c3', 'c4']);
-  });
-
-  it('4 tadan kam kamera aylanmaydi', () => {
-    expect(rotatingMosaic(cams.slice(0, 3), 5).map((c) => c.id)).toEqual(['c1', 'c2', 'c3']);
+  it('kataklar navbat bilan: har safar bitta yangi, ko‘rinib turgani takrorlanmaydi', () => {
+    const pool = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6'];
+    expect(nextTile(['c1', 'c2', 'c3', 'c4'], pool, 4)).toEqual({ id: 'c5', cursor: 5 });
+    expect(nextTile(['c5', 'c2', 'c3', 'c4'], pool, 5)).toEqual({ id: 'c6', cursor: 6 });
+    // oxiriga yetgach boshidan, lekin ekrandagilarni o'tkazib yuboradi
+    expect(nextTile(['c5', 'c6', 'c3', 'c4'], pool, 6)).toEqual({ id: 'c1', cursor: 1 });
+    expect(nextTile(['c1', 'c2'], ['c1', 'c2'], 0)).toEqual({ id: null, cursor: 0 });
+    expect(ROTATE_MS).toBe(30_000);
   });
 });
 

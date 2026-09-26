@@ -50,19 +50,22 @@ import {
  */
 
 const MOSAIC_TILES = 4;
-/** Yig'ilgan mozaika shu oraliqda navbatdagi 4 ta kameraga o'tadi. */
-export const ROTATE_MS = 10_000;
+/** Har katak shu oraliqda yangi kameraga o'tadi. Kataklar birdan emas,
+ *  NAVBAT bilan almashadi: har ROTATE_MS / 4 da bittadan. */
+export const ROTATE_MS = 30_000;
 
-/** Aylanuvchi mozaika: tasvir uzatayotgan kameralar 4 tadan navbat bilan.
- *  Kamera 4 tadan kam bo'lsa — aylanmaydi. */
-export function rotatingMosaic(cameras: readonly CameraFeed[], step: number, count = MOSAIC_TILES): CameraFeed[] {
-  const pool = rankCameras(cameras).filter(isStreaming);
-  if (pool.length <= count) return pickMosaic(cameras, count);
-  const pages = Math.ceil(pool.length / count);
-  const start = (step % pages) * count;
-  const page = pool.slice(start, start + count);
-  // Oxirgi sahifa to'lmasa — boshidan to'ldiriladi (katak bo'sh qolmaydi).
-  return page.length < count ? [...page, ...pool.slice(0, count - page.length)] : page;
+/** Katakdagi kamerani navbatdagisiga almashtiradi: pool dagi `cursor` dan
+ *  boshlab hozir ko'rsatilmayotgan birinchi kamera. */
+export function nextTile(
+  shown: readonly string[],
+  pool: readonly string[],
+  cursor: number,
+): { id: string | null; cursor: number } {
+  for (let i = 0; i < pool.length; i += 1) {
+    const index = (cursor + i) % pool.length;
+    if (!shown.includes(pool[index])) return { id: pool[index], cursor: index + 1 };
+  }
+  return { id: null, cursor };
 }
 
 /** Tashqaridan (Ctrl+K) "shu kamerani kattalashtir" so'rovi. */
@@ -87,14 +90,43 @@ export default function CamerasPanel({
 
   const stats = useMemo(() => cameraStats(cameras), [cameras]);
   const codes = useMemo(() => buildCameraCodes(cameras), [cameras]);
-  const [step, setStep] = useState(0);
-  const rotating = !expanded && pageVisible && cameras.filter(isStreaming).length > MOSAIC_TILES;
+  const pool = useMemo(() => rankCameras(cameras).filter(isStreaming), [cameras]);
+  const rotating = !expanded && pageVisible && pool.length > MOSAIC_TILES;
+  // Kataklar: har ROTATE_MS / 4 da BITTA katak navbatdagi kameraga o'tadi.
+  const [tiles, setTiles] = useState<{ ids: string[]; cursor: number; slot: number }>({ ids: [], cursor: 0, slot: 0 });
+  useEffect(() => {
+    // Yangi ro'yxat: mavjud kataklar saqlanadi, yo'qolgan kamera o'rni to'ldiriladi.
+    setTiles((current) => {
+      const poolIds = pool.map((c) => c.id);
+      let cursor = current.cursor;
+      const ids = current.ids.filter((id) => poolIds.includes(id)).slice(0, MOSAIC_TILES);
+      while (ids.length < Math.min(MOSAIC_TILES, poolIds.length)) {
+        const next = nextTile(ids, poolIds, cursor);
+        if (!next.id) break;
+        ids.push(next.id);
+        cursor = next.cursor;
+      }
+      return { ids, cursor, slot: current.slot };
+    });
+  }, [pool]);
   useEffect(() => {
     if (!rotating) return;
-    const timer = window.setInterval(() => setStep((n) => n + 1), ROTATE_MS);
+    const timer = window.setInterval(() => {
+      setTiles((current) => {
+        const next = nextTile(current.ids, pool.map((c) => c.id), current.cursor);
+        if (!next.id) return current;
+        const ids = [...current.ids];
+        ids[current.slot % ids.length] = next.id;
+        return { ids, cursor: next.cursor, slot: (current.slot + 1) % MOSAIC_TILES };
+      });
+    }, ROTATE_MS / MOSAIC_TILES);
     return () => window.clearInterval(timer);
-  }, [rotating]);
-  const mosaic = useMemo(() => rotatingMosaic(cameras, step), [cameras, step]);
+  }, [rotating, pool]);
+  const mosaic = useMemo(() => {
+    if (pool.length <= MOSAIC_TILES) return pickMosaic(cameras, MOSAIC_TILES);
+    const byId = new Map(pool.map((c) => [c.id, c]));
+    return tiles.ids.map((id) => byId.get(id)).filter((c): c is CameraFeed => Boolean(c));
+  }, [cameras, pool, tiles]);
 
   return (
     <Panel

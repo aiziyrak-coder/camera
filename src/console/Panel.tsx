@@ -35,6 +35,10 @@ export interface PanelProps {
   onExpand: (id: string | null) => void;
   /** Yoyilganda ko'rsatiladigan boshqacha (kengaytirilgan) mazmun. */
   full?: ReactNode;
+  /** Panelning istalgan joyini bosish uni kattalashtirsinmi. Ichida filtr va
+   *  tugmalar bor panelda false — aks holda filtrni bosish panelni ochib yuboradi;
+   *  kattalashtirish faqat burchakdagi tugma bilan. */
+  clickToExpand?: boolean;
   children: ReactNode;
 }
 
@@ -47,6 +51,7 @@ export default function Panel({
   expanded,
   onExpand,
   full,
+  clickToExpand = true,
   children,
 }: PanelProps) {
   // Yoyilganda setkadagi nusxa KO'RINMAYDI (opacity-0), lekin baribir
@@ -87,10 +92,11 @@ export default function Panel({
         layoutId={`panel-${id}`}
         transition={spring}
         aria-label={title}
-        onClick={() => !expanded && onExpand(id)}
+        onClick={clickToExpand ? () => !expanded && onExpand(id) : undefined}
         className={cn(
-          'panel-enter glass glass-hover relative flex min-h-0 flex-col overflow-hidden',
-          !expanded && 'cursor-pointer',
+          'panel-enter glass relative flex min-h-0 flex-col overflow-hidden',
+          clickToExpand && 'glass-hover',
+          clickToExpand && !expanded && 'cursor-pointer',
           expanded && 'pointer-events-none opacity-0',
           area,
         )}

@@ -723,6 +723,7 @@ async def people_by_status(
     faculty_id: Annotated[str | None, Query(alias="facultyId")] = None,
     course: Annotated[int | None, Query(ge=1, le=12)] = None,
     group: Annotated[str | None, Query(max_length=100)] = None,
+    department_id: Annotated[str | None, Query(alias="departmentId", max_length=100)] = None,
     search: Annotated[str | None, Query(max_length=100)] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(alias="pageSize", ge=1, le=500)] = 100,
@@ -752,6 +753,10 @@ async def people_by_status(
         stmt = stmt.where(StudentStaff.faculty_id == fid)
     if group:
         stmt = stmt.where(svc.member_prefilter(group))
+    if department_id:
+        # Kafedra / bo'lim (xodimlar) — /kafedras dagi bilan bir xil ro'yxat.
+        _unit, staff_ids = await svc.department_staff_ids(db, department_id)
+        stmt = stmt.where(StudentStaff.id.in_(staff_ids or [uuid.uuid4()]))
     rows = (await db.execute(stmt)).all()
     names = await svc.faculty_names(db)
     needle = svc.norm_name(search) if search else ""

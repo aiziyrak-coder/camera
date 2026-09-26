@@ -733,6 +733,8 @@ export interface StatusPeopleQuery {
   facultyId?: string;
   course?: number;
   group?: string;
+  /** Xodimlar: kafedra / bo'lim (getKafedras id). */
+  departmentId?: string;
   search?: string;
   page?: number;
   pageSize?: number;

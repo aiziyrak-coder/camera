@@ -42,3 +42,13 @@ async def test_staff_and_pagination(client, world, admin):
 
 async def test_requires_permission(client: AsyncClient):
     assert (await client.get(URL)).status_code in (401, 403)
+
+
+async def test_staff_filtered_by_department(client, world, admin):
+    units = (await client.get("/api/situation/kafedras", params={"kind": "all"}, headers=admin)).json()
+    anatomy = next(u for u in units if u["name"] == "Anatomiya kafedrasi")
+    body = (await client.get(URL, params={"type": "xodim", "departmentId": anatomy["id"]}, headers=admin)).json()
+    names = [p["fullName"] for p in body["items"]]
+    assert names and any("Yusupova" in n for n in names)
+    assert body["counts"]["hammasi"] == len(names)
+    assert (await client.get(URL, params={"type": "xodim", "departmentId": "yoq"}, headers=admin)).status_code == 404
