@@ -15,7 +15,7 @@ from sqlalchemy.orm import selectinload
 from app.audit import log_action
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
-from app.models import Faculty, StudentStaff
+from app.models import Faculty, OrgUnit, StudentStaff
 from app.pagination import Page, PageParams, build_page, paginate
 from app.schemas.student_staff import (
     BiometricsConfirmationOut,
@@ -119,9 +119,15 @@ def _confirmed_label(record: StudentStaff) -> str | None:
     return to_local(record.biometrics_confirmed_at).strftime("%d.%m.%Y %H:%M")
 
 
-def _to_out(record: StudentStaff, faculty_name: str) -> StudentStaffOut:
+def _to_out(record: StudentStaff, faculty_name: str, org_unit: str | None = None) -> StudentStaffOut:
     course, group = split_course(record.group_or_position) if record.type == "talaba" else (None, None)
     return StudentStaffOut(
+        org_unit=org_unit,
+        position=record.position if record.type == "xodim" else None,
+        photo_angles=sum(
+            1 for key in (record.biometric_photo_key, record.biometric_photo_left_key, record.biometric_photo_right_key)
+            if key
+        ),
         id=str(record.id),
         full_name=record.full_name,
         type=record.type,
@@ -135,6 +141,15 @@ def _to_out(record: StudentStaff, faculty_name: str) -> StudentStaffOut:
         confirmed_label=_confirmed_label(record),
         self_registered=record.self_registered,
         awaiting_approval=record.awaiting_approval,
+        # Tasdiqlash oynasi uchun: chap va o'ng tomon (faqat kutayotganlarda).
+        biometric_photo_left_url=(
+            presigned_url(record.biometric_photo_left_key)
+            if record.awaiting_approval and record.biometric_photo_left_key else None
+        ),
+        biometric_photo_right_url=(
+            presigned_url(record.biometric_photo_right_key)
+            if record.awaiting_approval and record.biometric_photo_right_key else None
+        ),
     )
 
 
@@ -169,11 +184,13 @@ AWAITING_APPROVAL_FILTER = "tasdiq_kutmoqda"
 BIOMETRICS_FILTER_LABELS = {
     "tasdiqlangan": "Ro'yxatdan o'tganlar (yuzi tasdiqlangan)",
     UNCONFIRMED_FILTER: "Ro'yxatdan o'tmaganlar (yuzi tasdiqlanmagan)",
-    AWAITING_APPROVAL_FILTER: "O'zi ro'yxatdan o'tgan, tasdiq kutmoqda",
+    AWAITING_APPROVAL_FILTER: "Yuzi tasdiq kutmoqda",
 }
 
+# Ro'yxatdagi odam ham shu yerga tushadi: yuzi boshqasiga o'xshab qolsa
+# (self_enrollment.decide_status) — aks holda uni tasdiqlab ham, rad etib
+# ham bo'lmasdi.
 AWAITING_APPROVAL = and_(
-    StudentStaff.self_registered.is_(True),
     StudentStaff.biometrics_status == "kutilmoqda",
     StudentStaff.biometric_embedding.is_not(None),
 )
@@ -192,7 +209,8 @@ def _filtered_query(
     Alohida yozilsa, ikkalasi vaqt o'tib bir-biridan farq qila boshlardi
     va yuklab olingan fayl ekranda ko'rinayotgan ro'yxatga mos
     kelmasdi — bu hisobot uchun jiddiy nuqson."""
-    stmt = select(StudentStaff).options(selectinload(StudentStaff.faculty))
+    # Reestr — faol odamlar (bitirgan/ishdan ketganlar Maxfiylik sahifasida "Faol emas").
+    stmt = select(StudentStaff).options(selectinload(StudentStaff.faculty)).where(StudentStaff.active.is_(True))
     if type:
         stmt = stmt.where(StudentStaff.type == type)
     if faculty == NO_FACULTY_KEY:
@@ -247,8 +265,16 @@ async def list_students_staff(
     stmt = _filtered_query(type, faculty, search, biometrics, course)
 
     records, total = await paginate(db, stmt, page_params)
-    items = [_to_out(r, r.faculty.name if r.faculty else "") for r in records]
-    return build_page(items, total, page_params)
+    return build_page(await _outs(db, records), total, page_params)
+
+
+async def _outs(db: AsyncSession, records: list[StudentStaff]) -> list[StudentStaffOut]:
+    """Ro'yxat qatorlari + xodimning HEMIS bo'linmasi nomi (bitta so'rovda)."""
+    unit_ids = {r.org_unit_id for r in records if r.org_unit_id}
+    names: dict = {}
+    if unit_ids:
+        names = dict((await db.execute(select(OrgUnit.id, OrgUnit.name).where(OrgUnit.id.in_(unit_ids)))).all())
+    return [_to_out(r, r.faculty.name if r.faculty else "", names.get(r.org_unit_id)) for r in records]
 
 
 @router.post("/search", response_model=Page[StudentStaffOut])
@@ -262,8 +288,7 @@ async def search_students_staff(
     page_params = PageParams(page=body.page, page_size=body.page_size)
     stmt = _filtered_query(body.type, body.faculty, body.search, body.biometrics_status, body.course, body.sort)
     records, total = await paginate(db, stmt, page_params)
-    items = [_to_out(r, r.faculty.name if r.faculty else "") for r in records]
-    return build_page(items, total, page_params)
+    return build_page(await _outs(db, records), total, page_params)
 
 
 @router.get("/biometrics-coverage", response_model=BiometricsCoverageOut)
@@ -296,6 +321,7 @@ async def _coverage(db: AsyncSession, type: str | None) -> BiometricsCoverageOut
         StudentStaff.biometrics_status,
         func.count(StudentStaff.id),
     ).select_from(StudentStaff).outerjoin(Faculty, StudentStaff.faculty_id == Faculty.id)
+    stmt = stmt.where(StudentStaff.active.is_(True))
     if type:
         stmt = stmt.where(StudentStaff.type == type)
     stmt = stmt.group_by(Faculty.name, StudentStaff.biometrics_status)

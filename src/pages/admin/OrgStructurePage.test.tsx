@@ -4,12 +4,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 /**
- * QA: tashkiliy tuzilma sahifasi.
- *
- * Fakultet o'chirilganda backend uning guruhlarini ham o'chiradi
- * (student_groups.faculty_id ondelete="CASCADE") — tasdiq oynasi buni
- * aytadi, lekin ekrandagi ro'yxat yangilanmasdi va "Guruhlar" tabida
- * allaqachon o'chgan guruhlar ko'rinib turardi.
+ * QA: tashkiliy tuzilma sahifasi. Fakultet, guruh va kafedra HEMIS'dan
+ * keladi — qo'lda o'chirilsa keyingi sinxronlashda qaytib kelardi.
  */
 
 const del = vi.fn().mockResolvedValue(undefined);
@@ -19,9 +15,11 @@ vi.mock('../../lib/permissions', () => ({ usePermissions: () => ({ can: () => tr
 vi.mock('../../lib/apiClient', () => ({
   ApiError: class ApiError extends Error {},
   isAbortError: () => false,
+  buildQuery: () => '',
   api: {
     del: (...args: unknown[]) => del(...args),
     get: (path: string) => {
+      if (path.includes('/tuzilma')) return Promise.resolve({ date: '2026-09-26', units: [], positions: [] });
       if (path === '/api/buildings') return Promise.resolve([]);
       if (path === '/api/departments') return Promise.resolve([]);
       if (path === '/api/faculties') {
@@ -36,8 +34,8 @@ vi.mock('../../lib/apiClient', () => ({
 
 import OrgStructurePage from './OrgStructurePage';
 
-describe('OrgStructurePage — fakultet o’chirish', () => {
-  it("fakultet bilan birga uning guruhlari ham ro'yxatdan chiqadi", async () => {
+describe("OrgStructurePage — HEMIS ro'yxatlari", () => {
+  it("fakultetni qo'lda o'chirib bo'lmaydi — ro'yxat HEMIS'dan keladi", async () => {
     render(
       <MemoryRouter initialEntries={['/tuzilma?tab=fakultetlar']}>
         <OrgStructurePage />
@@ -46,16 +44,11 @@ describe('OrgStructurePage — fakultet o’chirish', () => {
 
     // Jadval ish stoli va telefon ko'rinishida ikki marta chiziladi.
     await waitFor(() => expect(screen.getAllByText('Stomatologiya').length).toBeGreaterThan(0));
-
-    fireEvent.click(screen.getAllByLabelText("«Stomatologiya» — o'chirish")[0]);
-    // Tasdiq oynasi guruh yo'qolishini aytadi.
-    expect(screen.getByText(/1 ta guruh/)).toBeTruthy();
-
-    fireEvent.click(screen.getByRole('button', { name: "O'chirish" }));
-    await waitFor(() => expect(del).toHaveBeenCalledWith('/api/faculties/f1', 't'));
-
-    // Guruhlar tabiga o'tamiz — o'chgan guruh ko'rinmasligi kerak.
+    // HEMIS keyingi sinxronlashda qaytarib qo'yardi — o'chirish tugmasi yo'q.
+    expect(screen.queryAllByLabelText("«Stomatologiya» — o'chirish")).toHaveLength(0);
+    expect(screen.getByText(/HEMIS'dan avtomatik yangilanadi/)).toBeTruthy();
     fireEvent.click(screen.getAllByRole('tab', { name: /Guruhlar/ })[0]);
-    await waitFor(() => expect(screen.queryByText('DI-2301')).toBeNull());
+    await waitFor(() => expect(screen.getAllByText('DI-2301').length).toBeGreaterThan(0));
+    expect(del).not.toHaveBeenCalled();
   });
 });

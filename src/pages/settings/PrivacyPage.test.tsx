@@ -89,8 +89,10 @@ describe('PrivacyPage', () => {
         <PrivacyPage />
       </MemoryRouter>,
     );
-    expect(await screen.findByText('4 soat')).toBeTruthy();
-    expect(screen.getByText('Video arxiv')).toBeTruthy();
+    expect(await screen.findByText('1 yil')).toBeTruthy();
+    expect(screen.getByText('Turniket qaydlari')).toBeTruthy();
+    // Video yozuv o'chirilgan (NVR saqlaydi) — arxiv muddati ko'rsatilmaydi.
+    expect(screen.queryByText('Video arxiv')).toBeNull();
   });
 
   it('odam tanlanganda saqlanayotgan biometrika ko‘rinadi', async () => {

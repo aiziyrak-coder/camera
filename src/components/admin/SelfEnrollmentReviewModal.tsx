@@ -75,11 +75,19 @@ export default function SelfEnrollmentReviewModal({ record, onClose, onDone }: P
         <div className="space-y-4">
           <div className="flex flex-col items-center gap-3 rounded-card border border-border bg-surface-2/60 p-4 text-center">
             {record.biometricPhotoUrl ? (
-              <img
-                src={record.biometricPhotoUrl}
-                alt={`${record.fullName} — yuborilgan yuz rasmi`}
-                className="h-48 w-48 rounded-card border border-border object-cover"
-              />
+              <div className="flex items-end justify-center gap-2">
+                {record.biometricPhotoLeftUrl && (
+                  <img src={record.biometricPhotoLeftUrl} alt={`${record.fullName} — chap tomon`} className="h-28 w-28 rounded-card border border-border object-cover" />
+                )}
+                <img
+                  src={record.biometricPhotoUrl}
+                  alt={`${record.fullName} — yuborilgan yuz rasmi`}
+                  className="h-40 w-40 rounded-card border border-border object-cover"
+                />
+                {record.biometricPhotoRightUrl && (
+                  <img src={record.biometricPhotoRightUrl} alt={`${record.fullName} — o'ng tomon`} className="h-28 w-28 rounded-card border border-border object-cover" />
+                )}
+              </div>
             ) : (
               <div className="flex h-48 w-48 flex-col items-center justify-center gap-2 rounded-card bg-surface-3 text-sm text-muted">
                 <ImageOff size={22} aria-hidden="true" />

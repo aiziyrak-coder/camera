@@ -357,7 +357,7 @@ async def _verify_liveness(frames: list[bytes]) -> None:
 
 
 @router.post("/pose-check", response_model=PoseCheckOut)
-@limiter.limit("240/minute")
+@limiter.limit("600/minute")  # institut Wi-Fi: ko'p telefon bitta IP dan (NAT)
 async def pose_check(
     request: Request,
     expected: Annotated[str, Form(alias="expected")],
@@ -411,7 +411,7 @@ async def pose_check(
 
 
 @router.post("/{record_id}/submit", response_model=EnrollmentSubmitOut)
-@limiter.limit("30/minute")
+@limiter.limit("90/minute")
 async def submit_enrollment(
     request: Request,
     record_id: str,

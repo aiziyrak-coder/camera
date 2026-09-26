@@ -274,7 +274,7 @@ export default function WallTile({
       <TileBrackets tone={camera && playback !== 'offline' ? 'video' : 'paper'} />
 
       {cameraId && (
-        <div className="absolute right-1 top-6 z-20 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+        <div className="absolute right-1 top-6 z-20 flex gap-1 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100">
           <button
             type="button"
             onClick={(event) => {

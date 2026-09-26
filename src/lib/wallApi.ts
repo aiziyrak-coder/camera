@@ -86,6 +86,8 @@ export interface SpotlightFace {
   initials: string;
   status: string;
   checkIn: string | null;
+  /** Yuzi ro'yxatdan o'tmagan — kameralar tanimaydi ("kelmadi" emas). */
+  noFace?: boolean;
 }
 
 export interface SpotlightDetail {
@@ -116,6 +118,7 @@ interface RawFace {
   initials: string;
   status: string;
   checkIn: string | null;
+  biometricsStatus?: string;
 }
 
 interface RawKafedra {
@@ -138,7 +141,15 @@ const UNIT_KIND_LABEL: Record<string, string> = {
 };
 
 function pickFace(f: RawFace): SpotlightFace {
-  return { id: f.id, fullName: f.fullName, photoUrl: f.photoUrl, initials: f.initials, status: f.status, checkIn: f.checkIn };
+  return {
+    id: f.id,
+    fullName: f.fullName,
+    photoUrl: f.photoUrl,
+    initials: f.initials,
+    status: f.status,
+    checkIn: f.checkIn,
+    noFace: f.biometricsStatus !== undefined && f.biometricsStatus !== 'tasdiqlangan',
+  };
 }
 
 export async function getSpotlightDetail(item: SpotlightItem, opts?: CallOptions): Promise<SpotlightDetail> {

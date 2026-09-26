@@ -25,6 +25,13 @@ class StudentStaffOut(CamelModel):
     # yuzi yuborilgan va administrator qarorini kutmoqda.
     self_registered: bool = False
     awaiting_approval: bool = False
+    # Xodim: HEMIS bo'linmasi nomi va lavozimi.
+    org_unit: str | None = None
+    position: str | None = None
+    # Ro'yxatdan o'tishda saqlangan tomonlar soni (old, chap, o'ng): 0..3.
+    photo_angles: int = 0
+    biometric_photo_left_url: str | None = None
+    biometric_photo_right_url: str | None = None
 
 
 class StudentStaffCreateIn(CamelModel):

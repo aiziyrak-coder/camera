@@ -505,7 +505,7 @@ export default function EnrollmentPage() {
               </div>
               <p className="text-[13px] leading-relaxed text-muted">
                 {awaitingApproval
-                  ? `${found.fullName}, ma'lumotlaringiz qabul qilindi. Siz institut ro'yxatida yo'q edingiz, shuning uchun administrator tasdiqlagandan keyin kameralar sizni taniy boshlaydi.`
+                  ? `${found.fullName}, ma'lumotlaringiz qabul qilindi. Administrator tekshirib tasdiqlagandan keyin kameralar sizni taniy boshlaydi (odatda bir ish kuni ichida).`
                   : `${found.fullName}, yuzingiz endi kameralar orqali tanib olinadi.`}
               </p>
             </div>

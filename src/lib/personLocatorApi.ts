@@ -14,6 +14,9 @@ export interface PersonLocation {
   zone: string | null;
   lastSeenAt: string | null;
   currentlyVisible: boolean;
+  /** Yuzi tasdiqlangan — kameralar taniy oladi. */
+  hasFace?: boolean;
+  photoUrl?: string | null;
 }
 
 export interface PhotoPersonMatch {

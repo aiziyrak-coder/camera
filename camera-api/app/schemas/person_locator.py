@@ -25,6 +25,8 @@ class PersonLocationOut(CamelModel):
     zone: str | None = None
     last_seen_at: datetime | None = None
     currently_visible: bool = False
+    has_face: bool = True
+    photo_url: str | None = None
 
 
 class PhotoPersonMatch(CamelModel):

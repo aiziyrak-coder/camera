@@ -26,11 +26,13 @@ function PersonResult({ person, onRoute }: { person: PersonLocation; onRoute: (t
   const location = locationText(person);
   const wall = person.cameraId ? liveLink(person.cameraId) : null;
   return (
-    <Card padding="md" className="flex min-w-0 items-center gap-3">
-      <Avatar name={person.fullName} size="md" />
+    <Card padding="md" className="flex min-w-0 flex-wrap items-center gap-3 sm:flex-nowrap">
+      <Avatar name={person.fullName} src={person.photoUrl ?? undefined} size="md" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <h2 className="truncate text-[15px] font-bold text-fg">{person.fullName}</h2>
+          <Link to={`/shaxs/${person.id}`} className="truncate text-[15px] font-bold text-fg hover:text-primary hover:underline">
+            {person.fullName}
+          </Link>
           {person.currentlyVisible && <span className="live-dot h-2 w-2 shrink-0 rounded-full bg-success" aria-label="So‘nggi 5 daqiqada ko‘rilgan" />}
         </div>
         <p className="truncate text-[12px] text-muted">{person.faculty || person.groupOrPosition || (person.type === 'talaba' ? 'Talaba' : 'Xodim')}</p>
@@ -39,7 +41,11 @@ function PersonResult({ person, onRoute }: { person: PersonLocation; onRoute: (t
             <MapPin size={14} className="shrink-0 text-primary" aria-hidden="true" />
             <span className="truncate">{location}</span>
           </div>
-        ) : <p className="mt-2 text-[12px] text-muted">Kamerada hali aniqlanmagan</p>}
+        ) : person.hasFace === false ? (
+          <p className="mt-2 text-[12px] text-warning">Yuzsiz — ro‘yxatdan o‘tmagan, kameralar tanimaydi</p>
+        ) : (
+          <p className="mt-2 text-[12px] text-muted">Kamerada hali aniqlanmagan</p>
+        )}
       </div>
       <div className="flex shrink-0 flex-col items-end gap-2">
         {person.lastSeenAt && <span className="flex items-center gap-1 text-[11px] font-medium text-muted"><Clock3 size={12} aria-hidden="true" />{seenAt(person.lastSeenAt)}</span>}

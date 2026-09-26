@@ -113,9 +113,7 @@ class StudentStaff(Base):
 
     @property
     def awaiting_approval(self) -> bool:
-        """Yuzi yuborilgan, lekin administrator hali ko'rib chiqmagan."""
-        return (
-            self.self_registered
-            and self.biometrics_status == "kutilmoqda"
-            and self.biometric_embedding is not None
-        )
+        """Yuzi yuborilgan, lekin administrator hali ko'rib chiqmagan: o'zini
+        o'zi qo'shgan odam YOKI yuzi boshqa odamga o'xshab qolgan har kim
+        (self_enrollment.decide_status)."""
+        return self.biometrics_status == "kutilmoqda" and self.biometric_embedding is not None

@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { FileDown } from 'lucide-react';
 import { ApiError } from '../../lib/apiClient';
-import { useAuth } from '../../lib/auth';
-import { downloadPdf } from '../../lib/pdfDownload';
 import { Button, useToast } from '../../ui';
 
 /** "PDF" tugmasi — ekrandagi filtr natijasini PDF qilib yuklab oladi. */
@@ -17,14 +15,16 @@ export default function PdfButton({
   filename: string;
   label?: string;
 }) {
-  const { token } = useAuth();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
 
   async function run() {
     setBusy(true);
     try {
-      await downloadPdf(path, params, filename, token);
+      // Kechiktirilgan import: tugma chizilishi uchun yuklab olish kodi kerak emas.
+      // Token apiClient ning o'zidan olinadi (joriy sessiya).
+      const { downloadPdf } = await import('../../lib/pdfDownload');
+      await downloadPdf(path, params, filename);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'PDF ni yuklab bo‘lmadi');
     } finally {

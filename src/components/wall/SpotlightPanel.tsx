@@ -48,7 +48,9 @@ function FaceGrid({ detail }: { detail: SpotlightDetail }) {
                 {showNames && (
                   <div className="mt-[0.35em] w-full text-center leading-tight">
                     <div className="truncate font-medium text-fg">{f.fullName.split(' ').slice(0, 2).join(' ')}</div>
-                    <div className="intel-code text-muted">{f.checkIn ?? '—'}</div>
+                    <div className={f.noFace && !f.checkIn ? 'text-warning' : 'intel-code text-muted'}>
+                      {f.checkIn ?? (f.noFace ? 'yuzsiz' : '—')}
+                    </div>
                   </div>
                 )}
               </div>

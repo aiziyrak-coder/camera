@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BookOpen, Building2, Landmark, Pencil, Plus, Trash2, Users2 } from 'lucide-react';
+import { BookOpen, Building2, Landmark, Network, Pencil, Plus, Trash2, Users2 } from 'lucide-react';
 import {
   Button,
   CodeText,
@@ -22,16 +22,14 @@ import {
   type TabItem,
 } from '../../ui';
 import AddBuildingModal from '../../components/admin/AddBuildingModal';
-import AddDepartmentModal from '../../components/admin/AddDepartmentModal';
-import AddFacultyModal from '../../components/admin/AddFacultyModal';
-import AddGroupModal from '../../components/admin/AddGroupModal';
 import { ApiError, api, isAbortError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { usePermissions } from '../../lib/permissions';
-import { situationPaths } from '../../lib/situationApi';
+import { getOrgTree, situationPaths, type OrgNode } from '../../lib/situationApi';
+import PdfButton from '../../components/situation/PdfButton';
 import type { Building, Department, Faculty, StudentGroup } from '../../types';
 
-type TabId = 'binolar' | 'fakultetlar' | 'guruhlar' | 'kafedralar';
+type TabId = 'hemis' | 'binolar' | 'fakultetlar' | 'guruhlar' | 'kafedralar';
 
 type DeleteTarget =
   | { kind: 'building'; item: Building }
@@ -99,10 +97,11 @@ export function deleteConsequences(target: DeleteTarget, groupsInFaculty: number
 }
 
 const ADD_LABEL: Record<TabId, string> = {
+  hemis: '',
   binolar: "Korpus qo'shish",
-  fakultetlar: "Fakultet qo'shish",
-  guruhlar: "Guruh qo'shish",
-  kafedralar: "Kafedra qo'shish",
+  fakultetlar: '',
+  guruhlar: '',
+  kafedralar: '',
 };
 
 function matches(text: string | null | undefined, query: string): boolean {
@@ -156,6 +155,24 @@ export default function OrgStructurePage() {
   const [courseFilter, setCourseFilter] = useState('');
 
   const [addOpen, setAddOpen] = useState<TabId | null>(null);
+  // HEMIS tuzilmasi (rektorat → fakultet → kafedra, bo'limlar) — davomat
+  // sanoqlari bilan. Faqat davomat/hisobot huquqi borlarga.
+  const canSeeTree = canOpenAttendance || can('viewReports', role);
+  const [tree, setTree] = useState<OrgNode[] | null>(null);
+  const [treeError, setTreeError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!canSeeTree) return;
+    const controller = new AbortController();
+    getOrgTree(undefined, { signal: controller.signal })
+      .then((res) => {
+        setTree(res.units);
+        setTreeError(null);
+      })
+      .catch((err: unknown) => {
+        if (!isAbortError(err)) setTreeError(err instanceof ApiError ? err.message : "Tuzilmani yuklab bo'lmadi");
+      });
+    return () => controller.abort();
+  }, [canSeeTree, nonce]);
   const [editingBuilding, setEditingBuilding] = useState<Building | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
@@ -196,12 +213,13 @@ export default function OrgStructurePage() {
 
   const tabs = useMemo<TabItem<TabId>[]>(
     () => [
+      ...(canSeeTree ? [{ id: 'hemis' as const, label: 'HEMIS tuzilmasi', icon: Network, count: tree ? tree.length : null }] : []),
       { id: 'binolar', label: 'Binolar', icon: Building2, count: loading ? null : buildings.length },
       { id: 'fakultetlar', label: 'Fakultetlar', icon: BookOpen, count: loading ? null : faculties.length },
       { id: 'guruhlar', label: 'Guruhlar', icon: Users2, count: loading ? null : groups.length },
       { id: 'kafedralar', label: 'Kafedralar', icon: Landmark, count: loading ? null : departments.length },
     ],
-    [loading, buildings.length, faculties.length, groups.length, departments.length],
+    [loading, buildings.length, faculties.length, groups.length, departments.length, canSeeTree, tree],
   );
   const [tab] = useUrlTab(tabs);
 
@@ -333,18 +351,6 @@ export default function OrgStructurePage() {
       hideOnMobile: true,
     },
     { key: 'students', header: 'Talabalar', align: 'right', cell: (f) => <Count value={f.studentCount} />, sortValue: (f) => f.studentCount, sortFirst: 'desc' },
-    ...(canEdit
-      ? [
-          {
-            key: 'actions',
-            header: <span className="sr-only">Amallar</span>,
-            align: 'right' as const,
-            width: '4rem',
-            mobileLabel: 'Amallar',
-            cell: (f: Faculty) => <RowActions>{deleteButton({ kind: 'faculty', item: f })}</RowActions>,
-          },
-        ]
-      : []),
   ];
 
   const groupColumns: DataTableColumn<StudentGroup>[] = [
@@ -357,18 +363,6 @@ export default function OrgStructurePage() {
     },
     { key: 'course', header: 'Kurs', width: '5rem', mono: true, cell: (g) => <CodeText className="text-[12px] text-fg">{g.course}-kurs</CodeText>, sortValue: (g) => g.course },
     { key: 'students', header: 'Talabalar', align: 'right', cell: (g) => <Count value={g.studentCount} />, sortValue: (g) => g.studentCount, sortFirst: 'desc' },
-    ...(canEdit
-      ? [
-          {
-            key: 'actions',
-            header: <span className="sr-only">Amallar</span>,
-            align: 'right' as const,
-            width: '4rem',
-            mobileLabel: 'Amallar',
-            cell: (g: StudentGroup) => <RowActions>{deleteButton({ kind: 'group', item: g })}</RowActions>,
-          },
-        ]
-      : []),
   ];
 
   const departmentColumns: DataTableColumn<Department>[] = [
@@ -385,21 +379,46 @@ export default function OrgStructurePage() {
       sortValue: (d) => d.buildingName || null,
     },
     { key: 'cameras', header: 'Kameralar', align: 'right', cell: (d) => <Count value={d.cameraCount} />, sortValue: (d) => d.cameraCount, sortFirst: 'desc' },
-    ...(canEdit
-      ? [
-          {
-            key: 'actions',
-            header: <span className="sr-only">Amallar</span>,
-            align: 'right' as const,
-            width: '4rem',
-            mobileLabel: 'Amallar',
-            cell: (d: Department) => <RowActions>{deleteButton({ kind: 'department', item: d })}</RowActions>,
-          },
-        ]
-      : []),
+  ];
+
+  const treeColumns: DataTableColumn<OrgNode>[] = [
+    {
+      key: 'name',
+      header: "Bo'linma",
+      cell: (n) => (
+        <span className="block min-w-0 truncate" style={{ paddingLeft: `${(query ? 0 : n.depth) * 1.1}rem` }}>
+          <span className={n.depth === 0 ? 'font-semibold text-fg' : 'text-fg'}>{n.name}</span>
+        </span>
+      ),
+    },
+    { key: 'kind', header: 'Turi', width: '9rem', hideOnMobile: true, cell: (n) => <MicroLabel>{n.kindLabel}</MicroLabel> },
+    { key: 'total', header: 'Xodimlar', align: 'right', width: '6rem', cell: (n) => <Count value={n.total} /> },
+    {
+      key: 'present',
+      header: 'Keldi',
+      align: 'right',
+      width: '5rem',
+      cell: (n) => <CodeText className="text-[12px] text-success">{n.present}</CodeText>,
+    },
+    {
+      key: 'absent',
+      header: 'Kelmadi',
+      align: 'right',
+      width: '5.5rem',
+      cell: (n) => <CodeText className="text-[12px] text-danger">{n.absent}</CodeText>,
+    },
+    {
+      key: 'noData',
+      header: "Ma'lumot yo'q",
+      align: 'right',
+      width: '7rem',
+      hideOnMobile: true,
+      cell: (n) => <CodeText className="text-[12px] text-muted">{n.noData}</CodeText>,
+    },
   ];
 
   const searchPlaceholder: Record<TabId, string> = {
+    hemis: "Bo'linma…",
     binolar: 'Korpus…',
     fakultetlar: 'Fakultet…',
     guruhlar: 'Guruh…',
@@ -444,7 +463,7 @@ export default function OrgStructurePage() {
   // "Guruhlar" tabida fakultet/kurs filtri ham bor: filtr tufayli ro'yxat
   // bo'sh bo'lsa "Guruh qo'shish" tugmasi noto'g'ri maslahat bo'ladi.
   const emptyAction = (id: TabId) =>
-    canEdit && !(id === 'guruhlar' ? filtersActive : query) ? (
+    canEdit && id === 'binolar' && !query ? (
       <Button icon={Plus} variant="primary" onClick={() => setAddOpen(id)}>
         {ADD_LABEL[id]}
       </Button>
@@ -452,7 +471,9 @@ export default function OrgStructurePage() {
 
   const common = { loading, loadingRows: 5, dense: true, maxHeight: 'none' } as const;
 
+  const shownTree = (tree ?? []).filter((node) => matches(node.name, query));
   const SECTION: Record<TabId, { title: string; shown: number; total: number }> = {
+    hemis: { title: "Bo'linmalar", shown: shownTree.length, total: tree?.length ?? 0 },
     binolar: { title: 'Korpuslar', shown: shownBuildings.length, total: buildings.length },
     fakultetlar: { title: 'Fakultetlar', shown: shownFaculties.length, total: faculties.length },
     guruhlar: { title: 'Guruhlar', shown: shownGroups.length, total: groups.length },
@@ -469,7 +490,9 @@ export default function OrgStructurePage() {
       title="Tashkiliy tuzilma"
       tabs={tabs}
       actions={
-        canEdit && (
+        tab === 'hemis' ? (
+          <PdfButton path="/api/situation/pdf/tuzilma" params={{}} filename="tuzilma.pdf" />
+        ) : canEdit && tab === 'binolar' && (
           <Button
             variant="primary"
             icon={Plus}
@@ -487,6 +510,32 @@ export default function OrgStructurePage() {
         <ErrorState variant="block" message={error} onRetry={reload} className="border border-border bg-surface" />
       ) : (
         <>
+          {tab === 'hemis' && (
+            <IntelPanel title={section.title} right={sectionRight}>
+              {treeError ? (
+                <ErrorState message={treeError} onRetry={reload} />
+              ) : (
+                <DataTable
+                  {...common}
+                  loading={tree === null}
+                  ariaLabel="HEMIS tuzilmasi"
+                  columns={treeColumns}
+                  rows={query ? shownTree : tree ?? []}
+                  rowKey={(n) => n.id}
+                  onRowClick={canOpenAttendance ? (n) => n.total > 0 && navigate(situationPaths.kafedra(n.id)) : undefined}
+                  emptyTitle={query ? "Bo'linma topilmadi" : "HEMIS tuzilmasi hali kelmagan"}
+                  manualSort
+                />
+              )}
+            </IntelPanel>
+          )}
+
+          {(tab === 'fakultetlar' || tab === 'guruhlar' || tab === 'kafedralar') && (
+            <p className="border border-border bg-surface-2 px-3 py-2 text-[12px] text-muted">
+              Bu ro'yxat HEMIS'dan avtomatik yangilanadi — qo'shish va o'chirish HEMIS'ning o'zida qilinadi.
+            </p>
+          )}
+
           {tab === 'binolar' && (
             <IntelPanel title={section.title} right={sectionRight}>
             <DataTable
@@ -570,32 +619,6 @@ export default function OrgStructurePage() {
           setBuildings((prev) => prev.map((b) => (b.id === building.id ? building : b)));
           setEditingBuilding(null);
           toast.success('Saqlandi');
-        }}
-      />
-      <AddDepartmentModal
-        open={addOpen === 'kafedralar'}
-        buildings={buildings}
-        onClose={() => setAddOpen(null)}
-        onAdd={(department) => {
-          setDepartments((prev) => [...prev, department]);
-          toast.success(`«${department.name}» qo'shildi`);
-        }}
-      />
-      <AddFacultyModal
-        open={addOpen === 'fakultetlar'}
-        onClose={() => setAddOpen(null)}
-        onAdd={(faculty) => {
-          setFaculties((prev) => [...prev, faculty]);
-          toast.success(`«${faculty.name}» qo'shildi`);
-        }}
-      />
-      <AddGroupModal
-        open={addOpen === 'guruhlar'}
-        faculties={faculties}
-        onClose={() => setAddOpen(null)}
-        onAdd={(group) => {
-          setGroups((prev) => [...prev, group]);
-          toast.success(`«${group.name}» qo'shildi`);
         }}
       />
 

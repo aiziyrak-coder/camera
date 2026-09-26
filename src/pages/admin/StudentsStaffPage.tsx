@@ -354,20 +354,33 @@ export default function StudentsStaffPage() {
       : [
           {
             key: 'position',
-            header: "Kafedra / Bo'lim",
-            cell: (person: StudentStaffRecord) => <span className="text-muted">{person.groupOrPosition || '—'}</span>,
+            header: "Bo'linma / Lavozim",
+            cell: (person: StudentStaffRecord) => (
+              <span className="block min-w-0">
+                <span className="block truncate text-fg">{person.orgUnit || person.groupOrPosition || '—'}</span>
+                {person.position && <span className="block truncate text-[12px] text-muted">{person.position}</span>}
+              </span>
+            ),
           },
         ]),
     {
       key: 'status',
       header: 'Yuz holati',
       width: '9.5rem',
-      cell: (person) =>
-        person.awaitingApproval ? (
-          <StatusLamp status="warn" label="Tasdiq kutmoqda" />
-        ) : (
-          <StatusLamp status={BIOMETRICS_META[person.biometricsStatus].status} label={BIOMETRICS_META[person.biometricsStatus].label} />
-        ),
+      cell: (person) => (
+        <span className="flex flex-col gap-0.5">
+          {person.awaitingApproval ? (
+            <StatusLamp status="warn" label="Tasdiq kutmoqda" />
+          ) : (
+            <StatusLamp status={BIOMETRICS_META[person.biometricsStatus].status} label={BIOMETRICS_META[person.biometricsStatus].label} />
+          )}
+          {person.biometricsStatus !== 'yoq' && (person.photoAngles ?? 0) < 3 && (
+            <span className="text-[11px] text-warning" title="3 tomonlama (old, chap, o'ng) ro'yxatdan o'tmagan — havola orqali qayta o'tishi kerak">
+              {person.photoAngles ?? 0}/3 tomon
+            </span>
+          )}
+        </span>
+      ),
     },
     {
       key: 'confirmed',

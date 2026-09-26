@@ -34,7 +34,6 @@ import {
   type WallHighEvent,
 } from '../../lib/wallApi';
 import type { AIEvent } from '../../types';
-import { useTheme } from '../../ui';
 
 const POLL_MS = 20_000;
 const CHRONIC_MS = 15 * 60_000;
@@ -156,13 +155,8 @@ export default function WallScreenPage() {
   const allowed = can('viewReports', role) || can('manageAttendance', role);
   const [searchParams, setSearchParams] = useSearchParams();
   const config = useMemo(() => parseWallConfig(searchParams), [searchParams]);
-  const { setForcedTheme } = useTheme();
-
-  // Qorong'i mavzu majburiy; chiqishda foydalanuvchi tanloviga qaytadi.
-  useEffect(() => {
-    setForcedTheme(null); // qorong'i mavzu olib tashlandi
-    return () => setForcedTheme(null);
-  }, [setForcedTheme]);
+  // Hodisa kadrlari /api/events dan olinadi — u reviewEvents huquqini talab qiladi.
+  const canSeeEvents = can('reviewEvents', role);
 
   // ── Asosiy ma'lumot (bitta so'rov, 20 s)
   const [wall, setWall] = useState<Wall | null>(null);
@@ -279,7 +273,7 @@ export default function WallScreenPage() {
   const [snapshots, setSnapshots] = useState<Record<string, string | null>>({});
   const highIds = (wall?.highEvents ?? []).map((e) => e.id).join(',');
   useEffect(() => {
-    if (!highIds || !config.panels.includes('E')) return;
+    if (!highIds || !config.panels.includes('E') || !canSeeEvents) return;
     const missing = highIds.split(',').filter((id) => !(id in snapshots));
     if (missing.length === 0) return;
     const ctrl = new AbortController();
@@ -303,7 +297,7 @@ export default function WallScreenPage() {
       });
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- snapshots faqat keshni tekshirish uchun
-  }, [highIds, config.panels]);
+  }, [highIds, config.panels, canSeeEvents]);
 
   const highEvents = useMemo(() => {
     const server = wall?.highEvents ?? [];

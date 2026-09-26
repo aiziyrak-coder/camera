@@ -88,6 +88,10 @@ async def search_person_location(
             zone=zone,
             last_seen_at=last_seen_at,
             currently_visible=bool(last_seen_at and last_seen_at >= now - timedelta(minutes=5)),
+            # Yuzi tasdiqlanmagan odamni kameralar tanimaydi — "hali ko'rilmagan"
+            # emas, "yuzsiz" deb aytish kerak.
+            has_face=person.biometrics_status == "tasdiqlangan" and person.biometric_embedding is not None,
+            photo_url=_presign(person.biometric_photo_key),
         )
         for person, camera_id, last_seen_at, camera_name, building_name, floor, zone in rows
     ]

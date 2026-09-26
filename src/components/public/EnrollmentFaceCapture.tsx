@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Loader2, RotateCcw, ScanFace, VideoOff } from 'lucide-react';
 import { Button, CodeText, MicroLabel, StatusLamp, cn, type IntelStatus } from '../../ui';
 import { Notice } from '../settings/kit';
+import { ApiError } from '../../lib/apiClient';
 import { type LivenessStep, LIVENESS_STEPS, checkPose } from '../../lib/enrollment';
 
 interface EnrollmentFaceCaptureProps {
@@ -265,10 +266,14 @@ export default function EnrollmentFaceCapture({
         setCaptured((prev) => [...prev, url]);
         setMatching(false);
         setStepIndex((i) => i + 1);
-      } catch {
-        // Tarmoq uzilishi — keyingi urinishda davom etadi. Bu yerda
-        // xato ko‘rsatish shovqin bo‘lardi: sekundiga bir marta
-        // chaqiriladigan so‘rovning bittasi o‘tmasligi normal.
+      } catch (err) {
+        // Tarmoq uzilishi — keyingi urinishda davom etadi. Bitta so'rov
+        // o'tmasligi normal; lekin server "juda ko'p so'rov" (429) desa —
+        // bir tarmoqdan (institut Wi‑Fi) ko'p odam birdaniga topshirmoqda:
+        // odam qotib qoldi deb o'ylamasin, aytamiz.
+        if (err instanceof ApiError && err.status === 429) {
+          setHint('Server band — hozir ko‘p odam ro‘yxatdan o‘tmoqda. Bir necha soniya kuting, jarayon o‘zi davom etadi.');
+        }
       } finally {
         busyRef.current = false;
       }

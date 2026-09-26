@@ -824,7 +824,9 @@ export default function VideoWall({
       className={cn(
         immersive
           ? cn('relative flex flex-col bg-black', standalone ? 'h-screen w-screen' : 'h-full w-full')
-          : cn('flex min-h-[460px] flex-col', presentation ? 'h-[calc(100vh-15rem)]' : 'h-[calc(100vh-19.5rem)]'),
+          : // Telefonda balandlik mazmunga qarab (ro'yxat + devor ustma-ust) —
+            // qat'iy balandlik ichiga 288 px ro'yxat + devor sig'masdi.
+            cn('flex flex-col md:min-h-[460px]', presentation ? 'md:h-[calc(100vh-15rem)]' : 'md:h-[calc(100vh-19.5rem)]'),
       )}
     >
       {overlayChrome}
@@ -832,7 +834,7 @@ export default function VideoWall({
         {sidebar && <div className={immersive ? 'z-30 h-full p-2 pt-16' : 'shrink-0 md:h-full'}>{sidebar}</div>}
         <div
           className={cn(
-            'flex min-h-[260px] min-w-0 flex-1 flex-col overflow-hidden',
+            'flex min-h-[60vh] min-w-0 flex-1 flex-col overflow-hidden md:min-h-[260px]',
             immersive ? 'border border-border' : 'intel-panel intel-brackets',
           )}
         >

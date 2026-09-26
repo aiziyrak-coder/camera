@@ -149,6 +149,14 @@ export interface StudentStaffRecord {
   selfRegistered?: boolean;
   /** Yuzi yuborilgan, administrator qarorini kutmoqda — kameralar hali tanimaydi. */
   awaitingApproval?: boolean;
+  /** Xodim: HEMIS bo'linmasi va lavozimi. */
+  orgUnit?: string | null;
+  position?: string | null;
+  /** Ro'yxatdan o'tishda saqlangan tomonlar (old, chap, o'ng): 0..3. */
+  photoAngles?: number;
+  /** Tasdiq kutayotganlarda: chap va o'ng tomon rasmlari. */
+  biometricPhotoLeftUrl?: string | null;
+  biometricPhotoRightUrl?: string | null;
 }
 
 /** Tahrirlash oynasi — ro'yxatda yuborilmaydigan shaxsiy identifikatorlar bilan. */

@@ -241,7 +241,19 @@ class TestImpersonationOfAnImportedPerson:
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["biometricsStatus"] == "kutilmoqda"
+        assert resp.json()["awaitingApproval"] is True
         assert str(victim.id) not in await _known_ids(db_session)
+
+        # Ro'yxatdagi odam ham administrator navbatida: tasdiqlash ishlaydi
+        # (ilgari faqat o'zi qo'shilganlar uchun edi — bu odam osilib qolardi).
+        headers = await auth_headers(client, "admin", "admin123")
+        listed = await client.post(
+            "/api/students-staff/search", json={"biometricsStatus": "tasdiq_kutmoqda"}, headers=headers
+        )
+        assert [p["id"] for p in listed.json()["items"]] == [str(victim.id)]
+        approved = await client.post(f"/api/students-staff/{victim.id}/biometrics/approve", headers=headers)
+        assert approved.status_code == 200, approved.text
+        assert approved.json()["biometricsStatus"] == "tasdiqlangan"
 
     async def test_an_ordinary_first_enrollment_still_works(self, client: AsyncClient, db_session):
         person = StudentStaff(full_name="Oddiy Xodim", type="xodim", group_or_position="Assistent",
