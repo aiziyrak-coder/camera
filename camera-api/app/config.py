@@ -330,6 +330,10 @@ class Settings(BaseSettings):
     # o'qiladi — xona kamerasida yuz substream'da juda kichik.
     # app/services/camera_roles.py, app/jobs/attendance_ai.py, frame_grabber.py.
     attendance_all_cameras: bool = False
+    # Kelish ISTALGAN kamerada (2026-09-26): umumiy yuz tekshiruvi (unified
+    # face sweep) barcha kameralarni aylanadi va kunning birinchi aniq tanilishi
+    # "keldi" + o'sha soat bo'ladi. Doimiy kuzatuvchi faqat kirish eshiklarida.
+    attendance_any_camera: bool = True
     # Tarmoq o'tkazuvchanligi cheklangan: 107 ta 4K asosiy oqim bir vaqtda
     # ochilganda (2026-09-19 03:45) 69 kamera, jumladan kirish eshiklari ham,
     # asosiy oqimni ololmay substream'ga tushdi. Shuning uchun:

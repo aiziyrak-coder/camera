@@ -318,3 +318,57 @@ class TestSleepBurstSkip:
         counts = await _process_camera(a_camera, flags, candidates=None, session_factory=TestSessionLocal)
         assert detected == [frames[0]]
         assert counts["sleep"] == 0
+
+
+
+class TestArrivalOnAnyCamera:
+    """2026-09-26: kelish istalgan kamerada — koridor kamerasi odamni aniq
+    tanisa, kunning birinchi ko'rinishi "keldi" bo'ladi."""
+
+    async def test_corridor_camera_records_first_arrival(self, db_session, a_camera, monkeypatch):
+        import json
+        import uuid
+
+        import numpy as np
+
+        from app.models import AttendanceRecord, PresenceVisit, StudentStaff
+        from app.services.face_matching import invalidate_candidate_matrix_cache, load_candidate_matrix
+        from tests.conftest import TestSessionLocal
+
+        vector = np.random.default_rng(3).normal(size=512)
+        vector /= np.linalg.norm(vector)
+        other = np.random.default_rng(4).normal(size=512)
+        other /= np.linalg.norm(other)
+        person = StudentStaff(id=uuid.uuid4(), full_name="Koridor Xodim", type="xodim", group_or_position="Bo'lim",
+                              biometrics_status="tasdiqlangan", biometric_embedding=json.dumps(vector.tolist()))
+        second = StudentStaff(id=uuid.uuid4(), full_name="Boshqa Xodim", type="xodim", group_or_position="Bo'lim",
+                              biometrics_status="tasdiqlangan", biometric_embedding=json.dumps(other.tolist()))
+        person_id = person.id
+        db_session.add_all([person, second])
+        await db_session.commit()
+        invalidate_candidate_matrix_cache()
+        candidates = await load_candidate_matrix(db_session)
+
+        frame = _frame("corridor")
+
+        async def fake_grab(camera, *args, **kwargs):
+            return frame
+
+        async def fake_detect(data, **kwargs):
+            return [SimpleNamespace(embedding=vector, bbox=np.array([0, 0, 80, 100]))]
+
+        from app.config import settings
+
+        # Productiondagi kabi: kelish vaqti — istalgan kameradagi birinchi ko'rinish.
+        monkeypatch.setattr(settings, "attendance_arrival_only", True)
+        monkeypatch.setattr(unified_face_sweep, "grab_frame_for_camera", fake_grab)
+        monkeypatch.setattr(unified_face_sweep, "detect_faces", fake_detect)
+        flags = {"unauthorized": False, "sleep": False, "arrival": True}
+        counts = await _process_camera(a_camera, flags, candidates, TestSessionLocal)
+        assert counts["arrivals"] == 1
+
+        db_session.expire_all()
+        record = (await db_session.execute(select(AttendanceRecord).where(AttendanceRecord.student_staff_id == person_id))).scalar_one()
+        assert record.status in ("keldi", "kech_keldi") and record.check_in is not None
+        visits = (await db_session.execute(select(PresenceVisit).where(PresenceVisit.student_staff_id == person_id))).scalars().all()
+        assert [v.camera_id for v in visits] == [a_camera.id]
