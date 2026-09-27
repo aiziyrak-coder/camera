@@ -235,7 +235,7 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
 
       <IntelPanel title="Asosiy ko'rsatkichlar" code={`${rows.length} ta`}>
         <KpiReadout
-          className={hasLessons ? 'lg:grid-cols-4' : 'lg:grid-cols-2'}
+          className={hasLessons ? 'lg:grid-cols-3 xl:grid-cols-6' : 'lg:grid-cols-4'}
           items={[
             {
               label: 'Keldi',
@@ -245,12 +245,30 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
               unit: `/ ${summary.decided}`,
               rate: staffRate,
               // Maxraj jami xodimdan kichik — sababsiz u tushunarsiz qoladi.
-              hint: staffRate === null ? undefined : `Holati aniq ${summary.decided} xodimdan`,
+              hint:
+                staffRate === null
+                  ? undefined
+                  : `Yuzi bazada bor ${summary.decided} xodimdan (foiz shulardan). Kech kelganlar ham shu songa kiradi`,
             },
             {
               label: 'Kech keldi',
               value: loader.loading ? '…' : summary.late,
               unit: 'kishi',
+              hint: 'Kelganlar ichida — ish boshlanishidan kech',
+            },
+            {
+              label: isToday ? 'Kelmadi / hali yo‘q' : 'Kelmadi',
+              value: loader.loading ? '…' : summary.absent + (isToday ? summary.notYet : 0),
+              unit: 'kishi',
+              hint: isToday
+                ? `${summary.notYet} tasi hali kelishi mumkin (kun tugamagan)`
+                : 'Yuzi bazada bor, kamera kun bo‘yi ko‘rmagan',
+            },
+            {
+              label: 'Ma’lumot yo‘q',
+              value: loader.loading ? '…' : summary.noData + summary.dayOff,
+              unit: 'kishi',
+              hint: 'Yuzi bazada yo‘q (kamera taniy olmaydi) yoki dam olishda — foizga kirmaydi',
             },
             ...(hasLessons
               ? [

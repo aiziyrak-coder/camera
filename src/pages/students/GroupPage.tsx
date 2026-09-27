@@ -259,7 +259,9 @@ export default function GroupPage() {
   const filterTiles: FilterTile[] = totals && byStatus
     ? [
         { id: 'all', label: 'Jami', value: totals.total, tone: 'neutral' },
-        { id: 'keldi', label: STATUS_META.keldi.label, value: byStatus.keldi, tone: 'success' },
+        // Plitka faqat o'z vaqtida kelganlar (kech kelganlar yonidagi plitkada) —
+        // yuqoridagi "Davomat" foizi ikkalasini ham oladi, shuning uchun nomi boshqa.
+        { id: 'keldi', label: 'O‘z vaqtida', value: byStatus.keldi, tone: 'success' },
         { id: 'kech_keldi', label: STATUS_META.kech_keldi.label, value: byStatus.kech_keldi, tone: 'warning' },
         { id: 'kelmadi', label: STATUS_META.kelmadi.label, value: byStatus.kelmadi, tone: 'danger' },
         ...(isToday || byStatus.kutilmoqda > 0
@@ -360,8 +362,17 @@ export default function GroupPage() {
               <KpiReadout
                 className="lg:grid-cols-2"
                 items={[
-                  { label: 'Keldi', value: formatPercent(totals.rate, 1), rate: hasAttendanceData(totals) ? totals.rate : null },
-                  { label: 'Yuzi bor', value: formatPercent(facePct, 1) },
+                  {
+                    label: 'Davomat',
+                    value: formatPercent(totals.rate, 1),
+                    rate: hasAttendanceData(totals) ? totals.rate : null,
+                    hint: `${totals.present} keldi (kech kelganlar bilan) / ${totals.present + totals.absent + totals.notYet} yuzi bazada borlardan`,
+                  },
+                  {
+                    label: 'Yuzi bor',
+                    value: formatPercent(facePct, 1),
+                    hint: `${totals.enrolled} / ${totals.total} talaba — qolganlarini kamera taniy olmaydi`,
+                  },
                 ]}
               />
               <div className="border-t border-border">

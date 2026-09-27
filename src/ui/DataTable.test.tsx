@@ -66,7 +66,7 @@ describe('DataTable', () => {
     // Har qatorda harf + to'liq hukm so'zi: rangni ajratmaydigan o'quvchi ham o'qiydi.
     const rows = within(screen.getByRole('table')).getAllByRole('row');
     expect(within(rows[1]).getAllByRole('cell')[0]).toHaveTextContent('Q — Chora kerak');
-    expect(within(rows[2]).getAllByRole('cell')[0]).toHaveTextContent('Y — Talab bajarilgan');
+    expect(within(rows[2]).getAllByRole('cell')[0]).toHaveTextContent('Y — Me’yorda');
     expect(within(rows[3]).getAllByRole('cell')[0]).toHaveTextContent("— — O'lchanmagan");
   });
 

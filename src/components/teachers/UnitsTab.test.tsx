@@ -60,22 +60,22 @@ describe("UnitsTab — «Xodimlar keldi» plitkasi", () => {
     renderTab([unit({ staffTotal: 20, enrolled: 12, present: 10, late: 2, absent: 2, noData: 8, rate: 83.3 })]);
     // Izohdagi yagona son foizning MAXRAJI bo'lishi kerak: jami xodim (20)
     // u yerda turса, plitka o'z foizidan boshqa asosni nomlagan bo'lardi.
-    const hint = await screen.findByText(/Holati aniq/);
-    expect(hint.textContent).toBe('Holati aniq 12 xodimdan');
+    const hint = await screen.findByText(/Yuzi bazada bor/);
+    expect(hint.textContent).toContain('Yuzi bazada bor 12 xodimdan');
     expect(hint.textContent).not.toContain('20');
   });
 
   it('counts people who have not arrived yet, not the ones with no face enrolled', async () => {
     renderTab([unit({ staffTotal: 10, enrolled: 9, present: 4, absent: 1, notYet: 4, noData: 1, rate: 44.4 })]);
-    const hint = await screen.findByText(/Holati aniq/);
-    expect(hint.textContent).toContain('Holati aniq 9 xodimdan');
+    const hint = await screen.findByText(/Yuzi bazada bor/);
+    expect(hint.textContent).toContain('Yuzi bazada bor 9 xodimdan');
   });
 
   // Katta sondagi maxraj "/ 20" (jami xodim) edi, yonidagi progress esa
   // 83,3% (10 / 12) — bitta plitkada ikki xil maxraj.
   it('shows the fraction over the same denominator as the percentage', async () => {
     renderTab([unit({ staffTotal: 20, enrolled: 12, present: 10, late: 2, absent: 2, noData: 8, rate: 83.3 })]);
-    await screen.findByText(/Holati aniq/);
+    await screen.findByText(/Yuzi bazada bor/);
     expect(screen.getByText('/ 12')).toBeTruthy();
     expect(screen.queryByText('/ 20')).toBeNull();
   });

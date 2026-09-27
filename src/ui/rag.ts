@@ -48,7 +48,7 @@ export const RAG_LETTER: Record<Rag, string> = {
 };
 
 export const RAG_LABEL: Record<Rag, string> = {
-  yashil: 'Talab bajarilgan',
+  yashil: 'Me’yorda',
   sariq: 'Chegarada',
   qizil: 'Chora kerak',
   yoq: "O'lchanmagan",

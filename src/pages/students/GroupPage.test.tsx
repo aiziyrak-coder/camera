@@ -78,7 +78,7 @@ describe('Guruh sahifasi — holat plitkalari', () => {
     renderPage();
     await waitFor(() => expect(screen.getByText('Aliyev Anvar')).toBeInTheDocument());
     expect(tile('Kelmadi')).toBeDisabled();
-    expect(tile('Keldi')).toBeEnabled();
+    expect(tile('O‘z vaqtida')).toBeEnabled();
     expect(tile('Jami')).toBeEnabled();
   });
 

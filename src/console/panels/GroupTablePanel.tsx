@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, GraduationCap, Users } from 'lucide-react';
 import { ApiError } from '../../lib/apiClient';
@@ -226,13 +226,13 @@ export default function GroupTablePanel({
   const groupColumns: DataTableColumn<GroupStat>[] = [
     { key: 'name', header: 'Guruh', sortValue: (r) => r.name, cell: (r) => <b>{r.name}</b> },
     { key: 'course', header: 'Kurs', sortValue: (r) => r.course ?? 0, cell: (r) => r.course ?? '—', align: 'center' },
-    { key: 'total', header: 'Jami', sortValue: (r) => r.total, align: 'right', cell: (r) => countCell(r, 'hammasi', r.total, 'text-fg') },
-    { key: 'present', header: 'Keldi', sortValue: (r) => r.present, align: 'right', cell: (r) => countCell(r, 'kelgan', r.present, 'text-success') },
-    { key: 'late', header: 'Kech', sortValue: (r) => r.late, align: 'right', cell: (r) => countCell(r, 'kech_keldi', r.late, 'text-warning') },
-    { key: 'absent', header: 'Kelmadi', sortValue: (r) => r.absent, align: 'right', cell: (r) => countCell(r, 'kelmadi', r.absent, 'text-danger') },
-    { key: 'notYet', header: 'Hali yo‘q', sortValue: (r) => r.notYet, align: 'right', cell: (r) => countCell(r, 'kutilmoqda', r.notYet, 'text-muted') },
-    { key: 'noFace', header: 'Yuzsiz', sortValue: (r) => r.total - r.enrolled, align: 'right', cell: (r) => countCell(r, 'yuzsiz', r.total - r.enrolled, 'text-danger') },
-    { key: 'rate', header: '%', sortValue: (r) => r.rate ?? -1, align: 'right', cell: (r) => (r.rate == null ? '—' : `${Math.round(r.rate)}%`) },
+    { key: 'total', header: <Hint text="Guruhdagi barcha faol talabalar">Jami</Hint>, sortValue: (r) => r.total, align: 'right', cell: (r) => countCell(r, 'hammasi', r.total, 'text-fg') },
+    { key: 'present', header: <Hint text="Kelganlar — kech kelganlar ham shu songa kiradi">Keldi</Hint>, sortValue: (r) => r.present, align: 'right', cell: (r) => countCell(r, 'kelgan', r.present, 'text-success') },
+    { key: 'late', header: <Hint text="Kelganlardan kech kelganlari (ish boshlanishi + ruxsat etilgan daqiqalardan keyin)">Kech</Hint>, sortValue: (r) => r.late, align: 'right', cell: (r) => countCell(r, 'kech_keldi', r.late, 'text-warning') },
+    { key: 'absent', header: <Hint text="Yuzi bazada bor, lekin kun davomida kamera ko‘rmagan (20:00 dan keyin belgilanadi)">Kelmadi</Hint>, sortValue: (r) => r.absent, align: 'right', cell: (r) => countCell(r, 'kelmadi', r.absent, 'text-danger') },
+    { key: 'notYet', header: <Hint text="Bugun hali kamera ko‘rmagan — kun tugamagan, kelishi mumkin">Hali yo‘q</Hint>, sortValue: (r) => r.notYet, align: 'right', cell: (r) => countCell(r, 'kutilmoqda', r.notYet, 'text-muted') },
+    { key: 'noFace', header: <Hint text="Yuzi bazaga kiritilmagan — kamera taniy olmaydi, davomati o‘lchanmaydi">Yuzsiz</Hint>, sortValue: (r) => r.total - r.enrolled, align: 'right', cell: (r) => countCell(r, 'yuzsiz', r.total - r.enrolled, 'text-danger') },
+    { key: 'rate', header: <Hint text="Davomat foizi = keldi ÷ (keldi + kelmadi + hali yo‘q). Yuzsiz va dam olishdagilar hisobga kirmaydi">%</Hint>, sortValue: (r) => r.rate ?? -1, align: 'right', cell: (r) => (r.rate == null ? '—' : `${Math.round(r.rate)}%`) },
   ];
 
   const studentColumns: DataTableColumn<GroupStudent>[] = [
@@ -435,6 +435,13 @@ export default function GroupTablePanel({
     <div className="flex h-full min-h-0 flex-col gap-2 px-3 pb-3">
       {filters}
       {body}
+      {!(students && group) && (
+        <p className="shrink-0 text-[11px] leading-snug text-muted">
+          <b className="text-fg">Keldi</b> — kech kelganlar bilan birga · <b className="text-fg">%</b> = keldi ÷ (keldi +
+          kelmadi + hali yo‘q) · <b className="text-fg">Yuzsiz</b> — kamera taniy olmaydi, foizga kirmaydi · Jami bilan farq — dam
+          olishdagilar va ma’lumoti yo‘qlar. Sarlavhaga sichqonchani olib boring — izoh chiqadi.
+        </p>
+      )}
       {!isToday && <p className="shrink-0 text-[11px] text-muted">Arxiv: {date} holati</p>}
     </div>
   );
@@ -458,5 +465,15 @@ export default function GroupTablePanel({
     >
       {expanded ? null : content}
     </Panel>
+  );
+}
+
+
+/** Ustun sarlavhasi izohi: nuqtali tagchiziq va sichqoncha ostida tushuntirish. */
+function Hint({ text, children }: { text: string; children: ReactNode }) {
+  return (
+    <span title={text} className="cursor-help underline decoration-dotted decoration-subtle underline-offset-2">
+      {children}
+    </span>
   );
 }

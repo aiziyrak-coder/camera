@@ -816,3 +816,15 @@ export function searchPeopleByName(
 ): Promise<PersonHit[]> {
   return api.get<PersonHit[]>(`${BASE}/odam-qidirish${buildQuery({ q, ...params })}`, undefined, opts);
 }
+
+/** Kun holati: ish kuni yoki dam olish/bayram (va oxirgi ish kuni). */
+export interface DayInfo {
+  date: string;
+  isWorkDay: boolean;
+  reason: string | null;
+  lastWorkDay: string | null;
+}
+
+export function dayInfoPath(date: string): string {
+  return `${BASE}/kun${buildQuery({ date })}`;
+}

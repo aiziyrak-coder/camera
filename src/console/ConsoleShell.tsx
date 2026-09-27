@@ -18,6 +18,7 @@ import { useConsoleFilter } from './consoleFilter';
 import { useNazoratSelection } from './nazoratSelection';
 import { useGroupLive } from './useGroupLive';
 import { EASE } from './motion';
+import DayOffNotice from '../components/situation/DayOffNotice';
 
 const PULSE_THROTTLE_MS = 10_000;
 
@@ -204,6 +205,9 @@ function Console() {
           <ConsoleUserMenu />
         </span>
       </motion.header>
+
+      {/* Dam olish / bayram kuni — nima uchun hamma sonlar 0 ekanini aytadi. */}
+      {canPeople && <DayOffNotice date={date} onPick={filter.setDate} className="relative z-10 mx-3 mt-2.5" />}
 
       {/* Panellar: chapda jadval, o'ngda kameralar va jonli sanoqlar. */}
       <motion.main

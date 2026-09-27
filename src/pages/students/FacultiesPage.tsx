@@ -26,6 +26,7 @@ import { useLiveAttendance, type LiveAttendanceMessage } from '../../lib/realtim
 import { useViewDate } from '../../lib/viewDate';
 import { LiveArrivals, type ArrivalItem } from '../../components/attendance/LiveArrivals';
 import { QuickSearch } from '../../components/students/QuickSearch';
+import { WeakestGroups } from '../../components/students/WeakestGroups';
 import { useAsyncData } from '../../components/students/useAsyncData';
 import { EnrollmentCampaign } from '../../components/students/EnrollmentCampaign';
 
@@ -91,10 +92,10 @@ export default function FacultiesPage() {
   }, [data, live]);
 
   const s = data?.students;
-  const faculties = useMemo(
-    () => data?.byFaculty.filter((f) => f.total > 0 || f.id !== null) ?? [],
-    [data],
-  );
+  // Talabasi yo'q fakultet (HEMIS'da bor, lekin talaba biriktirilmagan)
+  // taxtada joy egallab, "0 kishi" bilan chalg'itmasin — soni pastda aytiladi.
+  const faculties = useMemo(() => data?.byFaculty.filter((f) => f.total > 0) ?? [], [data]);
+  const emptyFaculties = useMemo(() => data?.byFaculty.filter((f) => f.total === 0 && f.id !== null).length ?? 0, [data]);
   const available = data ? data.studentsDataAvailable : true;
   const views: TabItem<ViewId>[] = [
     { id: 'davomat', label: 'Davomat', icon: CalendarCheck },
@@ -181,22 +182,51 @@ export default function FacultiesPage() {
               <IntelPanel title="Fakultetlar" code={`${faculties.length} ta`}>
                 {/* Uchta son — qolgani taxtaning o'zida. */}
                 <KpiReadout
-                  className="lg:grid-cols-3"
+                  className="lg:grid-cols-4"
                   items={[
-                    { label: 'Keldi', value: formatPercent(s.rate, 1), rate: s.rate },
-                    { label: 'Kech keldi', value: formatNumber(s.late), unit: 'talaba' },
-                    { label: 'Kelmadi', value: formatNumber(s.absent), unit: 'talaba' },
+                    {
+                      label: 'Davomat',
+                      value: formatPercent(s.rate, 1),
+                      rate: s.rate,
+                      hint: `${formatNumber(s.present)} keldi / ${formatNumber(s.present + s.absent + s.notYet)} kelishi kerak (yuzi bazada borlar)`,
+                    },
+                    {
+                      label: 'Kech keldi',
+                      value: formatNumber(s.late),
+                      unit: 'talaba',
+                      hint: 'Kelganlar ichida — ish boshlanishidan kech',
+                    },
+                    {
+                      label: isToday ? 'Kelmadi / hali yo‘q' : 'Kelmadi',
+                      value: formatNumber(s.absent + (isToday ? s.notYet : 0)),
+                      unit: 'talaba',
+                      hint: isToday
+                        ? `${formatNumber(s.notYet)} tasi hali kelishi mumkin (kun tugamagan)`
+                        : 'Yuzi bazada bor, kamera kun bo‘yi ko‘rmagan',
+                    },
+                    {
+                      label: 'Yuzi yo‘q',
+                      value: formatNumber(s.total - s.enrolled),
+                      unit: 'talaba',
+                      hint: 'Kamera taniy olmaydi — foizga kirmaydi. «Yuz topshirish» bo‘limiga qarang',
+                    },
                   ]}
                 />
                 <div className="border-t border-border">
                   <StatusBoard items={sortedBoard} onOpen={(id) => navigate(withDate(situationPaths.faculty(id === 'none' ? null : id)))} />
                 </div>
                 <RagLegend />
+                {emptyFaculties > 0 && (
+                  <p className="px-3 pb-2 text-[11px] text-muted">
+                    Yana {emptyFaculties} ta fakultetga hali talaba biriktirilmagan — ro‘yxatda ko‘rsatilmadi.
+                  </p>
+                )}
               </IntelPanel>
 
               <LiveArrivals items={arrivals} live={isToday} linkFor={(id) => withDate(situationPaths.person(id))} className="self-start" />
             </div>
           )}
+          {faculties.length > 0 && available && <WeakestGroups date={date} withDate={withDate} />}
         </div>
       ) : null}
     </Page>

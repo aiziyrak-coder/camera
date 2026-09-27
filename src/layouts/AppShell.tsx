@@ -5,7 +5,8 @@ import { usePermissions } from '../lib/permissions';
 import { useLiveEvents } from '../lib/realtime';
 import { signalAlarm } from '../lib/alarmSignal';
 import { usePersistedState } from '../lib/usePersistedState';
-import { VIEW_DATE_PARAM } from '../lib/viewDate';
+import { VIEW_DATE_PARAM, useViewDate } from '../lib/viewDate';
+import DayOffNotice from '../components/situation/DayOffNotice';
 import { ButtonLink, EmptyState, PageSkeleton, cn } from '../ui';
 import { ShellContext, type Crumb, type PageMeta } from '../ui/pageContext';
 import { ROLE_LABEL, findActive, homeForRole, isPathAllowedForRole, usesViewDate, visibleSections } from './shell/navConfig';
@@ -152,6 +153,7 @@ export default function AppShell() {
               ) : (
                 /* Sahifa bo'lagi yuklanayotganda menyu va panel joyida qoladi. */
                 <Suspense fallback={<PageSkeleton />}>
+                  {usesViewDate(location.pathname) && <ViewDateDayOff />}
                   <Outlet />
                 </Suspense>
               )}
@@ -161,4 +163,11 @@ export default function AppShell() {
       </div>
     </ShellContext.Provider>
   );
+}
+
+
+/** Sanaga bog'liq sahifalar ustida: tanlangan kun dam olish/bayram bo'lsa ogohlantirish. */
+function ViewDateDayOff() {
+  const { date, setDate } = useViewDate();
+  return <DayOffNotice date={date} onPick={setDate} className="mb-3" />;
 }

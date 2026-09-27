@@ -7,6 +7,7 @@ import { downloadBlob } from '../../lib/download';
 import { todayInTashkent } from '../../lib/uzDate';
 import PdfButton from '../situation/PdfButton';
 import { Badge, Button, DataTable, EmptyState, ErrorState, Readout, useToast, type DataTableColumn } from '../../ui';
+import DayOffNotice from '../situation/DayOffNotice';
 
 /**
  * Kim qayerda bo'lishi kerak — HEMIS dars jadvali va kamera ko'rgan odamlar
@@ -212,6 +213,7 @@ export default function ScheduleBoard() {
           <PdfButton path="/api/jadval/kun.pdf" params={{ sana: day, hozir: String(nowOnly && isToday) }} filename={`jadval-davomat-${day}`} />
         </span>
       </div>
+      <DayOffNotice date={day} onPick={(d) => { setNowOnly(false); setDay(d); }} />
       <p className="text-[12px] text-muted">
         &quot;Kamera ko&apos;rmadi&quot; — kelmagani degani emas: yuzi bazada bo&apos;lmasa yoki xona kamerasi burchagi yomon
         bo&apos;lsa, odam kelgan bo&apos;lsa ham ko&apos;rinmaydi.

@@ -380,7 +380,7 @@ export default function StudentsStaffPage() {
           )}
           {person.biometricsStatus !== 'yoq' && (person.photoAngles ?? 0) < 3 && (
             <span className="text-[11px] text-warning" title="3 tomonlama (old, chap, o'ng) ro'yxatdan o'tmagan — havola orqali qayta o'tishi kerak">
-              {person.photoAngles ?? 0}/3 tomon
+              {person.photoAngles ?? 0}/3 burchak
             </span>
           )}
         </span>

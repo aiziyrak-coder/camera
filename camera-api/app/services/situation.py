@@ -579,7 +579,10 @@ def build_catalog(deps: list[DepartmentInfo], staff: list[tuple[uuid.UUID, str |
 
     variants: dict[str, Counter] = defaultdict(Counter)
     for _pid, raw in staff:
-        if is_position(raw):
+        # HEMIS bo'linmasiga bog'langan xodim (kalit "org:<uuid>") — yuqorida
+        # hal qilingan; matnli bo'linma sifatida ham qo'shilsa, har haqiqiy
+        # bo'linma yonida "org:…" nomli 0 kishilik nusxa paydo bo'lardi.
+        if (raw or "").startswith(ORG_PREFIX) or is_position(raw):
             continue
         key = unit_key(raw)
         key = aliases.get(key, key)

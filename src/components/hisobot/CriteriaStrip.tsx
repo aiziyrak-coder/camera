@@ -66,6 +66,23 @@ export default function CriteriaStrip({
           {active.available ? active.description : active.unavailable}
         </p>
       )}
+      {/* Xira tugmalar sababi — o'chirilgan tugma ustida brauzer izohni ko'pincha ko'rsatmaydi. */}
+      {criteria.some((c) => !c.available) && (
+        <details className="border-t border-border px-3 py-1.5 text-[11px] text-muted">
+          <summary className="cursor-pointer select-none">
+            Nega ba&apos;zi ko&apos;rsatkichlar xira? ({criteria.filter((c) => !c.available).length} ta hozir o&apos;lchanmayapti)
+          </summary>
+          <ul className="mt-1 list-disc space-y-0.5 ps-4">
+            {criteria
+              .filter((c) => !c.available)
+              .map((c) => (
+                <li key={c.key}>
+                  <b className="text-fg">{c.label}</b> — {c.unavailable ?? 'bu ko‘rsatkich uchun ma’lumot yo‘q'}
+                </li>
+              ))}
+          </ul>
+        </details>
+      )}
     </div>
   );
 }

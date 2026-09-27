@@ -1239,3 +1239,40 @@ async def search_people_by_name(
         )
         for p in rows
     ]
+
+
+# ─────────────────────────────────────────── kun holati (ish kuni / dam olish)
+
+
+class DayInfoOut(CamelModel):
+    date: str
+    is_work_day: bool
+    # "Yakshanba — dam olish kuni" yoki bayram nomi; ish kunida None.
+    reason: str | None
+    # Shu sanadan oldingi eng yaqin ish kuni (ma'lumot bor kun) — "o'sha kunni ko'rish" uchun.
+    last_work_day: str | None
+
+
+_WEEKDAYS = ("Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba", "Yakshanba")
+
+
+@router.get("/kun", response_model=DayInfoOut)
+async def day_info(db: DbDep, _: ReadDep, date: DateQuery = None) -> DayInfoOut:
+    """Tanlangan kun ish kunimi. Dam olish/bayram kuni sahifalar bo'sh "0"
+    ko'rsatish o'rniga buni aytadi va oxirgi ish kuniga o'tishni taklif qiladi."""
+    from app.models.attendance_policy import Holiday
+    from app.services.attendance_policy import current_policy
+
+    day = svc.resolve_day(date)
+    policy = current_policy()
+    if policy.is_work_day(day):
+        return DayInfoOut(date=day.isoformat(), is_work_day=True, reason=None, last_work_day=None)
+    holiday = await db.get(Holiday, day)
+    reason = f"bayram ({holiday.name})" if holiday else f"{_WEEKDAYS[day.weekday()].lower()}, dam olish kuni"
+    last = None
+    for back in range(1, 15):
+        candidate = day - timedelta(days=back)
+        if policy.is_work_day(candidate):
+            last = candidate.isoformat()
+            break
+    return DayInfoOut(date=day.isoformat(), is_work_day=False, reason=reason, last_work_day=last)

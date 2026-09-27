@@ -195,7 +195,12 @@ function QueueTab({ onPending }: { onPending: (n: number | null) => void }) {
     return (
       <>
         {dayBar}
-        <EmptyState icon={UserCheck} tone="success" title="Navbat bo‘sh" description="Bu kun uchun tekshiriladigan yuz yo‘q." />
+        <EmptyState
+          icon={UserCheck}
+          tone="success"
+          title="Navbat bo‘sh"
+          description="Bu kun uchun tekshiriladigan yuz yo‘q. Bu yerga kamera odamni «ehtimol shu» deb topgan, lekin davomat yozishga yetarli ishonch bo‘lmagan yuzlar tushadi — siz «Ha, u» desangiz davomat yoziladi va tanish aniqlashadi. Bazada umuman yo‘q, lekin tez-tez ko‘rinadigan yuzlar «Takroriy yuzlar» bo‘limida."
+        />
       </>
     );
   }

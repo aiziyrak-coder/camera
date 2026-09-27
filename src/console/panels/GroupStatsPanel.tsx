@@ -183,9 +183,11 @@ export default function GroupStatsPanel({
       />
       <div className={cn('text-[12px]', error ? 'text-danger' : 'text-muted')}>
         {error ??
-          (overview
-            ? `Hozir ${overview.lessons.ongoing} ta dars ketmoqda · darsdagi o‘qituvchilar: ${overview.teachers.onTime} o‘z vaqtida, ${overview.teachers.late} kechikdi, ${overview.teachers.absent} kelmadi`
-            : 'Yuklanmoqda…')}
+          (!overview
+            ? 'Yuklanmoqda…'
+            : isToday
+              ? `Hozir ${overview.lessons.ongoing} ta dars ketmoqda · darsdagi o‘qituvchilar: ${overview.teachers.onTime} o‘z vaqtida, ${overview.teachers.late} kechikdi, ${overview.teachers.absent} kelmadi`
+              : `Shu kuni darsi bor o‘qituvchilar: ${overview.teachers.onTime} o‘z vaqtida, ${overview.teachers.late} kechikdi, ${overview.teachers.absent} kelmadi`)}
       </div>
       <p className="text-[11px] text-muted">
         Sonni bosing — kimligi ko‘rinadi.{students ? ' Guruh bo‘yicha batafsil — chapdagi jadvaldan guruhni tanlang.' : ''}
@@ -198,7 +200,12 @@ export default function GroupStatsPanel({
       <Panel
         id="group-stats"
         title={
-          groupView ? `${group} — jonli holat` : students ? 'Institut — talabalar, jonli' : 'O‘qituvchi va xodimlar — jonli'
+          // "jonli" faqat bugun uchun — o'tgan kun arxiv.
+          groupView
+            ? `${group} — ${isToday ? 'jonli holat' : 'kun holati'}`
+            : students
+              ? `Institut — talabalar${isToday ? ', jonli' : ''}`
+              : `O‘qituvchi va xodimlar${isToday ? ' — jonli' : ''}`
         }
         live={isToday}
         expanded={expanded}

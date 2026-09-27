@@ -49,6 +49,7 @@ import {
   type HisobotView,
 } from '../../lib/hisobotApi';
 import { tabelExcelFilename, tabelExcelHref, tabelPaths, type TabelReport } from '../../lib/tabelApi';
+import DayOffNotice from '../../components/situation/DayOffNotice';
 
 /**
  * Hisobotlar — rahbar uchun.
@@ -316,6 +317,14 @@ export default function HisobotPage() {
             )}
           </div>}
         </div>
+
+        {/* Bir kunlik davr dam olish/bayramga tushsa — nima uchun hammasi 0 ekanini aytamiz. */}
+        {!holat && !kpi && state.from === state.to && (
+          <DayOffNotice
+            date={state.from}
+            onPick={(day) => update({ preset: 'custom', from: day, to: day })}
+          />
+        )}
 
         {/* 3. Javob. */}
         {holat ? (
