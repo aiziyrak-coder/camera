@@ -4,7 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import { Building2, Cctv, Clock, CornerDownLeft, GraduationCap, Loader2, Search, SearchX, UserRound, Users, type LucideIcon } from 'lucide-react';
 import { api, buildQuery, isAbortError, type Page as ApiPage } from '../../lib/apiClient';
 import type { PermissionKey } from '../../lib/permissions';
-import { getGroups, getKafedras, situationPaths, UNIT_KIND_LABELS, type KafedraStat } from '../../lib/situationApi';
+import { getGroups, getKafedras, searchPeopleByName, situationPaths, UNIT_KIND_LABELS, type KafedraStat } from '../../lib/situationApi';
+
+type PersonRow = { id: string; fullName: string; type: string; groupOrPosition: string | null };
 import { highlight, loadRecent, matchText, pushRecent, rankItems, visibleRecent, type MatchRange, type RecentItem } from '../../lib/search';
 import { useDebouncedValue } from '../../lib/useDebouncedValue';
 import type { StudentStaffRecord } from '../../types';
@@ -127,15 +129,23 @@ function PaletteDialog({ onClose, sections, can, role }: Omit<CommandPaletteProp
   const debounced = useDebouncedValue(query.trim(), 200);
   const remoteQ = debounced.length >= 2 ? debounced : '';
 
-  const canDavomat = can('manageAttendance');
-  const canPeople = can('registerPeople');
+  // Davomat sahifalari hisobot ko'ruvchiga ham ochiq (App.tsx) — qidiruv ham.
+  const canDavomat = can('manageAttendance') || can('viewReports');
+  const canRegistry = can('registerPeople');
+  const canPeople = canRegistry || canDavomat;
   const canCameras = can('viewLive') || can('editCameraLocation');
 
   const groupsRes = useRemote(canDavomat && remoteQ ? `g:${remoteQ}` : null, (signal) => getGroups({ search: remoteQ }, { signal }));
   // Bo'linmalar kam — bir marta olinib, mijozda filtrlanadi.
   const unitsRes = useRemote<KafedraStat[]>(canDavomat ? 'units' : null, (signal) => getKafedras(undefined, { signal }));
-  const peopleRes = useRemote(canPeople && remoteQ ? `p:${remoteQ}` : null, (signal) =>
-    api.post<ApiPage<StudentStaffRecord>>('/api/students-staff/search', { search: remoteQ, pageSize: 6 }, undefined, { signal }),
+  // Reestr qidiruvi registerPeople talab qiladi; faqat davomatni ko'ruvchiga —
+  // ism bo'yicha qisqa qidiruv (/api/situation/odam-qidirish).
+  const peopleRes = useRemote<PersonRow[]>(canPeople && remoteQ ? `p:${canRegistry ? 'r' : 'd'}:${remoteQ}` : null, (signal) =>
+    canRegistry
+      ? api
+          .post<ApiPage<StudentStaffRecord>>('/api/students-staff/search', { search: remoteQ, pageSize: 6 }, undefined, { signal })
+          .then((page) => page.items)
+      : searchPeopleByName(remoteQ, { limit: 6 }, { signal }),
   );
   const camerasRes = useRemote(canCameras && remoteQ ? `c:${remoteQ}` : null, (signal) =>
     api.get<ApiPage<PublicCamera>>(`/api/public/cameras${buildQuery({ search: remoteQ, pageSize: 5 })}`, undefined, { signal }),
@@ -233,7 +243,7 @@ function PaletteDialog({ onClose, sections, can, role }: Omit<CommandPaletteProp
     }
 
     if (canPeople && q.length >= 2) {
-      const people = peopleRes.data?.items ?? [];
+      const people = peopleRes.data ?? [];
       out.push({
         kind: 'person',
         label: GROUP_LABEL.person,

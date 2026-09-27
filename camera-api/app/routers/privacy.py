@@ -87,6 +87,9 @@ async def _erase(db: AsyncSession, person: StudentStaff) -> list[str]:
     biometrikani tozalaydi; commit'dan keyin o'chiriladigan kalitlarni
     qaytaradi."""
     photo_keys = clear_biometrics(person)
+    # Rozilik qaytarilgan / o'chirish so'ralgan: HEMIS suratidan yuz qayta
+    # avtomatik kiritilmaydi (app/jobs/hemis_photos.py).
+    person.biometrics_opt_out_at = datetime.now(timezone.utc)
     extra = await erase_face_samples(db, [person.id])
     return unique_keys([*photo_keys, *extra])
 
@@ -257,6 +260,8 @@ async def deactivate_person(
         return _to_out(person)
     person.active = False
     person.deactivated_at = datetime.now(timezone.utc)
+    # HEMIS sinxroni admin qarorini bekor qilmasin (hemis._apply_update).
+    person.manually_deactivated = True
     await log_action(db, request, current_user.id, f"Faolsizlantirildi: {person.full_name}", AUDIT_MODULE)
     await db.commit()
     if person_has_biometrics(person):
@@ -276,6 +281,7 @@ async def activate_person(
         return _to_out(person)
     person.active = True
     person.deactivated_at = None
+    person.manually_deactivated = False
     await log_action(db, request, current_user.id, f"Qayta faollashtirildi: {person.full_name}", AUDIT_MODULE)
     await db.commit()
     if person_has_biometrics(person):

@@ -9,6 +9,7 @@
 Hisob-kitob app/services/hisobot.py da.
 """
 
+import asyncio
 from io import BytesIO
 from typing import Annotated, Literal
 from urllib.parse import quote
@@ -66,7 +67,7 @@ async def export(
     start, end = svc.resolve_range(date_from, date_to, default_days=1)
     data = await hisobot.report(db, kind, start, end, _filters(faculty, course, group, unit_kind, unit, q), criterion,
                                 limit=None)
-    content = build_workbook(data)
+    content = await asyncio.to_thread(build_workbook, data)
     label = next(c["label"] for c in data["criteria"] if c["key"] == data["criterion"])
     name = f"hisobot-{'talabalar' if kind == 'talaba' else 'xodimlar'}-{data['criterion']}-{start}_{end}.xlsx"
     return Response(
@@ -98,7 +99,7 @@ async def tabel_export(
     data = await tabel_svc.build(db, kind, oy, _filters(faculty, course, group, unit_kind, unit, q))
     name = f"tabel-{'talabalar' if kind == 'talaba' else 'xodimlar'}-{data['month']}.xlsx"
     return Response(
-        build_tabel_workbook(data),
+        await asyncio.to_thread(build_tabel_workbook, data),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}",
                  "X-Report-Title": quote(data["title"])},

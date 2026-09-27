@@ -263,8 +263,35 @@ class _StreamReader:
     async def ensure_started(self) -> None:
         async with self._lock:
             if self._proc is not None and self._proc.returncode is None:
-                return  # already running
+                if not self._is_stalled():
+                    return  # already running
+                # Jarayon tirik, lekin kadr kelmayapti: kamera toki uzilgan yoki
+                # kommutator qayta yuklangan — yarim ochiq TCP ulanishda ffmpeg
+                # o'zi hech qachon chiqmaydi va kamera abadiy "ko'r" qolardi.
+                logger.warning(
+                    "stream reader stalled — restarting", extra={"stream_url": self._log_url}
+                )
+                await self._kill_locked()
             await self._start()
+
+    def _is_stalled(self) -> bool:
+        """Kamida bitta kadr bergan o'quvchi STREAM_STALL_SECONDS dan beri jim."""
+        if self._frames_decoded == 0 or not getattr(self, "_latest_frame_at", None):
+            return False
+        return time.monotonic() - self._latest_frame_at > STREAM_STALL_SECONDS
+
+    async def _kill_locked(self) -> None:
+        for task in (self._reader_task, self._stderr_task):
+            if task is not None:
+                task.cancel()
+        self._reader_task = self._stderr_task = None
+        if self._proc is not None and self._proc.returncode is None:
+            try:
+                self._proc.kill()
+                await self._proc.wait()
+            except ProcessLookupError:
+                pass
+        self._proc = None
 
     async def _start(self) -> None:
         # +discardcorrupt: shikastlangan paketni dekoderga bermaydi, ya'ni
@@ -382,6 +409,10 @@ class _StreamReader:
                 except ProcessLookupError:
                     pass
             self._proc = None
+
+
+#: Shuncha soniya kadr kelmasa, tirik ffmpeg jarayoni ham qayta ishga tushiriladi.
+STREAM_STALL_SECONDS = 45.0
 
 
 class StreamCache:

@@ -35,6 +35,7 @@ class User(Base):
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
     telegram_chat_id: Mapped[str | None] = mapped_column(String, nullable=True)
     telegram_link_code: Mapped[str | None] = mapped_column(String(32), nullable=True, unique=True)
+    telegram_link_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Ikki bosqichli kirish (TOTP, app/services/totp.py). Sir Fernet bilan
     # shifrlangan (app/crypto.py): baza nusxasi (backup) sizib chiqsa ham

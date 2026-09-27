@@ -133,6 +133,9 @@ async def _group_roster(db: AsyncSession, group_name: str) -> list[StudentStaff]
     result = await db.execute(
         select(StudentStaff)
         .where(StudentStaff.type == "talaba")
+        # Faolsizlantirilgan talabani kamera tanimaydi (candidate matrix) —
+        # u har darsda "kelmadi" bo'lib yozilmasin (absence_marker bilan bir qoida).
+        .where(StudentStaff.active.is_(True))
         .where(group_member_clause(group_name))
         .where(StudentStaff.biometrics_status == "tasdiqlangan")
     )

@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -16,7 +16,7 @@ async def record_visit(
     camera_id: str | uuid.UUID,
     seen_at: datetime,
     similarity: float | None = None,
-) -> PresenceVisit:
+) -> PresenceVisit | None:
     """Shu odamning shu kameradagi oxirgi tashrifi yaqinda (gap ichida)
     tugagan bo'lsa — uzaytiriladi, aks holda yangi tashrif ochiladi.
 
@@ -25,6 +25,20 @@ async def record_visit(
     person_id = uuid.UUID(str(student_staff_id))
     cam_id = uuid.UUID(str(camera_id))
     gap = timedelta(minutes=settings.presence_visit_gap_minutes)
+
+    # Kirish kuzatuvchisi va uning fondagi zoom vazifasi (alohida sessiya)
+    # bir odamni bir kamerada bir vaqtda yozishi mumkin — ikkalasi ham "yo'q"
+    # deb topib, ikki qator qo'shardi. Qulf tranzaksiya oxirigacha, faqat shu
+    # (odam, kamera) juftligi uchun. KUTILMAYDI (try): bir tranzaksiya bir
+    # necha odamni yozadi — kutish tartibi har xil bo'lsa deadlock bo'lardi.
+    # Band bo'lsa — aynan shu tashrifni boshqa yo'l hozir yozmoqda.
+    locked = (
+        await db.execute(
+            text("SELECT pg_try_advisory_xact_lock(hashtextextended(:k, 0))"), {"k": f"visit:{person_id}:{cam_id}"}
+        )
+    ).scalar()
+    if not locked:
+        return None
 
     visit = (
         await db.execute(

@@ -397,6 +397,8 @@ class Settings(BaseSettings):
     # standart 1-6, ya'ni dam olish kuni faqat yakshanba.
     attendance_absence_marking_enabled: bool = True
     attendance_absence_mark_after: str = "20:00"
+    # Ota-onalarga "kelmadi" xabari shu soatdan keyin (va 06:00 gacha) yuborilmaydi.
+    parent_notify_quiet_after: str = "22:00"
     attendance_working_weekdays: str = "1,2,3,4,5,6"
     attendance_absence_marking_interval_seconds: int = 900
     # Shu kuni ro'yxatdagi odamlarning kamida shuncha ulushi tanilgan
@@ -1044,7 +1046,7 @@ class Settings(BaseSettings):
     # FAISS exact IP search when enrolled count >= this threshold (requires faiss-cpu).
     face_match_faiss_min_size: int = 10_000
     # Live detection (public.py) reloads embeddings from DB after this TTL.
-    candidate_matrix_cache_ttl_seconds: int = 30
+    candidate_matrix_cache_ttl_seconds: int = 300
     # AI sweep loops share one matrix per TTL — avoids 10k+ row reads every tick.
     candidate_matrix_sweep_cache_ttl_seconds: int = 300
 

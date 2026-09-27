@@ -50,6 +50,30 @@ logger = logging.getLogger("app.jobs.hemis_photos")
 MAX_PHOTO_BYTES = 5_000_000
 
 
+class PhotoTooLarge(ValueError):
+    pass
+
+
+async def fetch_photo(client: httpx.AsyncClient, url: str) -> tuple[int, str, bytes]:
+    """(status, content-type, tana). Tana oqim bilan o'qiladi va MAX_PHOTO_BYTES
+    dan oshsa to'xtatiladi — noto'g'ri ishlagan server xotirani to'ldira olmasin."""
+    async with client.stream("GET", url) as response:
+        content_type = response.headers.get("content-type", "")
+        if response.status_code != 200 or not content_type.startswith("image/"):
+            return response.status_code, content_type, b""
+        declared = response.headers.get("content-length", "")
+        if declared.isdigit() and int(declared) > MAX_PHOTO_BYTES:
+            raise PhotoTooLarge("Rasm juda katta")
+        chunks: list[bytes] = []
+        total = 0
+        async for chunk in response.aiter_bytes():
+            total += len(chunk)
+            if total > MAX_PHOTO_BYTES:
+                raise PhotoTooLarge("Rasm juda katta")
+            chunks.append(chunk)
+        return response.status_code, content_type, b"".join(chunks)
+
+
 def allowed_photo_host(url: str) -> bool:
     """Rasm HEMIS bilan bir xil asosiy domendan (student.fjsti.uz -> fjsti.uz)."""
     base = urlsplit(settings.hemis_base_url).hostname or ""
@@ -216,6 +240,8 @@ async def run_hemis_photos_once(batch: int | None = None) -> dict[str, int]:
                 .where(
                     StudentStaff.active.is_(True),
                     StudentStaff.hemis_photo_url.is_not(None),
+                    # Rozilikni qaytarib olgan (biometrikasi o'chirilgan) odam.
+                    StudentStaff.biometrics_opt_out_at.is_(None),
                     or_(
                         StudentStaff.hemis_photo_checked_at.is_(None),
                         StudentStaff.hemis_photo_error == OLD_NO_FACE,
@@ -245,16 +271,14 @@ async def run_hemis_photos_once(batch: int | None = None) -> dict[str, int]:
                     if not allowed_photo_host(url):
                         raise ValueError("Rasm manzili HEMIS domenidan emas")
                     try:
-                        response = await client.get(url)
+                        code, content_type, body = await fetch_photo(client, url)
                     except httpx.TransportError as error:
                         raise TransientDownloadError(type(error).__name__) from error
-                    if response.status_code >= 500 or response.status_code == 429:
-                        raise TransientDownloadError(str(response.status_code))
-                    if response.status_code != 200 or not response.headers.get("content-type", "").startswith("image/"):
-                        raise ValueError(f"Rasmni yuklab bo'lmadi ({response.status_code})")
-                    if len(response.content) > MAX_PHOTO_BYTES:
-                        raise ValueError("Rasm juda katta")
-                    kind = await enroll_person(db, person, response.content)
+                    if code >= 500 or code == 429:
+                        raise TransientDownloadError(str(code))
+                    if code != 200 or not content_type.startswith("image/"):
+                        raise ValueError(f"Rasmni yuklab bo'lmadi ({code})")
+                    kind = await enroll_person(db, person, body)
                     person.hemis_photo_error = None
                     stats[kind] += 1
                 except TransientDownloadError as error:

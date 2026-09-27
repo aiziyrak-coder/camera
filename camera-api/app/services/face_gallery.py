@@ -105,6 +105,15 @@ async def maybe_add(
     if norm <= 0:
         return False
     embedding = embedding / norm
+    # Moslik keshdagi (eski bo'lishi mumkin) rasmga nisbatan topilgan: rasm
+    # hozirgina almashtirilgan bo'lsa, namuna yangi rasmga ham o'xshashi
+    # shart — aks holda eski yuz yangi rasm kaliti ostida qolib ketardi.
+    anchor = np.asarray(json.loads(anchor_json), dtype=np.float64)
+    anchor_norm = np.linalg.norm(anchor)
+    if anchor_norm <= 0 or anchor.shape != embedding.shape:
+        return False
+    if float(anchor @ embedding) / anchor_norm < settings.face_gallery_min_similarity:
+        return False
     if existing:
         stored = np.array([json.loads(item) for item in existing], dtype=np.float64)
         stored /= np.maximum(np.linalg.norm(stored, axis=1, keepdims=True), 1e-12)

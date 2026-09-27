@@ -34,7 +34,7 @@ def _unit(vector) -> np.ndarray | None:
 
 async def hemis_similarity(person: StudentStaff, embedding: list[float]) -> tuple[float | None, str | None]:
     """(o'xshashlik, None) yoki (None, nega solishtirib bo'lmadi)."""
-    from app.jobs.hemis_photos import MAX_PHOTO_BYTES, _embed_photo, allowed_photo_host
+    from app.jobs.hemis_photos import PhotoTooLarge, _embed_photo, allowed_photo_host, fetch_photo
     from app.services.face_recognition import NoFaceDetectedError
 
     url = person.hemis_photo_url or ""
@@ -44,16 +44,16 @@ async def hemis_similarity(person: StudentStaff, embedding: list[float]) -> tupl
         return None, "HEMIS surati manzili HEMIS domenidan emas"
     try:
         async with httpx.AsyncClient(timeout=20.0, follow_redirects=False) as client:
-            response = await client.get(url)
+            code, content_type, body = await fetch_photo(client, url)
+    except PhotoTooLarge:
+        return None, "HEMIS surati juda katta"
     except httpx.HTTPError as error:
         logger.warning("HEMIS photo download failed", extra={"person_id": str(person.id), "error": type(error).__name__})
         return None, "HEMIS surati yuklanmadi"
-    if response.status_code != 200 or not response.headers.get("content-type", "").startswith("image/"):
-        return None, f"HEMIS surati yuklanmadi ({response.status_code})"
-    if len(response.content) > MAX_PHOTO_BYTES:
-        return None, "HEMIS surati juda katta"
+    if code != 200 or not content_type.startswith("image/"):
+        return None, f"HEMIS surati yuklanmadi ({code})"
     try:
-        reference, _height = await _embed_photo(response.content)
+        reference, _height = await _embed_photo(body)
     except NoFaceDetectedError:
         return None, "HEMIS suratida yuz aniqlanmadi"
     a, b = _unit(reference), _unit(embedding)

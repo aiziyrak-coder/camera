@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import settings
 from app.models import NotificationLog, ReportSchedule
 from app.services import hisobot, kpi as kpi_svc, tabel as tabel_svc
+from app.services.attendance_policy import load_policy
 from app.services.notifications import telegram
 from app.timezone import INSTITUTE_TZ
 
@@ -216,13 +217,15 @@ class SendOutcome:
     failed: int
     errors: list[str]
     all_blocked: bool
+    # Javob kelmagan (timeout) — fayl yetib borgan bo'lishi mumkin.
+    uncertain: int = 0
 
 
 async def send(db: AsyncSession, schedule: ReportSchedule, start: date_type, end: date_type) -> SendOutcome:
     """Faylni har bir chatga yuboradi va natijani notification_log'ga yozadi
     ("Bildirishnomalar" jurnalida ko'rinsin). Commit chaqiruvchida."""
     attachment = await build_attachment(db, schedule, start, end)
-    sent = failed = blocked = 0
+    sent = failed = blocked = uncertain = 0
     errors: list[str] = []
     text = telegram.strip_html(attachment.caption)
     for chat_id in schedule.telegram_chat_ids or []:
@@ -232,12 +235,34 @@ async def send(db: AsyncSession, schedule: ReportSchedule, start: date_type, end
         else:
             failed += 1
             blocked += result.blocked
+            uncertain += result.no_fallback
             errors.append(f"{chat_id}: {result.error}")
         db.add(NotificationLog(
             channel="telegram", recipient=str(chat_id), kind=LOG_KIND,
             status="yuborildi" if result.ok else "xato", text=text, error=result.error, ref_id=str(schedule.id),
         ))
-    return SendOutcome(sent=sent, failed=failed, errors=errors, all_blocked=failed > 0 and blocked == failed)
+    return SendOutcome(
+        sent=sent, failed=failed, errors=errors, all_blocked=failed > 0 and blocked == failed, uncertain=uncertain
+    )
+
+
+#: Bir davr uchun xato bilan tugagan urinishlar chegarasi.
+MAX_ATTEMPTS = 3
+
+
+async def _failed_attempts(db: AsyncSession, schedule: ReportSchedule, now: datetime) -> int:
+    """Shu davr chegarasidan beri nechta urinish xato bilan tugagan (jurnal bo'yicha)."""
+    from sqlalchemy import func
+
+    boundary = last_boundary(schedule.kind, now)
+    return int(
+        await db.scalar(
+            select(func.count(func.distinct(NotificationLog.created_at)))
+            .where(NotificationLog.kind == LOG_KIND, NotificationLog.ref_id == str(schedule.id))
+            .where(NotificationLog.status == "xato", NotificationLog.created_at >= boundary)
+        )
+        or 0
+    )
 
 
 async def run_due(session_factory: async_sessionmaker[AsyncSession], now: datetime | None = None) -> int:
@@ -256,6 +281,11 @@ async def run_due(session_factory: async_sessionmaker[AsyncSession], now: dateti
             schedule = await db.get(ReportSchedule, schedule_id)
             if schedule is None:
                 continue
+            if schedule.kind == "kunlik" and not (await load_policy(db)).is_work_day(period[0]):
+                # Dam olish kuni / bayram — kunlik davomat hisoboti bo'sh, yuborilmaydi.
+                schedule.last_sent_at = now
+                await db.commit()
+                continue
             try:
                 outcome = await send(db, schedule, *period)
             except Exception:
@@ -264,7 +294,11 @@ async def run_due(session_factory: async_sessionmaker[AsyncSession], now: dateti
                 continue
             # Vaqtinchalik xato (tarmoq) bo'lsa keyingi aylanishda qayta
             # urinamiz; bloklangan chatga qayta urinishdan foyda yo'q.
-            if outcome.sent or outcome.all_blocked:
+            # Timeout — fayl yetib borgan bo'lishi mumkin: qayta yuborilsa rahbariyat
+            # bir hisobotni har 5 daqiqada olardi. Doimiy xato (masalan chat
+            # supergroup'ga aylangan) — shu davr uchun ko'pi bilan MAX_ATTEMPTS marta.
+            attempts = await _failed_attempts(db, schedule, now)
+            if outcome.sent or outcome.all_blocked or outcome.uncertain or attempts >= MAX_ATTEMPTS:
                 schedule.last_sent_at = now
                 done += 1
             await db.commit()

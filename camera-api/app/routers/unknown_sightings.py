@@ -18,6 +18,7 @@ from app.database import get_db
 from app.dependencies import CurrentUser, has_any_permission, require_permission
 from app.models import Camera, StudentStaff, UnknownSighting
 from app.services.access_scope import allowed_camera_ids, camera_column_filter
+from app.services.face_matching import announce_roster_change
 from app.schemas.base import CamelModel
 from app.services.unknown_clusters import assign_group, dismiss_group, lookalikes, recurring_clusters
 from app.services.unknown_sightings import ResolveError, assign_to_person, dismiss, mark_stranger
@@ -339,6 +340,10 @@ async def assign_recurring(
         "Xavfsizlik",
     )
     await db.commit()
+    if kind != "tekshiruvda":
+        # Yangi yuz / galereya namunasi — tanish ro'yxati darhol yangilansin
+        # (aks holda 5 daqiqagacha eski ro'yxat bilan ishlardi).
+        await announce_roster_change()
     if kind == "tekshiruvda":
         return ClusterActionOut(
             message=f"{person.full_name}: yuz registrga tekshiruvga yuborildi — tasdiqlangach kamera uni taniydi",
@@ -423,6 +428,8 @@ async def resolve_as_person(
         db, request, current_user.id, f"Notanish yuz {person.full_name} ga biriktirildi ({kind})", "Xavfsizlik"
     )
     await db.commit()
+    if kind != "tekshiruvda":
+        await announce_roster_change()
     camera_name, person_name = await _names(db, row)
     message = {
         "asosiy": f"{person.full_name}: yuzi tizimga kiritildi — endi kamera uni taniydi",

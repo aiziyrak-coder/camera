@@ -80,6 +80,8 @@ class NotificationLog(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Nimaga tegishli: hodisa id, kamera id, odam id va h.k.
     ref_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Qayta yuborilgan (bir marta) — xato yozuv cheksiz qayta yuborilmasin.
+    resent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class EventComment(Base):

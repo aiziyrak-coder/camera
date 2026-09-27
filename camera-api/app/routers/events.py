@@ -40,7 +40,7 @@ from app.schemas.event import (
     EventTimelineItemOut,
 )
 from app.services.event_bus import event_to_out, sla_due_at
-from app.services.access_scope import NOT_FOUND_EVENT, allowed_buildings, event_filter
+from app.services.access_scope import NOT_FOUND_EVENT, allowed_buildings, event_filter, is_restricted
 from app.services.sop import load_sops
 from app.services.event_scope import NOT_SUPPRESSED, OPERATOR_EVENTS, REGISTERED_MODULE
 from app.services.event_status import (
@@ -437,10 +437,23 @@ async def events_summary(
     current_user: ReviewDep,
 ) -> EventSummaryOut:
     """~10 ta agregat — har ochiq Hodisalar varag'i har jonli hodisada so'raydi.
-    Foydalanuvchi bo'yicha 10 soniya keshlanadi ("menga tayinlangan" shaxsiy)."""
+
+    Bino doirasi yo'q foydalanuvchilar uchun kesh UMUMIY (ilgari har operator
+    alohida — N operator N marta to'liq sanardi); faqat shaxsiy "menga
+    tayinlangan" soni har so'rovda alohida, kichik so'rov bilan. Doirasi
+    borlarga — o'z keshi."""
     from app.services import situation as svc
 
-    return await svc.cached(("events_summary", current_user.id), lambda: _events_summary(db, current_user))
+    if is_restricted(current_user):
+        return await svc.cached(("events_summary", current_user.id), lambda: _events_summary(db, current_user))
+    shared = await svc.cached(("events_summary", "hammasi"), lambda: _events_summary(db, current_user))
+    mine = await db.scalar(
+        select(func.count())
+        .select_from(Event)
+        .where(OPERATOR_EVENTS)
+        .where(Event.status.in_(ACTIVE_STATUSES), Event.assigned_to_id == uuid.UUID(current_user.id))
+    )
+    return shared.model_copy(update={"assigned_to_me": int(mine or 0)})
 
 
 async def _events_summary(db: AsyncSession, current_user: CurrentUser) -> EventSummaryOut:
@@ -636,7 +649,7 @@ async def export_events_pdf(
         note=None if total <= len(rows) else f"Faylga birinchi {len(rows)} ta yozuv tushdi — sana oralig'ini toraytiring.",
     )
     return Response(
-        content=pdf_export.render(document), media_type="application/pdf",
+        content=await pdf_export.render_async(document), media_type="application/pdf",
         headers={"Content-Disposition": 'attachment; filename="hodisalar.pdf"'},
     )
 

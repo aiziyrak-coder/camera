@@ -11,7 +11,7 @@ from datetime import date as date_type, datetime, time, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
-from sqlalchemy import and_, func, select
+from sqlalchemy import func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_action
@@ -48,23 +48,24 @@ async def search_person_location(
     current_user: ReadDep,
 ) -> list[PersonLocationOut]:
     """Ism bo'yicha faqat faol shaxslar va ularning eng so'nggi tashrifini qaytaradi."""
+    # Har odam uchun eng so'nggi tashrif — LATERAL + LIMIT 1 (odam, last_seen
+    # indeksi bo'yicha bir nechta qator o'qiladi). Ilgari row_number() butun
+    # presence_visits jadvali (yil bo'yi, millionlab qator) ustida har qidiruvda
+    # hisoblanardi — ism filtri va LIMIT unga tushmasdi.
     latest = (
-        select(
-            PresenceVisit.student_staff_id.label("person_id"),
-            PresenceVisit.camera_id.label("camera_id"),
-            PresenceVisit.last_seen_at.label("last_seen_at"),
-            func.row_number()
-            .over(partition_by=PresenceVisit.student_staff_id, order_by=PresenceVisit.last_seen_at.desc())
-            .label("rank"),
-        )
+        select(PresenceVisit.camera_id.label("camera_id"), PresenceVisit.last_seen_at.label("last_seen_at"))
+        .where(PresenceVisit.student_staff_id == StudentStaff.id)
         # Bino doirasi: cheklangan foydalanuvchi faqat o'z binolaridagi kuzatuvni ko'radi.
         .where(camera_column_filter(current_user, PresenceVisit.camera_id))
-        .subquery()
+        .order_by(PresenceVisit.last_seen_at.desc())
+        .limit(1)
+        .lateral("latest")
     )
     terms = [term for term in body.query.split() if term]
     stmt = (
         select(StudentStaff, latest.c.camera_id, latest.c.last_seen_at, Camera.name, Building.name, Camera.floor, Camera.zone)
-        .outerjoin(latest, and_(latest.c.person_id == StudentStaff.id, latest.c.rank == 1))
+        .select_from(StudentStaff)
+        .outerjoin(latest, true())
         .outerjoin(Camera, Camera.id == latest.c.camera_id)
         .outerjoin(Building, Building.id == Camera.building_id)
         .where(StudentStaff.active.is_(True))

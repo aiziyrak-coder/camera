@@ -177,7 +177,7 @@ async def _record_locked(db, camera, frame_bytes, faces, closest, now) -> int:
             best_row.last_seen_at = moment
             # Yirikroq yuz — aniqroq rasm va ishonchliroq vektor.
             if px > best_row.face_px:
-                crop = crop_face(frame_bytes, face.bbox, settings.unknown_crop_margin)
+                crop = await asyncio.to_thread(crop_face, frame_bytes, face.bbox, settings.unknown_crop_margin)
                 key = await _upload_crop(crop) if crop else None
                 if key:
                     if best_row.crop_key:
@@ -192,7 +192,7 @@ async def _record_locked(db, camera, frame_bytes, faces, closest, now) -> int:
             logger.warning("unknown sightings daily cap reached", extra={"cap": settings.unknown_daily_cap})
             break
 
-        crop = crop_face(frame_bytes, face.bbox, settings.unknown_crop_margin)
+        crop = await asyncio.to_thread(crop_face, frame_bytes, face.bbox, settings.unknown_crop_margin)
         key = await _upload_crop(crop) if crop else None
         row = UnknownSighting(
             day=day,

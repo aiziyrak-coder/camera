@@ -58,6 +58,11 @@ def is_working_day(day: date_type) -> bool:
     return current_policy().is_work_day(day)
 
 
+def _quiet_after() -> time_type:
+    """Shundan keyin ota-onalarga "kelmadi" xabari yuborilmaydi."""
+    return time_type.fromisoformat(settings.parent_notify_quiet_after)
+
+
 def _cutoff_time() -> time_type:
     return time_type.fromisoformat(settings.attendance_absence_mark_after)
 
@@ -97,7 +102,7 @@ async def tracked_types(db: AsyncSession) -> list[str]:
     return types
 
 
-async def mark_absences_for_day(db: AsyncSession, day: date_type) -> int:
+async def mark_absences_for_day(db: AsyncSession, day: date_type, *, notify: bool = True) -> int:
     """Files 'kelmadi' for every enrolled person with no row for `day`.
     Returns how many rows were actually inserted."""
     types = await tracked_types(db)
@@ -175,7 +180,10 @@ async def mark_absences_for_day(db: AsyncSession, day: date_type) -> int:
     inserted = len(marked)
     if inserted:
         logger.info("marked absences", extra={"date": day.isoformat(), "count": inserted})
-        await notify_absences(marked, day)
+        if notify:
+            await notify_absences(marked, day)
+        else:
+            logger.info("absence notices skipped — quiet hours", extra={"date": day.isoformat(), "count": inserted})
     return inserted
 
 
@@ -199,7 +207,10 @@ async def run_absence_marking_once(
         # O'tgan kunlar qayta to'ldirilmaydi (test_yesterdays_absences_are_not_backfilled).
         if not past_cutoff or not is_working_day(today):
             return 0
-        return await mark_absences_for_day(db, today)
+        # Tungi sokinlik: belgilash kechikkan bo'lsa (jarayon o'chgan edi yoki
+        # qamrov kech yetdi), ota-onaga yarim tunda SMS ketmaydi.
+        quiet = business_seconds(now.time()) >= business_seconds(_quiet_after())
+        return await mark_absences_for_day(db, today, notify=not quiet)
 
 
 async def absence_marking_loop() -> None:

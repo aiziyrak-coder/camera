@@ -89,6 +89,7 @@ class StudentStaff(Base):
     parent_telegram_chat_id: Mapped[str | None] = mapped_column(String, nullable=True)
     parent_notify_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     telegram_link_code: Mapped[str | None] = mapped_column(String(32), nullable=True, unique=True)
+    telegram_link_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Turniket/kirish kartasi raqami (app/services/integrations/access_control.py).
     card_number: Mapped[str | None] = mapped_column(String, nullable=True, unique=True, index=True)
     # HEMIS tizimidagi identifikator (talaba: student_id_number, xodim: employee_id_number).
@@ -104,6 +105,12 @@ class StudentStaff(Base):
     # biometrikasi saqlash muddatidan keyin o'chiriladi (app/jobs/cleanup.py).
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Administrator qo'lda faolsizlantirgan — HEMIS sinxroni uni qayta
+    # faollashtirmaydi (HEMIS ro'yxatida hali "faol" bo'lsa ham).
+    manually_deactivated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # Rozilik qaytarib olingan / biometrika o'chirilgan: HEMIS suratidan
+    # yuz AVTOMATIK qayta kiritilmaydi (app/jobs/hemis_photos.py).
+    biometrics_opt_out_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Biometrik ma'lumotni qayta ishlashga rozilik (O'zR "Shaxsga doir
     # ma'lumotlar to'g'risida"gi qonun). consent_source: 'royxatdan_otish',
     # 'admin', 'hemis', 'qogoz'.

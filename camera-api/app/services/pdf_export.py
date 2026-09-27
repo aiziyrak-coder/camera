@@ -121,10 +121,16 @@ def render(document: PdfDocument, *, generated: datetime | None = None) -> bytes
     total = sum(c.width for c in document.columns) or 1
     widths = [usable * c.width / total for c in document.columns]
     data = [[Paragraph(_text(c.header), head) for c in document.columns]]
+    # Uslublar bir marta: ilgari har katak uchun yangi ParagraphStyle
+    # yaratilardi (5000 qator × 8 ustun = 40 000 ta).
+    cell_styles = [
+        ParagraphStyle(f"c{i}", parent=base, alignment={"RIGHT": 2, "CENTER": 1}.get(col.align, 0))
+        for i, col in enumerate(document.columns)
+    ]
     for row in document.rows:
         data.append([
-            Paragraph(_text(value), ParagraphStyle(f"c{i}", parent=base, alignment={"RIGHT": 2, "CENTER": 1}.get(col.align, 0)))
-            for i, (value, col) in enumerate(zip(row, document.columns, strict=True))
+            Paragraph(_text(value), cell_styles[i])
+            for i, (value, _col) in enumerate(zip(row, document.columns, strict=True))
         ])
     if len(data) == 1:
         data.append([Paragraph(_text("Ma'lumot yo'q"), small)] + [""] * (len(document.columns) - 1))
@@ -166,3 +172,12 @@ def filename(stem: str, day: str | None = None) -> str:
     # HTTP sarlavhasi — faqat ASCII (kirill guruh nomi sarlavhani buzardi).
     safe = "".join(ch if (ch.isascii() and ch.isalnum()) or ch in "-_" else "-" for ch in stem.lower()).strip("-") or "hisobot"
     return f"{safe}-{day}.pdf" if day else f"{safe}.pdf"
+
+
+async def render_async(document: PdfDocument) -> bytes:
+    """render() alohida oqimda: katta PDF (minglab qator) CPU ishi — asosiy
+    hodisa siklida bajarilsa, shu jarayondagi barcha so'rovlar (leader'da
+    AI tekshiruvlari ham) soniyalab qotib qolardi."""
+    import asyncio
+
+    return await asyncio.to_thread(render, document)

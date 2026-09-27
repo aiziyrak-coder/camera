@@ -604,15 +604,30 @@ class HemisClient:
         `params` — qo'shimcha filtrlar (masalan employee-list uchun type)."""
         items: list[dict] = []
         page = 1
+        expected = 0
         while True:
             result = await self.fetch_page(endpoint, page, params=params)
             items.extend(result.items)
+            expected = max(expected, result.total_count)
             if on_page is not None:
                 await on_page(page, result.page_count)
             if page >= result.page_count or not result.items or page >= MAX_PAGES:
                 break
             page += 1
+        # Kichik farqqa (HEMIS totalCount ba'zan bir-ikki yozuvga noaniq) chidaymiz.
+        if expected and len(items) < expected - max(5, expected // 50):
+            # Chala javob (bo'sh sahifa o'rtada, pageCount yo'q): keyingi
+            # qadamlar ro'yxatda yo'qlarni faolsizlantiradi — shuning uchun
+            # to'xtatamiz, qisman ro'yxat bilan ishlamaymiz.
+            raise HemisError(f"HEMIS {endpoint}: {len(items)} ta keldi, {expected} ta kutilgan — chala javob")
         return items
+
+
+def _looks_complete(fetched: int, stored: int) -> bool:
+    """HEMIS ro'yxati to'liqmi — "ro'yxatda yo'q" = "ketgan" deyish uchun.
+    Bittadan ortiq sinxronda yarmidan ko'pi birdan yo'qolmaydi: bunday
+    javob uzilgan/chala deb hisoblanadi (hemis_schedule bilan bir qoida)."""
+    return stored < 20 or fetched >= stored * 0.8
 
 
 # employee-list "type" parametrisiz 400 qaytaradi ("Kerakli parametrlar
@@ -911,9 +926,16 @@ class _HemisSync:
             row = existing[unit.hemis_id]
             parent = existing.get(unit.parent_id) if unit.parent_id else None
             row.parent_id = parent.id if parent is not None and parent.id != row.id else None
-        for hemis_id, row in existing.items():
-            if hemis_id not in self.units:
-                row.active = False
+        stored_active = sum(1 for row in existing.values() if row.active)
+        if _looks_complete(len(self.units), stored_active):
+            for hemis_id, row in existing.items():
+                if hemis_id not in self.units:
+                    row.active = False
+        else:
+            self.message(
+                f"Bo'linmalar: {len(self.units)} ta keldi, bazada {stored_active} ta faol — "
+                "chala javob bo'lishi mumkin, hech biri faolsizlantirilmadi"
+            )
         self.org_units = {hemis_id: row.id for hemis_id, row in existing.items()}
 
     # ── guruhlar ──
@@ -1127,7 +1149,13 @@ class _HemisSync:
                     except Exception:
                         logger.warning("refresh after failed HEMIS write failed", exc_info=True)
 
-        if settings.hemis_deactivate_missing and seen_hemis:
+        stored = sum(1 for row in rows if row.type == person_type and row.hemis_id and row.active)
+        if settings.hemis_deactivate_missing and seen_hemis and not _looks_complete(len(seen_hemis), stored):
+            self.message(
+                f"{label}: {len(seen_hemis)} ta keldi, bazada {stored} ta faol — chala javob bo'lishi mumkin, "
+                "hech kim faolsizlantirilmadi"
+            )
+        elif settings.hemis_deactivate_missing and seen_hemis:
             for row in rows:
                 if row.type == person_type and row.hemis_id and row.hemis_id not in seen_hemis and row.active:
                     row.active = False
@@ -1241,7 +1269,9 @@ class _HemisSync:
             changes["hemis_photo_checked_at"] = None
             changes["hemis_photo_error"] = None
         outcome = "updated"
-        if person.active and not record.active:
+        if person.active and not record.active and not record.manually_deactivated:
+            # Administrator qo'lda faolsizlantirgan odam HEMIS'da "faol" bo'lsa
+            # ham qayta faollashtirilmaydi — qaror adminniki.
             changes["active"] = True
             changes["deactivated_at"] = None
         elif not person.active and record.active:

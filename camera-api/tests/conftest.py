@@ -122,8 +122,14 @@ async def _clean_tables():
     from app.jobs.camera_health import reset_camera_health_state_for_tests
     from app.services.face_matching import invalidate_candidate_matrix_cache
 
+    from app.jobs import attendance_ai
+    from app.services import situation as situation_svc
+
+    # Umumiy (foydalanuvchiga bog'liq bo'lmagan) 15 s keshlar oldingi testdan qolmasin.
+    situation_svc.clear_cache()
     invalidate_candidate_matrix_cache()
     reset_camera_health_state_for_tests()
+    attendance_ai._off_hours_raised.clear()
     yield
     invalidate_candidate_matrix_cache()
     reset_camera_health_state_for_tests()

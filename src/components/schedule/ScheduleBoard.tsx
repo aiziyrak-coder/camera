@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { Download, RefreshCw } from 'lucide-react';
 import { api, ApiError } from '../../lib/apiClient';
+import { useVisibleInterval } from '../../lib/useVisibleInterval';
 import { useAuth } from '../../lib/auth';
 import { downloadBlob } from '../../lib/download';
 import { todayInTashkent } from '../../lib/uzDate';
@@ -104,11 +105,8 @@ export default function ScheduleBoard() {
   }, []);
 
   // Hozirgi darslar — daqiqada bir yangilanadi (kamera ko'rganlar o'zgarib boradi).
-  useEffect(() => {
-    if (!(nowOnly && isToday)) return;
-    const timer = window.setInterval(() => setReload((n) => n + 1), 60_000);
-    return () => window.clearInterval(timer);
-  }, [nowOnly, isToday]);
+  // Yashirin oynada so'ramaydi (useVisibleInterval): butun kunlik jadval og'ir so'rov.
+  useVisibleInterval(() => setReload((n) => n + 1), nowOnly && isToday ? 60_000 : null);
 
   const rows = useMemo(() => {
     const text = search.trim().toLowerCase();

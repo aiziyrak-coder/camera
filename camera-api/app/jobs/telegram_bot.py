@@ -58,8 +58,19 @@ def _audit(db: AsyncSession, action: str) -> None:
     )
 
 
+def _expired(expires_at) -> bool:
+    from datetime import datetime, timezone
+
+    return expires_at is not None and expires_at < datetime.now(timezone.utc)
+
+
+EXPIRED_TEXT = "Havola muddati tugagan (7 kun). Tizimdan yangi havola oling."
+
+
 async def _link(db: AsyncSession, code: str, chat_id: str) -> str:
     user = (await db.execute(select(User).where(User.telegram_link_code == code))).scalar_one_or_none()
+    if user is not None and _expired(user.telegram_link_expires_at):
+        return EXPIRED_TEXT
     if user is not None:
         user.telegram_chat_id = chat_id
         user.telegram_link_code = None
@@ -73,6 +84,8 @@ async def _link(db: AsyncSession, code: str, chat_id: str) -> str:
     person = (
         await db.execute(select(StudentStaff).where(StudentStaff.telegram_link_code == code))
     ).scalar_one_or_none()
+    if person is not None and _expired(person.telegram_link_expires_at):
+        return EXPIRED_TEXT
     if person is not None:
         person.parent_telegram_chat_id = chat_id
         person.telegram_link_code = None

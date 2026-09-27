@@ -39,9 +39,11 @@ from app.database import SessionLocal
 from app.jobs.attendance_ai import (
     STAFF_ATTENDANCE_MODULE_CODE,
     STUDENT_ATTENDANCE_MODULE_CODE,
+    _note_static_faces,
     is_watched,
     upsert_attendance_from_recognition,
 )
+from app.services import static_faces
 from app.jobs.camera_health import is_reachable
 from app.jobs.module_status import (
     camera_allows_module,
@@ -101,14 +103,16 @@ def _allows(camera: Camera, module_code: int) -> bool:
 
 
 async def _load_module_flags(db: AsyncSession) -> dict[str, bool]:
-    attendance = settings.attendance_any_camera and (
-        await is_module_active(db, STAFF_ATTENDANCE_MODULE_CODE)
-        or await is_module_active(db, STUDENT_ATTENDANCE_MODULE_CODE)
-    )
+    staff = await is_module_active(db, STAFF_ATTENDANCE_MODULE_CODE)
+    student = await is_module_active(db, STUDENT_ATTENDANCE_MODULE_CODE)
     return {
         "unauthorized": await is_module_active(db, UNAUTHORIZED_MODULE_CODE),
         "sleep": await is_module_active(db, SLEEP_MODULE_CODE),
-        "attendance": attendance,
+        "attendance": settings.attendance_any_camera and (staff or student),
+        # Tur bo'yicha (kirish kuzatuvchisi bilan bir qoida): 7-modul o'chiq
+        # bo'lsa talabalar kelishi yozilmaydi, 6 — xodimlar.
+        "staff_attendance": staff,
+        "student_attendance": student,
     }
 
 
@@ -116,12 +120,31 @@ def _any_face_module(flags: dict[str, bool]) -> bool:
     return any(flags.get(k) for k in ("unauthorized", "sleep", "attendance"))
 
 
-async def record_arrivals(db: AsyncSession, camera: Camera, faces: list, candidates: CandidateMatrix) -> int:
+async def record_arrivals(
+    db: AsyncSession,
+    camera: Camera,
+    faces: list,
+    candidates: CandidateMatrix,
+    flags: dict[str, bool] | None = None,
+) -> int:
     """Kadrdagi ANIQ tanilgan (qat'iy chegara va ikkinchi nomzoddan uzoq)
     odamlar — tashrif va kunlik davomat (kunning birinchi ko'rinishi "keldi").
-    Qaytaradi: nechta odam. Commit shu yerda."""
+    Qaytaradi: nechta odam. Commit shu yerda.
+
+    Kirish kuzatuvchisi (attendance_ai.process_camera_frame) bilan bir xil
+    himoyalar: kamerada 6/7-modul ruxsati, odam turi bo'yicha modul, kichik
+    yuz uchun yuqoriroq chegara va devordagi rasmlar (static_faces) — aks
+    holda eshik oldidagi rektor portreti har kuni "keldi" yozardi."""
+    flags = flags or {}
+    staff_ok = flags.get("staff_attendance", True) and _allows(camera, STAFF_ATTENDANCE_MODULE_CODE)
+    student_ok = flags.get("student_attendance", True) and _allows(camera, STUDENT_ATTENDANCE_MODULE_CODE)
+    if not (staff_ok or student_ok):
+        return 0
+    camera_key = str(camera.id)
+    faces, _skipped = static_faces.static_face_store.split(camera_key, faces)
     usable = recognizable_faces(faces)
     if not usable or candidates.is_empty:
+        _note_static_faces(camera, camera_key, faces, [])
         return 0
     import numpy as np
 
@@ -134,12 +157,24 @@ async def record_arrivals(db: AsyncSession, camera: Camera, faces: list, candida
     )
     moment = local_now()
     seen: set[str] = set()
-    for match in graded:
+    matched_boxes: list = []
+    for face, match in zip(usable, graded, strict=True):
         if match.grade != "strict" or not match.person_id or match.person_id in seen:
             continue
+        person_type = candidates.person_type(match.person_id)
+        if (person_type == "xodim" and not staff_ok) or (person_type == "talaba" and not student_ok):
+            continue
+        if (
+            recognition_stats.face_height_px(face) < settings.attendance_min_face_px
+            and match.similarity < settings.attendance_small_face_match_threshold
+        ):
+            continue
         seen.add(match.person_id)
+        matched_boxes.append(face.bbox)
         await record_visit(db, match.person_id, camera.id, moment, match.similarity)
         await upsert_attendance_from_recognition(db, match.person_id, moment, camera, off_hours_module_active=False)
+    # Tanilgan joylar "tirik", qolganlari devordagi rasm nomzodi sifatida kuzatiladi.
+    _note_static_faces(camera, camera_key, faces, matched_boxes)
     if seen:
         await db.commit()
     return len(seen)
@@ -242,7 +277,9 @@ async def _process_camera(
         async with session_factory() as db:
             if needs_arrival and arrival_frame is not None:
                 try:
-                    counts["arrivals"] = await record_arrivals(db, camera, faces_by_frame_id[id(arrival_frame)], candidates)
+                    counts["arrivals"] = await record_arrivals(
+                        db, camera, faces_by_frame_id[id(arrival_frame)], candidates, flags
+                    )
                 except Exception:
                     await db.rollback()
                     logger.warning("arrival recording failed", extra={"camera_id": str(camera.id)}, exc_info=True)
@@ -381,7 +418,12 @@ async def run_unified_face_sweep_once(
             and eligible
             and not (settings.unknown_review_all_cameras and is_watched(camera_id)),
             # Kirish kuzatuvchisi bor kamerani qayta tahlil qilmaymiz.
-            "arrival": flags.get("attendance", False) and not is_watched(camera_id),
+            "arrival": flags.get("attendance", False)
+            and not is_watched(camera_id)
+            # Admin 6 va 7-modulni shu kamerada o'chirgan bo'lsa — kelish yozilmaydi.
+            and (_allows(camera, STAFF_ATTENDANCE_MODULE_CODE) or _allows(camera, STUDENT_ATTENDANCE_MODULE_CODE)),
+            "staff_attendance": flags.get("staff_attendance", False),
+            "student_attendance": flags.get("student_attendance", False),
             "sleep": flags["sleep"]
             and role_allows(camera, SLEEP_MODULE_CODE)
             and (lesson_cameras is None or camera_id in lesson_cameras)

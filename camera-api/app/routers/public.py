@@ -119,7 +119,8 @@ def _to_public_camera(camera: Camera) -> PublicCameraOut:
         has_video=has_video,
         stream_url=signed_stream_url(camera.stream_url),
         floor=camera.floor,
-        ptz_enabled=bool(camera.ptz_enabled),
+        # Protokolsiz PTZ ishlamaydi (har harakat 409) — panel ham ko'rsatilmasin.
+        ptz_enabled=bool(camera.ptz_enabled and camera.ptz_protocol),
     )
 
 
@@ -269,6 +270,8 @@ async def list_top_students(db: Annotated[AsyncSession, Depends(get_db)]) -> lis
     reytingga qo'shilmaydi, aks holda ular soxta 0% bilan pastda emas,
     umuman ko'rinmaydi degan ma'noni anglatadi)."""
     now = local_now()  # local month/year — AttendanceRecord.date is filed under the local calendar day
+    month_start = now.date().replace(day=1)
+    next_month = (month_start + timedelta(days=32)).replace(day=1)
     present_count = func.sum(
         case((AttendanceRecord.status.in_(["keldi", "kech_keldi"]), 1), else_=0)
     )
@@ -278,9 +281,11 @@ async def list_top_students(db: Annotated[AsyncSession, Depends(get_db)]) -> lis
     stmt = (
         select(StudentStaff.id, StudentStaff.full_name, StudentStaff.group_or_position, rate.label("rate"))
         .join(AttendanceRecord, AttendanceRecord.student_staff_id == StudentStaff.id)
-        .where(StudentStaff.type == "talaba")
-        .where(extract("year", AttendanceRecord.date) == now.year)
-        .where(extract("month", AttendanceRecord.date) == now.month)
+        .where(StudentStaff.type == "talaba", StudentStaff.active.is_(True))
+        # Oraliq — sana indeksidan foydalanadi (extract(year/month) butun jadvalni skanerlardi).
+        .where(AttendanceRecord.date >= month_start, AttendanceRecord.date < next_month)
+        # dam_olish — o'lchanmagan kun, foizga kirmaydi.
+        .where(AttendanceRecord.status != "dam_olish")
         .group_by(StudentStaff.id, StudentStaff.full_name, StudentStaff.group_or_position)
         .order_by(rate.desc())
         .limit(10)

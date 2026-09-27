@@ -174,7 +174,7 @@ async def queue_grey_matches(
             # Yirikroq yoki o'xshashroq yuz — operator uchun aniqroq rasm,
             # galereya uchun ishonchliroq vektor.
             if px > row.face_px or sim > row.similarity:
-                crop = crop_face(frame_bytes, face.bbox, settings.unknown_crop_margin)
+                crop = await asyncio.to_thread(crop_face, frame_bytes, face.bbox, settings.unknown_crop_margin)
                 key = await _upload_crop(crop) if crop else None
                 if key:
                     row.crop_key = key
@@ -195,7 +195,7 @@ async def queue_grey_matches(
         if day_total >= settings.face_review_daily_cap:
             logger.warning("face review daily cap reached", extra={"cap": settings.face_review_daily_cap})
             break
-        crop = crop_face(frame_bytes, face.bbox, settings.unknown_crop_margin)
+        crop = await asyncio.to_thread(crop_face, frame_bytes, face.bbox, settings.unknown_crop_margin)
         key = await _upload_crop(crop) if crop else None
         db.add(
             FaceReviewItem(

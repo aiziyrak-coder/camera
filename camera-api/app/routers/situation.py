@@ -1093,7 +1093,7 @@ async def people_status_pdf(
                 ("Hali kelmagan", c.kutilmoqda), ("Yuzi bazada yo'q", c.yuzsiz)],
         note=None if result.total <= 5000 else f"Birinchi 5000 ta qator (jami {result.total})",
     )
-    return _pdf(pdf_export.render(document), pdf_export.filename(f"{who}-{status_}", result.date))
+    return _pdf(await pdf_export.render_async(document), pdf_export.filename(f"{who}-{status_}", result.date))
 
 
 @router.get("/pdf/groups")
@@ -1129,7 +1129,7 @@ async def groups_pdf(
                 ("Keldi", sum(g.present for g in groups)), ("Kech", sum(g.late for g in groups)),
                 ("Kelmadi", sum(g.absent for g in groups))],
     )
-    return _pdf(pdf_export.render(document), pdf_export.filename("guruhlar", day.isoformat()))
+    return _pdf(await pdf_export.render_async(document), pdf_export.filename("guruhlar", day.isoformat()))
 
 
 @router.get("/pdf/group")
@@ -1173,7 +1173,7 @@ async def group_pdf(
                 ("Hali kelmagan", t.not_yet), ("Yuzi bazada yo'q", t.total - t.enrolled)],
         note=f"Shu kungi darslar: {lessons}" if lessons else None,
     )
-    return _pdf(pdf_export.render(document), pdf_export.filename(f"guruh-{name}", detail.date))
+    return _pdf(await pdf_export.render_async(document), pdf_export.filename(f"guruh-{name}", detail.date))
 
 
 @router.get("/pdf/tuzilma")
@@ -1191,7 +1191,7 @@ async def org_tree_pdf(db: DbDep, user: ReadDep, date: DateQuery = None) -> Resp
         counts=[("Xodimlar", sum(u.total for u in roots)), ("Keldi", sum(u.present for u in roots)),
                 ("Kelmadi", sum(u.absent for u in roots))],
     )
-    return _pdf(pdf_export.render(document), pdf_export.filename("tuzilma", tree.date))
+    return _pdf(await pdf_export.render_async(document), pdf_export.filename("tuzilma", tree.date))
 
 
 # ─────────────────────────────────────────── ism bo'yicha qisqa qidiruv

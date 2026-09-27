@@ -73,6 +73,7 @@ def set_session_factory(factory: Callable[[], Any]) -> None:
 
 def reset_state_for_tests() -> None:
     _last_sent.clear()
+    _device_denials.clear()
     _arrival_sent.clear()
 
 
@@ -297,7 +298,7 @@ async def _deliver_to_user(
     if user.telegram_chat_id and telegram.is_configured():
         result = await telegram.send_message(user.telegram_chat_id, html_text if html_text is not None else message.html())
         logs.append(_log("telegram", user.telegram_chat_id, kind, text, result=result, ref_id=ref_id))
-        if result.ok:
+        if result.ok or result.no_fallback:
             return logs
         if result.blocked:
             logger.info("user blocked the telegram bot, unlinking", extra={"user_id": str(user.id)})
@@ -321,7 +322,7 @@ async def _deliver_to_parent(person: StudentStaff, text: str, kind: str) -> list
     if person.parent_telegram_chat_id and telegram.is_configured():
         result = await telegram.send_message(person.parent_telegram_chat_id, html.escape(text))
         logs.append(_log("telegram", person.parent_telegram_chat_id, kind, text, result=result, ref_id=ref_id))
-        if result.ok:
+        if result.ok or result.no_fallback:
             return logs
         if result.blocked:
             person.parent_telegram_chat_id = None
@@ -624,7 +625,29 @@ async def notify_absences(person_ids: list[uuid.UUID], day: date) -> None:
 # ---------------------------------------------------------------------------
 
 
+#: Bitta turniketdan 10 daqiqada ko'pi bilan shuncha "rad etildi" xabari:
+#: har xil kartani ketma-ket bosib, har biriga qoidadagi hamma odamga pullik
+#: SMS yubortirish mumkin edi (karta bo'yicha cheklov bunga to'sqinlik qilmasdi).
+ACCESS_DENIED_DEVICE_LIMIT = 5
+ACCESS_DENIED_DEVICE_WINDOW = 600.0
+_device_denials: dict[str, list[float]] = {}
+
+
+def _device_flooding(device_name: str) -> bool:
+    now = time.monotonic()
+    recent = [t for t in _device_denials.get(device_name, []) if now - t < ACCESS_DENIED_DEVICE_WINDOW]
+    if len(recent) >= ACCESS_DENIED_DEVICE_LIMIT:
+        _device_denials[device_name] = recent
+        return True
+    recent.append(now)
+    _device_denials[device_name] = recent
+    return False
+
+
 async def _send_access_denied(device_name: str, person_name: str | None, card_number: str | None, occurred_at: datetime) -> None:
+    if _device_flooding(device_name):
+        logger.warning("access denied notices suppressed — device flood", extra={"device": device_name})
+        return
     message = messages.access_denied_message(
         device_name=device_name, person_name=person_name, card_number=card_number, occurred_at=occurred_at
     )

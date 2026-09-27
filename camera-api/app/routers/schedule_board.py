@@ -43,6 +43,15 @@ class BoardOut(CamelModel):
     items: list[BoardRowOut]
 
 
+async def _board(db: AsyncSession, day: date, at):
+    """day_board — butun kunning darslari, tashriflari va davomati; har bir
+    ochiq ekran har daqiqada so'raydi. Daqiqa aniqligida 15 s keshlanadi."""
+    from app.services import situation as svc
+
+    minute = at.replace(second=0, microsecond=0) if at is not None else None
+    return await svc.cached(("day_board", day, minute), lambda: day_board(db, day, at=minute))
+
+
 def _day(sana: str | None) -> date:
     if not sana:
         return business_today()
@@ -63,7 +72,7 @@ async def get_day_board(
     `hozir=true` — faqat hozir davom etayotgan darslar (bugun)."""
     day = _day(sana)
     now = local_now()
-    rows = await day_board(db, day, at=now if hozir and day == business_date(now) else None)
+    rows = await _board(db, day, now if hozir and day == business_date(now) else None)
     return BoardOut(
         day=day.isoformat(),
         now=hozir,
@@ -92,7 +101,7 @@ async def export_day_board(
 ) -> Response:
     day = _day(sana)
     now = local_now()
-    data = board_workbook(day, await day_board(db, day, at=now if hozir and day == business_date(now) else None))
+    data = board_workbook(day, await _board(db, day, now if hozir and day == business_date(now) else None))
     return Response(
         content=data,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -113,7 +122,7 @@ async def export_day_board_pdf(
 
     day = _day(sana)
     now = local_now()
-    rows = await day_board(db, day, at=now if hozir and day == business_date(now) else None)
+    rows = await _board(db, day, now if hozir and day == business_date(now) else None)
     labels = {"xonada": "Xonada", "binoda": "Binoda", "kelmagan": "Kamera ko'rmadi"}
 
     def hm(moment):
@@ -139,6 +148,6 @@ async def export_day_board_pdf(
                 ("Talabalar keldi", f"{sum(r.students_arrived for r in rows)}/{sum(r.students_expected for r in rows)}")],
     )
     return Response(
-        content=pdf_export.render(document), media_type="application/pdf",
+        content=await pdf_export.render_async(document), media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="jadval-davomat-{day.isoformat()}.pdf"'},
     )

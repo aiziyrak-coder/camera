@@ -443,7 +443,7 @@ async def test_user_phone(client: AsyncClient, db_session, admin_headers):
 
 async def test_resend_failed_message(client: AsyncClient, db_session, admin_headers, apis):
     failed = NotificationLog(channel="telegram", recipient="555", kind="event", status="xato",
-                             text="Yong'in <signal>", error="timeout")
+                             text="Yong'in <signal>", error="Bad Request: chat not reachable")
     sent = NotificationLog(channel="telegram", recipient="555", kind="event", status="yuborildi", text="ok")
     db_session.add_all([failed, sent])
     await db_session.commit()
@@ -457,6 +457,19 @@ async def test_resend_failed_message(client: AsyncClient, db_session, admin_head
     assert retry.status == "yuborildi" and retry.kind == "event"
 
     assert (await client.post(f"/api/notifications/log/{sent.id}/qayta", headers=admin_headers)).status_code == 409
+    # Bir marta: ikkinchi bosish yana xabar (pullik SMS) yubormaydi.
+    again = await client.post(f"/api/notifications/log/{failed.id}/qayta", headers=admin_headers)
+    assert again.status_code == 409
+
+
+async def test_timeout_is_not_resent(client: AsyncClient, db_session, admin_headers, apis):
+    """Javob kelmagan xabar yetib borgan bo'lishi mumkin — qayta yuborilmaydi."""
+    row = NotificationLog(channel="sms", recipient="998900000001", kind="event", status="xato",
+                          text="x", error="Eskiz javob bermadi (timeout)")
+    db_session.add(row)
+    await db_session.commit()
+    resp = await client.post(f"/api/notifications/log/{row.id}/qayta", headers=admin_headers)
+    assert resp.status_code == 409
 
 
 async def test_parent_coverage(client: AsyncClient, db_session, admin_headers, student):

@@ -35,7 +35,7 @@ import itertools
 import random
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, time as time_type
+from datetime import datetime, time as time_type, timedelta, timezone
 from time import monotonic
 
 import numpy as np
@@ -425,11 +425,16 @@ async def upsert_attendance_from_recognition(
     if (
         off_hours_module_active
         and camera is not None
-        and is_first_sighting_today
+        # Kunning birinchi yozuvi (INSERT g'olibi — ikki kamera bir soniyada
+        # ko'rsa ham bittasi) YOKI yarim tundan keyingi kirish: kechqurun
+        # ko'rilgan odam 02:00 da qaytib kelsa, uning yozuvi allaqachon bor,
+        # lekin bu ham ish vaqtidan tashqari kirish.
+        and (created or _is_night_tail(occurred_time))
         and _is_off_hours(
             occurred_time,
             at_entrance=camera.is_entrance and getattr(camera, "face_direction", None) != "chiqish",
         )
+        and _off_hours_cooldown_ok(str(student_staff_id))
     ):
         # Davomat yozuvi hodisadan mustaqil saqlanadi: raise_event chegara
         # yoki sinov cheklovi tufayli hech narsa yozmay qaytishi mumkin.
@@ -453,6 +458,42 @@ async def upsert_attendance_from_recognition(
     return record
 
 
+def _capture_moment(captured: float | None) -> datetime | None:
+    """Kadr olingan payt (UTC) — agar ma'lum va aqlga sig'adigan bo'lsa.
+    Kelajakdagi yoki 10 daqiqadan eski vaqt (soat buzilgan) e'tiborsiz."""
+    if captured is None:
+        return None
+    moment = datetime.fromtimestamp(captured, tz=timezone.utc)
+    now = datetime.now(timezone.utc)
+    if moment > now or now - moment > timedelta(minutes=10):
+        return None
+    return moment
+
+
+def _is_night_tail(moment: time_type) -> bool:
+    """Soat ish kunining yarim tundan keyingi dumida (00:00 – day_start)."""
+    return moment.hour < settings.day_start_hour
+
+
+#: Ish vaqtidan tashqari kirish hodisasi — bir odam uchun shu oraliqda bir marta.
+OFF_HOURS_PERSON_COOLDOWN_SECONDS = 30 * 60
+_off_hours_raised: dict[str, float] = {}
+
+
+def _off_hours_cooldown_ok(person_id: str) -> bool:
+    """True — yuborish mumkin (va belgilab qo'yiladi). await yo'q: ikki kamera
+    bir soniyada ko'rsa ham faqat bittasi o'tadi."""
+    now = monotonic()
+    last = _off_hours_raised.get(person_id)
+    if last is not None and now - last < OFF_HOURS_PERSON_COOLDOWN_SECONDS:
+        return False
+    if len(_off_hours_raised) > 5000:
+        for key in [k for k, t in _off_hours_raised.items() if now - t > OFF_HOURS_PERSON_COOLDOWN_SECONDS]:
+            del _off_hours_raised[key]
+    _off_hours_raised[person_id] = now
+    return True
+
+
 def _is_earlier_arrival(record: AttendanceRecord, occurred_time: time_type) -> bool:
     """Shu ko'rinish mavjud yozuvdagi kelishdan OLDINmi (yoki yozuv
     umuman kelishni bilmaydimi)?
@@ -462,7 +503,11 @@ def _is_earlier_arrival(record: AttendanceRecord, occurred_time: time_type) -> b
     ataylab tuzatgan yozuv; kamera uning ustiga yozmaydi."""
     if record.status == "dam_olish" or record.source == "qolda":
         return False
-    if record.status == "kelmadi" or record.check_in is None:
+    if record.status == "kelmadi":
+        # Yarim tundan keyingi (00:00–05:59) ko'rinish — ertangi kunga
+        # erta kelgan odam; kechagi "kelmadi" ni "keldi" ga aylantirmaydi.
+        return not _is_night_tail(occurred_time)
+    if record.check_in is None:
         return True
     # Ish kuni 06:00 dan: tungi 01:30 kunduzgi 09:30 dan KEYIN keladi.
     return business_seconds(occurred_time) < business_seconds(record.check_in)
@@ -1430,8 +1475,13 @@ async def _analyse_entrance_frame(
     overlay_out: list | None = None,
     unknown_skip: tuple = (),
     unknown_out: list | None = None,
+    captured: float | None = None,
 ) -> int:
-    """`live` — operator shu kamerani ko'ryapti: eng yuqori navbat va 3D
+    """`captured` — kadr dekodlangan payt (epoch): kelish vaqti navbatda
+    kutgan vaqt emas, kamera odamni KO'RGAN payt bo'lishi kerak (100 ta
+    kamera 12 ta slotda — kechikish 08:10 chegarasidan oshirib yuborardi).
+
+    `live` — operator shu kamerani ko'ryapti: eng yuqori navbat va 3D
     belgilar (skanerdagi "uxlayapti" belgisi uchun). `main_stream` — kadr
     asosiy (4K) oqimdan: statik ramkalar va zoom kichik oqim
     koordinatalarida yuritiladi, shuning uchun ular o'chiriladi (zoom
@@ -1460,6 +1510,7 @@ async def _analyse_entrance_frame(
                 min_face_px=settings.attendance_watch_min_face_px,
                 unknown_skip=unknown_skip,
                 unknown_out=unknown_out,
+                occurred_at=_capture_moment(captured),
             )
             if overlay_out:
                 await _name_overlay(db, overlay_out)
@@ -1726,6 +1777,7 @@ async def _watch_entrance_camera(camera: Camera, watcher: _EntranceWatcher) -> N
                     overlay_out=overlay,
                     unknown_skip=active_unknown,
                     unknown_out=now_unknown,
+                    captured=captured_at(last_seq),
                 )
                 tracked = tuple(identified)
                 unknown_tracked = now_unknown

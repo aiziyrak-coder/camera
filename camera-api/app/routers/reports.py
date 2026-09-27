@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from datetime import date
 from typing import Annotated, Literal
@@ -161,7 +162,7 @@ async def report_analytics_xlsx(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     filename = f"hisobot-{date_from.isoformat()}_{date_to.isoformat()}.xlsx"
     return Response(
-        content=build_analytics_workbook(analytics),
+        content=await asyncio.to_thread(build_analytics_workbook, analytics),
         media_type=XLSX_MIME,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

@@ -132,6 +132,8 @@ def record_consent(person: StudentStaff, source: str) -> None:
     person.consent_given_at = datetime.now(timezone.utc)
     person.consent_version = settings.consent_version
     person.consent_source = source
+    # Yangi rozilik — avtomatik kiritish (HEMIS surati) yana mumkin.
+    person.biometrics_opt_out_at = None
 
 
 def withdraw_consent(person: StudentStaff) -> None:

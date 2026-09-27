@@ -60,6 +60,10 @@ class SendResult:
     # Foydalanuvchi botni bloklagan yoki chat yo'q (403 / "chat not found") —
     # bu manzilga qayta yuborishdan foyda yo'q.
     blocked: bool = False
+    # Javob kelmadi (timeout — xabar yetib borgan bo'lishi mumkin) yoki
+    # Telegram cheklovi (429): boshqa kanalga (SMS) almashtirilmaydi — aks
+    # holda ota-ona bir xabarni ikki marta oladi va har biri pullik SMS.
+    no_fallback: bool = False
 
 
 class TelegramError(Exception):
@@ -145,7 +149,9 @@ async def _with_retry(method: str, **kwargs: Any) -> SendResult:
             if exc.status == 429 and attempt < MAX_ATTEMPTS:
                 wait = min(exc.retry_after or 1, MAX_RETRY_AFTER_SECONDS)
                 if (exc.retry_after or 0) > MAX_RETRY_AFTER_SECONDS:
-                    return SendResult(ok=False, error=f"Telegram cheklovi: {exc.retry_after} s kutish kerak")
+                    return SendResult(
+                        ok=False, error=f"Telegram cheklovi: {exc.retry_after} s kutish kerak", no_fallback=True
+                    )
                 await _sleep(wait)
                 continue
             if exc.status is None and attempt < MAX_ATTEMPTS:
@@ -160,7 +166,7 @@ async def _with_retry(method: str, **kwargs: Any) -> SendResult:
                 plain["text"] = strip_html(plain.get("text", ""))
                 kwargs = {**kwargs, "json": plain}
                 continue
-            return SendResult(ok=False, error=last_error)
+            return SendResult(ok=False, error=last_error, no_fallback=exc.status in (0, 429))
     return SendResult(ok=False, error=last_error)
 
 

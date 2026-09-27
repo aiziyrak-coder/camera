@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import uuid
+from functools import partial
 from datetime import datetime, timezone
 from typing import Annotated, Literal
 
@@ -517,7 +518,7 @@ async def _export_response(
     if kind == "stats":
         data = await _coverage_data(db, type)
         scope = f"Turi: {PERSON_TYPE_TITLES[type]}" if type else "Barcha turdagi shaxslar"
-        content = build_stats_workbook(data, scope, now, type)
+        content = await asyncio.to_thread(build_stats_workbook, data, scope, now, type)
         filename = f"{slug}-statistika-{stamp}.xlsx"
     else:
         records = (await db.execute(_filtered_query(type, faculty, search, biometrics, course))).scalars().all()
@@ -536,12 +537,15 @@ async def _export_response(
             ),
             key=person_sort_key,
         )
-        content = build_people_workbook(
-            rows,
-            _filter_label(type, faculty, search, biometrics, course),
-            now,
-            person_type=type,
-            title=_people_title(type, biometrics),
+        content = await asyncio.to_thread(
+            partial(
+                build_people_workbook,
+                rows,
+                _filter_label(type, faculty, search, biometrics, course),
+                now,
+                person_type=type,
+                title=_people_title(type, biometrics),
+            )
         )
         filename = f"{slug}-{stamp}.xlsx"
 

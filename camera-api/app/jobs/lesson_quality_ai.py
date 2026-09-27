@@ -132,8 +132,8 @@ async def _lesson_gallery(db: AsyncSession, session_row: LessonSession) -> Candi
             # Faolsizlantirilgan odam tanilmaydi (face_matching.load_candidate_matrix).
             .where(StudentStaff.active.is_(True))
             # Umumiy ro'yxatdagi qoida (face_matching.load_candidate_matrix):
-            # o'zini o'zi ro'yxatdan o'tkazgan odam tasdiqlangunicha tanilmaydi.
-            .where(or_(StudentStaff.self_registered.is_(False), StudentStaff.biometrics_status == "tasdiqlangan"))
+            # tekshiruvdagi ("kutilmoqda") yuz hech kim uchun tanilmaydi.
+            .where(StudentStaff.biometrics_status != "kutilmoqda")
             .where(or_(*members))
         )
     ).all()

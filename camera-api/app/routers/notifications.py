@@ -2,7 +2,7 @@
 
 import secrets
 import uuid
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -229,6 +229,26 @@ async def resend_failed(log_id: uuid.UUID, request: Request, db: DbDep, current_
         raise HTTPException(status.HTTP_409_CONFLICT, "Faqat xato bilan tugagan xabar qayta yuboriladi")
     if not row.text.strip():
         raise HTTPException(status.HTTP_409_CONFLICT, "Xabar matni saqlanmagan — qayta yuborib bo'lmaydi")
+    if row.resent_at is not None:
+        # Bir marta: har bosishda yana pullik SMS ketardi.
+        raise HTTPException(status.HTTP_409_CONFLICT, "Bu xabar allaqachon qayta yuborilgan")
+    if row.error and "timeout" in row.error.lower():
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Javob kelmagan (timeout) — xabar yetib borgan bo'lishi mumkin, qayta yuborilmaydi"
+        )
+    if row.kind.startswith("parent_"):
+        # Ota-ona keyin botdan chiqqan (/stop) yoki xabarlar o'chirilgan bo'lishi mumkin.
+        person = None
+        try:
+            person = await db.get(StudentStaff, uuid.UUID(row.ref_id or ""))
+        except ValueError:
+            person = None
+        current = {person.parent_telegram_chat_id, sms.normalize_phone(person.parent_phone)} if person else set()
+        if person is None or not person.parent_notify_enabled or row.recipient not in current:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "Ota-ona endi bu manzilga bog'lanmagan yoki xabarlar o'chirilgan"
+            )
+    row.resent_at = datetime.now(timezone.utc)
     if row.channel == "telegram":
         if not telegram.is_configured():
             raise HTTPException(status.HTTP_409_CONFLICT, "Telegram bot sozlanmagan")
@@ -370,6 +390,7 @@ async def my_telegram_link(db: DbDep, current_user: Annotated[CurrentUser, Depen
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Foydalanuvchi topilmadi")
     user.telegram_link_code = _new_code()
+    user.telegram_link_expires_at = _link_expiry()
     await db.commit()
     return _link_out(user.telegram_link_code, username)
 
@@ -385,6 +406,17 @@ async def my_telegram_unlink(
     user.telegram_link_code = None
     await log_action(db, request, current_user.id, "Telegram bog'lanishini bekor qildi", AUDIT_MODULE)
     await db.commit()
+
+
+#: Telegram bog'lash havolasi muddati: uzatilgan yoki chop etilgan eski
+#: havola bilan begona odam talaba xabarlarini ololmasin.
+LINK_TTL = timedelta(days=7)
+
+
+def _link_expiry():
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc) + LINK_TTL
 
 
 async def _load_person(db: AsyncSession, record_id: str) -> StudentStaff:
@@ -412,6 +444,7 @@ async def parent_telegram_link(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Ota-ona xabarnomasi faqat talabalar uchun")
     username = await _require_bot_username()
     person.telegram_link_code = _new_code()
+    person.telegram_link_expires_at = _link_expiry()
     await log_action(db, request, current_user.id, f"Ota-ona Telegram havolasini yaratdi: {person.full_name}", "Talabalar")
     await db.commit()
     return _link_out(person.telegram_link_code, username)
