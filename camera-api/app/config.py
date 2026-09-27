@@ -228,10 +228,12 @@ class Settings(BaseSettings):
     # tasdiq; mos kelmasa yoki surat bo'lmasa — administrator ko'radi.
     # O'lchov (2026-09-26, prod, 3 tomonlama ro'yxatdan o'tgan va HEMIS surati
     # bor odamlar): o'zi bilan 0.51-0.78, boshqa odam bilan <= 0.28.
-    # Super Admin va Admin uchun ikki bosqichli kirish (TOTP) majburiy: 2FA
-    # yoqilmagan administrator faqat uni sozlash sahifasiga kira oladi
-    # (app/dependencies.py). Favqulodda holatda ADMIN_2FA_REQUIRED=false.
-    admin_2fa_required: bool = True
+    # Super Admin va Admin uchun ikki bosqichli kirishni (TOTP) majburiy qilish:
+    # yoqilsa, 2FA'siz administrator faqat uni sozlash sahifasiga kira oladi
+    # (app/dependencies.py).
+    # O'chirilgan (2026-09-27, foydalanuvchi so'rovi): 2FA ixtiyoriy — har kim
+    # o'z profilida yoqishi mumkin. Majburiy qilish: ADMIN_2FA_REQUIRED=true.
+    admin_2fa_required: bool = False
     self_enrollment_identity_check: bool = True
     self_enrollment_identity_threshold: float = 0.40
     face_det_max_side: int = 1280  # 720p qo'shimcha oqim to'liq o'lchamda tahlil qilinadi
