@@ -106,6 +106,8 @@ class CameraRecognitionStats:
 _stats: dict[str, CameraRecognitionStats] = {}
 # person_id -> monotonic vaqt: yumshoq moslik birinchi marta ko'ringan payt.
 _pending_relaxed: dict[str, float] = {}
+# person_id -> birinchi yumshoq ko'rinish qaysi kamerada bo'lgani.
+_pending_camera: dict[str, str | None] = {}
 
 
 def _bucket(similarity: float) -> str:
@@ -263,20 +265,36 @@ def record_zoom_matches(camera_id: str | None, count: int) -> None:
     _camera_stats(camera_id).zoom_matches += count
 
 
-def confirm_relaxed(person_id: str, *, now: float | None = None) -> bool:
+def confirm_relaxed(person_id: str, camera_id: str | None = None, *, now: float | None = None) -> bool:
     """True — shu odam oynada allaqachon bir marta ko'ringan (tasdiqlandi).
-    False — birinchi ko'rinish, eslab qolindi va keyingisi kutiladi."""
+    False — birinchi ko'rinish, eslab qolindi va keyingisi kutiladi.
+
+    Ikkinchi ko'rinish MUSTAQIL bo'lishi kerak: bir kameraning ketma-ket
+    kadrlari bir xil yuz, bir xil burchak — eshik oldida bir soniya turgan
+    o'xshash begona o'zini o'zi "tasdiqlab" qo'yardi. Shuning uchun:
+      * boshqa kamera — mustaqil burchak, attendance_relaxed_min_gap_seconds yetarli;
+      * o'sha kamera (yoki noma'lum) — kamida
+        attendance_relaxed_same_camera_gap_seconds (boshqa holat, boshqa burchak)."""
     moment = time.monotonic() if now is None else now
     window = settings.attendance_relaxed_confirm_window_seconds
     for key, seen_at in list(_pending_relaxed.items()):
         if moment - seen_at > window:
             del _pending_relaxed[key]
+            _pending_camera.pop(key, None)
     first = _pending_relaxed.get(person_id)
-    if first is not None and moment - first >= settings.attendance_relaxed_min_gap_seconds:
-        del _pending_relaxed[person_id]
-        return True
     if first is None:
         _pending_relaxed[person_id] = moment
+        _pending_camera[person_id] = camera_id
+        return False
+    first_camera = _pending_camera.get(person_id)
+    other_camera = camera_id is not None and first_camera is not None and camera_id != first_camera
+    needed = settings.attendance_relaxed_min_gap_seconds
+    if not other_camera:
+        needed = max(needed, settings.attendance_relaxed_same_camera_gap_seconds)
+    if moment - first >= needed:
+        del _pending_relaxed[person_id]
+        _pending_camera.pop(person_id, None)
+        return True
     return False
 
 
@@ -284,6 +302,7 @@ def note_strict_sighting(person_id: str) -> None:
     """Qat'iy moslik allaqachon ishonchli — kutilayotgan yumshoq holatni
     tozalaymiz, keyingi yumshoq ko'rinish qaytadan boshlanadi."""
     _pending_relaxed.pop(person_id, None)
+    _pending_camera.pop(person_id, None)
 
 
 def snapshot(camera_id: str) -> CameraRecognitionStats | None:
@@ -431,3 +450,4 @@ def local_views() -> dict[str, RecognitionView]:
 def reset_for_tests() -> None:
     _stats.clear()
     _pending_relaxed.clear()
+    _pending_camera.clear()

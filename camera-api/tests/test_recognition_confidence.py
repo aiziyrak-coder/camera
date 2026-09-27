@@ -89,11 +89,18 @@ class TestGradedMatches:
 
 
 class TestRelaxedConfirmation:
-    def test_first_relaxed_sighting_waits_second_confirms(self):
-        assert recognition_stats.confirm_relaxed("ali", now=100.0) is False
-        assert recognition_stats.confirm_relaxed("ali", now=101.0) is True
+    def test_another_camera_confirms_quickly(self):
+        assert recognition_stats.confirm_relaxed("ali", "kam-1", now=100.0) is False
+        assert recognition_stats.confirm_relaxed("ali", "kam-2", now=101.0) is True
         # Tasdiqlangandan keyin navbat tozalanadi — keyingisi yana ikkitani talab qiladi.
-        assert recognition_stats.confirm_relaxed("ali", now=102.0) is False
+        assert recognition_stats.confirm_relaxed("ali", "kam-2", now=102.0) is False
+
+    def test_same_camera_needs_a_real_gap(self):
+        """Eshik oldida turgan o'xshash begona ketma-ket kadrlar bilan o'zini tasdiqlamasin."""
+        gap = settings.attendance_relaxed_same_camera_gap_seconds
+        assert recognition_stats.confirm_relaxed("ali", "kam-1", now=100.0) is False
+        assert recognition_stats.confirm_relaxed("ali", "kam-1", now=101.0) is False
+        assert recognition_stats.confirm_relaxed("ali", "kam-1", now=100.0 + gap) is True
 
     def test_sightings_too_far_apart_do_not_confirm(self):
         window = settings.attendance_relaxed_confirm_window_seconds
@@ -101,8 +108,8 @@ class TestRelaxedConfirmation:
         assert recognition_stats.confirm_relaxed("ali", now=window + 5.0) is False
 
     def test_same_instant_is_not_a_second_sighting(self):
-        assert recognition_stats.confirm_relaxed("ali", now=10.0) is False
-        assert recognition_stats.confirm_relaxed("ali", now=10.1) is False
+        assert recognition_stats.confirm_relaxed("ali", "kam-1", now=10.0) is False
+        assert recognition_stats.confirm_relaxed("ali", "kam-2", now=10.1) is False
 
 
 class TestProcessCameraFrameWithRelaxedMatches:
@@ -136,7 +143,8 @@ class TestProcessCameraFrameWithRelaxedMatches:
         assert first == []
         assert (await db_session.execute(select(AttendanceRecord))).scalars().all() == []
 
-        recognition_stats._pending_relaxed[str(person.id)] -= 5  # birinchi ko'rinish 5 s oldin bo'lgan
+        # O'sha kamera — birinchi ko'rinish kamida same_camera_gap oldin bo'lgan bo'lishi kerak.
+        recognition_stats._pending_relaxed[str(person.id)] -= settings.attendance_relaxed_same_camera_gap_seconds + 1
         second = await process_camera_frame(b"f2", db_session, camera, occurred_at=local_now(),
                                             candidates=candidates, faces=[face])
         assert len(second) == 1

@@ -108,6 +108,10 @@ class Settings(BaseSettings):
     attendance_ai_relaxed_margin: float = 0.08
     attendance_relaxed_confirm_window_seconds: int = 180
     attendance_relaxed_min_gap_seconds: float = 0.5
+    # O'sha kameraning o'zi yumshoq moslikni faqat shuncha soniyadan keyin
+    # tasdiqlay oladi (ketma-ket kadrlar mustaqil dalil emas); boshqa kamera —
+    # min_gap bilan (recognition_stats.confirm_relaxed).
+    attendance_relaxed_same_camera_gap_seconds: float = 10.0
     # Bundan kichik (piksel balandligi) yuz uchun faqat qat'iy moslik:
     # juda kichik yuzning vektori ishonchsiz.
     attendance_min_face_px: int = 40

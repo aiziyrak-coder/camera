@@ -737,7 +737,7 @@ async def process_camera_frame(
             # chiqishi mumkin — yumshoq chegarada unga ishonilmaydi.
             if not face_quality_ok(face):
                 continue
-            if not recognition_stats.confirm_relaxed(student_staff_id):
+            if not recognition_stats.confirm_relaxed(student_staff_id, camera_key):
                 recognition_stats.record_credit(camera_key, "relaxed_pending")
                 continue
             recognition_stats.record_credit(camera_key, "relaxed_confirmed")
