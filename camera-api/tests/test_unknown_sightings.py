@@ -116,14 +116,10 @@ async def test_assign_to_person_without_face_enrolls_them(db_session, camera):
     await db_session.commit()
     row = await _sighting(db_session, camera, _vec(20))
 
-    kind = await svc.assign_to_person(db_session, row, student, None, can_enroll=True)
-    await db_session.commit()
-
-    assert kind == "asosiy"
-    await db_session.refresh(student)
-    assert student.biometrics_status == "tasdiqlangan"
-    assert student.biometric_embedding == row.embedding
-    assert row.status == "talaba" and row.person_id == student.id
+    # Yuzi yo'q odamga kamera kadridan yuz kiritilmaydi — faqat 3 tomonlama ro'yxatdan o'tish.
+    with pytest.raises(svc.ResolveError, match="3 tomondan"):
+        await svc.assign_to_person(db_session, row, student, None, can_enroll=True)
+    assert row.status == "kutilmoqda"
 
 
 async def test_assign_without_enroll_right_goes_to_review(db_session, camera):
@@ -134,13 +130,10 @@ async def test_assign_without_enroll_right_goes_to_review(db_session, camera):
     await db_session.commit()
     row = await _sighting(db_session, camera, _vec(21))
 
-    kind = await svc.assign_to_person(db_session, row, student, None)
-    await db_session.commit()
-
-    assert kind == "tekshiruvda"
+    with pytest.raises(svc.ResolveError):
+        await svc.assign_to_person(db_session, row, student, None)
     await db_session.refresh(student)
-    assert student.biometrics_status == "kutilmoqda"
-    assert student.biometrics_review_reason == svc.ASSIGN_REVIEW_REASON
+    assert student.biometrics_status == "yoq"
 
 
 async def test_inactive_person_gets_no_face(db_session, camera):
@@ -226,14 +219,14 @@ async def test_api_list_and_resolve_flow(client: AsyncClient, db_session, camera
     res = await client.post(
         f"/api/notanishlar/{first['id']}/talaba", headers=headers, json={"personId": str(student.id)}
     )
-    assert res.status_code == 200, res.text
-    assert "kamera uni taniydi" in res.json()["message"]
+    # Yuzi yo'q odamga kadrdan yuz kiritilmaydi (3 tomon shart) — 409, yozuv navbatda qoladi.
+    assert res.status_code == 409, res.text
 
     res = await client.post(f"/api/notanishlar/{second['id']}/otkazish", headers=headers)
     assert res.status_code == 200
 
     after = (await client.get("/api/notanishlar?sana=2026-09-24", headers=headers)).json()
-    assert after["pending"] == 0
+    assert after["pending"] == 1
 
     # Ikkinchi marta hal qilib bo'lmaydi.
     res = await client.post(f"/api/notanishlar/{second['id']}/otkazish", headers=headers)

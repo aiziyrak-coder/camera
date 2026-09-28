@@ -36,11 +36,9 @@ class TestBiometricsEnrollment:
                 headers=headers,
                 files={"photo": ("face.jpg", f, "image/jpeg")},
             )
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["biometricsStatus"] == "tasdiqlangan"
-        assert body["biometricPhotoUrl"] is not None
-        assert body["biometricPhotoUrl"].startswith("http")
+        # Bitta surat bilan yuz kiritilmaydi — faqat 3 tomonlama ro'yxatdan o'tish.
+        assert resp.status_code == 422
+        assert "3 tomondan" in resp.json()["detail"]
 
     async def test_enroll_unknown_student_is_404(self, client: AsyncClient):
         headers = await auth_headers(client, "admin", "admin123")

@@ -76,16 +76,11 @@ async def test_recurring_person_comes_first_and_is_assigned_in_one_click(client:
         headers=headers,
         json={"sightingIds": first["sightingIds"], "personId": str(person_id)},
     )
-    assert res.status_code == 200, res.text
-    assert res.json()["count"] == 3
-
+    # Yuzi yo'q odamga kadrlardan yuz kiritilmaydi (3 tomon shart) — 409, hech narsa o'zgarmaydi.
+    assert res.status_code == 409, res.text
     db_session.expire_all()
     stored = await db_session.get(StudentStaff, person_id)
-    assert stored.biometrics_status == "tasdiqlangan" and stored.biometric_embedding
-    gallery = (await db_session.execute(select(FaceGalleryEmbedding).where(FaceGalleryEmbedding.student_staff_id == person_id))).scalars().all()
-    assert len(gallery) == 2  # eng yirigi asosiy rasm, qolgan ikkitasi — galereya
-    statuses = {r.status for r in (await db_session.execute(select(UnknownSighting))).scalars()}
-    assert statuses == {"talaba", "kutilmoqda"}  # bir marta ko'ringan begona tegilmadi
+    assert stored.biometrics_status == "yoq" and not stored.biometric_embedding
 
 
 async def test_a_group_of_different_people_is_refused(client: AsyncClient, db_session, seeded):

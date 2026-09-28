@@ -122,11 +122,9 @@ async def test_person_without_a_face_is_enrolled_from_the_photo(db_session, seed
     monkeypatch.setattr(hemis_photos, "_embed_photo", fake_embed)
     monkeypatch.setattr(hemis_photos, "_upload", fake_upload)
     person = await db_session.get(StudentStaff, person_id)
-    assert await hemis_photos.enroll_person(db_session, person, b"jpg") == "asosiy"
-    await db_session.commit()
-    db_session.expire_all()
-    stored = await db_session.get(StudentStaff, person_id)
-    assert stored.biometrics_status == "tasdiqlangan" and stored.biometric_photo_key == "biometrika/hemis.jpg"
+    # Bitta HEMIS surati bilan yuz "tasdiqlangan" bo'lmaydi — 3 tomon shart.
+    with pytest.raises(ValueError, match="3 tomondan"):
+        await hemis_photos.enroll_person(db_session, person, b"jpg")
 
 
 async def test_photo_of_someone_else_is_not_added_to_an_existing_face(db_session, seeded, monkeypatch):

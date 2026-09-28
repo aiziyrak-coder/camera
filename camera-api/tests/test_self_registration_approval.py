@@ -207,11 +207,11 @@ class TestAutoApprove:
 
         from app.services.self_enrollment import approve_pending
 
-        a = StudentStaff(full_name="Kutuvchi Bir", type="talaba", group_or_position="DI-101", self_registered=False, biometrics_status="kutilmoqda",
+        a = StudentStaff(full_name="Kutuvchi Bir", type="talaba", group_or_position="DI-101", self_registered=False, biometrics_status="kutilmoqda", biometric_photo_key="a", biometric_photo_left_key="b", biometric_photo_right_key="c",
                          biometric_embedding=json.dumps([1.0] + [0.0] * 511))
-        b = StudentStaff(full_name="Kutuvchi Ikki", type="talaba", group_or_position="DI-101", self_registered=False, biometrics_status="kutilmoqda",
+        b = StudentStaff(full_name="Kutuvchi Ikki", type="talaba", group_or_position="DI-101", self_registered=False, biometrics_status="kutilmoqda", biometric_photo_key="a", biometric_photo_left_key="b", biometric_photo_right_key="c",
                          biometric_embedding=json.dumps([1.0, 0.01] + [0.0] * 510))
-        c = StudentStaff(full_name="Kutuvchi Uch", type="talaba", group_or_position="DI-101", self_registered=False, biometrics_status="kutilmoqda",
+        c = StudentStaff(full_name="Kutuvchi Uch", type="talaba", group_or_position="DI-101", self_registered=False, biometrics_status="kutilmoqda", biometric_photo_key="a", biometric_photo_left_key="b", biometric_photo_right_key="c",
                          biometric_embedding=json.dumps([0.0, 1.0] + [0.0] * 510))
         stranger = StudentStaff(full_name="Begona Kutuvchi", type="talaba", group_or_position="DI-101", self_registered=True,
                                 biometrics_status="kutilmoqda", biometric_embedding=json.dumps([0.0, 0.0, 1.0] + [0.0] * 509))

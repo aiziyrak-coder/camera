@@ -221,6 +221,9 @@ async def enroll_person(db: AsyncSession, person: StudentStaff, data: bytes) -> 
             )
         )
         return "galereya"
+    if not person.has_all_angles:
+        # Bitta HEMIS surati bilan yuz "tasdiqlangan" bo'lmaydi (3 burchak shart).
+        raise ValueError("Yuz 3 tomondan olinmagan — ro'yxatdan o'tish havolasi orqali o'tsin")
     person.biometric_embedding = encoded
     person.biometrics_status = "tasdiqlangan"
     person.biometrics_confirmed_at = datetime.now(timezone.utc)

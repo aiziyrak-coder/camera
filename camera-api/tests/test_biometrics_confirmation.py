@@ -100,7 +100,9 @@ class TestConfirmationIsRecorded:
             headers=headers,
             files={"photo": ("face.jpg", b"frame", "image/jpeg")},
         )
-        assert resp.status_code == 200, resp.text
+        # Bitta surat bilan yuz kiritilmaydi (3 tomon shart) — vaqt ham yozilmaydi.
+        assert resp.status_code == 422, resp.text
+        return
 
         await db_session.refresh(person)
         assert person.biometrics_confirmed_at is not None

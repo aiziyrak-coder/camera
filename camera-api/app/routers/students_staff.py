@@ -1036,6 +1036,12 @@ async def enroll_biometrics(
     # solishtirilganda Postgres darajasida xato bo'lib, 404 o'rniga 500
     # qaytardi.
     record = await _load_record(db, record_id)
+    # Yuz faqat 3 burchakdan (ro'yxatdan o'tish havolasi: old, chap, o'ng)
+    # kiritiladi — bitta surat bilan "tasdiqlangan" yuz yaratilmaydi.
+    raise HTTPException(
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "Yuz faqat 3 tomondan (old, chap, o'ng) kiritiladi — odamga ro'yxatdan o'tish havolasini bering",
+    )
 
     data = await photo.read()
     if len(data) > MAX_PHOTO_SIZE_BYTES:
@@ -1088,6 +1094,11 @@ async def approve_self_enrollment(
     Shu paytdan u davomatga tushadi va kameralar uni begona deb
     hisoblamaydi. Qaror audit jurnaliga yoziladi."""
     record = await _awaiting_record(db, record_id)
+    if not record.has_all_angles:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Yuz 3 tomondan olinmagan — tasdiqlab bo'lmaydi. Odam ro'yxatdan o'tish havolasi orqali qayta o'tsin",
+        )
     record.biometrics_status = "tasdiqlangan"
     record.biometrics_confirmed_at = datetime.now(timezone.utc)
     record.biometrics_review_reason = None

@@ -16,7 +16,9 @@ def _identity_on(monkeypatch):
 
 
 def _person(**extra) -> StudentStaff:
-    fields = {"biometrics_status": "yoq", **extra}
+    # Uch burchak (old, chap, o'ng) — tasdiqlash sharti.
+    fields = {"biometrics_status": "yoq", "biometric_photo_key": "a", "biometric_photo_left_key": "b",
+              "biometric_photo_right_key": "c", **extra}
     return StudentStaff(full_name="Ro'yxatdagi Talaba", type="talaba", group_or_position="1-kurs, X",
                         hemis_photo_url="https://student.example.uz/p.jpg", **fields)
 

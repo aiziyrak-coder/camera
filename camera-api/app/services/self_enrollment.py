@@ -91,6 +91,8 @@ async def decide_status(db: AsyncSession, record: StudentStaff, embedding: list[
             return "kutilmoqda", f"shaxsni avtomatik tasdiqlab bo'lmadi: {problem}"
         if similarity < settings.self_enrollment_identity_threshold:
             return "kutilmoqda", f"HEMIS surati bilan mos kelmadi ({similarity:.2f})"
+    if not record.has_all_angles:
+        return "kutilmoqda", "yuz 3 tomondan olinmagan — qayta o'tishi kerak"
     return "tasdiqlangan", None
 
 
@@ -131,7 +133,7 @@ async def approve_pending(db: AsyncSession) -> tuple[int, int]:
         except (ValueError, TypeError):
             held += 1
             continue
-        if lookalike(embedding, ids, names, matrix, record.id):
+        if lookalike(embedding, ids, names, matrix, record.id) or not record.has_all_angles:
             held += 1
             continue
         record.biometrics_status = "tasdiqlangan"

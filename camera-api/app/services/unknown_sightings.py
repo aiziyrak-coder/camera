@@ -306,19 +306,11 @@ async def assign_to_person(
         )
         kind = "galereya"
     else:
-        person.biometric_embedding = sighting.embedding
-        if sighting.crop_key and not person.biometric_photo_key:
-            person.biometric_photo_key = sighting.crop_key
-        if can_enroll:
-            person.biometrics_status = "tasdiqlangan"
-            kind = "asosiy"
-        else:
-            # Odam ro'yxatga olish huquqi yo'q (faqat hodisalarni ko'radi):
-            # yuz darhol "tasdiqlangan" bo'lmaydi — aks holda istalgan yuzni
-            # istalgan odam nomiga yozib, davomatni soxtalashtirish mumkin edi.
-            person.biometrics_status = "kutilmoqda"
-            person.biometrics_review_reason = ASSIGN_REVIEW_REASON
-            kind = "tekshiruvda"
+        # Yuzi yo'q odamga kamera kadridan bitta burchakli yuz kiritilmaydi:
+        # yuz faqat 3 tomondan (ro'yxatdan o'tish havolasi) olinadi.
+        raise ResolveError(
+            f"{person.full_name}ning yuzi hali kiritilmagan — yuz faqat 3 tomondan (ro'yxatdan o'tish havolasi) olinadi"
+        )
 
     sighting.status = "talaba"
     sighting.person_id = person.id

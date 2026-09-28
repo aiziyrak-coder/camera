@@ -126,3 +126,9 @@ class StudentStaff(Base):
         o'zi qo'shgan odam YOKI yuzi boshqa odamga o'xshab qolgan har kim
         (self_enrollment.decide_status)."""
         return self.biometrics_status == "kutilmoqda" and self.biometric_embedding is not None
+
+    @property
+    def has_all_angles(self) -> bool:
+        """Yuz uch burchakdan (old, chap, o'ng) olingan. Faqat shunda yuz
+        "tasdiqlangan" bo'la oladi — bir burchakli yuz ishonchsiz tanitadi."""
+        return bool(self.biometric_photo_key and self.biometric_photo_left_key and self.biometric_photo_right_key)
