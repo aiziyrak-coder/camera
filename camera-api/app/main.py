@@ -276,6 +276,22 @@ app = FastAPI(
     openapi_url="/openapi.json" if settings.api_docs_enabled else None,
 )
 
+from fastapi import HTTPException as _HTTPException  # noqa: E402
+from fastapi.exception_handlers import http_exception_handler as _default_http_handler  # noqa: E402
+
+
+@app.exception_handler(_HTTPException)
+async def _log_enrollment_rejections(request, exc):
+    # Ochiq ro'yxatdan o'tish rad etilganda foydalanuvchi faqat "saqlanmadi"
+    # ko'radi — sababini log'dan topish uchun (shaxsiy ma'lumotsiz: faqat xabar).
+    if "/enrollment/" in request.url.path and exc.status_code >= 400:
+        logger.warning(
+            "enrollment request rejected",
+            extra={"path_kind": request.url.path.rsplit("/", 1)[-1], "status": exc.status_code, "detail": str(exc.detail)[:300]},
+        )
+    return await _default_http_handler(request, exc)
+
+
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
