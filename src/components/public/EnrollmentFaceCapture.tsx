@@ -205,26 +205,32 @@ export default function EnrollmentFaceCapture({
   }, [finished, stopStream]);
 
   // ─────────────────────────── Kadr olish
-  const grab = useCallback((probeWidth?: number): Promise<Blob | null> => {
+
+  /** Bitta video kadridan ikki nusxa: yo'naltirish uchun kichik va saqlash
+   *  uchun to'liq. Saqlanadigan kadr AYNAN tekshirilgan kadr bo'lishi kerak —
+   *  ilgari to'liq kadr bir lahza keyin olinardi, odam boshini qaytara
+   *  boshlagan bo'lardi va server "talabga mos kelmadi" deb rad etardi. */
+  const grabPair = useCallback(async (): Promise<{ probe: Blob; full: Blob } | null> => {
     const video = videoRef.current;
-    if (!video || !video.videoWidth) return Promise.resolve(null);
-
-    // Yo'naltirish kadri kichik, saqlanadigan kadr esa katta — lekin
-    // ikkalasi ham cheklangan (MAX_FRAME_WIDTH sababi yuqorida).
-    const maxWidth = probeWidth ?? MAX_FRAME_WIDTH;
-    const scale = Math.min(1, maxWidth / video.videoWidth);
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(video.videoWidth * scale);
-    canvas.height = Math.round(video.videoHeight * scale);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return Promise.resolve(null);
-
-    // Teskari qilinmaydi: ko‘rinish oyna kabi bo‘lsa ham, serverga
-    // kameraning haqiqiy tasviri boradi.
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    return new Promise((resolve) =>
-      canvas.toBlob((b) => resolve(b), 'image/jpeg', probeWidth ? 0.65 : FRAME_QUALITY),
-    );
+    if (!video || !video.videoWidth) return null;
+    const draw = (maxWidth: number) => {
+      const scale = Math.min(1, maxWidth / video.videoWidth);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(video.videoWidth * scale);
+      canvas.height = Math.round(video.videoHeight * scale);
+      canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
+      return canvas;
+    };
+    const full = draw(MAX_FRAME_WIDTH);
+    const small = document.createElement('canvas');
+    const scale = Math.min(1, PROBE_WIDTH / full.width);
+    small.width = Math.round(full.width * scale);
+    small.height = Math.round(full.height * scale);
+    small.getContext('2d')?.drawImage(full, 0, 0, small.width, small.height);
+    const toBlob = (c: HTMLCanvasElement, q: number) =>
+      new Promise<Blob | null>((resolve) => c.toBlob((b) => resolve(b), 'image/jpeg', q));
+    const [probe, fullBlob] = await Promise.all([toBlob(small, 0.65), toBlob(full, FRAME_QUALITY)]);
+    return probe && fullBlob ? { probe, full: fullBlob } : null;
   }, []);
 
   // ─────────────────────────── Jonli yo‘naltirish
@@ -236,8 +242,9 @@ export default function EnrollmentFaceCapture({
       if (stopped || busyRef.current || doneRef.current) return;
       busyRef.current = true;
       try {
-        const probe = await grab(PROBE_WIDTH);
-        if (!probe || stopped) return;
+        const pair = await grabPair();
+        if (!pair || stopped) return;
+        const probe = pair.probe;
 
         const result = await checkPose(step, probe);
         if (stopped) return;
@@ -255,9 +262,9 @@ export default function EnrollmentFaceCapture({
         setStableHits(hitsRef.current);
         if (hitsRef.current < STABLE_HITS) return;
 
-        // Bosqich tasdiqlandi — endi TO‘LIQ o‘lchamdagi kadr olinadi.
-        const full = await grab();
-        if (!full || stopped) return;
+        // Bosqich tasdiqlandi — saqlanadi AYNAN shu tekshirilgan kadrning to'liq nusxasi.
+        const full = pair.full;
+        if (stopped) return;
         hitsRef.current = 0;
         setStableHits(0);
         framesRef.current = [...framesRef.current, full];
@@ -283,7 +290,7 @@ export default function EnrollmentFaceCapture({
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [ready, finished, cameraError, submitting, step, grab]);
+  }, [ready, finished, cameraError, submitting, step, grabPair]);
 
   // ─────────────────────────── Uch kadr yig‘ilgach yuborish
   useEffect(() => {
