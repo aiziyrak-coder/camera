@@ -365,6 +365,24 @@ async def register_self(
     return _lookup_out(record)
 
 
+def _log_frame_shape(index: int, frame: bytes) -> None:
+    """Yuz topilmagan kadr haqida faqat raqamlar (rasm saqlanmaydi): o'lcham,
+    fayl hajmi, o'rtacha yorqinlik — qora/bo'sh kadrni ajratish uchun."""
+    try:
+        import cv2
+        import numpy as np
+
+        img = cv2.imdecode(np.frombuffer(frame, np.uint8), cv2.IMREAD_COLOR)
+        shape = None if img is None else img.shape[:2]
+        mean = None if img is None else round(float(img.mean()), 1)
+    except Exception:
+        shape, mean = None, None
+    logger.warning(
+        "enrollment frame without face",
+        extra={"index": index, "bytes": len(frame), "shape": str(shape), "mean": mean, "head": frame[:4].hex()},
+    )
+
+
 async def _verify_liveness(frames: list[bytes]) -> None:
     """Uch kadr talab qilingan burilishlarni haqiqatan ko'rsatganini tekshiradi.
 
@@ -383,6 +401,7 @@ async def _verify_liveness(frames: list[bytes]) -> None:
             ) from exc
 
         if not faces:
+            _log_frame_shape(index, frame)
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
                 f"{index}-kadrda ({DIRECTION_LABELS[expected]}) yuz aniqlanmadi",
