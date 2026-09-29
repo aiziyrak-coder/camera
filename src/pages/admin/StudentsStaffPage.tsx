@@ -293,6 +293,7 @@ export default function StudentsStaffPage() {
     return current.total;
   };
   const awaitingCount = current?.awaitingApproval ?? 0;
+  const [approveAllOpen, setApproveAllOpen] = useState(false);
 
   const tabs = useMemo<TabItem<PersonType>[]>(
     () => PERSON_TABS.map((t) => ({ ...t, count: overview?.[t.id]?.total ?? null })),
@@ -564,16 +565,23 @@ export default function StudentsStaffPage() {
               ? `${formatNumber(awaitingCount)} kishi tasdiq kutmoqda.`
               : 'Tasdiq kutayotganlar qolmadi.'}
           </span>
-          <Button
-            size="sm"
-            variant={awaitingOnly ? 'secondary' : 'primary'}
-            onClick={() => {
-              setAwaitingOnly((value) => !value);
-              setPage(1);
-            }}
-          >
-            {awaitingOnly ? "Butun ro'yxat" : "Ko'rib chiqish"}
-          </Button>
+          <span className="flex gap-2">
+            {awaitingCount > 0 && (
+              <Button size="sm" variant="primary" onClick={() => setApproveAllOpen(true)}>
+                Hammasini tasdiqlash
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                setAwaitingOnly((value) => !value);
+                setPage(1);
+              }}
+            >
+              {awaitingOnly ? "Butun ro'yxat" : "Ko'rib chiqish"}
+            </Button>
+          </span>
         </div>
       )}
 
@@ -647,6 +655,31 @@ export default function StudentsStaffPage() {
       {/* O'chirish qaytarib bo'lmaydi va odamning butun tarixini olib
           ketadi, shuning uchun tasdiqlash oynasida AYNAN nima yo'qolishi
           yozilgan — "rostdanmi?" degan savolning o'zi yetarli emas. */}
+      <ConfirmDialog
+        open={approveAllOpen}
+        title="Hammasini tasdiqlash"
+        message={`${formatNumber(awaitingCount)} kishining yuzi tasdiqlanadi va kameralar ularni tanishni boshlaydi. Uch tomondan (old, chap, o'ng) olinmagan yuzlar tasdiqlanmaydi.`}
+        confirmLabel="Ha, tasdiqlansin"
+        onCancel={() => setApproveAllOpen(false)}
+        onConfirm={async () => {
+          try {
+            const res = await api.post<{ approved: number; skippedAngles: number }>(
+              `/api/students-staff/biometrics/approve-all?type=${tab}`,
+              {},
+              token,
+            );
+            toast.success(
+              `${formatNumber(res.approved)} kishi tasdiqlandi` +
+                (res.skippedAngles ? `, ${formatNumber(res.skippedAngles)} tasi 3 tomondan olinmagani uchun qoldi` : ''),
+            );
+            refresh();
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Tasdiqlab bo‘lmadi');
+          } finally {
+            setApproveAllOpen(false);
+          }
+        }}
+      />
       <ConfirmDialog
         open={!!deleting}
         title="Ro'yxatdan o'chirish"

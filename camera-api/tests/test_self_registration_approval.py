@@ -320,3 +320,23 @@ class TestRegistrationUsesHemisStructure:
         await db_session.refresh(record)
         assert record.org_unit_id == unit.id
         assert record.position == "Assistent"
+
+
+async def test_approve_all_confirms_only_three_angle_faces(client, db_session, seeded):
+    from app.models import StudentStaff
+    from tests.conftest import auth_headers
+
+    full = StudentStaff(full_name="Uch Tomonli", type="talaba", group_or_position="DI-1", biometrics_status="kutilmoqda",
+                        biometric_embedding="[1]", biometric_photo_key="a", biometric_photo_left_key="b",
+                        biometric_photo_right_key="c")
+    partial = StudentStaff(full_name="Bir Tomonli", type="talaba", group_or_position="DI-1",
+                           biometrics_status="kutilmoqda", biometric_embedding="[1]", biometric_photo_key="a")
+    db_session.add_all([full, partial])
+    await db_session.commit()
+    headers = await auth_headers(client, "admin", "admin123")
+    res = await client.post("/api/students-staff/biometrics/approve-all?type=talaba", headers=headers)
+    assert res.status_code == 200, res.text
+    assert res.json() == {"approved": 1, "skippedAngles": 1}
+    await db_session.refresh(full)
+    await db_session.refresh(partial)
+    assert full.biometrics_status == "tasdiqlangan" and partial.biometrics_status == "kutilmoqda"

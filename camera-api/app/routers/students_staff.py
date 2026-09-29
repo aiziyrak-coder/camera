@@ -1082,6 +1082,44 @@ async def _awaiting_record(db: AsyncSession, record_id: str) -> StudentStaff:
     return record
 
 
+class BulkApproveOut(CamelModel):
+    approved: int
+    skipped_angles: int
+
+
+@router.post("/biometrics/approve-all", response_model=BulkApproveOut)
+async def approve_all_awaiting(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[CurrentUser, Depends(require_permission("registerPeople"))],
+    type: Annotated[Literal["talaba", "xodim"] | None, Query()] = None,
+) -> BulkApproveOut:
+    """Tasdiq kutayotgan barcha yuzlarni bir bosishda tasdiqlash (administrator
+    qarori). Uch tomoni (old, chap, o'ng) to'liq bo'lmaganlar tasdiqlanmaydi."""
+    stmt = select(StudentStaff).where(AWAITING_APPROVAL, StudentStaff.active.is_(True))
+    if type:
+        stmt = stmt.where(StudentStaff.type == type)
+    rows = (await db.execute(stmt)).scalars().all()
+    now = datetime.now(timezone.utc)
+    approved = skipped = 0
+    for record in rows:
+        if not record.has_all_angles:
+            skipped += 1
+            continue
+        record.biometrics_status = "tasdiqlangan"
+        record.biometrics_confirmed_at = now
+        record.biometrics_review_reason = None
+        approved += 1
+    await log_action(
+        db, request, current_user.id,
+        f"Tasdiq kutayotganlar ommaviy tasdiqlandi: {approved} ta (3 tomoni yo'q: {skipped})", "Talabalar",
+    )
+    await db.commit()
+    if approved:
+        await announce_roster_change()
+    return BulkApproveOut(approved=approved, skipped_angles=skipped)
+
+
 @router.post("/{record_id}/biometrics/approve", response_model=StudentStaffOut)
 async def approve_self_enrollment(
     record_id: str,
