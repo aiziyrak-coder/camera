@@ -445,6 +445,14 @@ async def _verify_liveness(frames: list[bytes]) -> None:
             )
 
         actual = direction_of(face.landmarks_68)
+        if actual is None and expected in ("left", "right"):
+            # Oraliq holat, lekin TO'G'RI tomonga burilgan: yo'naltirish bu
+            # burilishni allaqachon tasdiqlagan, to'liq kadr esa bir lahza
+            # keyin olinadi — odam boshini qaytara boshlagan bo'ladi.
+            # Qarama-qarshi tomon yoki to'g'ri qarash baribir rad etiladi.
+            ratio = turn_ratio(face.landmarks_68)
+            if (ratio > 0) == (expected == "left"):
+                actual = expected
         if actual != expected:
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
