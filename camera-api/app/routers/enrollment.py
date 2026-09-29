@@ -365,6 +365,30 @@ async def register_self(
     return _lookup_out(record)
 
 
+#: Ro'yxatga olish kadrining eng uzun tomoni (piksel).
+ENROLL_FRAME_MAX_SIDE = 640
+
+
+def _downscale(frame: bytes) -> bytes:
+    import cv2
+    import numpy as np
+
+    try:
+        img = cv2.imdecode(np.frombuffer(frame, np.uint8), cv2.IMREAD_COLOR)
+    except cv2.error:
+        img = None
+    if img is None:
+        return frame  # o'qilmaydigan kadr — tiriklik tekshiruvi aniq xabar beradi
+    h, w = img.shape[:2]
+    side = max(h, w)
+    if side <= ENROLL_FRAME_MAX_SIDE:
+        return frame
+    scale = ENROLL_FRAME_MAX_SIDE / side
+    img = cv2.resize(img, (round(w * scale), round(h * scale)), interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 90])
+    return buf.tobytes() if ok else frame
+
+
 def _log_frame_shape(index: int, frame: bytes) -> None:
     """Yuz topilmagan kadr haqida faqat raqamlar (rasm saqlanmaydi): o'lcham,
     fayl hajmi, o'rtacha yorqinlik — qora/bo'sh kadrni ajratish uchun."""
@@ -579,6 +603,11 @@ async def submit_enrollment(
     # o'zi ham tekshiradi, lekin u faqat foydalanuvchini yo'naltirish
     # uchun — bu yerga kelgan kadrlar boshqa yo'l bilan ham yuborilishi
     # mumkin, shuning uchun yakuniy hukm faqat shu yerda chiqariladi.
+    # Telefon selfisi (720x1280, yuz kadrning katta qismi) to'liq o'lchamda
+    # detektordan o'tmay qolardi — "1-kadrda yuz aniqlanmadi" hammada.
+    # Yo'naltirish (pose-check) kichik kadrda muvaffaqiyatli ishlaydi,
+    # shuning uchun saqlash kadrlari ham o'sha o'lchamga keltiriladi.
+    frames = await asyncio.to_thread(lambda: [_downscale(frame) for frame in frames])
     await _verify_liveness(frames)
 
     try:
