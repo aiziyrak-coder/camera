@@ -143,3 +143,43 @@ def test_clone_with_two_candidates_is_left_alone():
     clone = _r("c", "Imran Ahmad", "2-kurs, MD-0126", biometrics_status="tasdiqlangan", biometric_embedding=True)
     groups, unsure = find_clone_pairs([a, b, clone])
     assert not groups and len(unsure) == 1
+
+
+# ── Havolada klon ochilmasligi: "egasi yo'q" yozuvni topish ──────────────────
+
+from app.services.person_dedupe import pick_unclaimed  # noqa: E402
+
+
+def _c(id_, name, group, **extra):
+    row = {"id": id_, "full_name": name, "type": "talaba", "group_or_position": group, "reported_group": None,
+           "active": True, "pinfl": None, "biometric_embedding": None}
+    row.update(extra)
+    return row
+
+
+def test_registration_claims_the_unclaimed_hemis_record():
+    hemis = _c("h", "Muxsinova Nastarinbonu Begzod qizi", "1-kurs, DI-4426")
+    other = _c("o", "Karimova Dilnoza Anvar qizi", "1-kurs, DI-4426")
+    assert pick_unclaimed("Мухсинова Настарин Бегзод кизи", "talaba", "4426", [hemis, other])["id"] == "h"
+    assert pick_unclaimed("Shukrona Isojonova", "talaba", "DI-3326", [_c("i", "Isojonova Shukronaxon Abduqayum qizi", "1-kurs, DI-3326")])["id"] == "i"
+
+
+def test_registration_never_claims_a_record_with_face_or_pinfl_or_other_group():
+    face = _c("f", "Aliyeva Dilnoza Karim qizi", "1-kurs, DI-4426", biometric_embedding="[...]")
+    pin = _c("p", "Aliyeva Dilnoza Karim qizi", "1-kurs, DI-4426", pinfl="1" * 14)
+    other_group = _c("g", "Aliyeva Dilnoza Karim qizi", "1-kurs, DI-9999")
+    assert pick_unclaimed("Aliyeva Dilnoza Karim qizi", "talaba", "4426", [face, pin, other_group]) is None
+
+
+def test_registration_with_two_namesakes_creates_new():
+    a, b = _c("a", "Aliyeva Dilnoza Karim qizi", "1-kurs, DI-4426"), _c("b", "Aliyeva Dilnoza Karim qizi", "1-kurs, DI-4426")
+    assert pick_unclaimed("Aliyeva Dilnoza Karim qizi", "talaba", "4426", [a, b]) is None
+
+
+def test_staff_needs_exact_name():
+    s = _c("s", "Dodobayev Azizjon Avazovich", "", type="xodim")
+    assert pick_unclaimed("Dodobayev Azizjon Avazovich", "xodim", "asistent", [s])["id"] == "s"
+    # Bitta harf xatosi — o'sha odam (09.10 dagi Dodobayev/Dododbayev klonining oldi olinadi).
+    assert pick_unclaimed("Dododbayev Azizjon Avazovich", "xodim", "asistent", [s])["id"] == "s"
+    # Otasining ismi boshqa — adash, yangi yozuv.
+    assert pick_unclaimed("Dodobayev Azizjon Karimovich", "xodim", "asistent", [s]) is None

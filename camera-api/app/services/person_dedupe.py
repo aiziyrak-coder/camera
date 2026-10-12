@@ -640,3 +640,37 @@ def find_clone_pairs(rows: list[dict]) -> tuple[list[tuple[dict, list[dict]]], l
     # Faqat JSHSHIRli (yuzsiz) klonlar guruhi ham foydali: JSHSHIR HEMIS
     # yozuviga o'tadi — havola odamni topadi, tahrirlashda xato chiqmaydi.
     return list(groups.values()), unsure
+
+
+# ── Havolada klon ochilishining oldini olish ───────────────────────────────
+# /royxatdan-otish: JSHSHIR/pasport bo'yicha topilmagan odam ilgari DOIM yangi
+# yozuv ochardi — bazada uning JSHSHIRsiz HEMIS yozuvi tursa ham (09-12.10
+# dagi yuzlab klonlarning manbai). Endi avval "egasi yo'q" (faol, JSHSHIRsiz,
+# yuzsiz) mos yozuv qidiriladi. Yuzi yoki JSHSHIRi bor yozuvga tegilmaydi —
+# begona odam boshqaning tasdiqlangan yozuvini egallay olmasin.
+
+def pick_unclaimed(full_name: str, person_type: str, group_text: str, candidates: list[dict]) -> dict | None:
+    """Yagona mos "egasi yo'q" yozuv yoki None.
+
+    Talaba: yozgan guruhining raqami nomzodnikiga mos bo'lishi shart (ikkalasida
+    bo'lsa); raqam bo'lmasa — ism to'liq mos (same_person_name) bo'lishi shart.
+    Xodim: ism to'liq mos."""
+    g = group_numbers({"group_or_position": group_text})
+    hits = []
+    for c in candidates:
+        if c.get("type") != person_type or not c.get("active") or c.get("pinfl") or c.get("biometric_embedding"):
+            continue
+        strict = same_person_name(full_name, c.get("full_name"))
+        if person_type == "talaba":
+            cg = group_numbers(c)
+            if g and cg:
+                if not (g & cg):
+                    continue
+                ok = strict or clone_name_match(full_name, c.get("full_name") or "", same_group=True)
+            else:
+                ok = strict
+        else:
+            ok = strict
+        if ok:
+            hits.append(c)
+    return hits[0] if len(hits) == 1 else None
