@@ -1370,8 +1370,19 @@ async def delete_student_staff(
 
     Yumshoq o'chirish (arxivga olish) ataylab emas: tizimda bunday naqsh
     yo'q va "o'chirildi, lekin hali ham tanilyapti" holati odamni
-    chalkashtiradi. Amal audit jurnaliga yoziladi."""
+    chalkashtiradi. Amal audit jurnaliga yoziladi.
+
+    HEMIS'dan kelgan yozuv o'chirilmaydi (409): u bilan HEMIS ID, rasmiy
+    ism, guruh va davomat qaytarib bo'lmas yo'qolardi (15-16.10 da klon
+    o'rniga shu yozuvlar o'chirilgan). Klon bo'lsa — "Birlashtirish"."""
     record = await _load_record(db, record_id)
+    if record.hemis_id:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Bu yozuv HEMIS'dan kelgan — uni o'chirib bo'lmaydi: HEMIS ID, guruh va davomat "
+            "butunlay yo'qoladi. Agar bu odamning ikkinchi (klon) yozuvi bo'lsa, shu qatordagi "
+            "\"Birlashtirish\" tugmasi bilan ikkalasini bitta yozuvga qo'shing.",
+        )
     # Qiymatlar O'CHIRISHDAN OLDIN olinadi: commit'dan keyin obyekt
     # maydonlariga murojaat qilish bazadan yo'q qatorni qayta o'qishga
     # urinadi va xato beradi.

@@ -108,6 +108,20 @@ class TestDeletePerson:
         ).scalars().all()
         assert any("Ro'yxatdan o'chirdi" in entry and "Audit Uchun Xodim" in entry for entry in entries)
 
+    async def test_hemis_record_is_not_deleted(self, client: AsyncClient, db_session):
+        """HEMIS yozuvi o'chirilmaydi — klon bo'lsa "Birlashtirish" taklif qilinadi."""
+        headers = await auth_headers(client, "admin", "admin123")
+        person_id = await _person(client, headers, "Hemisli Talaba Rasmiy")
+        person = await db_session.get(StudentStaff, person_id)
+        person.hemis_id = "hemis-delete-guard-1"
+        await db_session.commit()
+
+        resp = await client.delete(f"/api/students-staff/{person_id}", headers=headers)
+        assert resp.status_code == 409
+        assert "Birlashtirish" in resp.text
+        db_session.expire_all()
+        assert await db_session.get(StudentStaff, person_id) is not None
+
     async def test_unknown_id_is_404(self, client: AsyncClient):
         headers = await auth_headers(client, "admin", "admin123")
         missing = await client.delete(
