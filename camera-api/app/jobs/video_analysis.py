@@ -25,7 +25,7 @@ from sqlalchemy import case, delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.batch.analyzer import Analyzer, JobContext
-from app.batch.planner import Clip, LessonSlot, build_plan
+from app.batch.planner import DAYTIME_TRIGGER, Clip, LessonSlot, build_plan
 from app.config import settings
 from app.database import SessionLocal
 from app.models import (
@@ -93,6 +93,7 @@ async def create_run(
     triggered_by: str = "tizim",
     now: datetime | None = None,
     window: tuple[datetime, datetime] | None = None,
+    slice_from: datetime | None = None,
 ) -> VideoAnalysisRun:
     """Kun uchun yangi tahlil: reja tuziladi va vazifalar yoziladi.
 
@@ -102,7 +103,9 @@ async def create_run(
     muvaffaqiyatli agregatsiya qilingandan keyin o'chiriladi
     (`supersede_old_runs`).
     `window` — kun oynasini qo'lda berish (yozib olingan videolar sinovi,
-    scripts/video_tahlil.py); berilmasa sozlamadagi 07:00–20:00."""
+    scripts/video_tahlil.py); berilmasa sozlamadagi kun oynasi.
+    `slice_from` — kunduzgi rejim bo'lagi: shu paytdan keyin tugagan darslar
+    (planner.build_plan, lessons_ending_after)."""
     window_start, window_end = window if window is not None else analysis_window(day, now=now)
     run = VideoAnalysisRun(
         day=day,
@@ -153,6 +156,7 @@ async def create_run(
         window_start=window_start,
         window_end=window_end,
         active_codes=await _active_codes(db),
+        lessons_ending_after=slice_from,
     )
     for job in plan.jobs:
         db.add(
@@ -572,6 +576,13 @@ async def pick_run(db: AsyncSession, *, now: datetime | None = None) -> VideoAna
     ).scalar_one_or_none()
     if unfinished is not None:
         return unfinished
+    if settings.video_analysis_daytime:
+        today = business_date(now)
+        for day in (today, today - timedelta(days=1)):
+            run = await next_daytime_slice(db, day, now)
+            if run is not None:
+                return run
+        return None
     due = _due_day(now)
     if due is None:
         due = business_date(now) - timedelta(days=1)
@@ -581,6 +592,50 @@ async def pick_run(db: AsyncSession, *, now: datetime | None = None) -> VideoAna
         if run is not None:
             return run
     return None
+
+
+async def next_daytime_slice(db: AsyncSession, day: date_type, now: datetime) -> VideoAnalysisRun | None:
+    """Kunduzgi rejim: kunning navbatdagi bo'lagi yoki None.
+
+    Bo'lak oynasi — oldingi muvaffaqiyatli bo'lak oxiridan (kun boshidan)
+    `now - lag` gacha (kun oxiridan oshmaydi). Bo'lak kamida
+    video_analysis_slice_minutes uzunlikda bo'lganda yaratiladi, kun
+    oxiridagi qoldiq esa qisqa bo'lsa ham. Yiqilgan bo'lak oynasi keyingi
+    bo'lakka qo'shiladi (o'tkazib yuborilmaydi)."""
+    day_start, day_end = (
+        datetime.combine(day, _clock(value), tzinfo=INSTITUTE_TZ).astimezone(timezone.utc)
+        for value in (settings.video_analysis_day_start, settings.video_analysis_start)
+    )
+    last_end = (
+        await db.execute(
+            select(func.max(VideoAnalysisRun.window_end)).where(
+                VideoAnalysisRun.day == day,
+                VideoAnalysisRun.triggered_by == DAYTIME_TRIGGER,
+                VideoAnalysisRun.status == "tugadi",
+            )
+        )
+    ).scalar_one_or_none() or day_start
+    target_end = min(now - timedelta(minutes=settings.video_analysis_lag_minutes), day_end)
+    if target_end <= last_end:
+        return None
+    if target_end < day_end and target_end - last_end < timedelta(minutes=settings.video_analysis_slice_minutes):
+        return None
+    # Bir oyna ketma-ket yiqilaversa — har bo'lak oralig'ida bir urinish.
+    last_failed = (
+        await db.execute(
+            select(func.max(VideoAnalysisRun.finished_at)).where(
+                VideoAnalysisRun.day == day,
+                VideoAnalysisRun.triggered_by == DAYTIME_TRIGGER,
+                VideoAnalysisRun.status == "xato",
+                VideoAnalysisRun.window_start == last_end,
+            )
+        )
+    ).scalar_one_or_none()
+    if last_failed is not None and now - last_failed < timedelta(minutes=settings.video_analysis_slice_minutes):
+        return None
+    return await create_run(
+        db, day, triggered_by=DAYTIME_TRIGGER, now=now, window=(last_end, target_end), slice_from=last_end
+    )
 
 
 async def _unreferenced_evidence(db: AsyncSession, *where) -> list[str]:
@@ -606,6 +661,10 @@ async def supersede_old_runs(db: AsyncSession, run: VideoAnalysisRun) -> list[st
     commit'dan keyin o'chiriladigan dalil rasmlari (eski hodisalar
     aggregate_run'da o'chgan, shuning uchun ularning rasmlari ham shu yerda)."""
     old_runs = select(VideoAnalysisRun.id).where(VideoAnalysisRun.day == run.day, VideoAnalysisRun.id != run.id)
+    if run.triggered_by == DAYTIME_TRIGGER:
+        # Kunduzgi bo'laklar bir-birini almashtirmaydi — kun natijasi ularning
+        # hammasidan; faqat boshqa (to'liq kunlik, qo'lda) tahlillar eskiradi.
+        old_runs = old_runs.where(VideoAnalysisRun.triggered_by != DAYTIME_TRIGGER)
     keys = await _unreferenced_evidence(db, VideoObservation.run_id.in_(old_runs))
     await db.execute(delete(VideoObservation).where(VideoObservation.run_id.in_(old_runs)))
     return keys

@@ -38,6 +38,12 @@ export interface AnalysisStatus {
   startTime: string;
   dayStart: string;
   nextRunAt: string | null;
+  /** Kunduzgi rejim: har sliceMinutes da, lagMinutes kechikish bilan. */
+  daytime?: boolean;
+  lagMinutes?: number;
+  sliceMinutes?: number;
+  /** Bugun shu paytgacha bo'lgan yozuv tahlil qilingan. */
+  analyzedUntil?: string | null;
   nvrCount: number;
   mappedCameras: number;
   activeCameras: number;

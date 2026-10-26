@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.batch import coat as coat_rules
 from app.batch import holatlar
-from app.batch.planner import KIND_ENTRANCE, KIND_LESSON, Clip
+from app.batch.planner import DAYTIME_TRIGGER, KIND_ENTRANCE, KIND_LESSON, Clip
 from app.batch.rules import (
     DayAttendance,
     JobInfo,
@@ -200,6 +200,24 @@ async def _clear_day(db: AsyncSession, day, start: datetime, end: datetime) -> N
     await db.execute(delete(DailyPersonCriteria).where(DailyPersonCriteria.day == day))
 
 
+async def source_run_ids(db: AsyncSession, run: VideoAnalysisRun) -> list[uuid.UUID]:
+    """Kun natijasi qaysi tahlillar kuzatuvlaridan: oddiy tahlil — o'zi;
+    kunduzgi bo'lak — shu kunning muvaffaqiyatli tugagan bo'laklari va o'zi."""
+    if run.triggered_by != DAYTIME_TRIGGER:
+        return [run.id]
+    others = (
+        await db.execute(
+            select(VideoAnalysisRun.id).where(
+                VideoAnalysisRun.day == run.day,
+                VideoAnalysisRun.triggered_by == DAYTIME_TRIGGER,
+                VideoAnalysisRun.status == "tugadi",
+                VideoAnalysisRun.id != run.id,
+            )
+        )
+    ).scalars().all()
+    return [run.id, *others]
+
+
 async def aggregate_run(db: AsyncSession, run: VideoAnalysisRun, *, now: datetime | None = None) -> dict:
     """Bitta kun tahlilining yakuni. Qaytaradi — kriteriyalar bo'yicha sonlar."""
     now = now or datetime.now(timezone.utc)
@@ -207,14 +225,15 @@ async def aggregate_run(db: AsyncSession, run: VideoAnalysisRun, *, now: datetim
     day_start, day_end = day_bounds(day)
     policy = await load_policy(db)
 
+    run_ids = await source_run_ids(db, run)
     jobs = [
         _job_info(job)
-        for job in (await db.execute(select(VideoAnalysisJob).where(VideoAnalysisJob.run_id == run.id))).scalars()
+        for job in (await db.execute(select(VideoAnalysisJob).where(VideoAnalysisJob.run_id.in_(run_ids)))).scalars()
     ]
     observations = [
         _obs(row)
         for row in (
-            await db.execute(select(VideoObservation).where(VideoObservation.run_id == run.id))
+            await db.execute(select(VideoObservation).where(VideoObservation.run_id.in_(run_ids)))
         ).scalars()
     ]
     modules = {

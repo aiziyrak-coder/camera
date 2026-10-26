@@ -112,6 +112,36 @@ async def _live_counters(db: AsyncSession, run: VideoAnalysisRun) -> None:
     run.frames_analyzed = int(sum(row[2] for row in rows))
 
 
+async def _analyzed_until(db, now: datetime) -> datetime | None:
+    """Kunduzgi rejim: bugun qaysi paytgacha bo'lgan yozuv tahlil qilingan."""
+    from app.batch.planner import DAYTIME_TRIGGER
+
+    return (
+        await db.execute(
+            select(func.max(VideoAnalysisRun.window_end)).where(
+                VideoAnalysisRun.day == business_date(now),
+                VideoAnalysisRun.triggered_by == DAYTIME_TRIGGER,
+                VideoAnalysisRun.status == "tugadi",
+            )
+        )
+    ).scalar_one_or_none()
+
+
+def _next_daytime_slice_at(now: datetime, analyzed_until: datetime | None) -> datetime:
+    """Navbatdagi kunduzgi bo'lak taxminan qachon boshlanadi."""
+    lag = timedelta(minutes=settings.video_analysis_lag_minutes)
+    step = timedelta(minutes=settings.video_analysis_slice_minutes)
+    today = business_date(now)
+    day_start = datetime.combine(today, time_type.fromisoformat(settings.video_analysis_day_start), tzinfo=INSTITUTE_TZ)
+    day_end = datetime.combine(today, time_type.fromisoformat(settings.video_analysis_start), tzinfo=INSTITUTE_TZ)
+    covered = analyzed_until or day_start
+    if covered >= day_end:
+        tomorrow = today + timedelta(days=1)
+        start = time_type.fromisoformat(settings.video_analysis_day_start)
+        return datetime.combine(tomorrow, start, tzinfo=INSTITUTE_TZ) + lag + step
+    return max(now, min(covered + step, day_end) + lag)
+
+
 def _next_run_at(now: datetime) -> datetime:
     start = time_type.fromisoformat(settings.video_analysis_start)
     today = business_date(now)
@@ -144,11 +174,23 @@ async def analysis_status(db: Db, _: Reader) -> AnalysisStatusOut:
         select(func.count()).select_from(Camera).where(Camera.nvr_id.is_not(None), Camera.nvr_channel.is_not(None))
     )
     active = await db.scalar(select(func.count()).select_from(Camera).where(Camera.status == "faol"))
+    daytime = settings.video_analysis_daytime
+    analyzed_until = await _analyzed_until(db, now) if daytime else None
+    if settings.analysis_mode != "kunlik":
+        next_run = None
+    elif daytime:
+        next_run = _next_daytime_slice_at(now, analyzed_until)
+    else:
+        next_run = _next_run_at(now)
     return AnalysisStatusOut(
         mode=settings.analysis_mode,
         start_time=settings.video_analysis_start,
         day_start=settings.video_analysis_day_start,
-        next_run_at=_iso(_next_run_at(now)) if settings.analysis_mode == "kunlik" else None,
+        next_run_at=_iso(next_run) if next_run else None,
+        daytime=daytime,
+        lag_minutes=settings.video_analysis_lag_minutes,
+        slice_minutes=settings.video_analysis_slice_minutes,
+        analyzed_until=_iso(analyzed_until) if analyzed_until else None,
         nvr_count=nvr_count or 0,
         mapped_cameras=mapped or 0,
         active_cameras=active or 0,

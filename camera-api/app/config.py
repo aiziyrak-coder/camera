@@ -1333,23 +1333,34 @@ class Settings(BaseSettings):
     # qayta yaratardi. False — HEMIS'ga HECH QANDAY so'rov yo'q: sinxron,
     # dars jadvali, davomat, rasmlar, "Hozir sinxronlash" tugmasi va havoladagi
     # HEMIS surati bilan shaxs tekshiruvi. Qayta ulash: HEMIS_ENABLED=true.
-    hemis_enabled: bool = False
+    # QAYTA ULANDI (2026-10-26, buyurtmachi): ma'lumot kuniga bir marta
+    # to'liq olinib saqlanadi, keyingi kunlar faqat farq yangilanadi —
+    # HEMIS ko'p so'rovda bloklaydi (pastdagi oraliqlar va
+    # hemis_min_request_interval_seconds).
+    hemis_enabled: bool = True
     # 0 — faqat qo'lda ("Sinxronlash" tugmasi). >0 — har N soatda.
     # HEMIS sozlangan bo'lsagina ishlaydi (hemis_configured). Kuniga bir marta
     # to'liq (talabalar, xodimlar, guruhlar, jadval); jadvalning o'zi tez-tez.
     hemis_sync_interval_hours: int = 24
-    hemis_schedule_interval_hours: float = 3.0
+    # Jadval ham kuniga bir marta (14 kun oldinga olinadi — kun ichida
+    # qayta so'rash shart emas).
+    hemis_schedule_interval_hours: float = 24.0
     hemis_schedule_days_back: int = 1
     hemis_schedule_days_ahead: int = 14
     hemis_page_size: int = 200
+    # HEMIS so'rovlari orasidagi eng kam oraliq (soniya) — ko'p so'rovda
+    # HEMIS tokenni bloklaydi. 0 — cheklanmaydi.
+    hemis_min_request_interval_seconds: float = 1.0
     # Davomat HEMIS'dan (app/jobs/hemis_attendance_sync.py): ish soatlarida har
     # N daqiqada BUGUNGI kun (o'qituvchilar har darsni belgilab boradi),
     # tugash soatidan keyin va ertasi kuni ertalab — yakuniy (darsi jadvalda
     # bo'lib, HEMIS'da o'tkazilmagan o'qituvchi "kelmadi"). Kamera, turniket
     # va qo'lda kiritilgan yozuvlarga tegilmaydi.
     hemis_attendance_sync_enabled: bool = True
-    hemis_attendance_interval_minutes: int = 30
-    hemis_attendance_start_hour: int = 8
+    # Kuniga bir marta: 19:00 dan keyin bugungi kun yakuniy (start = end —
+    # kun ichida so'rov yo'q). Tekshiruv har soatda, so'rov — kuniga bitta.
+    hemis_attendance_interval_minutes: int = 60
+    hemis_attendance_start_hour: int = 19
     hemis_attendance_end_hour: int = 19
     # HEMIS rasmidan tanitish (app/jobs/hemis_photos.py): har N soniyada bir
     # to'plam, fon navbatida (davomat kadrlaridan keyin).
@@ -1363,7 +1374,9 @@ class Settings(BaseSettings):
     # (boshqa odamga juda o'xshasa yozilmaydi). Talabalar uchun 26-sentabr
     # qarori o'zgarmaydi. hemis_photo_enrollment o'chiq bo'lsa ham vazifa
     # xodimlar uchun ishlaydi.
-    hemis_photo_staff_single: bool = True
+    # O'CHIRILDI (2026-10-26): uch tomonlama qoida hamma uchun majburiy
+    # (buyurtmachi, 2026-10-02) va HEMIS'ga so'rov kam bo'lsin.
+    hemis_photo_staff_single: bool = False
     # Nazorat → "Kriteriyalar bo'yicha": Diqqat ustuni foizda. Darsdagi diqqat
     # tahlili (#19) hali ishlamaydi, shuning uchun NAMUNA qiymat: davomati bor
     # har guruhga 65-90% (guruh + sana bo'yicha barqaror). Buyurtmachi
@@ -1455,9 +1468,18 @@ class Settings(BaseSettings):
     # 2026-10-04 dan standart emas).
     analysis_mode: Literal["kunlik", "realtime"] = "kunlik"
     # Tahlil shu paytda boshlanadi va shu payt kun oynasining oxiri.
-    video_analysis_start: str = "20:00"
+    video_analysis_start: str = "19:30"
     # Kun oynasining boshi — kirish kameralari shundan boshlab ko'riladi.
-    video_analysis_day_start: str = "07:00"
+    video_analysis_day_start: str = "07:30"
+    # Kunduzgi rejim (2026-10-26, buyurtmachi): kun oxirini kutmasdan har
+    # video_analysis_slice_minutes da shu paytgacha TUGAGAN darslar
+    # video_analysis_lag_minutes kechikish bilan (NVR yozuvidan) tahlil
+    # qilinadi — natija o'sha kuni chiqadi, yuk kun bo'yi teng taqsimlanadi.
+    # Kun natijasi barcha bo'laklar kuzatuvlaridan yig'iladi. False — eski
+    # rejim: kun oxirida (video_analysis_start) bir marta.
+    video_analysis_daytime: bool = True
+    video_analysis_lag_minutes: int = 60
+    video_analysis_slice_minutes: int = 30
     # Bir vaqtda nechta vazifa (kamera×oraliq) tahlil qilinadi. Yuz/poza
     # modellarining o'z navbatlari baribir CPU'ni cheklaydi; bu — NVR'dan
     # bir vaqtda o'qiladigan oqimlar va xotira uchun.

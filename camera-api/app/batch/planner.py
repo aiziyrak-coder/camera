@@ -37,6 +37,10 @@ PHASE_START = "boshlanish"
 PHASE_MID = "orta"
 PHASE_END = "oxir"
 
+# Kunduzgi rejim bo'laklari (app/jobs/video_analysis.py) shu belgi bilan
+# yaratiladi: kun natijasi ularning hammasidan yig'iladi.
+DAYTIME_TRIGGER = "tizim (kunduzgi)"
+
 KIND_ENTRANCE = "kirish"
 KIND_LESSON = "dars"
 KIND_GENERAL = "umumiy"
@@ -226,20 +230,28 @@ def build_plan(
     window_end: datetime,
     active_codes: set[int],
     everywhere: bool | None = None,
+    lessons_ending_after: datetime | None = None,
 ) -> Plan:
     """`cameras` — Camera obyektlari (yoki shu atributli narsalar):
     id, name, nvr_id, nvr_channel, room_type, is_entrance, is_exit,
     is_perimeter, excluded_module_codes.
 
     `everywhere` (standart — settings.video_analysis_everywhere): kamera
-    turi belgilanmagan bo'lsa ham hamma kriteriyalar hamma kamerada."""
+    turi belgilanmagan bo'lsa ham hamma kriteriyalar hamma kamerada.
+
+    `lessons_ending_after` (kunduzgi rejim bo'lagi): faqat shu paytdan
+    keyin va window_end gacha TUGAGAN darslar olinadi — har dars to'liq
+    (boshlanishi oldingi bo'lak oynasida bo'lsa ham) bitta bo'lakda ko'riladi."""
     s = settings
     if everywhere is None:
         everywhere = s.video_analysis_everywhere
     plan = Plan()
     lessons_by_camera: dict[uuid.UUID, list[LessonSlot]] = {}
     for lesson in lessons:
-        if lesson.end <= window_start or lesson.start >= window_end:
+        if lessons_ending_after is not None:
+            if not (lessons_ending_after < lesson.end <= window_end):
+                continue
+        elif lesson.end <= window_start or lesson.start >= window_end:
             continue
         lessons_by_camera.setdefault(lesson.camera_id, []).append(lesson)
 
@@ -270,7 +282,8 @@ def build_plan(
         if camera_lessons or room_type in CLASSROOM_TYPES:
             for lesson in sorted(camera_lessons, key=lambda item: item.start):
                 clips = lesson_clips(lesson.start, lesson.end, codes, window_end)
-                clips = [clip for clip in clips if clip.start >= window_start - timedelta(hours=1)]
+                if lessons_ending_after is None:
+                    clips = [clip for clip in clips if clip.start >= window_start - timedelta(hours=1)]
                 if clips:
                     plan.jobs.append(
                         PlannedJob(camera_id=camera.id, kind=KIND_LESSON, clips=clips, lesson_session_id=lesson.id)

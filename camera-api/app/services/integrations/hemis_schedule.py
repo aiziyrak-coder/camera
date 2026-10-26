@@ -123,22 +123,37 @@ def map_lesson(item: dict) -> HemisLesson | None:
     )
 
 
+# Kamera nomining o'zi xona bo'lsa ("206-xona", "211"): xona raqami
+# kiritilmagan kameralar ham darsga bog'lanadi ("1-xona koridori" — yo'q).
+_CAMERA_ROOM_NAME = re.compile(r"^\s*(\d{1,4}[a-z]?)\s*(?:-?\s*xona)?\s*$", re.IGNORECASE)
+
+
+def camera_room_code(camera: Camera) -> str | None:
+    """Kameraning xona kodi: kiritilgan room_code, bo'lmasa — nomidan."""
+    code = normalize_room_code(camera.room_code)
+    if code:
+        return code
+    match = _CAMERA_ROOM_NAME.match(camera.name or "")
+    return match.group(1).lower() if match else None
+
+
 async def camera_index(db: AsyncSession) -> dict[tuple[int, str], Camera]:
     """(bino raqami, xona kodi) -> kamera. Bir xonada bir nechta kamera bo'lsa
     — birinchisi (nomi bo'yicha); qolganlari keyin qo'shimcha sifatida kerak bo'lsa ham
-    dars bitta kameraga bog'lanadi."""
+    dars bitta kameraga bog'lanadi. Xona raqami qo'lda kiritilgan kamera
+    nomidan topilganidan ustun."""
     rows = (
         await db.execute(
             select(Camera, Building.name)
             .join(Building, Building.id == Camera.building_id, isouter=True)
-            .where(Camera.room_code.is_not(None))
             .order_by(Camera.name)
         )
     ).all()
     index: dict[tuple[int, str], Camera] = {}
-    for camera, building_name in rows:
+    explicit_first = sorted(rows, key=lambda row: normalize_room_code(row[0].room_code) is None)
+    for camera, building_name in explicit_first:
         number = building_number(building_name)
-        code = normalize_room_code(camera.room_code)
+        code = camera_room_code(camera)
         if number is not None and code:
             index.setdefault((number, code), camera)
     return index

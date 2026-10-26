@@ -139,6 +139,12 @@ class AnalysisStatusOut(CamelModel):
     start_time: str
     day_start: str
     next_run_at: str | None
+    # Kunduzgi rejim: har slice_minutes da, lag_minutes kechikish bilan;
+    # analyzed_until — bugun shu paytgacha bo'lgan yozuv tahlil qilingan.
+    daytime: bool = False
+    lag_minutes: int = 0
+    slice_minutes: int = 0
+    analyzed_until: str | None = None
     nvr_count: int
     mapped_cameras: int
     active_cameras: int

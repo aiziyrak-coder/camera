@@ -504,6 +504,8 @@ async def test_api_permissions(client, seeded):
 
 
 async def test_api_not_configured(client, seeded, monkeypatch):
+    # Yoqilgan, lekin manzil yo'q — 400 (o'chirilgan HEMIS esa 409 beradi).
+    monkeypatch.setattr(settings, "hemis_enabled", True)
     monkeypatch.setattr(settings, "hemis_base_url", "")
     admin = await auth_headers(client, "admin", "admin123")
     status = await client.get("/api/integrations/hemis/status", headers=admin)
@@ -692,3 +694,23 @@ async def test_sync_builds_org_tree_and_links_staff(hemis_settings):
     await _run_sync()
     async with TestSessionLocal() as db:
         assert len((await db.execute(select(OrgUnit))).scalars().all()) == len(DEPARTMENTS)
+
+
+async def test_requests_are_spaced_out(hemis_settings, monkeypatch):
+    """HEMIS ko'p so'rovda tokenni bloklaydi — ketma-ket so'rovlar orasida
+    eng kam oraliq saqlanadi (sahifalar ham, alohida mijozlar ham)."""
+    monkeypatch.setattr(settings, "hemis_min_request_interval_seconds", 1.0)
+    monkeypatch.setattr(hemis, "_last_request_at", [0.0])
+    set_transport_for_tests(httpx.MockTransport(lambda r: httpx.Response(200, json=_page([{"x": 1}], 1, 1))))
+    waits = []
+
+    async def fake_sleep(seconds):
+        waits.append(seconds)
+
+    async with hemis.HemisClient(sleep=fake_sleep) as client:
+        await client.fetch_page("group-list")
+        await client.fetch_page("group-list")
+    async with hemis.HemisClient(sleep=fake_sleep) as client:
+        await client.fetch_page("group-list")
+    assert len(waits) == 2
+    assert all(0.9 < w <= 1.0 for w in waits)

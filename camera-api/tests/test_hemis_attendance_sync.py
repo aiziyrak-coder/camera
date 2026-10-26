@@ -62,3 +62,15 @@ def test_single_photo_rule_applies_to_staff_only(monkeypatch):
     assert not hemis_photos.single_photo_allowed(SimpleNamespace(type="talaba"))
     monkeypatch.setattr(settings, "hemis_photo_staff_single", False)
     assert not hemis_photos.single_photo_allowed(SimpleNamespace(type="xodim"))
+
+
+def test_default_settings_ask_hemis_once_a_day():
+    """Standart sozlamada (2026-10-26): kun ichida so'rov yo'q — 19:00 dan
+    keyin bugungi kun bir marta yakuniy olinadi."""
+    today = date(2026, 10, 26)
+    yesterday = date(2026, 10, 25)
+    finalized = {yesterday}
+    calls = [plan_runs(hour, today, finalized) for hour in range(7, 19)]
+    assert all(c == [] for c in calls)
+    assert plan_runs(19, today, finalized) == [(today, True)]
+    assert plan_runs(20, today, finalized | {today}) == []

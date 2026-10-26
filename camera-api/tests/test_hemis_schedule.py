@@ -224,3 +224,31 @@ async def test_full_size_portrait_is_analysed_at_640(monkeypatch):
     with pytest.raises(hemis_photos.NoFaceDetectedError):
         await hemis_photos._embed_photo(buffer.tobytes())
     assert shapes == [(640, 498), (640, 498)]
+
+
+def test_camera_room_code_falls_back_to_the_camera_name():
+    def cam(name, code=None):
+        return Camera(name=name, ip="10.0.0.1", zone="Z", resolution="1080p", status="faol", room_code=code)
+
+    assert hs.camera_room_code(cam("206-xona")) == "206"
+    assert hs.camera_room_code(cam("211")) == "211"
+    assert hs.camera_room_code(cam("60-xona ")) == "60"
+    assert hs.camera_room_code(cam("206-xona", "110")) == "110"
+    assert hs.camera_room_code(cam("1-xona koridori")) is None
+    assert hs.camera_room_code(cam("Katta majlislar zali")) is None
+
+
+async def test_lesson_links_to_a_camera_named_after_the_room(db_session):
+    """2026-10-26: 107 kameradan 22 tasida xona raqami kiritilgan edi —
+    "206-xona" nomli kamera "206-xona Ma'ruza" darsiga bog'lanmasdi."""
+    building = Building(id=uuid.uuid4(), name="1-Bino (Asosiy korpus)")
+    db_session.add(building)
+    await db_session.commit()
+    named = Camera(id=uuid.uuid4(), name="206-xona", ip="10.1.0.6", zone="Z", resolution="1080p", status="faol",
+                   building_id=building.id)
+    db_session.add(named)
+    await db_session.commit()
+    item = _item(1, date(2026, 9, 28), room="206-xona Ma'ruza", building="1-Oʻquv bino")
+    stats = await hs.sync_schedule(db_session, [item], {}, first=date(2026, 9, 28), last=date(2026, 9, 28))
+    await db_session.commit()
+    assert stats["with_camera"] == 1

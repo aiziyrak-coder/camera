@@ -287,5 +287,19 @@ def _realtime_mode_for_legacy_tests(request, monkeypatch):
 
     if request.node.get_closest_marker("daily_mode"):
         monkeypatch.setattr(settings, "analysis_mode", "kunlik")
+        # Kun oxiridagi bir martalik tahlil (07:00-20:00) — bu testlar shu
+        # yo'lni tekshiradi; kunduzgi bo'laklar `daytime_mode` belgisi bilan.
+        daytime = bool(request.node.get_closest_marker("daytime_mode"))
+        monkeypatch.setattr(settings, "video_analysis_daytime", daytime)
+        if not daytime:
+            monkeypatch.setattr(settings, "video_analysis_day_start", "07:00")
+            monkeypatch.setattr(settings, "video_analysis_start", "20:00")
     else:
         monkeypatch.setattr(settings, "analysis_mode", "realtime")
+
+
+@pytest.fixture(autouse=True)
+def _hemis_unthrottled(monkeypatch):
+    """HEMIS so'rovlari orasidagi kutish (production himoyasi) testlarni
+    sekinlashtirmasin; uning o'zi test_integrations_hemis.py da tekshiriladi."""
+    monkeypatch.setattr(settings, "hemis_min_request_interval_seconds", 0.0)

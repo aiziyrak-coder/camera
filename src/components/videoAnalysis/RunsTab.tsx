@@ -174,7 +174,13 @@ export default function RunsTab({
           ) : (
             <p className="text-[13px] text-muted">
               Hozir tahlil ketmayapti.{' '}
-              {status?.nextRunAt ? `Keyingisi: ${dateTime(status.nextRunAt)} (kun yozuvlari ${status.dayStart}–${status.startTime}).` : ''}
+              {status?.daytime
+                ? `Kunduzgi rejim: har ${status.sliceMinutes} daqiqada, ${status.lagMinutes} daqiqa kechikish bilan (yozuvlar ${status.dayStart}–${status.startTime}). ${
+                    status.analyzedUntil ? `Bugun ${clockOf(status.analyzedUntil)} gacha tahlil qilindi. ` : ''
+                  }${status.nextRunAt ? `Keyingisi: ${dateTime(status.nextRunAt)}.` : ''}`
+                : status?.nextRunAt
+                  ? `Keyingisi: ${dateTime(status.nextRunAt)} (kun yozuvlari ${status.dayStart}–${status.startTime}).`
+                  : ''}
             </p>
           )}
           {canManage && !isRunActive(current) && (
@@ -215,7 +221,11 @@ export default function RunsTab({
           error={error}
           onRetry={() => void load()}
           emptyTitle="Hali tahlil bo'lmagan"
-          emptyDescription={`Birinchi tahlil bugun ${status?.startTime ?? '20:00'} da avtomatik boshlanadi.`}
+          emptyDescription={
+            status?.daytime
+              ? `Birinchi tahlil ${status.nextRunAt ? dateTime(status.nextRunAt) : 'bugun'} da avtomatik boshlanadi (NVR ulangan bo'lsa).`
+              : `Birinchi tahlil bugun ${status?.startTime ?? '20:00'} da avtomatik boshlanadi.`
+          }
           ariaLabel="Tahlillar tarixi"
           maxHeight="none"
           dense

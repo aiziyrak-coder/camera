@@ -69,6 +69,11 @@ REQUEST_TIMEOUT_SECONDS = 30.0
 MAX_ATTEMPTS = 4
 # 5xx / 429 / tarmoq xatosida urinishlar orasidagi kutish (soniya).
 BACKOFF_SECONDS = (1.0, 3.0, 8.0)
+# HEMIS ko'p so'rovda tokenni bloklaydi: jarayon ichidagi barcha so'rovlar
+# orasida kamida settings.hemis_min_request_interval_seconds bo'ladi
+# (ro'yxat, jadval, davomat bir vaqtda ishlasa ham — umumiy navbat).
+_throttle_lock = asyncio.Lock()
+_last_request_at = [0.0]
 # Cheksiz sahifalashdan himoya (noto'g'ri pageCount qaytargan server).
 MAX_PAGES = 5000
 MAX_MESSAGES = 50
@@ -559,6 +564,17 @@ class HemisClient:
     def _url(self, endpoint: str) -> str:
         return f"{self.base_url}/v1/data/{endpoint}"
 
+    async def _throttle(self) -> None:
+        interval = settings.hemis_min_request_interval_seconds
+        if interval <= 0:
+            return
+        loop = asyncio.get_running_loop()
+        async with _throttle_lock:
+            wait = _last_request_at[0] + interval - loop.time()
+            if wait > 0:
+                await self._sleep(wait)
+            _last_request_at[0] = loop.time()
+
     async def _get_json(self, endpoint: str, params: dict[str, Any]) -> Any:
         assert self._client is not None, "HemisClient `async with` ichida ishlatiladi"
         url = self._url(endpoint)
@@ -566,6 +582,7 @@ class HemisClient:
         for attempt in range(MAX_ATTEMPTS):
             retryable = False
             try:
+                await self._throttle()
                 response = await self._client.get(url, params=params)
             except httpx.TimeoutException:
                 last_error = f"HEMIS javob bermadi ({REQUEST_TIMEOUT_SECONDS:.0f} s)"
