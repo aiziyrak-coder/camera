@@ -32,18 +32,24 @@ def test_hidden_lesson_criteria_are_not_columns():
     assert set(hisobot.HIDDEN_IN_GROUP) == {"dars_qatnashish", "darsga_kech", "darsdan_erta"}
 
 
-def test_demo_attention_is_65_to_90_and_stable():
-    day = date(2026, 10, 6)
-    values = [hisobot.demo_attention_percent(f"G-{i}", day) for i in range(500)]
-    assert min(values) >= 65 and max(values) <= 90 and len(set(values)) > 15
-    assert hisobot.demo_attention_percent("TPI-126", day) == hisobot.demo_attention_percent("TPI-126", day)
-
-
-def test_demo_attention_only_for_groups_with_attendance():
+def test_no_made_up_values_without_video_analysis():
+    """2026-10-26: hech qayerda soxta qiymat yo'q — diqqat foizi o'ylab
+    topilmaydi, tekshirilmagan oq xalat/chekish "0" yoki ✓ emas, "—"."""
     people = [_member(True), _member(True)]
     day = date(2026, 10, 6)
     data = hisobot.Data("talaba", day, day, Policy(), people)
-    assert hisobot.demo_attention_cell(data, "TPI-126", day)["value"] == "—"
+    data.active_modules = {6, 7, 8, 9, 10, 15, 19, 21, 22}
     data.day_rows = {people[0].id: {"status": "keldi"}}
-    cell = hisobot.demo_attention_cell(data, "TPI-126", day)
-    assert cell["value"].endswith("%") and "namuna" in cell["title"]
+    assert not hasattr(hisobot, "demo_attention_percent")
+    for key in ("diqqat", "forma", "chekish"):
+        cell = hisobot.group_cell(data, key, analysed=False)
+        assert cell["value"] == "—", (key, cell)
+        assert not cell["value"].endswith("%")
+
+
+def test_unchecked_coat_is_not_a_tick():
+    base = {"value": "1", "tone": "danger"}
+    assert hisobot.coat_cell(0, 0, base, analysed=True)["value"] == "—"
+    assert hisobot.coat_cell(0, 0, base, analysed=False)["value"] == "—"
+    assert hisobot.coat_cell(2, 0, base, analysed=True)["value"] == "✓"
+    assert hisobot.coat_cell(1, 1, base, analysed=True) is base

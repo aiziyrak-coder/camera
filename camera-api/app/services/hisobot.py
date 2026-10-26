@@ -1562,16 +1562,16 @@ def matrix_cell(data: Data, key: str, pid: uuid.UUID) -> dict:
 
 
 def coat_cell(seen_with: int, seen_without: int, base: dict, analysed: bool) -> dict:
-    """Oq xalat (buyurtmachi qarori, 2026-10-06): qoidabuzarlik qayd
-    etilmagan har talabada ✓; xalatsiz ko'rilgan bo'lsa — son (qizil). ✓ ning
-    izohi nima tekshirilganini aniq aytadi."""
+    """Oq xalat: tahlil xalatsiz ko'rgan bo'lsa — son (qizil); faqat xalatda
+    ko'rgan bo'lsa — ✓; umuman ko'rmagan bo'lsa — "—". Tekshirilmagan
+    talabaga ✓ qo'yilmaydi (2026-10-26, buyurtmachi: faqat real ma'lumot)."""
     if seen_without:
         return base
     if seen_with:
         return _cell("✓", "success", f"Oq xalatda ko'rildi ({seen_with} kun)", base.get("evidence") or 0)
     if analysed:
-        return _cell("✓", "success", "Oq xalatsiz holat qayd etilmagan")
-    return _cell("✓", "success", "Oq xalatsiz holat qayd etilmagan (bu kun video tahlil hali o'tkazilmagan)")
+        return _cell("—", "neutral", "Oq xalat tekshirilmagan: talaba bu kun video tahlilda ko'rinmagan")
+    return _cell("—", "neutral", "Oq xalat tekshirilmagan: bu kun video tahlil hali o'tkazilmagan")
 
 
 def matrix_unavailable(data: Data, key: str, analysed: bool) -> str | None:
@@ -1604,10 +1604,6 @@ async def group_matrix(db: AsyncSession, group: str, start: date_type, end: date
     for c in criteria_for(kind):
         value, tone = indicator(data, c.key)
         stop = matrix_unavailable(data, c.key, analysed)
-        if c.key == "forma" and stop and not blocker(data, c.key):
-            # Oq xalat ustuni doim ko'rsatiladi (✓ — qoidabuzarlik qayd
-            # etilmagan); tahlil o'tmagani izohda.
-            value, tone, stop = "0", "neutral", None
         criteria.append({
             "key": c.key, "code": criterion_code(c.key, kind), "label": c.label,
             "description": describe(c.key, data.policy, kind),
@@ -1647,6 +1643,11 @@ async def group_matrix(db: AsyncSession, group: str, start: date_type, end: date
 HIDDEN_IN_GROUP = ("dars_qatnashish", "darsga_kech", "darsdan_erta")
 
 
+# Faqat video tahlildan olinadigan mezonlar: tahlil o'tmagan davrda "0"
+# ko'rsatilmaydi ("hammasi joyida" emas, "tekshirilmagan").
+VIDEO_ONLY_CRITERIA = frozenset({"forma", "chekish", "diqqat", "faollik"})
+
+
 def group_cell(view: Data, key: str, analysed: bool) -> dict:
     """Bitta guruhning bitta mezon bo'yicha to'liq SONI (ixcham: value, tone,
     kerak bo'lsa title). Nazorat qoidasi bilan bir xil (2026-10-06): davomat
@@ -1667,34 +1668,11 @@ def group_cell(view: Data, key: str, analysed: bool) -> dict:
         return {"value": f"{present}/{len(enrolled)}", "tone": _rate_tone(rate),
                 "title": f"Ro'yxatdan o'tgan {len(enrolled)} talabadan {present} tasi keldi ({late} tasi kech)"}
     value, tone = indicator(view, key)
-    if key == "forma" and not analysed and value in ("0", "—"):
-        return {"value": "0", "tone": "neutral"}
-    if key == "chekish" and value == "0":
-        return {"value": "—", "tone": "neutral"}
+    if key in VIDEO_ONLY_CRITERIA and not analysed:
+        # Video tahlil o'tmagan kun: "0" — "qoidabuzarlik yo'q" emas,
+        # "tekshirilmagan" (faqat real ma'lumot, 2026-10-26).
+        return {"value": "—", "tone": "neutral", "title": "Bu davr uchun video tahlil hali o'tkazilmagan"}
     return {"value": value, "tone": tone}
-
-
-DEMO_ATTENTION_MIN, DEMO_ATTENTION_MAX = 65, 90
-
-
-def demo_attention_percent(group: str, day: date_type) -> int:
-    """Namuna diqqat foizi (settings.demo_attention_percent): guruh + sana
-    bo'yicha barqaror, 65..90 oralig'ida — sahifa yangilanganda sakramaydi."""
-    import hashlib
-
-    digest = hashlib.sha256(f"{group}|{day.isoformat()}".encode()).digest()
-    span = DEMO_ATTENTION_MAX - DEMO_ATTENTION_MIN + 1
-    return DEMO_ATTENTION_MIN + int.from_bytes(digest[:4], "big") % span
-
-
-def demo_attention_cell(view: Data, group: str, day: date_type) -> dict:
-    """Davomati bor guruh — namuna foiz; kelgan yo'q — "—"."""
-    present = sum(1 for m in view.members if m.enrolled and (view.day_rows.get(m.id) or {}).get("status") in PRESENT)
-    if not present:
-        return {"value": "—", "tone": "neutral", "title": "Bu kun guruhdan kelgan talaba yo'q"}
-    pct = demo_attention_percent(group, day)
-    return {"value": f"{pct}%", "tone": "success" if pct >= 80 else "warning",
-            "title": f"Darsdagi diqqat darajasi: {pct}% (namuna qiymat — diqqat tahlili hali ishga tushmagan)"}
 
 
 async def groups_criteria(db: AsyncSession, start: date_type, end: date_type,
@@ -1732,12 +1710,7 @@ async def groups_criteria(db: AsyncSession, start: date_type, end: date_type,
             "course": g_course,
             "total": len(members),
             "enrolled": sum(1 for m in members if m.enrolled),
-            "cells": {
-                c.key: demo_attention_cell(view, name, start)
-                if c.key == "diqqat" and settings.demo_attention_percent
-                else group_cell(view, c.key, analysed)
-                for c in criteria
-            },
+            "cells": {c.key: group_cell(view, c.key, analysed) for c in criteria},
         })
     groups.sort(key=lambda g: (-g["total"], g["name"]))
     return {
@@ -1745,7 +1718,7 @@ async def groups_criteria(db: AsyncSession, start: date_type, end: date_type,
         "analysed": analysed,
         "criteria": [
             {"key": c.key, "code": criterion_code(c.key, kind),
-             "label": "Darsdagi diqqat darajasi (%)" if c.key == "diqqat" and settings.demo_attention_percent else c.label,
+             "label": c.label,
              "description": describe(c.key, data.policy, kind)}
             for c in criteria
         ],
