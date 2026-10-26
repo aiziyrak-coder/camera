@@ -9,8 +9,11 @@ match score — the same category of model real biometric systems use.
 """
 
 import asyncio
+import copy
+import functools
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import cv2
@@ -100,6 +103,15 @@ def _int8_model_file(model_file: str, taskname: str) -> str:
     )
     if not wanted:
         return model_file
+    import os
+
+    if ".int8" in os.path.basename(model_file):
+        # insightface papkadagi BARCHA .onnx fayllarni ko'radi va tartib
+        # bo'yicha avval "det_10g.int8.onnx" ni oladi. Ilgari u qayta
+        # kvantlanib "det_10g.int8.int8.onnx" yaratilardi — har qayta ishga
+        # tushishda bir qavat: production'da 47 qavat (2026-10-06), oxiri
+        # "File name too long" xatosi va gigabaytlab keraksiz fayllar.
+        return model_file
     target = model_file[:-5] + ".int8.onnx" if model_file.endswith(".onnx") else model_file + ".int8"
     try:
         import os
@@ -115,6 +127,30 @@ def _int8_model_file(model_file: str, taskname: str) -> str:
     except Exception:
         logger.warning("INT8 quantization failed — using fp32 model", extra={"model": model_file}, exc_info=True)
         return model_file
+
+
+def _remove_nested_int8_models(model_dir: str | None = None) -> int:
+    """Qayta-qayta kvantlangan model fayllarini (*.int8.int8*.onnx, yarim
+    yozilgan *.part, *-inferred.onnx) o'chiradi — ular avtomatik yaratilgan
+    nusxalar, asl va bir marta kvantlangan model qoladi."""
+    import os
+
+    directory = model_dir or os.path.expanduser("~/.insightface/models/buffalo_l")
+    removed = 0
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return 0
+    for name in names:
+        if name.count(".int8") > 1 or name.endswith(".part") or name.endswith("-inferred.onnx"):
+            try:
+                os.remove(os.path.join(directory, name))
+                removed += 1
+            except OSError:
+                pass
+    if removed:
+        logger.info("nested INT8 model copies removed", extra={"removed": removed})
+    return removed
 
 
 def _limit_session_threads(app: FaceAnalysis, providers: list[str]) -> None:
@@ -189,6 +225,92 @@ def _get_app() -> FaceAnalysis:
     return _app
 
 
+# ── Jonli yo'lak: operator ko'rayotgan kamera ─────────────────────────────
+# O'sha modellar (o'sha INT8 fayllar — natija bir xil), faqat ko'proq
+# oqimli ONNX sessiyalar va o'z oqim hovuzi. Fon tahlillari 2 oqimda
+# ishlayveradi; jonli kadr ularning slotini ham, standart executor'ni ham
+# kutmaydi (settings.face_live_intra_op_threads izohidagi o'lchov).
+_live_app: tuple[FaceAnalysis, FaceAnalysis] | None = None  # (asl, nusxa)
+_live_executor: ThreadPoolExecutor | None = None
+_enrollment_executor: ThreadPoolExecutor | None = None
+
+
+def _live_lane_enabled() -> bool:
+    return settings.face_live_reserved_slots > 0
+
+
+def _clone_with_threads(app: FaceAnalysis, threads: int) -> FaceAnalysis:
+    import onnxruntime
+
+    clone = copy.copy(app)
+    clone.models = {}
+    for name, model in app.models.items():
+        twin = copy.copy(model)
+        model_file = getattr(model, "model_file", None)
+        if model_file:
+            options = onnxruntime.SessionOptions()
+            options.intra_op_num_threads = threads
+            options.inter_op_num_threads = 1
+            options.execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL
+            twin.session = onnxruntime.InferenceSession(
+                _int8_model_file(model_file, getattr(model, "taskname", "")),
+                sess_options=options,
+                providers=["CPUExecutionProvider"],
+            )
+        clone.models[name] = twin
+    clone.det_model = clone.models["detection"]
+    logger.info("InsightFace live sessions ready", extra={"intra_op_threads": threads})
+    return clone
+
+
+def _get_live_app() -> FaceAnalysis:
+    """Jonli yo'lak modellari. GPU'da yoki oqim soni fondagidan ko'p
+    bo'lmasa — umumiy modellar (alohida sessiya foyda bermaydi)."""
+    global _live_app
+    app = _get_app()
+    threads = settings.face_live_intra_op_threads
+    on_gpu = "CUDAExecutionProvider" in (_session_providers or [])
+    if on_gpu or threads <= max(0, settings.face_recognition_intra_op_threads):
+        return app
+    # Nusxa aynan shu umumiy modellardan olingan bo'lishi kerak (testlar va
+    # qayta yuklash _get_app() ni almashtiradi).
+    if _live_app is None or _live_app[0] is not app:
+        with _app_lock:
+            if _live_app is None or _live_app[0] is not app:
+                try:
+                    _live_app = (app, _clone_with_threads(app, threads))
+                except Exception:
+                    logger.warning("live InsightFace sessions failed — using shared ones", exc_info=True)
+                    _live_app = (app, app)
+    return _live_app[1]
+
+
+def _get_live_executor() -> ThreadPoolExecutor:
+    global _live_executor
+    if _live_executor is None:
+        _live_executor = ThreadPoolExecutor(
+            max_workers=max(1, settings.face_live_reserved_slots), thread_name_prefix="face-live"
+        )
+    return _live_executor
+
+
+def _get_enrollment_executor() -> ThreadPoolExecutor:
+    """/royxatdan-otish so'rovlari (pose-check, submit) uchun o'z hovuzi.
+
+    Ular jonli yo'lakka TUSHMASLIGI kerak: u bitta operator kamerasi uchun
+    2 oqimli (face_live_reserved_slots). 2026-10-07 da ro'yxatdan o'tayotgan
+    yuzlab talabaning har soniyadagi pose-check'i shu 2 oqimga tiqilib, bitta
+    javob 7-17 s kechikdi — «to'g'riga qarab tursa ham keyingi bosqichga
+    o'tmayapti». Standart executor'ni esa kuzatuvchilarning JPEG ishlari
+    band qiladi."""
+    global _enrollment_executor
+    if _enrollment_executor is None:
+        _enrollment_executor = ThreadPoolExecutor(
+            max_workers=max(1, settings.face_enrollment_workers), thread_name_prefix="face-enroll"
+        )
+    return _enrollment_executor
+
+
 def _load_app() -> None:
     """_app_lock ichida chaqiriladi."""
     global _app, _session_providers
@@ -215,6 +337,7 @@ def _load_app() -> None:
     # genderage va landmark_2d_106 hech qayerda o'qilmaydi — productionda
     # kirish kamerasida kadrga ~21 yuz tushadi, ya'ni kadr boshiga ~42
     # ta befoyda model chaqiruvi CPU chegarasida turgan konteynerda.
+    _remove_nested_int8_models()
     app = FaceAnalysis(name="buffalo_l", providers=providers, allowed_modules=REQUIRED_FACE_MODELS)
     _limit_session_threads(app, providers)
     # ctx_id=0 selects GPU device 0 when CUDAExecutionProvider is
@@ -449,7 +572,7 @@ def _sharpness(crop: np.ndarray) -> float:
     return float(cv2.Laplacian(gray, cv2.CV_64F).var())
 
 
-def detection_input_size(width: int, height: int) -> tuple[int, int] | None:
+def detection_input_size(width: int, height: int, max_side: int | None = None) -> tuple[int, int] | None:
     """Detektor kirish o'lchami (w, h) — kadrning o'z nisbatida.
 
     Ilgari har kadr 640x640 ga siqilardi. Bu ikki tomonga ham yomon edi:
@@ -460,10 +583,18 @@ def detection_input_size(width: int, height: int) -> tuple[int, int] | None:
     Endi kadr uzun tomoni face_det_max_side dan oshmaydigan qilib (kichik
     kadr — face_det_min_side gacha kattalashtiriladi, eski xatti-harakat
     kabi) o'z nisbatida, 32 ga karrali o'lchamda tahlil qilinadi.
-    None — eski usul (prepare() dagi 640x640)."""
-    if not settings.face_det_native_resolution or width <= 0 or height <= 0:
+    None — eski usul (prepare() dagi 640x640).
+
+    `max_side` berilsa — kadr shundan kattalashtirilmaydi ham (yuz katta
+    bo'lishi ma'lum joylar: ro'yxatdan o'tishdagi burchak tekshiruvi)."""
+    if width <= 0 or height <= 0:
         return None
     long_side = max(width, height)
+    if max_side is not None:
+        scale = min(1.0, max(32, max_side) / long_side)
+        return max(32, int(np.ceil(width * scale / 32.0)) * 32), max(32, int(np.ceil(height * scale / 32.0)) * 32)
+    if not settings.face_det_native_resolution:
+        return None
     max_side = max(32, settings.face_det_max_side)
     min_side = min(max(32, settings.face_det_min_side), max_side)
     scale = min(1.0, max_side / long_side)
@@ -508,6 +639,9 @@ def _detect_faces_sync(
     roi: Box | None = None,
     skip_boxes: tuple[Box, ...] = (),
     landmarks: bool = True,
+    live: bool = False,
+    embed: bool = True,
+    det_max_side: int | None = None,
 ) -> list[DetectedFace]:
     """Every face in the frame (not just the largest) with its bounding box,
     and — for faces worth it — its embedding and 68-point landmarks.
@@ -542,7 +676,14 @@ def _detect_faces_sync(
     `landmarks=False` — 68 nuqtali 3D belgilar hisoblanmaydi. Ularni faqat
     uyqu, frontallik va ro'yxatga olish o'qiydi; davomat esa yo'q. Model
     (1k3d68, 143 MB) har yuzga ~0.16 s oladi — ArcFace'ning deyarli
-    yarmi (productionda o'lchandi, 2026-09-24)."""
+    yarmi (productionda o'lchandi, 2026-09-24).
+
+    `live=True` — jonli yo'lak modellari (_get_live_app).
+
+    `embed=False` — ArcFace vektori hisoblanmaydi (faqat ramka va
+    landmarklar): ro'yxatdan o'tishdagi burchak tekshiruviga vektor kerak emas.
+
+    `det_max_side` — detektor kirishining uzun tomoni (detection_input_size)."""
     img = _decode_image(image_bytes)
     offset_x = offset_y = 0
     if roi is not None:
@@ -552,8 +693,8 @@ def _detect_faces_sync(
         img = np.ascontiguousarray(img[y1:y2, x1:x2])
         offset_x, offset_y = x1, y1
     offset = np.array([offset_x, offset_y, offset_x, offset_y], dtype=np.float32)
-    app = _get_app()
-    input_size = detection_input_size(img.shape[1], img.shape[0])
+    app = _get_live_app() if live else _get_app()
+    input_size = detection_input_size(img.shape[1], img.shape[0], det_max_side)
     if input_size is None:
         bboxes, kpss = app.det_model.detect(img, max_num=0, metric="default")
     else:
@@ -577,7 +718,7 @@ def _detect_faces_sync(
     if not to_analyse:
         return faces
 
-    recognition = app.models.get("recognition")
+    recognition = app.models.get("recognition") if embed else None
     if recognition is not None:
         size = recognition.input_size[0]
         crops = [face_align.norm_crop(img, landmark=raw.kps, image_size=size) for _, raw in to_analyse]
@@ -612,8 +753,15 @@ async def detect_faces(
     roi: Box | None = None,
     skip_boxes: tuple[Box, ...] = (),
     landmarks: bool = True,
+    enrollment: bool = False,
+    embed: bool = True,
+    det_max_side: int | None = None,
 ) -> list[DetectedFace]:
     """Gated by face_inference_gate — pass PRIORITY_LIVE for live-detection.
+
+    `enrollment=True` — /royxatdan-otish so'rovi: navbatda birinchi, lekin
+    kameraning jonli yo'lagida emas, o'z hovuzida (_get_enrollment_executor).
+    `embed=False` — vektorsiz, `det_max_side` — detektor o'lchami (_detect_faces_sync izohi).
 
     `min_face_px` — shundan kichik yuz tahlil qilinmaydi (None:
     settings.face_analysis_min_px). Ro'yxatga olish kabi yuzning har
@@ -631,10 +779,26 @@ async def detect_faces(
         roi,
         tuple(tuple(round(float(v), 1) for v in box[:4]) for box in skip_boxes),
         landmarks,
+        embed,
+        det_max_side,
     )
+
+    live = priority <= PRIORITY_LIVE and not enrollment and _live_lane_enabled()
 
     async def run() -> list[DetectedFace]:
         async with face_inference_gate.slot(priority=priority):
+            if live:
+                # O'z hovuzida: standart executor'ni 107 kuzatuvchining
+                # harakat/JPEG ishlari band qilib turadi.
+                call = functools.partial(
+                    _detect_faces_sync, image_bytes, threshold, analyse, roi, tuple(skip_boxes), landmarks, True
+                )
+                return await asyncio.get_running_loop().run_in_executor(_get_live_executor(), call)
+            if enrollment:
+                call = functools.partial(
+                    _detect_faces_sync, image_bytes, threshold, analyse, roi, tuple(skip_boxes), landmarks, False, embed, det_max_side
+                )
+                return await asyncio.get_running_loop().run_in_executor(_get_enrollment_executor(), call)
             return await asyncio.to_thread(
                 _detect_faces_sync, image_bytes, threshold, analyse, roi, tuple(skip_boxes), landmarks
             )

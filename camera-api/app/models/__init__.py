@@ -31,6 +31,13 @@ from app.models.report_schedule import ReportSchedule
 from app.models.revoked_token import RevokedToken
 from app.models.student_staff import StudentStaff
 from app.models.user import User
+from app.models.video_analysis import (
+    DailyPersonCriteria,
+    NvrDevice,
+    VideoAnalysisJob,
+    VideoAnalysisRun,
+    VideoObservation,
+)
 from app.models.wall_view import WallView
 
 __all__ = [
@@ -71,4 +78,9 @@ __all__ = [
     "AccessEvent",
     "IntegrationSyncRun",
     "WallView",
+    "NvrDevice",
+    "VideoAnalysisRun",
+    "VideoAnalysisJob",
+    "VideoObservation",
+    "DailyPersonCriteria",
 ]

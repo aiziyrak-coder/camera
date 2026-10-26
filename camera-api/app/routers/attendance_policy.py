@@ -67,6 +67,55 @@ async def get_policy(db: DbDep, _user: Annotated[CurrentUser, Depends(get_curren
     return _out(await load_policy(db, force=True))
 
 
+async def recompute_statuses(db: AsyncSession, policy) -> int:
+    """Oxirgi RECOMPUTE_DAYS kun yozuvlarining holatini (keldi / kech_keldi)
+    yangi qoida bilan qayta hisoblaydi; o'zgarganlar soni. Commit — chaqiruvchida.
+    Ish vaqti sahifasi (PUT) va scripts/ish_vaqti.py bir xil yo'ldan."""
+    since = business_today() - timedelta(days=RECOMPUTE_DAYS)
+    rows = (
+        await db.execute(
+            select(AttendanceRecord.id, AttendanceRecord.date, AttendanceRecord.check_in, AttendanceRecord.status, StudentStaff.type)
+            .join(StudentStaff, StudentStaff.id == AttendanceRecord.student_staff_id)
+            .where(AttendanceRecord.date >= since)
+            .where(AttendanceRecord.check_in.is_not(None))
+            .where(AttendanceRecord.status.in_(("keldi", "kech_keldi")))
+            # Qo'lda tuzatilgan yozuv (source='qolda') tegilmaydi — operator
+            # qarori qoidadan ustun. QOLGANLARINING hammasi qayta hisoblanadi,
+            # shu jumladan manbasi NULL bo'lgan ESKI yozuvlar: ilgari bu yerda
+            # source IN ('kamera','turniket') turardi va productionda 1005 ta
+            # yozuvning manbasi NULL, faqat 5 tasi 'kamera' edi — ya'ni "Ish
+            # vaqti" sahifasi saqlanganda muvaffaqiyat deb aytardi-yu, amalda
+            # deyarli hech nimani qayta hisoblamasdi.
+            # HEMIS davomati (source='hemis', scripts/hemis_davomat.py) ham
+            # tegilmaydi: uning vaqti — DARS boshlanishi (13:00 — ikkinchi
+            # smena), "kech" emas; holati darsga qatnashganidan olingan.
+            .where(
+                or_(
+                    AttendanceRecord.source.is_(None),
+                    AttendanceRecord.source.not_in(("qolda", "hemis")),
+                )
+            )
+        )
+    ).all()
+    changed = {"keldi": [], "kech_keldi": []}
+    for rec_id, day, check_in, old, person_type in rows:
+        new = policy.arrival_status(check_in, person_type, day)
+        if new != old:
+            changed[new].append(rec_id)
+    # Bo'laklab yangilanadi: 60 kun × 10 000 odam = 600 000 qator, hammasi
+    # bitta IN () ga sig'maydi — Postgres bitta so'rovda 32 767 dan ortiq
+    # parametr qabul qilmaydi va qoidani saqlash butunlay xato bilan
+    # tugardi (app/jobs/absence_marker.py:INSERT_CHUNK_SIZE da xuddi shu
+    # dars yozilgan).
+    for new_status, ids in changed.items():
+        for start in range(0, len(ids), UPDATE_CHUNK_SIZE):
+            chunk = ids[start : start + UPDATE_CHUNK_SIZE]
+            await db.execute(
+                update(AttendanceRecord).where(AttendanceRecord.id.in_(chunk)).values(status=new_status)
+            )
+    return sum(len(v) for v in changed.values())
+
+
 @router.put("")
 async def put_policy(
     body: PolicyIn,
@@ -100,46 +149,7 @@ async def put_policy(
     await db.flush()
     policy = replace(from_row(row), holidays=holidays)
 
-    since = business_today() - timedelta(days=RECOMPUTE_DAYS)
-    rows = (
-        await db.execute(
-            select(AttendanceRecord.id, AttendanceRecord.date, AttendanceRecord.check_in, AttendanceRecord.status, StudentStaff.type)
-            .join(StudentStaff, StudentStaff.id == AttendanceRecord.student_staff_id)
-            .where(AttendanceRecord.date >= since)
-            .where(AttendanceRecord.check_in.is_not(None))
-            .where(AttendanceRecord.status.in_(("keldi", "kech_keldi")))
-            # Qo'lda tuzatilgan yozuv (source='qolda') tegilmaydi — operator
-            # qarori qoidadan ustun. QOLGANLARINING hammasi qayta hisoblanadi,
-            # shu jumladan manbasi NULL bo'lgan ESKI yozuvlar: ilgari bu yerda
-            # source IN ('kamera','turniket') turardi va productionda 1005 ta
-            # yozuvning manbasi NULL, faqat 5 tasi 'kamera' edi — ya'ni "Ish
-            # vaqti" sahifasi saqlanganda muvaffaqiyat deb aytardi-yu, amalda
-            # deyarli hech nimani qayta hisoblamasdi.
-            .where(
-                or_(
-                    AttendanceRecord.source.is_(None),
-                    AttendanceRecord.source != "qolda",
-                )
-            )
-        )
-    ).all()
-    changed = {"keldi": [], "kech_keldi": []}
-    for rec_id, day, check_in, old, person_type in rows:
-        new = policy.arrival_status(check_in, person_type, day)
-        if new != old:
-            changed[new].append(rec_id)
-    # Bo'laklab yangilanadi: 60 kun × 10 000 odam = 600 000 qator, hammasi
-    # bitta IN () ga sig'maydi — Postgres bitta so'rovda 32 767 dan ortiq
-    # parametr qabul qilmaydi va qoidani saqlash butunlay xato bilan
-    # tugardi (app/jobs/absence_marker.py:INSERT_CHUNK_SIZE da xuddi shu
-    # dars yozilgan).
-    for new_status, ids in changed.items():
-        for start in range(0, len(ids), UPDATE_CHUNK_SIZE):
-            chunk = ids[start : start + UPDATE_CHUNK_SIZE]
-            await db.execute(
-                update(AttendanceRecord).where(AttendanceRecord.id.in_(chunk)).values(status=new_status)
-            )
-    recomputed = sum(len(v) for v in changed.values())
+    recomputed = await recompute_statuses(db, policy)
     await log_action(
         db, request, current_user.id,
         f"Ish vaqti qoidasini o'zgartirdi: xodim {body.staff_start:%H:%M}, talaba {body.student_start:%H:%M}, "

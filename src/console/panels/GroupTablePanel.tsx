@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, GraduationCap, Users } from 'lucide-react';
+import { ArrowLeft, CalendarCheck, GraduationCap, ListChecks, Users } from 'lucide-react';
 import { ApiError } from '../../lib/apiClient';
 import {
   POSITION_GROUP_LABEL,
   getGroups,
   getOrgTree,
+  getPeopleStatus,
   type GroupStat,
   type GroupStudent,
   type OrgTree,
@@ -15,12 +16,18 @@ import {
 } from '../../lib/situationApi';
 import { Button, DataTable, DatePicker, SearchInput, Select, StatusBadge, Tabs, cn, type DataTableColumn } from '../../ui';
 import StatusCounters, { COUNTER_META, type CounterKey } from '../../components/situation/StatusCounters';
-import StatusPeopleTable from '../../components/situation/StatusPeopleTable';
+import StatusPeopleTable, { PAGE_SIZE as PEOPLE_PAGE_SIZE } from '../../components/situation/StatusPeopleTable';
+import GroupsCriteriaTable from '../../components/situation/GroupsCriteriaTable';
+import { getGroupsCriteria, type GroupsCriteria } from '../../lib/groupCriteriaApi';
+import { prefetch } from '../../lib/responseCache';
+import { addDays, todayInTashkent } from '../../lib/uzDate';
 import CountPicker, { type CountOption } from '../../components/situation/CountPicker';
 import PdfButton from '../../components/situation/PdfButton';
+import GroupCriteriaTable from '../../components/situation/GroupCriteriaTable';
 import Panel from '../Panel';
 import type { GroupLive } from '../useGroupLive';
-import type { NazoratSelection, Who } from '../nazoratSelection';
+import type { GroupCriteriaState } from '../useGroupCriteria';
+import type { GroupView, NazoratSelection, Who } from '../nazoratSelection';
 
 /**
  * NAZORAT — chap jadval.
@@ -35,7 +42,8 @@ import type { NazoratSelection, Who } from '../nazoratSelection';
  * jadvali (sanoqlar bosiladi); holat yoki F.I.Sh. berilsa — shu filtrdagi
  * talabalarning o'zi (butun institut / fakultet / kurs bo'yicha).
  * Guruh tanlangan: guruh talabalari — holati, kelgan vaqti, hozirgi darsda
- * ko'ringanmi, yuzi bazadami.
+ * ko'ringanmi, yuzi bazadami. "Kriteriyalar" ko'rinishida — har talaba
+ * qatorida hamma kriteriyalar va video dalillar (GroupCriteriaTable).
  */
 
 const WHO_TABS = [
@@ -43,6 +51,13 @@ const WHO_TABS = [
   { id: 'xodim' as const, label: 'O‘qituvchi va xodimlar', icon: Users },
 ];
 
+const VIEW_TABS = [
+  { id: 'davomat' as const, label: 'Davomat', icon: CalendarCheck },
+  { id: 'kriteriyalar' as const, label: 'Kriteriyalar', icon: ListChecks },
+];
+
+// "Ma'lumot yo'q" sanog'i va jadvaldagi "Hali yo'q" / "Ma'lumotsiz" ustunlari
+// buyurtmachi so'rovi bilan olib tashlandi (2026-10-06).
 const DAY_KEYS: CounterKey[] = ['hammasi', 'kelgan', 'kech_keldi', 'kelmadi', 'kutilmoqda', 'yuzsiz'];
 const COUNT_FIELD: Record<string, keyof StatusCounts> = {
   hammasi: 'hammasi',
@@ -50,21 +65,40 @@ const COUNT_FIELD: Record<string, keyof StatusCounts> = {
   kech_keldi: 'kechKeldi',
   kelmadi: 'kelmadi',
   kutilmoqda: 'kutilmoqda',
+  malumot_yoq: 'malumotYoq',
   yuzsiz: 'yuzsiz',
 };
 
+/** Yuzi yo'q va yozuvi yo'q (server `noFace`); eski server bermasa — eski
+ *  hisob (yuzsizlarning hammasi). */
+/** Bugun -> kecha, kecha -> bugun; boshqa kunlar uchun — null. */
+export function neighbourDay(date: string, today = todayInTashkent()): string | null {
+  const yesterday = addDays(today, -1);
+  if (date === today) return yesterday;
+  if (date === yesterday) return today;
+  return null;
+}
+
+export function noFace(stat: Pick<GroupStat, 'noFace' | 'total' | 'enrolled'>): number {
+  return stat.noFace ?? stat.total - stat.enrolled;
+}
+
 export function studentMatches(student: GroupStudent, key: CounterKey, lessonSeen: ReadonlySet<string> | null): boolean {
+  // Sanoqlar ustma-ust tushmaydi (2026-10-06 qarori): yuzsiz talaba — faqat
+  // "Yuzsiz"da (HEMIS yozuvi bo'lsa ham), holatlar faqat yuzi borlar orasida.
+  const enrolled = student.biometricsStatus === 'tasdiqlangan';
   switch (key) {
     case 'hammasi':
       return true;
+    case 'yuzsiz':
+      return !enrolled;
     case 'kelgan':
-      return student.status === 'keldi' || student.status === 'kech_keldi';
+      return enrolled && (student.status === 'keldi' || student.status === 'kech_keldi');
     case 'kech_keldi':
     case 'kelmadi':
     case 'kutilmoqda':
-      return student.status === key;
-    case 'yuzsiz':
-      return student.biometricsStatus !== 'tasdiqlangan';
+    case 'malumot_yoq':
+      return enrolled && student.status === key;
     case 'darsda':
       return Boolean(lessonSeen?.has(student.id));
     case 'darsda_emas':
@@ -90,6 +124,8 @@ function statusOptions(keys: readonly CounterKey[]) {
 export default function GroupTablePanel({
   selection,
   live,
+  criteria,
+  canCriteria,
   date,
   setDate,
   isToday,
@@ -100,6 +136,9 @@ export default function GroupTablePanel({
 }: {
   selection: NazoratSelection;
   live: GroupLive;
+  /** Guruh kriteriyalari (hisobotlarni ko'rish huquqi bo'lsa). */
+  criteria: GroupCriteriaState;
+  canCriteria: boolean;
   date: string;
   setDate: (date: string) => void;
   isToday: boolean;
@@ -108,8 +147,14 @@ export default function GroupTablePanel({
   onExpand: (id: string | null) => void;
   area?: string;
 }) {
-  const { who, group, status, setWho, setGroup, setStatus } = selection;
+  const { who, group, status, view, setWho, setGroup, setStatus, setView } = selection;
   const students = who === 'talaba';
+  const criteriaMode = students && Boolean(group) && canCriteria && view === 'kriteriyalar';
+  // "Kriteriyalar bo'yicha": barcha guruhlar × kriteriyalar (guruh tanlanmaganda).
+  const [allCriteriaOn, setAllCriteriaOn] = useState(false);
+  const allCriteria = students && !group && canCriteria && allCriteriaOn;
+  const [groupsCriteria, setGroupsCriteria] = useState<GroupsCriteria | null>(null);
+  const [groupsCriteriaError, setGroupsCriteriaError] = useState<string | null>(null);
   const [groups, setGroups] = useState<GroupStat[] | null>(null);
   const [tree, setTree] = useState<OrgTree | null>(null);
   const [positionGroup, setPositionGroup] = useState<PositionGroup | ''>('');
@@ -139,6 +184,18 @@ export default function GroupTablePanel({
     return () => controller.abort();
   }, [date, pulse, students]);
 
+  useEffect(() => {
+    if (!allCriteria) return;
+    const controller = new AbortController();
+    setGroupsCriteriaError(null);
+    getGroupsCriteria({ date, facultyId: faculty || undefined }, { signal: controller.signal })
+      .then(setGroupsCriteria)
+      .catch((err) => {
+        if (!controller.signal.aborted) setGroupsCriteriaError(err instanceof ApiError ? err.message : "Ma'lumotni olib bo'lmadi");
+      });
+    return () => controller.abort();
+  }, [allCriteria, date, faculty, pulse]);
+
   const facultyOptions = useMemo(() => {
     const seen = new Map<string, string>();
     for (const g of groups ?? []) if (g.facultyId && g.faculty) seen.set(g.facultyId, g.faculty);
@@ -156,6 +213,18 @@ export default function GroupTablePanel({
       ),
     [groups, faculty, course],
   );
+  const groupTotals = useMemo(() => {
+    const sum = (pick: (g: GroupStat) => number) => filteredGroups.reduce((acc, g) => acc + pick(g), 0);
+    return {
+      hammasi: sum((g) => g.total),
+      kelgan: sum((g) => g.present),
+      kech_keldi: sum((g) => g.late),
+      kelmadi: sum((g) => g.absent),
+      kutilmoqda: sum((g) => g.notYet),
+      malumot_yoq: sum((g) => g.noData - noFace(g)),
+      yuzsiz: sum(noFace),
+    } as Record<CounterKey, number>;
+  }, [filteredGroups]);
   // Ochiluvchi ro'yxatda har guruh yonida: kelgan (yashil), kelmagan (qizil), ma'lumotsiz (kulrang).
   // HEMIS guruhlari (kursi va fakulteti ma'lum) birinchi, o'zi ro'yxatdan
   // o'tganda qo'lda yozilgan noaniq nomlar ("1", "20.26 gurux") — alohida pastda.
@@ -226,12 +295,11 @@ export default function GroupTablePanel({
   const groupColumns: DataTableColumn<GroupStat>[] = [
     { key: 'name', header: 'Guruh', sortValue: (r) => r.name, cell: (r) => <b>{r.name}</b> },
     { key: 'course', header: 'Kurs', sortValue: (r) => r.course ?? 0, cell: (r) => r.course ?? '—', align: 'center' },
-    { key: 'total', header: <Hint text="Guruhdagi barcha faol talabalar">Jami</Hint>, sortValue: (r) => r.total, align: 'right', cell: (r) => countCell(r, 'hammasi', r.total, 'text-fg') },
+    { key: 'total', header: <Hint text="Guruhdagi barcha faol talabalar">Jami</Hint>, sortValue: (r) => r.total, sortFirst: 'desc', align: 'right', cell: (r) => countCell(r, 'hammasi', r.total, 'text-fg') },
     { key: 'present', header: <Hint text="Kelganlar — kech kelganlar ham shu songa kiradi">Keldi</Hint>, sortValue: (r) => r.present, align: 'right', cell: (r) => countCell(r, 'kelgan', r.present, 'text-success') },
     { key: 'late', header: <Hint text="Kelganlardan kech kelganlari (ish boshlanishi + ruxsat etilgan daqiqalardan keyin)">Kech</Hint>, sortValue: (r) => r.late, align: 'right', cell: (r) => countCell(r, 'kech_keldi', r.late, 'text-warning') },
     { key: 'absent', header: <Hint text="Yuzi bazada bor, lekin kun davomida kamera ko‘rmagan (20:00 dan keyin belgilanadi)">Kelmadi</Hint>, sortValue: (r) => r.absent, align: 'right', cell: (r) => countCell(r, 'kelmadi', r.absent, 'text-danger') },
-    { key: 'notYet', header: <Hint text="Bugun hali kamera ko‘rmagan — kun tugamagan, kelishi mumkin">Hali yo‘q</Hint>, sortValue: (r) => r.notYet, align: 'right', cell: (r) => countCell(r, 'kutilmoqda', r.notYet, 'text-muted') },
-    { key: 'noFace', header: <Hint text="Yuzi bazaga kiritilmagan — kamera taniy olmaydi, davomati o‘lchanmaydi">Yuzsiz</Hint>, sortValue: (r) => r.total - r.enrolled, align: 'right', cell: (r) => countCell(r, 'yuzsiz', r.total - r.enrolled, 'text-danger') },
+    { key: 'noFace', header: <Hint text="/royxatdan-otish orqali ro‘yxatdan o‘tmagan (yuzi bazada yo‘q) — kamera taniy olmaydi (har kuni bir xil son). Ular boshqa ustunlarga va foizga kirmaydi">Ro‘yxatdan o‘tmagan</Hint>, sortValue: noFace, align: 'right', cell: (r) => countCell(r, 'yuzsiz', noFace(r), 'text-danger') },
     { key: 'rate', header: <Hint text="Davomat foizi = keldi ÷ (keldi + kelmadi + hali yo‘q). Yuzsiz va dam olishdagilar hisobga kirmaydi">%</Hint>, sortValue: (r) => r.rate ?? -1, align: 'right', cell: (r) => (r.rate == null ? '—' : `${Math.round(r.rate)}%`) },
   ];
 
@@ -283,6 +351,8 @@ export default function GroupTablePanel({
   ];
 
   const statusKeys: CounterKey[] = students && group && seen ? [...DAY_KEYS, 'darsda', 'darsda_emas'] : DAY_KEYS;
+  const peopleStatus = (status === 'darsda' || status === 'darsda_emas' ? 'hammasi' : status) as PeopleStatusKey;
+
   const peopleQuery = students
     ? {
         date,
@@ -299,6 +369,22 @@ export default function GroupTablePanel({
         position: position || undefined,
         search: needle || undefined,
       };
+
+  // Qo'shni kun (bugun <-> kecha) oldindan yuklanadi: "Kecha" yoki "Bugun"
+  // bosilganda ma'lumot keshdan darhol chiqadi (lib/responseCache.ts).
+  const prefetchKey = JSON.stringify([date, students, peopleMode, peopleQuery, peopleStatus]);
+  useEffect(() => {
+    const other = neighbourDay(date);
+    if (!other) return;
+    const timer = window.setTimeout(() => {
+      prefetch(() => (students ? getGroups({ date: other }) : getOrgTree(other)));
+      if (peopleMode) {
+        prefetch(() => getPeopleStatus({ ...peopleQuery, date: other, status: peopleStatus, page: 1, pageSize: PEOPLE_PAGE_SIZE }));
+      }
+    }, 600);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- prefetchKey hammasini qamraydi
+  }, [prefetchKey]);
 
   // PDF — aynan ekrandagi ko'rinish: guruh ro'yxati, bitta guruh yoki odamlar ro'yxati.
   const pdfStatus = status === 'darsda' || status === 'darsda_emas' ? 'hammasi' : status;
@@ -326,6 +412,9 @@ export default function GroupTablePanel({
           <Button size="sm" icon={ArrowLeft} onClick={() => setGroup('')}>
             Barcha guruhlar
           </Button>
+        )}
+        {students && group && canCriteria && (
+          <Tabs<GroupView> tabs={VIEW_TABS} value={view} onChange={setView} variant="segmented" size="sm" ariaLabel="Guruh jadvali" />
         )}
         {students ? (
           <>
@@ -355,7 +444,7 @@ export default function GroupTablePanel({
             <CountPicker label="Lavozim" value={position} onChange={setPosition} options={positionOptions} />
           </>
         )}
-        <Select
+        {!criteriaMode && !allCriteria && <Select
           label="Holat"
           value={status === 'hammasi' ? '' : status}
           onChange={(value) => setStatus((value || 'hammasi') as CounterKey)}
@@ -363,17 +452,78 @@ export default function GroupTablePanel({
           placeholder="hammasi"
           size="sm"
           highlightActive
+        />}
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder={allCriteria ? 'Guruh bo‘yicha qidirish' : 'F.I.Sh. bo‘yicha qidirish'}
+          size="sm"
+          className="w-52"
         />
-        <SearchInput value={search} onChange={setSearch} placeholder="F.I.Sh. bo‘yicha qidirish" size="sm" className="w-52" />
+        {students && !group && canCriteria && (
+          <Button
+            variant={allCriteria ? 'primary' : 'secondary'}
+            size="sm"
+            icon={ListChecks}
+            onClick={() => setAllCriteriaOn((on) => !on)}
+            aria-pressed={allCriteria}
+            title="Har bir guruh bo‘yicha har bir kriteriya — ustunma-ustun"
+          >
+            Kriteriyalar bo‘yicha
+          </Button>
+        )}
         <span className="ms-auto">
-          {status !== 'darsda' && status !== 'darsda_emas' && <PdfButton {...pdfTarget} />}
+          {!criteriaMode && !allCriteria && status !== 'darsda' && status !== 'darsda_emas' && <PdfButton {...pdfTarget} />}
         </span>
       </div>
     </div>
   );
 
+  const criteriaRows = criteria.data
+    ? { ...criteria.data, people: criteria.data.people.filter((p) => !needle || p.full_name.toLowerCase().includes(needle)) }
+    : null;
+
+  const groupsCriteriaRows = (groupsCriteria?.groups ?? []).filter(
+    (g) =>
+      (!course || String(g.course) === course) &&
+      (!needle || g.name.toLowerCase().includes(needle)),
+  );
+
   let body;
-  if (students && group) {
+  if (allCriteria) {
+    body = (
+      <>
+        <div className="min-h-0 flex-1">
+          <GroupsCriteriaTable
+            data={groupsCriteria}
+            rows={groupsCriteriaRows}
+            loading={!groupsCriteria}
+            error={groupsCriteriaError}
+            onOpen={(name) => setGroup(name, 'kriteriyalar')}
+          />
+        </div>
+        <p className="shrink-0 text-[11px] leading-snug text-muted">
+          <b className="text-fg">Davomat</b> — kelgan / ro‘yxatdan o‘tgan talabalar · qolgan ustunlar — holatlar soni · rang:{' '}
+          <span className="text-success">yashil</span> — yaxshi, <span className="text-warning">sariq</span> — ogohlantirish,{' '}
+          <span className="text-danger">qizil</span> — muammo · «—» — hisoblanmagan (sababi — katak izohida). Guruhni bosing —
+          talabalar bo‘yicha kriteriyalar.
+        </p>
+      </>
+    );
+  } else if (criteriaMode) {
+    body = (
+      <>
+        <div className="min-h-0 flex-1">
+          <GroupCriteriaTable data={criteriaRows} loading={criteria.loading} error={criteria.error} />
+        </div>
+        <p className="shrink-0 text-[11px] leading-snug text-muted">
+          Rang: <span className="text-success">yashil</span> — yaxshi, <span className="text-warning">sariq</span> — ogohlantirish,{' '}
+          <span className="text-danger">qizil</span> — muammo · kamera belgisi — 2 daqiqalik video dalil (talaba sahifasida) ·
+          «—» — shu talaba uchun yozuv yo‘q. Ustunni bosing — muammolilar tepaga chiqadi.
+        </p>
+      </>
+    );
+  } else if (students && group) {
     body = (
       <>
         <StatusCounters items={groupCounters(groupStudents, seen)} active={status} onPick={setStatus} size="sm" className="shrink-0" />
@@ -405,7 +555,7 @@ export default function GroupTablePanel({
           <StatusPeopleTable
             fill
             query={peopleQuery}
-            status={(status === 'darsda' || status === 'darsda_emas' ? 'hammasi' : status) as PeopleStatusKey}
+            status={peopleStatus}
             refreshKey={pulse}
             onLoaded={(page) => setCounts(page.counts)}
           />
@@ -414,6 +564,16 @@ export default function GroupTablePanel({
     );
   } else {
     body = (
+      <>
+        {/* Xodimlardagi kabi umumiy sanoq — jadvaldagi guruhlar yig'indisi
+            (fakultet/kurs filtri bilan); son bosilsa — shu holatdagilar ro'yxati. */}
+        <StatusCounters
+          items={DAY_KEYS.map((key) => ({ key, value: groups ? groupTotals[key] : null }))}
+          active={status}
+          onPick={setStatus}
+          size="sm"
+          className="shrink-0"
+        />
       <div className="min-h-0 flex-1">
         <DataTable
           columns={groupColumns}
@@ -424,10 +584,12 @@ export default function GroupTablePanel({
           error={loadError}
           emptyTitle="Guruh topilmadi"
           fill
-          defaultSort={{ key: 'name', dir: 'asc' }}
+          // Eng katta guruhlar tepada (Jami — ko'pidan kamiga).
+          defaultSort={{ key: 'total', dir: 'desc' }}
           dense
         />
       </div>
+      </>
     );
   }
 
@@ -435,11 +597,12 @@ export default function GroupTablePanel({
     <div className="flex h-full min-h-0 flex-col gap-2 px-3 pb-3">
       {filters}
       {body}
-      {!(students && group) && (
+      {!(students && group) && !allCriteria && (
         <p className="shrink-0 text-[11px] leading-snug text-muted">
-          <b className="text-fg">Keldi</b> — kech kelganlar bilan birga · <b className="text-fg">%</b> = keldi ÷ (keldi +
-          kelmadi + hali yo‘q) · <b className="text-fg">Yuzsiz</b> — kamera taniy olmaydi, foizga kirmaydi · Jami bilan farq — dam
-          olishdagilar va ma’lumoti yo‘qlar. Sarlavhaga sichqonchani olib boring — izoh chiqadi.
+          <b className="text-fg">Ro‘yxatdan o‘tmagan</b> — yuzi bazada yo‘q (har kuni bir xil), qolgan holatlar faqat ro‘yxatdan
+          o‘tganlar orasida ·{' '}
+          <b className="text-fg">Keldi</b> — kech kelganlar bilan · <b className="text-fg">%</b> = keldi ÷ (keldi + kelmadi + hali
+          kelmagan). Sarlavhaga sichqonchani olib boring — izoh chiqadi.
         </p>
       )}
       {!isToday && <p className="shrink-0 text-[11px] text-muted">Arxiv: {date} holati</p>}
@@ -449,7 +612,8 @@ export default function GroupTablePanel({
   const unitName = !students && group ? tree?.units.find((u) => u.id === group)?.name : null;
   const title = students ? (group ? `Guruh ${group}` : 'Talabalar') : unitName ?? 'O‘qituvchi va xodimlar';
   const badge =
-    students && group ? `${shownStudents.length}/${groupStudents.length}` : students && !peopleMode ? `${filteredGroups.length} guruh` : null;
+    criteriaMode && criteriaRows ? `${criteriaRows.people.length} talaba`
+    : students && group ? `${shownStudents.length}/${groupStudents.length}` : students && !peopleMode ? `${filteredGroups.length} guruh` : null;
 
   return (
     <Panel

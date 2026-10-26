@@ -24,6 +24,8 @@ async def test_counts_match_overview_and_lists_match_counts(client, world, admin
     assert counts["hammasi"] == 12 and counts["kelgan"] == 6 and counts["kechKeldi"] == 1
     assert counts["kelmadi"] == 2 and counts["kutilmoqda"] == 1 and counts["yuzsiz"] == 3
     assert body["total"] == 12
+    # Sanoqlar ustma-ust tushmaydi (2026-10-06): jami qo'shilib chiqadi.
+    assert counts["kelgan"] + counts["kelmadi"] + counts["kutilmoqda"] + counts["malumotYoq"] + counts["yuzsiz"] == 12
     for status, key in (("kelgan", "kelgan"), ("kech_keldi", "kechKeldi"), ("kelmadi", "kelmadi"), ("yuzsiz", "yuzsiz")):
         listing = (await client.get(URL, params={"status": status}, headers=admin)).json()
         assert listing["total"] == counts[key], status
@@ -31,6 +33,24 @@ async def test_counts_match_overview_and_lists_match_counts(client, world, admin
             assert all(p["status"] == "kech_keldi" for p in listing["items"])
         if status == "yuzsiz":
             assert all(p["biometricsStatus"] != "tasdiqlangan" for p in listing["items"])
+
+
+async def test_arrival_hour_lists_the_bar_people(client, world, admin):
+    """Kelish grafigidagi ustun bosilganda: aynan o'sha soatda kelganlar —
+    soni grafikdagi ustun bilan bir xil (overview.arrivalsByHour)."""
+    overview = (await client.get("/api/situation/overview", headers=admin)).json()
+    hours = {b["hour"]: b for b in overview["arrivalsByHour"]}
+    for hour in (8, 9):
+        body = (await client.get(URL, params={"status": "kelgan", "arrivalHour": hour}, headers=admin)).json()
+        assert body["total"] == hours[hour]["students"]
+        assert all(p["checkIn"].startswith(f"{hour:02d}:") for p in body["items"])
+    late = (await client.get(URL, params={"status": "kech_keldi", "arrivalHour": 9}, headers=admin)).json()
+    assert [p["fullName"] for p in late["items"]] == ["Botirova Nigora"]
+    staff = (await client.get(URL, params={"type": "xodim", "status": "kelgan", "arrivalHour": 7}, headers=admin)).json()
+    assert staff["total"] == hours[7]["staff"] == 1
+    assert (await client.get(URL, params={"arrivalHour": 24}, headers=admin)).status_code == 422
+    pdf = await client.get("/api/situation/pdf/people", params={"status": "kelgan", "arrivalHour": 9}, headers=admin)
+    assert pdf.status_code == 200 and pdf.content[:4] == b"%PDF"
 
 
 async def test_staff_and_pagination(client, world, admin):

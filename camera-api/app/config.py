@@ -731,12 +731,6 @@ class Settings(BaseSettings):
     # yeyish o'rniga).
     pose_detection_max_worker_crashes: int = 3
 
-    # TT kriteriya 2 ("Taqiqlangan zonaga kirish") —
-    # app/jobs/zone_entry_ai.py / app/services/zone_detection.py.
-    zone_ai_interval_seconds: int = 30
-    zone_dedup_minutes: int = 5
-    zone_min_landmark_visibility: float = 0.5
-
     # TT kriteriya 19 ("Talabaning darsga diqqati") va 21 ("O'qituvchi
     # faolligi") — app/jobs/lesson_quality_ai.py. lesson_duration_minutes
     # defines the "active window" after scheduled_start_time during which
@@ -861,6 +855,27 @@ class Settings(BaseSettings):
     # almashtirishga sarflardi. Umumiy oqimlar ≈ concurrency × shu qiymat —
     # cpus chegarasidan (ffmpeg o'quvchilari ham shu konteynerda!) oshmasin.
     face_recognition_intra_op_threads: int = 2
+    # Operator ochgan kamera (PRIORITY_LIVE) uchun alohida "jonli yo'lak":
+    # o'sha modellar, lekin ko'proq oqimli ONNX sessiyalar va fon
+    # tahlillari band qilgan slotlarni KUTMAYDIGAN zaxira joylar
+    # (app/services/inference_gate.py, face_recognition._live_app).
+    # O'lchov (2026-10-06, production, load ~17/32): 2 oqim — detektor
+    # 1396 ms, 3 yuz embedding 701 ms, landmark 183 ms/yuz; 8 oqim — 549,
+    # 319, 45 ms. Ilgari yuz chiqqan kadr natijasi 2.3-4.1 s kechikardi
+    # (navbat + 2 oqim). Zaxira joylar soni = bir vaqtda jonli tahlil
+    # qilinadigan kadrlar (odatda bitta operator — bitta kamera);
+    # 0 — yo'lak o'chiq, jonli ham umumiy navbatda.
+    face_live_intra_op_threads: int = 8
+    face_live_reserved_slots: int = 2
+    # /royxatdan-otish (pose-check, submit) hovuzidagi oqimlar — har worker'da.
+    # Jonli yo'lakdan alohida: u yerda 2 ta joy, ro'yxatdan o'tishda esa bir
+    # vaqtda o'nlab telefon (2026-10-07: 80+ so'rov/daqiqa).
+    face_enrollment_workers: int = 6
+    # Pose-check detektor kirishining uzun tomoni. Telefon 270x480 kadr
+    # yuboradi va yuz kameraga yaqin (>=110 px) — 640 gacha kattalashtirish
+    # behuda. O'lchov (2026-10-07, production, 30 rasm): 640 — 0.57 s,
+    # 320 — 0.15 s, yo'nalish va "yaqinlik" natijasi 30/30 bir xil.
+    enrollment_pose_det_max_side: int = 320
     # CPU'da INT8 modellar (app/services/face_recognition.py _int8_model_file):
     # AVX'siz protsessorda ArcFace 1.75x, detektor 1.3x tez, vektorlar fp32
     # bazasi bilan mos (cos ~0.994). GPU yoqilganda e'tiborga olinmaydi.
@@ -1248,7 +1263,10 @@ class Settings(BaseSettings):
     org_name: str = "Farg'ona JSSTI"
     # Ish kuni shu soatda (institut vaqti) almashadi — kunlik davomat,
     # "bugun" statistikasi va hisobot kunlari (app/timezone.py business_*).
-    day_start_hour: int = 6
+    # 2026-10-06: 6 -> 0 — kalendar kuni. 06:00 da almashganda tunda
+    # (00:00-05:59) panel kechagi sanani "Bugun" deb ko'rsatardi; institutda
+    # yarim tundan keyin dars/ish yo'q. Frontend: src/lib/uzDate.ts.
+    day_start_hour: int = 0
     # Hisobotlar bo'limi paroli (app/routers/report_lock.py): pbkdf2 xesh, .env da.
     # Bo'sh — qulf o'chiq.
     report_password_hash: str = ""
@@ -1293,8 +1311,29 @@ class Settings(BaseSettings):
 
     # HEMIS (hemis.uz universitet API). base_url masalan
     # https://student.fjsti.uz/rest — token HEMIS admin panelidan olinadi.
+    # iMentor integratsiyasi (app/routers/integration_v1.py): server-server
+    # "bu kim?" API — talabani HEMIS ID, JSHSHIR yoki yuz orqali aniqlash.
+    # Kalit bo'sh — API o'chiq (har so'rov 401). IP ro'yxati bo'sh — har
+    # qanday manzil (kalit baribir shart); "1.2.3.4, 10.0.0.0/8" ko'rinishida.
+    camfermi_integration_key: str = ""
+    integration_allowed_ips: str = ""
+    integration_rate_limit_per_minute: int = 60
+    # Yuz bo'yicha aniqlash chegarasi. Kamera davomatidan (0.50) qat'iyroq:
+    # iMentor odatda telefon selfisini yuboradi (ro'yxatdan o'tish rasmiga
+    # yaqin sharoit), noto'g'ri odamni aytish esa qimmat. margin — eng yaqin
+    # nomzod ikkinchisidan shuncha uzoq bo'lishi kerak.
+    integration_face_threshold: float = 0.55
+    integration_face_margin: float = 0.05
+    integration_max_image_bytes: int = 5 * 1024 * 1024
     hemis_base_url: str = ""
     hemis_api_token: str = ""
+    # HEMIS'ni BUTUNLAY uzish (2026-10-09, buyurtmachi qarori): ro'yxat
+    # tozalangan va qo'lda yuritiladi. Kunlik sinxron o'chirilgan klonlarni
+    # (tasdiqlangan egizagi HEMIS ID'siz, ismi boshqacha yozilgan) har kuni
+    # qayta yaratardi. False — HEMIS'ga HECH QANDAY so'rov yo'q: sinxron,
+    # dars jadvali, davomat, rasmlar, "Hozir sinxronlash" tugmasi va havoladagi
+    # HEMIS surati bilan shaxs tekshiruvi. Qayta ulash: HEMIS_ENABLED=true.
+    hemis_enabled: bool = False
     # 0 — faqat qo'lda ("Sinxronlash" tugmasi). >0 — har N soatda.
     # HEMIS sozlangan bo'lsagina ishlaydi (hemis_configured). Kuniga bir marta
     # to'liq (talabalar, xodimlar, guruhlar, jadval); jadvalning o'zi tez-tez.
@@ -1303,12 +1342,34 @@ class Settings(BaseSettings):
     hemis_schedule_days_back: int = 1
     hemis_schedule_days_ahead: int = 14
     hemis_page_size: int = 200
+    # Davomat HEMIS'dan (app/jobs/hemis_attendance_sync.py): ish soatlarida har
+    # N daqiqada BUGUNGI kun (o'qituvchilar har darsni belgilab boradi),
+    # tugash soatidan keyin va ertasi kuni ertalab — yakuniy (darsi jadvalda
+    # bo'lib, HEMIS'da o'tkazilmagan o'qituvchi "kelmadi"). Kamera, turniket
+    # va qo'lda kiritilgan yozuvlarga tegilmaydi.
+    hemis_attendance_sync_enabled: bool = True
+    hemis_attendance_interval_minutes: int = 30
+    hemis_attendance_start_hour: int = 8
+    hemis_attendance_end_hour: int = 19
     # HEMIS rasmidan tanitish (app/jobs/hemis_photos.py): har N soniyada bir
     # to'plam, fon navbatida (davomat kadrlaridan keyin).
     # O'CHIRILGAN (2026-09-26, institut qarori): HEMIS'dagi bitta portret
     # tanish uchun yetarli emas — faqat havola orqali uch tomonlama
     # ro'yxatdan o'tgan yuzlar ishlatiladi.
     hemis_photo_enrollment: bool = False
+    # XODIMLAR uchun istisno (2026-10-06, buyurtmachi qarori): 966 xodimdan
+    # faqat 18 tasi uch tomonlama ro'yxatdan o'tgan — qolgan 948 tasini
+    # kamera umuman tanimasdi. Xodimga bitta HEMIS portreti yetarli
+    # (boshqa odamga juda o'xshasa yozilmaydi). Talabalar uchun 26-sentabr
+    # qarori o'zgarmaydi. hemis_photo_enrollment o'chiq bo'lsa ham vazifa
+    # xodimlar uchun ishlaydi.
+    hemis_photo_staff_single: bool = True
+    # Nazorat → "Kriteriyalar bo'yicha": Diqqat ustuni foizda. Darsdagi diqqat
+    # tahlili (#19) hali ishlamaydi, shuning uchun NAMUNA qiymat: davomati bor
+    # har guruhga 65-90% (guruh + sana bo'yicha barqaror). Buyurtmachi
+    # so'rovi bilan ko'rsatish uchun (2026-10-06); katak izohida "namuna" deb
+    # yoziladi. Haqiqiy tahlil ishga tushganda — False.
+    demo_attention_percent: bool = True
     hemis_photo_batch: int = 60
     hemis_photo_interval_seconds: int = 300
     hemis_photo_busy_pause_seconds: int = 5
@@ -1386,5 +1447,130 @@ class Settings(BaseSettings):
     # Notanish yuzlar (kesilgan yuz rasmi bilan): qayta moslash 2 kun,
     # takroriylar 14 kun oralig'ida ishlaydi; 90 kundan eskisi o'chiriladi.
     unknown_sighting_retention_days: int = 90
+
+    # ── Kunlik video tahlil (docs/KUNLIK_VIDEO_TAHLIL.md) ──────────────────
+    # "kunlik" — kun davomida AI ishlamaydi; kun oxirida NVR yozuvlari
+    # tahlil qilinadi (app/jobs/video_analysis.py). "realtime" — eski rejim:
+    # kameralar uzluksiz tahlil qilinadi (server yukni ko'tarmagani uchun
+    # 2026-10-04 dan standart emas).
+    analysis_mode: Literal["kunlik", "realtime"] = "kunlik"
+    # Tahlil shu paytda boshlanadi va shu payt kun oynasining oxiri.
+    video_analysis_start: str = "20:00"
+    # Kun oynasining boshi — kirish kameralari shundan boshlab ko'riladi.
+    video_analysis_day_start: str = "07:00"
+    # Bir vaqtda nechta vazifa (kamera×oraliq) tahlil qilinadi. Yuz/poza
+    # modellarining o'z navbatlari baribir CPU'ni cheklaydi; bu — NVR'dan
+    # bir vaqtda o'qiladigan oqimlar va xotira uchun.
+    video_analysis_concurrency: int = 6
+    # Server o'chib qolgan kunlar shuncha kun orqaga to'ldiriladi.
+    video_analysis_catchup_days: int = 2
+    video_analysis_poll_seconds: int = 60
+    # Bitta vazifa yiqilsa necha marta qayta uriniladi.
+    video_analysis_max_attempts: int = 3
+    # Kun tahlili "xato" bilan tugasa (agregatsiya yiqildi) shuncha marta
+    # avtomatik qayta uriniladi, har safar kamida shuncha daqiqadan keyin.
+    # Kuzatuvlar saqlangani uchun video qayta o'qilmaydi — faqat agregatsiya.
+    video_analysis_day_retries: int = 2
+    video_analysis_retry_minutes: int = 30
+    # Kirish/chiqish kameralari: uzluksiz, shuncha kadr/s. Odam eshikdan
+    # 2-3 s da o'tadi: tig'iz soatlarda 2 kadr/s, qolgan vaqtda 1 kadr/s
+    # (klip ichidagi iz birlashtirish 2-3 kadrdan ham ishonchli tanitadi).
+    # Harakatsiz kadrlar baribir tahlil qilinmaydi (app/batch/analyzer.py).
+    video_analysis_entrance_fps: float = 1.0
+    video_analysis_entrance_peak_fps: float = 2.0
+    video_analysis_entrance_peak_windows: str = "07:00-09:30,16:00-19:00"
+    # Tahlil shu paytgacha (ertasi kuni, institut soati) tugamasa, qolgan
+    # past ustuvor vazifalar (chekish, umumiy) bekor qilinadi va natija
+    # bor ma'lumotdan chiqariladi — ertalab hisobot tayyor bo'lsin.
+    video_analysis_deadline: str = "08:00"
+    # Kirish kameralari oralig'i shuncha daqiqalik bo'laklarga bo'linadi
+    # (parallel o'qish va qayta urinish birligi).
+    video_analysis_chunk_minutes: int = 30
+    # Dars xonasi: boshlanish oynasi (kechikish, #8, #22).
+    video_analysis_lesson_start_before_minutes: int = 10
+    video_analysis_lesson_start_after_minutes: int = 20
+    video_analysis_lesson_start_step_seconds: int = 60
+    # Dars o'rtasi: diqqat (#19) va o'qituvchi faolligi (#21).
+    video_analysis_lesson_mid_step_minutes: int = 5
+    # Dars oxiri: erta ketish (#9).
+    video_analysis_lesson_end_minutes: int = 15
+    video_analysis_lesson_end_step_seconds: int = 60
+    # Bitta klip uzunligi va undagi kadr/s (klipdan 2-3 kadr olinadi:
+    # bir yuzni bir necha marta ko'rish — track birlashtirish uchun).
+    video_analysis_clip_seconds: float = 3.0
+    video_analysis_clip_fps: float = 1.0
+    # Boshqa kameralar (koridor, ofis, laboratoriya): har shuncha daqiqada
+    # bitta klip — xalat (#10) va "binoda bo'lgan" ko'rinishlari uchun.
+    # 0 — bunday kameralar ko'rilmaydi.
+    video_analysis_general_step_minutes: int = 10
+    # Chekish (#15) — "tashqi"/"koridor" turidagi kameralar: har shuncha
+    # daqiqada uzunroq klip (takroriy qo'l-og'iz harakatini ko'rish uchun).
+    video_analysis_smoking_step_minutes: int = 5
+    video_analysis_smoking_clip_seconds: float = 20.0
+    video_analysis_smoking_fps: float = 2.0
+    # Tahlil kadrining eng uzun tomoni (4K asosiy oqim kichraytiriladi).
+    video_analysis_max_side: int = 1920
+    # NVR o'qishining umumiy vaqt chegarasi (bir vazifa, soniya).
+    video_analysis_read_timeout_seconds: float = 900.0
+    # Kuzatuvlar (har tanilgan yuz) shuncha kun saqlanadi.
+    video_observation_retention_days: int = 30
+    # Agregatsiya chegaralari.
+    video_lesson_min_sightings: int = 2
+    video_lesson_early_leave_minutes: int = 10
+    # Xalat (#10): kim uchun majburiy (StudentStaff.type, vergul bilan).
+    # Xodimlar orasida ma'muriy xodimlar ham bor — ular uchun xalat talab
+    # qilinmaydi; o'qituvchilar lavozimi bo'yicha (coat_required_positions).
+    coat_required_types: str = "talaba"
+    # Shu so'zlardan biri lavozimda bo'lgan xodim ham xalat kiyishi shart.
+    coat_required_positions: str = "o'qituvchi,assistent,dotsent,professor,mudir,ordinator,shifokor,hamshira"
+    coat_white_fraction: float = 0.42
+    coat_dark_fraction: float = 0.15
+    coat_min_samples: int = 3
+    coat_violation_ratio: float = 0.3
+    coat_ok_ratio: float = 0.6
+    coat_min_face_px: int = 36
+    # Ixtiyoriy: o'qitilgan klassifikator (YOLO-cls, sinflar: oq_xalat /
+    # boshqa). Bo'sh — rang qoidasi ishlatiladi.
+    coat_model_path: str = ""
+    # Chekish (#15).
+    smoking_min_episodes: int = 2
+    smoking_hand_mouth_ratio: float = 0.55
+    # Ixtiyoriy: sigaret/vape sinfi bor YOLO detektor og'irliklari.
+    smoking_model_path: str = ""
+    smoking_model_confidence: float = 0.35
+    # Bir odam/kamera uchun bir kunda ko'pi bilan shuncha chekish hodisasi.
+    smoking_max_events_per_camera_day: int = 5
+    # Kamera turidan qat'i nazar hamma kriteriyalar hamma kamerada: har
+    # kamera kun bo'yi chekish/xalat/tanish kliplari bilan ko'riladi (dars
+    # xonasi — darslardan tashqari vaqtda ham). Kamera turlari hali
+    # belgilanmagan joyda (yoki sinovda) "ko'ringan har bir odam tekshirilsin".
+    video_analysis_everywhere: bool = False
+    # Har aniqlangan holat (kech kelish, erta ketish, xalatsizlik, chekish,
+    # past diqqat, o'qituvchi...) uchun yozuvdan video dalil: holatdan
+    # yarmi oldin, yarmi keyin. Rasm dalili bilan birga — ikkinchi dalil.
+    video_evidence_clips: bool = True
+    video_evidence_clip_seconds: int = 120
+    # Klip balandligi (piksel) — 4K yozuv 720p H.264 ga siqiladi (~5-10 MB).
+    video_evidence_clip_height: int = 720
+    # Bir kunda ko'pi bilan shuncha klip (bir xil kamera va paytdagi
+    # holatlar bitta klipni bo'lishadi) va parallel kesish.
+    video_evidence_clips_max: int = 600
+    video_evidence_concurrency: int = 3
+    # "Kelmadi" faqat ertalabki kelish oynasi (kun boshidan
+    # attendance_late_window_end gacha) kliplarining kamida shuncha qismi
+    # haqiqatan o'qilgan bo'lsa yoziladi (app/batch/rules.arrival_coverage).
+    video_absence_min_coverage: float = 0.8
+    # Diqqat va o'qituvchi faolligi shundan past bo'lsa — holat (dalil bilan).
+    video_attention_low_score: int = 60
+    video_teacher_activity_low_score: int = 40
+    # Kunlik tahlil natijasidan hodisalar (xalat, chekish, o'qituvchi) yaratilsinmi.
+    video_analysis_events: bool = True
+    # Bir kunda ko'pi bilan shuncha "xalat kiyilmagan" hodisasi (qolganlari
+    # faqat kunlik natijada) — tekshiruv navbati to'lib ketmasin.
+    video_analysis_coat_events_max: int = 300
+    # Yozib olingan videolarni import qilish papkasi (scripts/video_tahlil.py):
+    # ichida kanal papkalari, "Yuklangan videolar" NVR'i shu yerga qaraydi.
+    # Docker'da: /data/nvr-eksport (deploy/docker-compose.ai-worker.yml).
+    video_import_dir: str = "nvr-eksport"
 
 settings = Settings()

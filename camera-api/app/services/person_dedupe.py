@@ -33,6 +33,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.services.name_matching import same_person_name
 
 _APOS = str.maketrans({c: "'" for c in "‘’ʻʼ`´"})
 _SUFFIX = {"o'g'li", "og'li", "o'gli", "ogli", "ugli", "o'g'il", "qizi", "kizi", "qiz"}
@@ -43,7 +44,12 @@ COPY_FIELDS = (
     "parent_phone", "parent_telegram_chat_id", "telegram_link_code",
     "consent_given_at", "consent_version", "consent_source",
 )
-UNIQUE_FIELDS = frozenset({"pinfl", "hemis_id", "card_number", "telegram_link_code"})
+# ArcFace kosinus o'xshashligi: bundan past — boshqa-boshqa odamlar (bir
+# odamning ikki surati odatda 0.45 dan yuqori).
+FACE_DIFFERENT = 0.25
+
+# Pasport (seriya + raqam) — birgalikda noyob indeks (ix_students_staff_passport).
+UNIQUE_FIELDS = frozenset({"pinfl", "hemis_id", "card_number", "telegram_link_code", "passport_series", "passport_number"})
 BIOMETRIC_FIELDS = (
     "biometric_embedding", "biometric_photo_key", "biometric_photo_left_key", "biometric_photo_right_key",
     "biometrics_status", "biometrics_confirmed_at",
@@ -265,30 +271,61 @@ class MergeError(Exception):
     pass
 
 
-async def merge_people(db: AsyncSession, keeper_id: uuid.UUID, duplicate_id: uuid.UUID) -> dict:
+def faces_differ(a: dict, b: dict) -> bool:
+    """Ikkalasida yuz bor va ular boshqa-boshqa odamniki (FACE_DIFFERENT dan past)."""
+    va, vb = _unit_vector(a.get("biometric_embedding")), _unit_vector(b.get("biometric_embedding"))
+    return va is not None and vb is not None and va.shape == vb.shape and float(va @ vb) < FACE_DIFFERENT
+
+
+def _all_angles(row: dict) -> bool:
+    return bool(row.get("biometric_photo_key") and row.get("biometric_photo_left_key") and row.get("biometric_photo_right_key"))
+
+
+async def merge_people(
+    db: AsyncSession, keeper_id: uuid.UUID, duplicate_id: uuid.UUID, *, manual: bool = False
+) -> dict:
     """Bitta dublikatni saqlanadigan yozuvga qo'shib o'chiradi. Commit
-    chaqiruvchida (bir guruh — bir tranzaksiya). Nima ko'chirilganini qaytaradi."""
+    chaqiruvchida (bir guruh — bir tranzaksiya). Nima ko'chirilganini qaytaradi.
+
+    `manual=True` — administrator ikki yozuvni O'ZI tanlagan (merge_manual):
+    ism qoidasi tekshirilmaydi (familiya o'zgargan, harf xatosi), lekin
+    JSHSHIR va yuz himoyasi qoladi."""
     if keeper_id == duplicate_id:
         raise MergeError("Bir xil yozuv")
     keeper = await _person(db, keeper_id)
     dup = await _person(db, duplicate_id)
     if keeper is None or dup is None:
         raise MergeError("Yozuv topilmadi")
-    if keeper["type"] != dup["type"]:
+    if keeper["type"] != dup["type"] and not manual:
         raise MergeError("Talaba va xodimni birlashtirib bo'lmaydi")
     # Himoya: so'rov qo'lda tuzilgan bo'lsa ham, adashlarni birlashtirmaydi.
-    if not any(group.mergeable for group in group_duplicates([keeper, dup])):
+    # Ism qoidasi — name_matching (kirill/lotin, q/k, so'z tartibi; HEMIS
+    # moslashtirishi — app/services/hemis_reconcile.py — ham shunga tayanadi).
+    same_name = (
+        same_person_name(keeper["full_name"], dup["full_name"])
+        and not _pinfl_conflict([keeper, dup])
+        and not faces_differ(keeper, dup)
+    )
+    if manual:
+        _check_manual_pair(keeper, dup)
+    elif not same_name and not any(group.mergeable for group in group_duplicates([keeper, dup])):
         raise MergeError(f"{keeper['full_name']} va {dup['full_name']} — boshqa-boshqa odamlar")
 
     moved: dict[str, int] = {}
     updates = {f: dup[f] for f in COPY_FIELDS if keeper.get(f) is None and dup.get(f) is not None}
-    if len(name_tokens(dup["full_name"])) > len(name_tokens(keeper["full_name"])):
+    # HEMIS ismi rasmiy — sinxron baribir qaytarib yozadi.
+    if not keeper.get("hemis_id") and len(name_tokens(dup["full_name"])) > len(name_tokens(keeper["full_name"])):
         updates["full_name"] = dup["full_name"]
-    if not keeper.get("biometric_embedding") and dup.get("biometric_embedding"):
+    # Yuz: saqlanadiganda yo'q bo'lsa — dublikatniki; ikkalasida bo'lsa,
+    # uch burchakdan olingani (ro'yxatdan o'tish) bitta suratdan olinganidan
+    # (HEMIS rasmi) ishonchliroq tanitadi.
+    if dup.get("biometric_embedding") and (not keeper.get("biometric_embedding") or (_all_angles(dup) and not _all_angles(keeper))):
         for f in BIOMETRIC_FIELDS:
             updates[f] = dup.get(f)
         moved["yuz"] = 1
     unique_moves = [f for f in updates if f in UNIQUE_FIELDS]
+    if {"passport_series", "passport_number"} & set(unique_moves):
+        unique_moves = sorted(set(unique_moves) | {"passport_series", "passport_number"})
     if unique_moves:
         await db.execute(
             text("update students_staff set " + ", ".join(f"{f} = null" for f in unique_moves) + " where id = :d"),
@@ -354,3 +391,286 @@ async def merge_people(db: AsyncSession, keeper_id: uuid.UUID, duplicate_id: uui
 
     await db.execute(text("delete from students_staff where id = :d"), {"d": duplicate_id})
     return {key: value for key, value in moved.items() if value}
+
+
+# ── Qo'lda birlashtirish (administrator ikki yozuvni o'zi tanlaydi) ─────────
+# Avtomatik qidiruv topa olmaydigan juftlar uchun (2026-10-09): familiya
+# o'zgargan (Mamajonova -> Kenjayeva), harf xatosi (Dodobayev/Dododbayev),
+# kirill/lotin (Мухсинова/Muxsinova). Bir yozuvda yuz va JSHSHIR, ikkinchisida
+# dars jadvali va davomat — natija bitta to'liq yozuv, odam yuzini qayta
+# topshirmaydi.
+
+# Rasmiy profil (ism, guruh, fakultet, bo'linma) — shu maydonlar profil
+# manbasidan olinadi; HEMIS ID va boshqalar COPY_FIELDS orqali ko'chadi.
+PROFILE_FIELDS = (
+    "type", "full_name", "group_or_position", "faculty_id", "reported_group", "org_unit_id", "position", "hemis_photo_url",
+)
+
+
+def _check_manual_pair(a: dict, b: dict) -> None:
+    if a["id"] == b["id"]:
+        raise MergeError("Bir xil yozuv")
+    if a["type"] != b["type"] and not _wrong_type_clone(a, b):
+        raise MergeError("Talaba va xodimni birlashtirib bo'lmaydi")
+    if a.get("pinfl") and b.get("pinfl") and not pinfl_close(a["pinfl"], b["pinfl"]):
+        raise MergeError("Ikki yozuvda ikki xil JSHSHIR — bular boshqa-boshqa odamlar")
+    if faces_differ(a, b):
+        raise MergeError("Ikki yozuvdagi yuzlar boshqa-boshqa odamniki — birlashtirilmaydi")
+
+
+def _wrong_type_clone(a: dict, b: dict) -> bool:
+    """Havolada turini adashtirgan klon (talaba "xodim" deb o'tgan): biri
+    HEMIS'dan, ikkinchisi o'zi ro'yxatdan o'tgan — tur HEMIS'dan olinadi."""
+    official, clone = (a, b) if a.get("hemis_id") else (b, a)
+    return bool(official.get("hemis_id")) and not clone.get("hemis_id") and bool(clone.get("self_registered"))
+
+
+def _face_rank(row: dict) -> tuple:
+    """Qaysi yozuv qoladi: tasdiqlangan yuz > kutilmoqda > yuz bor; keyin
+    uch tomonlama; keyin rasmiylik (keeper_score)."""
+    status = row.get("biometrics_status")
+    return (
+        2 if status == "tasdiqlangan" else (1 if status == "kutilmoqda" and row.get("biometric_embedding") else 0),
+        1 if row.get("biometric_embedding") else 0,
+        1 if _all_angles(row) else 0,
+        keeper_score(row),
+    )
+
+
+def plan_manual_merge(a: dict, b: dict) -> dict:
+    """Sof funksiya — nima qoladi va natija qanday bo'ladi (bazaga yozmaydi)."""
+    _check_manual_pair(a, b)
+    keeper, other = (a, b) if _face_rank(a) >= _face_rank(b) else (b, a)
+    # Profil: HEMIS'dan kelgan (rasmiy) yozuvniki; bo'lmasa — faolniki.
+    if other.get("hemis_id") and not keeper.get("hemis_id"):
+        profile = other
+    elif other.get("active") and not keeper.get("active"):
+        profile = other
+    else:
+        profile = keeper
+    face = keeper if keeper.get("biometric_embedding") or not other.get("biometric_embedding") else other
+    status = face.get("biometrics_status") or "yoq"
+    if status == "kutilmoqda" and face.get("biometric_embedding") and _all_angles(face):
+        status = "tasdiqlangan"  # administrator qarori — uch tomonlama yuz tasdiqlanadi
+    return {
+        "keeper": keeper,
+        "other": other,
+        "profile": profile,
+        "result": {
+            "full_name": profile["full_name"],
+            "group_or_position": profile.get("group_or_position") or "",
+            "faculty_id": profile.get("faculty_id"),
+            "active": bool(keeper.get("active") or other.get("active")),
+            "biometrics_status": status,
+            "all_angles": _all_angles(face),
+            "has_pinfl": bool(keeper.get("pinfl") or other.get("pinfl")),
+            "hemis_linked": bool(keeper.get("hemis_id") or other.get("hemis_id")),
+            "attendance": int(keeper.get("att") or 0) + int(other.get("att") or 0),
+        },
+    }
+
+
+async def merge_manual(db: AsyncSession, first_id: uuid.UUID, second_id: uuid.UUID, *, apply: bool) -> dict:
+    """Ikki yozuvni bittaga. apply=False — faqat reja (oldindan ko'rish).
+    Commit chaqiruvchida."""
+    a, b = await _person(db, first_id), await _person(db, second_id)
+    if a is None or b is None:
+        raise MergeError("Yozuv topilmadi")
+    plan = plan_manual_merge(a, b)
+    if not apply:
+        return plan
+    keeper, other, profile = plan["keeper"], plan["other"], plan["profile"]
+    moved = await merge_people(db, keeper["id"], other["id"], manual=True)
+    updates: dict = {}
+    if profile is other:
+        updates.update({f: other.get(f) for f in PROFILE_FIELDS})
+        updates["self_registered"] = bool(other.get("self_registered"))
+    if plan["result"]["active"] and not keeper.get("active"):
+        updates.update(active=True, deactivated_at=None, manually_deactivated=False)
+    if plan["result"]["biometrics_status"] == "tasdiqlangan" and (
+        await db.execute(text("select biometrics_status from students_staff where id = :k"), {"k": keeper["id"]})
+    ).scalar() == "kutilmoqda":
+        updates.update(biometrics_status="tasdiqlangan", biometrics_review_reason=None)
+        await db.execute(
+            text("update students_staff set biometrics_confirmed_at = now() where id = :k"), {"k": keeper["id"]}
+        )
+    if updates:
+        await db.execute(
+            text("update students_staff set " + ", ".join(f"{f} = :{f}" for f in updates) + " where id = :k"),
+            {**updates, "k": keeper["id"]},
+        )
+    return {**plan, "moved": moved}
+
+
+def merge_candidate_score(person: dict, other: dict) -> int:
+    """Taklif tartibi uchun: ism-sharifning qancha qismi mos (0-3).
+    Familiya o'zgargan bo'lsa ham ism + otasining ismi mos keladi."""
+    from app.services import name_matching  # kirill/lotin bir xil tokenlarga
+
+    ta, tb = name_matching.name_tokens(person.get("full_name")), name_matching.name_tokens(other.get("full_name"))
+    if len(ta) < 2 or len(tb) < 2:
+        return 0
+    score = 0
+    if ta[0][:5] == tb[0][:5]:
+        score += 1
+    if ta[1][:5] == tb[1][:5]:
+        score += 1
+    if len(ta) > 2 and len(tb) > 2 and ta[2][:4] == tb[2][:4]:
+        score += 1
+    return score
+
+
+# ── Yuzli klon <-> HEMIS yozuvi juftlari (avtomatik) ────────────────────────
+# 09.10 holati: yuzi tasdiqlangan, JSHSHIRli, HEMIS ID'siz klon (ko'pincha
+# faol emas) va yuzsiz, lekin guruhi/davomati bor HEMIS yozuvi. Ism turlicha
+# yozilgan: "Shalola"/"Shalolaxon", "Bobirjon"/"Boburjon", so'z tartibi
+# ("Shukrona Isojonova"), kirill/lotin, familiya o'zgargan (Mamajonova ->
+# Kenjayeva). Guruh raqami ("TBI 426" = "TPI-426", "3226" = "DI-3226") va
+# YAGONALIK — adashni birlashtirmaslik uchun.
+
+_GROUP_NUMBER = re.compile(r"(?<!\d)(\d{3,4})(?!\d)")
+_GIVEN_SUFFIXES = ("hon", "jon", "bonu", "oy")
+
+
+def _lev(a: str, b: str) -> int:
+    if a == b:
+        return 0
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def _stem_given(word: str) -> str:
+    for suffix in _GIVEN_SUFFIXES:
+        if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+            return word[: -len(suffix)]
+    return word
+
+
+def _given_match(a: str, b: str) -> bool:
+    sa, sb = _stem_given(a), _stem_given(b)
+    if sa == sb or (len(sa) >= 4 and len(sb) >= 4 and (sa.startswith(sb) or sb.startswith(sa))):
+        return True
+    return min(len(sa), len(sb)) >= 4 and _lev(sa, sb) <= 1
+
+
+def _surname_match(a: str, b: str) -> bool:
+    sa, sb = a.rstrip("a"), b.rstrip("a")  # Ahmadaliyev / Ahmadaliyeva
+    if sa == sb:
+        return True
+    return min(len(sa), len(sb)) >= 5 and (_lev(sa, sb) <= 1 or sa[:7] == sb[:7] and len(sa[:7]) == 7)
+
+
+def _patronymic_match(a: str | None, b: str | None) -> bool | None:
+    """None — bittasida yo'q (noma'lum)."""
+    if not a or not b:
+        return None
+    return a[:4] == b[:4]
+
+
+def group_numbers(row: dict) -> set[str]:
+    text_ = " ".join(str(row.get(f) or "") for f in ("group_or_position", "reported_group"))
+    return set(_GROUP_NUMBER.findall(text_))
+
+
+def clone_name_match(clone: str, target: str, *, same_group: bool) -> bool:
+    """Klon ismi (havolada qo'lda yozilgan) HEMIS ismiga mosmi."""
+    from app.services import name_matching
+
+    tt = name_matching.name_tokens(target)
+    tc = name_matching.name_tokens(clone)
+    if len(tt) < 2 or len(tc) < 2:
+        return False
+    t_sur, t_giv, t_pat = tt[0], tt[1], (tt[2] if len(tt) > 2 else None)
+    # Klon so'z tartibi ikki xil bo'lishi mumkin: "Familiya Ism ..." yoki "Ism Familiya ...".
+    for sur, giv, pat in ((tc[0], tc[1], tc[2] if len(tc) > 2 else None), (tc[1], tc[0], tc[2] if len(tc) > 2 else None)):
+        if not _given_match(giv, t_giv):
+            continue
+        pm = _patronymic_match(pat, t_pat)
+        if _surname_match(sur, t_sur) and pm is not False:
+            return True
+        # Familiya o'zgargan: ism + otasining ismi + guruh mos.
+        if pm is True and same_group:
+            return True
+    return False
+
+
+def _is_face(row: dict) -> bool:
+    return bool(row.get("biometric_embedding")) and row.get("biometrics_status") in ("tasdiqlangan", "kutilmoqda")
+
+
+def find_clone_pairs(rows: list[dict]) -> tuple[list[tuple[dict, list[dict]]], list[tuple[dict, list[dict]]]]:
+    """(aniq guruhlar [(hemis, [klonlar])], noaniqlar [(klon, nomzodlar)]).
+
+    Klon — HEMIS ID'siz, yuzi (tasdiqlangan/kutilmoqda) YOKI JSHSHIRi bor
+    yozuv (faol bo'lmasa ham). Nishon — HEMIS ID'li, yuzsiz, faol. Tur bir xil
+    (yoki o'zi ro'yxatdan o'tgan klon turini adashtirgan — guruh raqami mos).
+    Guruh raqami ikkalasida bo'lsa — teng. JSHSHIR ikkalasida bo'lib, boshqa
+    bo'lsa — rad. Klonga AYNAN bitta nishon mos kelsagina aniq; bir nishonga
+    bir nechta klon (odam bir necha marta o'tgan) — hammasi bitta guruh."""
+    clones = [r for r in rows if not r.get("hemis_id") and (_is_face(r) or r.get("pinfl"))]
+    targets = [r for r in rows if r.get("hemis_id") and not r.get("biometric_embedding") and r.get("active")]
+    hits_of: dict = {}
+    for c in clones:
+        cg = group_numbers(c)
+        hits = []
+        for t in targets:
+            tg = group_numbers(t)
+            if t["type"] != c["type"] and not (c.get("self_registered") and cg and cg & tg):
+                continue
+            if cg and tg and not (cg & tg):
+                continue
+            if c.get("pinfl") and t.get("pinfl") and not pinfl_close(c["pinfl"], t["pinfl"]):
+                continue
+            if clone_name_match(c["full_name"], t["full_name"], same_group=bool(cg & tg)):
+                hits.append(t)
+        if hits:
+            hits_of[c["id"]] = (c, hits)
+    groups: dict = {}
+    unsure: list[tuple[dict, list[dict]]] = []
+    for c, hits in hits_of.values():
+        if len(hits) == 1:
+            groups.setdefault(hits[0]["id"], (hits[0], []))[1].append(c)
+        else:
+            unsure.append((c, hits))
+    # Faqat JSHSHIRli (yuzsiz) klonlar guruhi ham foydali: JSHSHIR HEMIS
+    # yozuviga o'tadi — havola odamni topadi, tahrirlashda xato chiqmaydi.
+    return list(groups.values()), unsure
+
+
+# ── Havolada klon ochilishining oldini olish ───────────────────────────────
+# /royxatdan-otish: JSHSHIR/pasport bo'yicha topilmagan odam ilgari DOIM yangi
+# yozuv ochardi — bazada uning JSHSHIRsiz HEMIS yozuvi tursa ham (09-12.10
+# dagi yuzlab klonlarning manbai). Endi avval "egasi yo'q" (faol, JSHSHIRsiz,
+# yuzsiz) mos yozuv qidiriladi. Yuzi yoki JSHSHIRi bor yozuvga tegilmaydi —
+# begona odam boshqaning tasdiqlangan yozuvini egallay olmasin.
+
+def pick_unclaimed(full_name: str, person_type: str, group_text: str, candidates: list[dict]) -> dict | None:
+    """Yagona mos "egasi yo'q" yozuv yoki None.
+
+    Talaba: yozgan guruhining raqami nomzodnikiga mos bo'lishi shart (ikkalasida
+    bo'lsa); raqam bo'lmasa — ism to'liq mos (same_person_name) bo'lishi shart.
+    Xodim: ism to'liq mos."""
+    g = group_numbers({"group_or_position": group_text})
+    hits = []
+    for c in candidates:
+        if c.get("type") != person_type or not c.get("active") or c.get("pinfl") or c.get("biometric_embedding"):
+            continue
+        strict = same_person_name(full_name, c.get("full_name"))
+        if person_type == "talaba":
+            cg = group_numbers(c)
+            if g and cg:
+                if not (g & cg):
+                    continue
+                ok = strict or clone_name_match(full_name, c.get("full_name") or "", same_group=True)
+            else:
+                ok = strict
+        else:
+            ok = strict
+        if ok:
+            hits.append(c)
+    return hits[0] if len(hits) == 1 else None

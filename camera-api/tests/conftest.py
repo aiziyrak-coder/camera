@@ -177,10 +177,28 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 
 
 @pytest_asyncio.fixture
-async def seeded(db_session: AsyncSession) -> None:
+async def seeded(request, db_session: AsyncSession) -> None:
     """Same seed data the real app boots with — demo users, default
-    permission matrix, starting faculties/buildings."""
+    permission matrix, starting faculties/buildings.
+
+    Real vaqt rejimi testlari uchun (``daily_mode`` belgisi yo'q) eski
+    kriteriyalar (3, 20, 26) ham qo'shiladi — tests/legacy_modules.py."""
     await seed_all(db_session)
+    if not request.node.get_closest_marker("daily_mode"):
+        await seed_legacy_modules(db_session)
+
+
+async def seed_legacy_modules(db: AsyncSession) -> None:
+    from sqlalchemy import select
+
+    from app.models import AIModuleConfig
+    from tests.legacy_modules import LEGACY_AI_MODULES, LEGACY_TRIAL_CODES
+
+    existing = set((await db.execute(select(AIModuleConfig.code))).scalars().all())
+    for module in LEGACY_AI_MODULES:
+        if module["code"] not in existing:
+            db.add(AIModuleConfig(**module, mode="sinov" if module["code"] in LEGACY_TRIAL_CODES else "ishchi"))
+    await db.commit()
 
 
 async def login(client: AsyncClient, login_name: str, password: str) -> str:
@@ -257,3 +275,17 @@ def _admin_2fa_optional(monkeypatch):
     from app.config import settings
 
     monkeypatch.setattr(settings, "admin_2fa_required", False)
+
+
+@pytest.fixture(autouse=True)
+def _realtime_mode_for_legacy_tests(request, monkeypatch):
+    """Standart rejim endi kunlik video tahlil (settings.analysis_mode).
+    Eski testlar real vaqt yo'lini (jonli ramka, sweeplar) tekshiradi —
+    ular uchun rejim "realtime". `daily_mode` belgili testlar kunlik
+    rejimning o'zini tekshiradi."""
+    from app.config import settings
+
+    if request.node.get_closest_marker("daily_mode"):
+        monkeypatch.setattr(settings, "analysis_mode", "kunlik")
+    else:
+        monkeypatch.setattr(settings, "analysis_mode", "realtime")

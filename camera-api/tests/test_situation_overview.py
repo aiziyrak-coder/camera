@@ -72,10 +72,14 @@ async def test_arrivals_by_hour_and_last_arrivals(client, world, admin):
     body = (await client.get(URL, headers=admin)).json()
     hours = {b["hour"]: b for b in body["arrivalsByHour"]}
     assert min(hours) == 7 and max(hours) == 19 and len(hours) == 13
-    assert hours[7] == {"hour": 7, "students": 0, "staff": 1}
-    assert hours[8] == {"hour": 8, "students": 5, "staff": 0}  # nofaol talabaning 08:00 i kirmaydi
-    assert hours[9] == {"hour": 9, "students": 1, "staff": 1}
-    assert hours[12] == {"hour": 12, "students": 0, "staff": 0}
+    assert hours[7] == {"hour": 7, "students": 0, "staff": 1, "studentsLate": 0, "staffLate": 0}
+    # nofaol talabaning 08:00 i kirmaydi
+    assert hours[8] == {"hour": 8, "students": 5, "staff": 0, "studentsLate": 0, "staffLate": 0}
+    # 09:15 Botirova va 09:20 Karimov — "kech_keldi" yozuvlari: kech qismi alohida
+    assert hours[9] == {"hour": 9, "students": 1, "staff": 1, "studentsLate": 1, "staffLate": 1}
+    assert hours[12] == {"hour": 12, "students": 0, "staff": 0, "studentsLate": 0, "staffLate": 0}
+    # Grafikdagi kechikish chizig'i — ish vaqti sozlamasidan (08:00 + 10 daqiqa).
+    assert body["lateAfterStudents"] == "08:10" and body["lateAfterStaff"] == "08:10"
 
     last = body["lastArrivals"]
     assert [a["time"] for a in last] == ["09:20", "09:15", "08:45", "08:30", "08:20", "08:10", "08:05", "07:55"]
@@ -87,6 +91,18 @@ async def test_arrivals_by_hour_and_last_arrivals(client, world, admin):
     assert aliyev["faculty"] == "Davolash ishi"
     assert aliyev["photoUrl"] and "faces/aliyev.jpg" in aliyev["photoUrl"]
     assert next(a for a in last if a["fullName"] == "Botirova Nigora")["photoUrl"] is None
+
+
+async def test_untimed_arrivals_are_counted_apart_from_the_hours(client, world, admin, db_session):
+    """HEMIS davomati (source=hemis) kelish vaqtisiz: soatlik ustunlarga
+    tushmaydi, lekin grafik ularni alohida sanaydi — ustunlar + vaqtsizlar =
+    kelganlar."""
+    db_session.add(AttendanceRecord(student_staff_id=world.people.davronov.id, date=world.today, status="keldi",
+                                    source="hemis"))
+    await db_session.commit()
+    body = (await client.get(URL, headers=admin)).json()
+    assert body["arrivalsUntimedStudents"] == 1 and body["arrivalsUntimedStaff"] == 0
+    assert sum(b["students"] for b in body["arrivalsByHour"]) == 6  # faqat vaqti borlar
 
 
 async def test_past_date_has_no_waiting_people(client, world, admin):

@@ -73,6 +73,13 @@ export type DetectedFaceStatus = 'tanildi' | 'notanish' | 'kichik';
 export interface DetectedFace {
   bbox: [number, number, number, number];
   personName?: string | null;
+  /** Tanilgan odam — operator ekranidagi karta (console/recognizedPeople.ts). */
+  personId?: string | null;
+  personType?: 'talaba' | 'xodim' | string | null;
+  /** Guruh yoki lavozim. */
+  personUnit?: string | null;
+  /** Ro'yxatdan o'tishdagi to'g'ri qaragan surat. */
+  photoUrl?: string | null;
   asleep: boolean;
   status?: DetectedFaceStatus;
   similarity?: number | null;
@@ -143,6 +150,8 @@ export interface StudentStaffRecord {
   /** Faqat talabada — groupOrPosition "2-kurs, DI-1625" dan ajratilgan. */
   course?: number | null;
   group?: string | null;
+  /** HEMIS'da topilmagan talaba o'zi yozgan guruh (group — "HEMIS'da topilmadi"). */
+  reportedGroup?: string | null;
   /** "14.09.2026 13:57" — yuz tasdiqlangan payt (Toshkent vaqti). */
   confirmedLabel?: string | null;
   /** Ochiq sahifada o'zini o'zi ro'yxatdan o'tkazgan. */
@@ -433,7 +442,6 @@ export interface CameraConfig {
    * nisbatan 0-1 oralig'ida normallashtirilgan (TT kriteriya 2 — taqiqlangan
    * zonaga kirish). null/aniqlanmagan bo'lsa app/jobs/zone_entry_ai.py bu
    * kamerani butunlay o'tkazib yuboradi. */
-  restrictedZonePolygon?: [number, number][] | null;
   /** AIModule.code raqamlari — bu kamera ULARDAN chetlashtirilgan (allow-list
    * emas, exclude-list). null/bo'sh massiv = faol modullarning barchasi shu
    * kamerada ishlaydi (standart holat). */

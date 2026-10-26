@@ -7,6 +7,7 @@
  * qilish uchun). Token apiClient orqali avtomatik qo'shiladi.
  */
 import { api, buildQuery, type CallOptions } from './apiClient';
+import { cachedRequest, ttlForDate } from './responseCache';
 
 // ───────────────────────────────────────────── Umumiy tiplar
 
@@ -26,6 +27,10 @@ export interface Counts {
   dayOff: number;
   notYet: number;
   noData: number;
+  /** noData ichidan: yuzi bazada yo'q va shu kuni hech qanday yozuvi yo'q
+   *  (HEMIS bo'yicha kelgan yuzsiz — present da). Ustma-ust tushmaydigan
+   *  "Yuzi bazada yo'q" sanog'i; eski server bermasa — undefined. */
+  noFace?: number;
   /** present / (present + absent + notYet) * 100; asos 0 → null */
   rate: number | null;
 }
@@ -97,8 +102,15 @@ export interface Overview {
   /** students.enrolled / students.total >= 5% */
   studentsDataAvailable: boolean;
   studentsEnrolledPct: number | null;
-  arrivalsByHour: Array<{ hour: number; students: number; staff: number }>;
+  /** Soat bo'yicha kelganlar; *Late — shundan "kech_keldi" (eski server bermasa — undefined). */
+  arrivalsByHour: Array<{ hour: number; students: number; staff: number; studentsLate?: number; staffLate?: number }>;
   lastArrivals: LastArrival[];
+  /** Kechikish chegarasi "HH:MM" (ish vaqti sozlamasidan) — kelish grafigidagi chiziq. */
+  lateAfterStudents?: string | null;
+  lateAfterStaff?: string | null;
+  /** Kelgan, lekin kelish vaqti noma'lum (HEMIS davomati, qo'lda) — soatlarda yo'q. */
+  arrivalsUntimedStudents?: number;
+  arrivalsUntimedStaff?: number;
 }
 
 // ───────────────────────────────────────────── 2–4. Fakultet / guruh
@@ -297,6 +309,8 @@ export interface PersonInfo {
   photoAngles?: number;
   group: string | null;
   course: number | null;
+  /** HEMIS'da topilmagan talaba o'zi yozgan guruh. */
+  reportedGroup?: string | null;
   departmentId: string | null;
   department: string | null;
   biometricsStatus: string;
@@ -569,7 +583,9 @@ export function getGroups(
   params: { date?: string; facultyId?: string; course?: number; search?: string } = {},
   opts?: CallOptions,
 ): Promise<GroupStat[]> {
-  return api.get<GroupStat[]>(`${BASE}/groups${buildQuery(params)}`, undefined, opts);
+  // Keshlanadi (lib/responseCache.ts): "Bugun"/"Kecha" almashganda darhol.
+  const url = `${BASE}/groups${buildQuery(params)}`;
+  return cachedRequest(url, ttlForDate(params.date), () => api.get<GroupStat[]>(url), opts?.signal);
 }
 
 export function getGroup(groupName: string, date?: string, opts?: CallOptions): Promise<GroupDetail> {
@@ -731,10 +747,13 @@ export interface StatusPeopleQuery {
   search?: string;
   page?: number;
   pageSize?: number;
+  /** Kelish grafigidagi ustun: shu soatda (0-23) kelganlar. */
+  arrivalHour?: number;
 }
 
 export function getPeopleStatus(params: StatusPeopleQuery = {}, opts?: CallOptions): Promise<StatusPeoplePage> {
-  return api.get<StatusPeoplePage>(`${BASE}/people-status${buildQuery({ ...params })}`, undefined, opts);
+  const url = `${BASE}/people-status${buildQuery({ ...params })}`;
+  return cachedRequest(url, ttlForDate(params.date), () => api.get<StatusPeoplePage>(url), opts?.signal);
 }
 
 /** Holat kaliti -> counts maydoni. */
@@ -794,7 +813,8 @@ export interface OrgTree {
 }
 
 export function getOrgTree(date?: string, opts?: CallOptions): Promise<OrgTree> {
-  return api.get<OrgTree>(`${BASE}/tuzilma${buildQuery({ date })}`, undefined, opts);
+  const url = `${BASE}/tuzilma${buildQuery({ date })}`;
+  return cachedRequest(url, ttlForDate(date), () => api.get<OrgTree>(url), opts?.signal);
 }
 
 

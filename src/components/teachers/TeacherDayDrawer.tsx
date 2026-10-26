@@ -30,7 +30,7 @@ export interface TeacherDayDrawerProps {
 }
 
 /** O'qituvchining kuni: davomat holati, jadvaldagi darslariga kirgani
- *  (punktuallik) va kun davomida qaysi bino/xonada bo'lgani. */
+ *  (darsga o'z vaqtida kirish) va kun davomida qaysi bino/xonada bo'lgani. */
 export function TeacherDayDrawer({ person, date, onClose, children }: TeacherDayDrawerProps) {
   const { withDate } = useViewDate();
   const [data, setData] = useState<PersonDay | null>(null);

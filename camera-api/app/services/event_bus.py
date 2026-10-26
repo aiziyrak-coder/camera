@@ -276,3 +276,61 @@ async def raise_event(
         await manager.broadcast(event_out.model_dump(by_alias=True))
         await notify_event(event)
     return event
+
+
+#: Kunlik video tahlil yaratgan hodisalar belgisi (details["source"]) — kunni
+#: qayta hisoblashda oldingilari shu bo'yicha o'chiriladi.
+VIDEO_ANALYSIS_SOURCE = "video_tahlil"
+
+
+async def create_analysis_event(
+    db: AsyncSession,
+    *,
+    camera: Camera | None,
+    module_code: int,
+    confidence: int,
+    severity: str,
+    occurred_at: datetime,
+    person_name: str | None = None,
+    details: dict | None = None,
+    snapshot_key: str | None = None,
+    module: AIModuleConfig | None = None,
+) -> Event | None:
+    """Kunlik tahlil hodisasi (app/batch/aggregate.py).
+
+    raise_event'dan farqi: vaqt — videodagi payt (hozir emas); real vaqt
+    uchun mo'ljallangan soatlik tezlik chegarasi qo'llanmaydi (hamma
+    hodisa bir lahzada yaratiladi, cheklovni kunlik tahlilning o'zi
+    qo'yadi); jonli lentaga (WebSocket) va Telegram'ga har biri alohida
+    yuborilmaydi — tahlil oxirida bitta xulosa yuboriladi. Modul
+    chegarasi (threshold) va sinov rejimi odatdagidek ishlaydi. Commit
+    qilmaydi."""
+    config = module
+    if config is None:
+        config = (
+            await db.execute(select(AIModuleConfig).where(AIModuleConfig.code == module_code))
+        ).scalar_one_or_none()
+    if config is None or not config.active:
+        return None
+    if confidence < config.threshold:
+        return None
+    is_trial = config.mode == "sinov"
+    event = Event(
+        occurred_at=occurred_at,
+        camera_id=camera.id if camera is not None else None,
+        camera_name=camera.name if camera is not None else "",
+        building=camera.building.name if camera is not None and camera.building else "",
+        module_code=module_code,
+        module_name=config.name,
+        group=config.group,
+        confidence=confidence,
+        severity=severity,
+        status="yangi",
+        person_name=person_name,
+        snapshot_key=snapshot_key,
+        is_trial=is_trial,
+        details={**(details or {}), "source": VIDEO_ANALYSIS_SOURCE},
+        due_at=None if is_trial else sla_due_at(severity, datetime.now(timezone.utc)),
+    )
+    db.add(event)
+    return event

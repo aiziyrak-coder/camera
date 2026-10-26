@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date as date_type, datetime, time, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -28,6 +28,7 @@ from app.models import (
     AttendanceRecord,
     Building,
     Camera,
+    DailyPersonCriteria,
     Event,
     LessonAttendance,
     LessonSession,
@@ -57,9 +58,11 @@ PERIOD_LABELS = {"bugun": "Bugun", "kecha": "Kecha", "hafta": "Hafta", "oy": "Sh
 
 STAFF_ATTENDANCE_CODE = 6
 STUDENT_ATTENDANCE_CODE = 7
-OFF_HOURS_CODE = 3
-SLEEP_CODE = 20
-PUNCTUALITY_CODES = (22, 26)
+COAT_CODE = 10
+SMOKING_CODE = 15
+# 2026-10-04: #26 (o'qituvchi o'rniga boshqasi) olib tashlandi — xonada
+# ko'ringan boshqa xodim #22 hodisasining tafsilotida aytiladi.
+PUNCTUALITY_CODES = (22,)
 
 
 @dataclass(frozen=True)
@@ -167,12 +170,15 @@ async def _people_counts(db: AsyncSession, population: str) -> tuple[int, int]:
     return total, enrolled
 
 
-async def _event_counts(db: AsyncSession, codes: tuple[int, ...], period: Period) -> dict[str, int]:
+async def _event_counts(
+    db: AsyncSession, codes: tuple[int, ...], period: Period, *, include_trial: bool = False
+) -> dict[str, int]:
     start, end = period.bounds_utc()
+    trial_filter = true() if include_trial else Event.is_trial.is_(False)
     rows = (
         await db.execute(
             select(Event.status, func.count())
-            .where(Event.is_trial.is_(False))
+            .where(trial_filter)
             .where(Event.module_code.in_(codes))
             .where(Event.occurred_at.between(start, end))
             .group_by(Event.status)
@@ -192,6 +198,68 @@ async def _lesson_counts(db: AsyncSession, period: Period) -> dict[str, int]:
         )
     ).all()
     return {status or "baholanmagan": count for status, count in rows}
+
+
+async def _coat_counts(db: AsyncSession, population: str, period: Period) -> dict[str, int]:
+    """Oq xalat (#10) — kunlik video tahlil natijasi: odam-kunlar holati."""
+    rows = (
+        await db.execute(
+            select(DailyPersonCriteria.coat_status, func.count())
+            .join(StudentStaff, StudentStaff.id == DailyPersonCriteria.student_staff_id)
+            .where(StudentStaff.type == population)
+            .where(DailyPersonCriteria.day.between(period.start, period.end))
+            .where(DailyPersonCriteria.coat_status.in_(("kiygan", "kiymagan", "aniqlanmadi")))
+            .group_by(DailyPersonCriteria.coat_status)
+        )
+    ).all()
+    return {status: count for status, count in rows}
+
+
+async def _attention_counts(db: AsyncSession, period: Period) -> dict[str, int]:
+    """Diqqat (#19) — talaba-darslar balli bo'yicha: yaxshi / o'rta / past."""
+    score = LessonAttendance.attention_score
+    bucket = case((score >= 75, "yaxshi"), (score >= 60, "orta"), else_="past")
+    rows = (
+        await db.execute(
+            select(bucket, func.count())
+            .join(LessonSession, LessonSession.id == LessonAttendance.lesson_session_id)
+            .where(LessonSession.date.between(period.start, period.end))
+            .where(score.is_not(None))
+            .group_by(bucket)
+        )
+    ).all()
+    return {key: count for key, count in rows}
+
+
+def _coat_criterion(counts: dict[str, int]) -> ReportCriterionOut:
+    total = sum(counts.values())
+    return ReportCriterionOut(
+        key="forma",
+        title="Oq xalat",
+        subtitle="Kun bo'yi kuzatuvlar bo'yicha: oq xalatda yurgan yoki yurmagan (odam-kunlar)",
+        total=total,
+        unit="odam-kun",
+        detail="none",
+        module_codes=[COAT_CODE],
+        note=None if total else "Bu davrda kunlik video tahlil oq xalat bo'yicha natija bermadi.",
+        buckets=[
+            ReportBucketOut(key="kiygan", label="Kiygan", count=counts.get("kiygan", 0), tone="green"),
+            ReportBucketOut(key="kiymagan", label="Kiymagan", count=counts.get("kiymagan", 0), tone="red"),
+            ReportBucketOut(key="aniqlanmadi", label="Aniqlanmadi", count=counts.get("aniqlanmadi", 0), tone="slate"),
+        ],
+    )
+
+
+def _smoking_criterion(counts: dict[str, int]) -> ReportCriterionOut:
+    criterion = _events_criterion(
+        "chekish",
+        "Chekish",
+        "Hovli va koridorlarda qo'lni og'izga takror ko'tarish — operator tasdiqlaydi",
+        (SMOKING_CODE,),
+        counts,
+        None if sum(counts.values()) else "Bu davrda bunday holat qayd etilmadi.",
+    )
+    return criterion
 
 
 def _events_criterion(
@@ -289,17 +357,6 @@ async def build_criteria(db: AsyncSession, population: str, period: Period) -> R
     ]
 
     if population == "xodim":
-        off_hours = await _event_counts(db, (OFF_HOURS_CODE,), period)
-        criteria.append(
-            _events_criterion(
-                "off_hours",
-                "Ish vaqtidan tashqari kirish",
-                "Kechki va dam olish kunidagi kirishlar — har biri kamera kadri bilan",
-                (OFF_HOURS_CODE,),
-                off_hours,
-                None if sum(off_hours.values()) else "Bu davrda bunday signal yo'q.",
-            )
-        )
         punctuality = await _event_counts(db, PUNCTUALITY_CODES, period)
         lessons_exist = (
             await db.scalar(
@@ -312,7 +369,7 @@ async def build_criteria(db: AsyncSession, population: str, period: Period) -> R
             _events_criterion(
                 "dars_intizomi",
                 "Dars intizomi",
-                "O'qituvchining darsga kelishi va o'rniga boshqasining kirishi",
+                "O'qituvchi darsga kechikkan yoki kelmagan holatlar",
                 PUNCTUALITY_CODES,
                 punctuality,
                 None if lessons_exist else "Bu davrga dars jadvali kiritilmagan — tekshirish ishlamaydi.",
@@ -341,17 +398,28 @@ async def build_criteria(db: AsyncSession, population: str, period: Period) -> R
                 ],
             )
         )
-        sleep = await _event_counts(db, (SLEEP_CODE,), period)
+        attention = await _attention_counts(db, period)
+        attention_total = sum(attention.values())
         criteria.append(
-            _events_criterion(
-                "uxlash",
-                "Darsda uxlab qolish",
-                "Har signal kamera kadri bilan tasdiqlanadi",
-                (SLEEP_CODE,),
-                sleep,
-                None if sum(sleep.values()) else "Bu davrda bunday signal yo'q.",
+            ReportCriterionOut(
+                key="diqqat",
+                title="Darsda diqqat",
+                subtitle="Har talaba-dars bo'yicha diqqat balli: yuz yo'nalishi va telefon",
+                total=attention_total,
+                unit="dars-yozuv",
+                detail="none",
+                module_codes=[19],
+                note=None if attention_total else "Bu davrda diqqat o'lchangan dars yo'q.",
+                buckets=[
+                    ReportBucketOut(key="yaxshi", label="Yaxshi (75+)", count=attention.get("yaxshi", 0), tone="green"),
+                    ReportBucketOut(key="orta", label="O'rta (60–74)", count=attention.get("orta", 0), tone="amber"),
+                    ReportBucketOut(key="past", label="Past (<60)", count=attention.get("past", 0), tone="red"),
+                ],
             )
         )
+
+    criteria.append(_coat_criterion(await _coat_counts(db, population, period)))
+    criteria.append(_smoking_criterion(await _event_counts(db, (SMOKING_CODE,), period, include_trial=True)))
 
     return ReportCriteriaOut(
         population=population,

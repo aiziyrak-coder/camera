@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -65,6 +65,12 @@ class LessonAttendance(Base):
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     sightings: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Kunlik video tahlil (app/batch/aggregate.py): darsning oxirgi
+    # daqiqalarida xonada ko'rinmagan (#9). NULL — o'lchanmadi.
+    left_early: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Shu talabaning shu darsdagi diqqat balli (#19), 0-100. NULL — o'lchanmadi.
+    attention_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    attention_samples: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
     lesson: Mapped["LessonSession"] = relationship("LessonSession", lazy="selectin")
     student: Mapped["StudentStaff"] = relationship("StudentStaff", lazy="selectin")

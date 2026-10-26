@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Video } from 'lucide-react';
 import { Avatar, CodeText, DataTable, EmptyState, cn, type DataTableColumn, type SortState } from '../../ui';
 import { RAG_TEXT, RATE_RAG, rag } from '../../ui/rag';
 import { RagChip } from './board';
@@ -11,6 +12,9 @@ import { formatCell, type HisobotColumn, type HisobotPerson, type HisobotReport 
  * Foizli ustunlar svetofor bilan chiqadi, qolganlari — oddiy raqam.
  * Qator bosilganda shaxs kartasi ochiladi.
  */
+
+/** Har odam qatoridagi video dalillar soni (backend: hisobot.EVIDENCE_COLUMN). */
+const EVIDENCE_KEY = 'dalil';
 
 /** Ustun foizmi — faqat shundagina hukm chiqaramiz. */
 function isRateColumn(column: HisobotColumn) {
@@ -62,6 +66,16 @@ export default function PeopleTable({ data }: { data: HisobotReport }) {
         cell: (person) => {
           const raw = person.values[column.key];
           const text = formatCell(raw, column.unit);
+          if (column.key === EVIDENCE_KEY) {
+            // Video dalil (2 daqiqalik klip) — odam kartasida ko'riladi; qator bosilganda ochiladi.
+            if (!numberOf(raw)) return <span className="text-muted">—</span>;
+            return (
+              <span className="flex items-center justify-end gap-1 text-primary" title="Video dalillar — odam kartasida">
+                <Video size={13} aria-hidden="true" />
+                <CodeText className="text-[13px] font-medium">{text}</CodeText>
+              </span>
+            );
+          }
           if (!rateColumn) return <CodeText className="text-[13px]">{text}</CodeText>;
           const tone = rag(numberOf(raw), RATE_RAG);
           return (

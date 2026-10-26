@@ -42,7 +42,7 @@ class TestModuleDocsFollowTheCode:
         from app.seed import DEFAULT_AI_MODULES, seed_all
 
         await seed_all(db_session)
-        row = (await db_session.execute(select(AIModuleConfig).where(AIModuleConfig.code == 1))).scalar_one()
+        row = (await db_session.execute(select(AIModuleConfig).where(AIModuleConfig.code == 6))).scalar_one()
         row.method = "YOLOv8-face + ArcFace, mahalliy GPU"
         row.description = "eski matn"
         row.threshold = 91
@@ -53,7 +53,22 @@ class TestModuleDocsFollowTheCode:
         await seed_all(db_session)
         await db_session.refresh(row)
 
-        expected = next(m for m in DEFAULT_AI_MODULES if m["code"] == 1)
+        expected = next(m for m in DEFAULT_AI_MODULES if m["code"] == 6)
         assert row.method == expected["method"]
         assert row.description == expected["description"]
         assert (row.threshold, row.active, row.mode) == (91, False, "sinov")
+
+
+async def test_seed_holds_exactly_the_customer_criteria(db_session):
+    """2026-10-04 buyurtmachi ro'yxati: 9 ta kriteriya + 2026-10-06 dan 1 (begona
+    shaxs); 10, 15, 19, 21 sinov rejimida."""
+    from sqlalchemy import select
+
+    from app.models import AIModuleConfig
+    from app.seed import seed_all
+
+    await seed_all(db_session)
+    rows = {row.code: row for row in (await db_session.execute(select(AIModuleConfig))).scalars()}
+    assert set(rows) == {1, 6, 7, 8, 9, 10, 15, 19, 21, 22}
+    assert all(row.active for row in rows.values())
+    assert {code for code, row in rows.items() if row.mode == "sinov"} == {10, 15, 19, 21}

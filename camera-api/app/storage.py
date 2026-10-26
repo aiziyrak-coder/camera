@@ -90,6 +90,16 @@ def presigned_url(key: str) -> str:
     return url
 
 
+def presigned_url_for(key: str, seconds: int) -> str:
+    """Uzoq muddatli havola (keshsiz) — sahifadan tashqarida ochiladigan
+    hisobot uchun (scripts/video_tahlil.py hisobot --html). S3 chegarasi 7 kun."""
+    return _s3_public.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": settings.s3_bucket, "Key": key},
+        ExpiresIn=min(seconds, 7 * 24 * 3600),
+    )
+
+
 def object_last_modified(key: str) -> datetime | None:
     """Obyekt omborga yozilgan payt (timezone-aware, UTC). Obyekt yo'q
     bo'lsa None; ombor bilan aloqa xatosi esa chaqiruvchiga ko'tariladi —

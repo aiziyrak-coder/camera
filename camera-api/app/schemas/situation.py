@@ -36,6 +36,9 @@ class CountsOut(CamelModel):
     day_off: int = 0
     not_yet: int = 0
     no_data: int = 0
+    # no_data ichidan: yuzi bazada yo'q va hech qanday yozuvi yo'q (HEMIS bo'yicha
+    # kelgan yuzsiz — present da). Ustma-ust tushmaydigan "Yuzi bazada yo'q" sanog'i.
+    no_face: int = 0
     rate: float | None = None
 
 
@@ -85,6 +88,10 @@ class HourBucketOut(CamelModel):
     hour: int
     students: int = 0
     staff: int = 0
+    # Shundan kech kelganlar (davomat yozuvi holati "kech_keldi" — hisobot
+    # bilan bitta qoida). Qolgani — o'z vaqtida.
+    students_late: int = 0
+    staff_late: int = 0
 
 
 class ArrivalOut(CamelModel):
@@ -116,6 +123,14 @@ class OverviewOut(CamelModel):
     students_enrolled_pct: float | None = None
     arrivals_by_hour: list[HourBucketOut]
     last_arrivals: list[ArrivalOut]
+    # Kechikish chegarasi (ish vaqti sozlamasidan, "HH:MM"): shundan keyin
+    # birinchi ko'rinish — "kech keldi". Kelish grafigidagi chiziq.
+    late_after_students: str | None = None
+    late_after_staff: str | None = None
+    # Kelgan, lekin kelish vaqti noma'lum (HEMIS davomati, qo'lda kiritilgan)
+    # — soatlik grafikda yo'q, alohida ko'rsatiladi.
+    arrivals_untimed_students: int = 0
+    arrivals_untimed_staff: int = 0
 
 
 # ─────────────────────────────────────────── 2-3. Fakultet va guruhlar
@@ -332,6 +347,8 @@ class PersonInfoOut(CamelModel):
     photo_angles: int = 0
     group: str | None = None  # talaba guruhi
     course: int | None = None
+    # HEMIS'da topilmagan talaba o'zi yozgan guruh.
+    reported_group: str | None = None
     department_id: str | None = None  # xodim kafedrasi (nom bo'yicha topilgan)
     department: str | None = None
     biometrics_status: str

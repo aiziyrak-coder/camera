@@ -33,3 +33,6 @@ deploy/run_migrate_fermi.py
 *.njsproj
 *.sln
 *.sw?
+
+# Yozib olingan videolar (kunlik video tahlil)
+nvr-eksport/

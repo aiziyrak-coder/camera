@@ -25,3 +25,6 @@ talabalar*.json
 # per-machine, and private keys don't belong in git even when self-signed.
 auto.crt
 auto.key
+
+# Yozib olingan videolar (scripts/video_tahlil.py) — repoga kirmaydi
+nvr-eksport/

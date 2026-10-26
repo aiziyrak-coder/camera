@@ -16,16 +16,16 @@ from app.jobs.attendance_ai import attendance_ai_loop, stop_entrance_watchers
 from app.jobs.camera_health import camera_health_loop
 from app.jobs.cleanup import cleanup_loop
 from app.jobs.leader_lock import release_leadership, try_become_leader
-from app.jobs.ai_scheduler import ai_scheduler_loop, standalone_sweep_loops
+from app.jobs.ai_scheduler import ai_scheduler_loop, daily_mode_sweep_loops, standalone_sweep_loops
+from app.jobs.video_analysis import video_analysis_loop
 from app.jobs.lesson_attendance import lesson_attendance_loop
 from app.jobs.lesson_quality_ai import lesson_quality_ai_loop
 from app.jobs.teacher_punctuality_ai import teacher_punctuality_ai_loop
 from app.jobs.unauthorized_person_ai import unauthorized_person_ai_loop
 from app.jobs.unified_face_sweep import unified_face_sweep_loop
-from app.jobs.vision_ai import vision_ai_loop
-from app.jobs.zone_entry_ai import zone_entry_ai_loop
 from app.jobs.access_poll import access_poll_loop
 from app.jobs.event_escalation import event_escalation_loop
+from app.jobs.hemis_attendance_sync import hemis_attendance_loop
 from app.jobs.hemis_photos import hemis_photos_loop
 from app.jobs.teacher_absence import teacher_absence_loop
 from app.jobs.unknown_rematch import unknown_rematch_loop
@@ -43,6 +43,7 @@ from app.services.pose_detection import shutdown_pose_detection_pool
 from app.services.stream_cache import shutdown_stream_cache, stream_cache_reaper_loop
 from app.services.thread_limits import apply_thread_limits
 from app.storage import check_bucket
+from app.routers import integration_v1
 from app.routers import (
     unknown_sightings,
     face_review,
@@ -80,6 +81,7 @@ from app.routers import (
     students_staff,
     system,
     users,
+    video_analysis,
     wall_views,
 )
 from app.seed import seed_all
@@ -130,6 +132,7 @@ def _start_platform_loops(tasks: list[asyncio.Task]) -> None:
         event_escalation_loop(),
         hemis_sync_loop(),
         hemis_photos_loop(),
+        hemis_attendance_loop(),
         teacher_absence_loop(),
         unknown_rematch_loop(),
         system_alerts_loop(),
@@ -138,8 +141,38 @@ def _start_platform_loops(tasks: list[asyncio.Task]) -> None:
         tasks.append(asyncio.create_task(loop_coro))
 
 
+def _start_daily_mode_loops(tasks: list[asyncio.Task]) -> None:
+    """ANALYSIS_MODE=kunlik: kun davomida kameralar tahlil qilinmaydi —
+    faqat kamera holati, platforma vazifalari va kechki video tahlil
+    (app/jobs/video_analysis.py). Real vaqt ko'rinishlariga bog'liq
+    vazifalar (o'qituvchi kelmagani haqida darhol ogohlantirish, notanish
+    yuzlarni qayta moslash) bu rejimda ishlamaydi."""
+    tasks.append(asyncio.create_task(runtime_snapshot_loop()))
+    for loop_coro in (
+        cleanup_loop(),
+        telegram_bot_loop(),
+        event_escalation_loop(),
+        hemis_sync_loop(),
+        hemis_photos_loop(),
+        hemis_attendance_loop(),
+        system_alerts_loop(),
+        access_poll_loop(),
+        camera_health_loop(),
+        video_analysis_loop(),
+        *daily_mode_sweep_loops(),
+    ):
+        tasks.append(asyncio.create_task(loop_coro))
+    logger.info(
+        "daily video analysis mode — realtime AI sweeps not started",
+        extra={"event": "leader_elected", "ai_role": settings.ai_role, "analysis_mode": "kunlik"},
+    )
+
+
 def _start_ai_loops(tasks: list[asyncio.Task]) -> None:
     """Leader jarayonida AI sweeplarini ishga tushiradi."""
+    if settings.analysis_mode == "kunlik":
+        _start_daily_mode_loops(tasks)
+        return
     # AI statistikasi faqat shu jarayon xotirasida — boshqa API
     # jarayonlari uni Redis orqali ko'radi (app/services/runtime_snapshot.py).
     tasks.append(asyncio.create_task(runtime_snapshot_loop()))
@@ -158,7 +191,6 @@ def _start_ai_loops(tasks: list[asyncio.Task]) -> None:
             if settings.unified_face_sweep_enabled
             else [
                 attendance_ai_loop(),
-                vision_ai_loop(),
                 unauthorized_person_ai_loop(),
             ]
         )
@@ -166,7 +198,6 @@ def _start_ai_loops(tasks: list[asyncio.Task]) -> None:
             camera_health_loop(),
             *face_loops,
             teacher_punctuality_ai_loop(),
-            zone_entry_ai_loop(),
             lesson_quality_ai_loop(),
             lesson_attendance_loop(),
             *standalone_sweep_loops(),
@@ -277,6 +308,7 @@ app = FastAPI(
 )
 
 from fastapi import HTTPException as _HTTPException  # noqa: E402
+from starlette.middleware.gzip import GZipMiddleware  # noqa: E402
 from fastapi.exception_handlers import http_exception_handler as _default_http_handler  # noqa: E402
 
 
@@ -293,7 +325,14 @@ async def _log_enrollment_rejections(request, exc):
 
 
 app.state.limiter = limiter
+# JSON javoblar siqiladi: nginx'da gzip_types/gzip_proxied o'chiq, ya'ni
+# proksidan o'tgan JSON siqilmay borardi — guruhlar ro'yxati 188 KB
+# (2026-10-06), internet orqali "Bugun/Kecha" sekin ochilardi. Rasm/video
+# Starlette'ning o'zi siqmaydi.
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# iMentor integratsiyasi — xatolar {"code", "message"} ko'rinishida.
+app.add_exception_handler(integration_v1.IntegrationError, integration_v1.integration_error_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -350,6 +389,8 @@ app.include_router(hisobot_jadval.router, dependencies=_report_gate)
 app.include_router(kpi.router, dependencies=[*_report_gate, *_fresh_policy])
 app.include_router(attendance_policy.router)
 app.include_router(wall_views.router)
+app.include_router(video_analysis.router)
+app.include_router(integration_v1.router)
 
 
 @app.get("/health")

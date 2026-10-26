@@ -60,6 +60,10 @@ class LessonSession(Base):
     auditorium: Mapped[str | None] = mapped_column(String, nullable=True)
     building: Mapped[str | None] = mapped_column(String, nullable=True)
     scheduled_end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Kunlik video tahlil: o'qituvchi xonada birinchi ko'ringan payt (#22)
+    # va dars o'rtasidagi kliplarning qanchasida ko'ringani, % (#21).
+    teacher_first_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    teacher_presence_pct: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     teacher_ref: Mapped["StudentStaff | None"] = relationship("StudentStaff", lazy="joined")
     camera: Mapped["Camera | None"] = relationship("Camera", lazy="joined")

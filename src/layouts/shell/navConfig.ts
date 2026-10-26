@@ -7,6 +7,7 @@ import {
   ChartColumn,
   Contact,
   DoorOpen,
+  FileVideo,
   GraduationCap,
   LayoutDashboard,
   Lock,
@@ -69,7 +70,10 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     id: 'tahlil',
     label: 'Tahlil',
-    items: [{ to: '/hisobotlar', code: 'HIS', label: 'Hisobotlar', icon: ChartColumn, permission: 'viewReports' }],
+    items: [
+      { to: '/kunlik-tahlil', code: 'KTH', label: 'Kunlik tahlil', icon: FileVideo, anyOf: ['viewReports', 'manageAttendance', 'systemSettings'] },
+      { to: '/hisobotlar', code: 'HIS', label: 'Hisobotlar', icon: ChartColumn, permission: 'viewReports' },
+    ],
   },
   {
     id: 'malumotlar',

@@ -53,6 +53,7 @@ export default function CriteriaStrip({
                 !item.available && 'cursor-not-allowed opacity-45 hover:border-border hover:text-muted',
               )}
             >
+              {item.code ? <span className="me-1 opacity-70">#{item.code}</span> : null}
               {item.label}
             </button>
           );

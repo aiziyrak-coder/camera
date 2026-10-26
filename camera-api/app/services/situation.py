@@ -234,6 +234,11 @@ class Counts:
     day_off: int = 0
     not_yet: int = 0
     no_data: int = 0
+    # no_data ichidan: yuzi bazada YO'Q odamlar — HAMMASI, yozuvi bo'lsa ham
+    # (buyurtmachi qarori, 2026-10-06): "Yuzi bazada yo'q" har kuni bir xil
+    # (yuzsizlar soni), holatlar esa faqat yuzi borlar orasida taqsimlanadi:
+    # jami = present + absent + not_yet + day_off + (no_data - no_face) + no_face.
+    no_face: int = 0
 
     def add(self, enrolled: bool, record_status: str | None, n: int, pending: bool) -> None:
         """pending — kun hali tugamagan (bugun): yuzi tasdiqlangan, lekin
@@ -241,6 +246,12 @@ class Counts:
         self.total += n
         if enrolled:
             self.enrolled += n
+        else:
+            # Yuzsiz — faqat "Yuzi bazada yo'q" (HEMIS yozuvi bo'lsa ham);
+            # foizga va holat sanoqlariga kirmaydi.
+            self.no_data += n
+            self.no_face += n
+            return
         if record_status in PRESENT_STATUSES:
             self.present += n
             if record_status == "kech_keldi":
@@ -255,7 +266,7 @@ class Counts:
             self.no_data += n
 
     def merge(self, other: "Counts") -> "Counts":
-        for name in ("total", "enrolled", "present", "late", "absent", "day_off", "not_yet", "no_data"):
+        for name in ("total", "enrolled", "present", "late", "absent", "day_off", "not_yet", "no_data", "no_face"):
             setattr(self, name, getattr(self, name) + getattr(other, name))
         return self
 
@@ -268,7 +279,7 @@ class Counts:
         return {
             "total": self.total, "enrolled": self.enrolled, "present": self.present, "late": self.late,
             "absent": self.absent, "day_off": self.day_off, "not_yet": self.not_yet, "no_data": self.no_data,
-            "rate": self.rate,
+            "no_face": self.no_face, "rate": self.rate,
         }
 
     def out(self) -> CountsOut:
@@ -909,25 +920,58 @@ async def event_summary(db: AsyncSession, day: date_type) -> dict:
     return {"open": open_row[0], "today": today_count or 0, "high_open": open_row[1], "overdue": open_row[2]}
 
 
+EMPTY_HOUR = {"students": 0, "staff": 0, "students_late": 0, "staff_late": 0}
+
+
 async def arrivals_by_hour(db: AsyncSession, day: date_type) -> list[dict]:
+    """Soat bo'yicha kelganlar (kunning birinchi ko'rinishi) va shundan kech
+    kelganlar. "Kech" — yozuvning o'z holati (kech_keldi), ya'ni hisobot va
+    kartochkalardagi bilan bitta qoida: 08:00-09:00 soatida 08:10 gacha
+    kelganlar o'z vaqtida, keyingilari kech."""
     hour = func.extract("hour", AttendanceRecord.check_in)
     rows = await db.execute(
-        select(hour, StudentStaff.type, func.count())
+        select(hour, StudentStaff.type, func.count(), func.count().filter(AttendanceRecord.status == "kech_keldi"))
         .join(StudentStaff, StudentStaff.id == AttendanceRecord.student_staff_id)
         .where(AttendanceRecord.date == day)
         .where(AttendanceRecord.check_in.is_not(None))
         .where(StudentStaff.active.is_(True))
+        # Sanoqlar bilan bir xil qoida: faqat yuzi bazada borlar ("Keldi").
+        .where(StudentStaff.biometrics_status == "tasdiqlangan")
         .group_by(hour, StudentStaff.type)
     )
     buckets: dict[int, dict] = {}
-    for h, type_, n in rows.all():
-        bucket = buckets.setdefault(int(h), {"students": 0, "staff": 0})
-        bucket["students" if type_ == "talaba" else "staff"] += n
+    for h, type_, n, late in rows.all():
+        bucket = buckets.setdefault(int(h), dict(EMPTY_HOUR))
+        key = "students" if type_ == "talaba" else "staff"
+        bucket[key] += n
+        bucket[f"{key}_late"] += late
     # Ish kuni oralig'i har doim to'liq chiziladi (bo'sh soatlar 0),
     # undan tashqaridagi soatlar faqat ma'lumot bo'lsa qo'shiladi.
     first = min([7, *buckets])
     last = max([19, *buckets])
-    return [{"hour": h, **buckets.get(h, {"students": 0, "staff": 0})} for h in range(first, last + 1)]
+    return [{"hour": h, **buckets.get(h, EMPTY_HOUR)} for h in range(first, last + 1)]
+
+
+async def arrivals_without_time(db: AsyncSession, day: date_type) -> dict[str, int]:
+    """Kelgan, lekin kelish vaqti yo'q yozuvlar (HEMIS davomati —
+    scripts/hemis_davomat.py, qo'lda kiritilgan) — soatlik grafikka
+    tushmaydi; grafik ular sonini alohida aytadi, aks holda ustunlar
+    yig'indisi "Keldi" bilan mos kelmasdi."""
+    rows = await db.execute(
+        select(StudentStaff.type, func.count())
+        .select_from(AttendanceRecord)
+        .join(StudentStaff, StudentStaff.id == AttendanceRecord.student_staff_id)
+        .where(AttendanceRecord.date == day)
+        .where(AttendanceRecord.check_in.is_(None))
+        .where(AttendanceRecord.status.in_(("keldi", "kech_keldi")))
+        .where(StudentStaff.active.is_(True))
+        .where(StudentStaff.biometrics_status == "tasdiqlangan")
+        .group_by(StudentStaff.type)
+    )
+    counts = {"students": 0, "staff": 0}
+    for type_, n in rows.all():
+        counts["students" if type_ == "talaba" else "staff"] += n
+    return counts
 
 
 async def last_arrivals(db: AsyncSession, day: date_type, limit: int = 10) -> list[dict]:

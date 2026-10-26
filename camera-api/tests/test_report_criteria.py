@@ -127,6 +127,11 @@ class TestCriteriaCards:
 
     async def test_students_card_explains_why_it_is_empty(self, client: AsyncClient, db_session, people):
         """#7 o'chirilgan: nol raqam "hech kim kelmadi" degani emas."""
+        module = (
+            await db_session.execute(select(AIModuleConfig).where(AIModuleConfig.code == 7))
+        ).scalar_one()
+        module.active = False  # 2026-10-04 dan standart bo'yicha yoqiq
+        await db_session.commit()
         headers = await auth_headers(client, "admin", "admin123")
         body = (
             await client.get(
@@ -151,11 +156,13 @@ class TestCriteriaCards:
         assert davomat_again["note"] and "yuzi" in davomat_again["note"]
 
     async def test_event_criteria_carry_module_codes(self, client: AsyncClient, db_session, people):
+        # Chekish (#15) sinov rejimida ham kartada sanaladi — operator
+        # uni «Tekshiruv»da tasdiqlaydi.
         db_session.add(
             Event(
-                camera_name="Kirish", building="1-bino", module_code=3,
-                module_name="Notekis/kechki vaqtda kirish", group="A", confidence=90,
-                severity="yuqori", status="yangi",
+                camera_name="Hovli", building="1-bino", module_code=15,
+                module_name="Chekish / elektron sigareta", group="D", confidence=70,
+                severity="o'rta", status="yangi", is_trial=True,
             )
         )
         await db_session.commit()
@@ -163,9 +170,13 @@ class TestCriteriaCards:
         body = (
             await client.get("/api/reports/criteria", headers=headers, params={"population": "xodim", "period": "bugun"})
         ).json()
-        off_hours = next(item for item in body["criteria"] if item["key"] == "off_hours")
-        assert off_hours["detail"] == "events" and off_hours["moduleCodes"] == [3]
-        assert off_hours["total"] == 1
+        keys = {item["key"] for item in body["criteria"]}
+        assert "off_hours" not in keys and "uxlash" not in keys
+        smoking = next(item for item in body["criteria"] if item["key"] == "chekish")
+        assert smoking["detail"] == "events" and smoking["moduleCodes"] == [15]
+        assert smoking["total"] == 1
+        punctuality = next(item for item in body["criteria"] if item["key"] == "dars_intizomi")
+        assert punctuality["moduleCodes"] == [22]
 
     async def test_yesterday_is_a_different_window(self, client: AsyncClient, today_data):
         headers = await auth_headers(client, "admin", "admin123")

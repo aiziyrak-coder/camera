@@ -54,7 +54,7 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -63,7 +63,8 @@ from app.audit import log_action
 from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
-from app.models import Faculty, OrgUnit, StudentGroup, StudentStaff
+from app.models import AuditLog, Faculty, OrgUnit, StudentGroup, StudentStaff
+from app.services.person_dedupe import group_numbers, pick_unclaimed
 from app.services.staff_export import split_course
 from app.rate_limit import limiter
 from app.schemas.enrollment import (
@@ -75,6 +76,8 @@ from app.schemas.enrollment import (
     EnrollmentSubmitOut,
 )
 from app.services.face_matching import announce_roster_change
+from app.services.hemis_reconcile import NOT_IN_HEMIS, hemis_groups, match_hemis_group
+from app.services.integrations.hemis import hemis_configured
 from app.services.inference_gate import PRIORITY_LIVE
 from app.services.privacy import record_consent
 from app.services.self_enrollment import decide_status
@@ -268,6 +271,33 @@ async def list_units(db: Annotated[AsyncSession, Depends(get_db)]) -> list[dict]
     return [{"id": str(uid), "name": name, "kind": kind} for uid, name, kind in rows.all()]
 
 
+async def _claim_unclaimed(db: AsyncSession, full_name: str, person_type: str, group_text: str) -> StudentStaff | None:
+    """Egasi yo'q (faol, JSHSHIRsiz, yuzsiz) yagona mos yozuv — person_dedupe.pick_unclaimed."""
+    stmt = select(StudentStaff).where(
+        StudentStaff.type == person_type,
+        StudentStaff.active.is_(True),
+        StudentStaff.pinfl.is_(None),
+        StudentStaff.biometric_embedding.is_(None),
+    )
+    numbers = group_numbers({"group_or_position": group_text}) if person_type == "talaba" else set()
+    if numbers:
+        stmt = stmt.where(or_(*[StudentStaff.group_or_position.ilike(f"%{n}%") for n in numbers]))
+    else:
+        words = [w for w in full_name.replace("'", " ").split() if len(w) >= 4][:2]
+        if not words:
+            return None
+        stmt = stmt.where(or_(*[StudentStaff.full_name.ilike(f"%{w[:5]}%") for w in words]))
+    rows = (await db.execute(stmt.limit(300))).scalars().all()
+    by_id = {r.id: r for r in rows}
+    picked = pick_unclaimed(
+        full_name, person_type, group_text,
+        [{"id": r.id, "full_name": r.full_name, "type": r.type, "group_or_position": r.group_or_position,
+          "reported_group": r.reported_group, "active": r.active, "pinfl": r.pinfl,
+          "biometric_embedding": r.biometric_embedding} for r in rows],
+    )
+    return by_id[picked["id"]] if picked else None
+
+
 @router.post("/register", response_model=EnrollmentLookupOut, status_code=status.HTTP_201_CREATED)
 @limiter.limit("30/minute")
 async def register_self(
@@ -315,6 +345,7 @@ async def register_self(
         faculty_id = faculty.id
 
     group_or_position = body.group_or_position.strip()
+    reported_group = None
     org_unit_id = None
     position = None
     if body.type == "talaba":
@@ -326,6 +357,16 @@ async def register_self(
         if group is not None:
             group_or_position = f"{group.course}-kurs, {group.name}"
             faculty_id = faculty_id or group.faculty_id
+        elif hemis_configured():
+            # HEMIS ulangan: qo'lda yozilgan, HEMIS'da yo'q guruh ("20.26
+            # gurux") Nazoratda bir kishilik soxta guruh bo'lmasin — bitta
+            # "HEMIS'da topilmadi" ro'yxati, yozgani reported_group'da.
+            known = match_hemis_group(group_or_position, await hemis_groups(db))
+            if known is not None:
+                group_or_position = known
+            else:
+                reported_group = group_or_position[:300]
+                group_or_position = NOT_IN_HEMIS
     else:
         position = group_or_position
         if body.org_unit_id:
@@ -334,10 +375,36 @@ async def register_self(
                 raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Bunday bo'linma topilmadi")
             org_unit_id = unit.id
 
+    # Klon ochmaslik: shu odamning JSHSHIRsiz, yuzsiz yozuvi (odatda HEMIS'dan)
+    # bo'lsa — JSHSHIR o'shanga yoziladi va yuz o'shanga topshiriladi.
+    claimed = await _claim_unclaimed(db, body.full_name.strip(), body.type, group_or_position + " " + (reported_group or ""))
+    if claimed is not None:
+        claimed.pinfl = pinfl or claimed.pinfl
+        if series and number and not claimed.passport_number:
+            claimed.passport_series, claimed.passport_number = series, number
+        db.add(AuditLog(
+            user_id=None, user_name="Ro'yxatdan o'tish havolasi", module="Talabalar", status="muvaffaqiyatli",
+            ip=request.client.host if request.client else "unknown",
+            action=f"Havola: yangi yozuv o'rniga mavjud yozuvga bog'landi — {claimed.full_name} "
+                   f"(yozilgan ism: {body.full_name.strip()[:80]}, guruh: {body.group_or_position.strip()[:40]})",
+        ))
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            existing = await _find_person(db, body.pinfl, body.passport_series, body.passport_number)
+            if existing is None:
+                raise
+            return _lookup_out(existing)
+        await db.refresh(claimed)
+        logger.info("self-service registration linked to existing record", extra={"record_id": str(claimed.id)})
+        return _lookup_out(claimed)
+
     record = StudentStaff(
         full_name=body.full_name.strip(),
         type=body.type,
         group_or_position=group_or_position,
+        reported_group=reported_group,
         org_unit_id=org_unit_id,
         position=position,
         faculty_id=faculty_id,
@@ -417,7 +484,7 @@ async def _verify_liveness(frames: list[bytes]) -> None:
     for index, (frame, expected) in enumerate(zip(frames, LIVENESS_STEPS, strict=True), 1):
         try:
             # Ro'yxatga olishda har yuz tahlil qilinadi — burchak landmarklardan o'lchanadi.
-            faces = await detect_faces(frame, priority=PRIORITY_LIVE, min_face_px=0)
+            faces = await detect_faces(frame, priority=PRIORITY_LIVE, min_face_px=0, enrollment=True)
         except NoFaceDetectedError as exc:
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -485,7 +552,11 @@ async def pose_check(
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Kadr juda katta")
 
     try:
-        faces = await detect_faces(data, priority=PRIORITY_LIVE, min_face_px=0)
+        # Faqat burchak kerak — vektor (ArcFace) hisoblanmaydi.
+        faces = await detect_faces(
+            data, priority=PRIORITY_LIVE, min_face_px=0, enrollment=True, embed=False,
+            det_max_side=settings.enrollment_pose_det_max_side,
+        )
     except NoFaceDetectedError:
         return PoseCheckOut(face_found=False, faces=0, hint="Kadrni o'qib bo'lmadi")
 

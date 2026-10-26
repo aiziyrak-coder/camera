@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../lib/apiClient';
 import {
   getOverview,
@@ -12,8 +12,12 @@ import { Modal, cn } from '../../ui';
 import StatusCounters, { COUNTER_META, type CounterKey } from '../../components/situation/StatusCounters';
 import StatusPeopleTable from '../../components/situation/StatusPeopleTable';
 import PdfButton from '../../components/situation/PdfButton';
+import ArrivalsChart from '../../components/situation/ArrivalsChart';
+import { bucketsFromPeople, hourRange } from '../../lib/arrivals';
+import { TONE_TEXT, criterionShort, groupCriteria } from '../../lib/groupCriteriaApi';
 import Panel from '../Panel';
 import type { GroupLive } from '../useGroupLive';
+import type { GroupCriteriaState } from '../useGroupCriteria';
 import type { NazoratSelection } from '../nazoratSelection';
 import { groupCounters, lessonSeenIds } from './GroupTablePanel';
 
@@ -38,14 +42,29 @@ const COUNT_FIELD: Partial<Record<CounterKey, keyof StatusCounts>> = {
   kech_keldi: 'kechKeldi',
   kelmadi: 'kelmadi',
   kutilmoqda: 'kutilmoqda',
+  malumot_yoq: 'malumotYoq',
   yuzsiz: 'yuzsiz',
 };
 
-function clock(iso: string | null): string {
-  if (!iso) return '—';
-  return new Intl.DateTimeFormat('uz-UZ', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tashkent' }).format(
-    new Date(iso),
-  );
+const TASHKENT_CLOCK = new Intl.DateTimeFormat('uz-UZ', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+  timeZone: 'Asia/Tashkent',
+});
+
+/** Dars vaqti "HH:MM". Server `startsAt`/`endsAt` ni allaqachon Toshkent
+ *  vaqtida "09:00" ko'rinishida beradi (camera-api/app/schemas/situation.py).
+ *  Ilgari bu ISO sana deb `new Date("09:00")` qilinardi — noto'g'ri sana
+ *  formatlashda RangeError tashlab, guruhni ochganda butun panelni
+ *  yiqitardi (2026-10-06). To'liq ISO sana kelsa ham ishlaydi, tanilmagan
+ *  qiymat — "—". */
+export function clock(value: string | null | undefined): string {
+  if (!value) return '—';
+  const hhmm = /^(\d{1,2}):(\d{2})/.exec(value);
+  if (hhmm) return `${hhmm[1].padStart(2, '0')}:${hhmm[2]}`;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '—' : TASHKENT_CLOCK.format(date);
 }
 
 function LessonCard({
@@ -94,9 +113,44 @@ function LessonCard({
   );
 }
 
+/** Guruh bo'yicha kriteriyalar — bosilsa chapdagi jadval kriteriyalarga o'tadi. */
+function CriteriaSummary({ criteria, onOpen }: { criteria: GroupCriteriaState; onOpen: () => void }) {
+  if (criteria.error) return <p className="text-[12px] text-danger">{criteria.error}</p>;
+  if (!criteria.data) return <p className="text-[12px] text-muted">Kriteriyalar yuklanmoqda…</p>;
+  return (
+    <div className="rounded-control border border-border bg-surface px-3 py-2">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-[13px] font-semibold text-fg">Kriteriyalar</span>
+        <button type="button" onClick={onOpen} className="text-[11px] text-primary hover:underline">
+          har talaba bo‘yicha →
+        </button>
+      </div>
+      <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1">
+        {groupCriteria(criteria.data.criteria).map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            onClick={onOpen}
+            title={`${c.code ? `${c.code}. ` : ''}${c.label} — ${c.unavailable ?? c.description}`}
+            className="flex items-baseline justify-between gap-2 rounded px-1 text-left text-[12px] hover:bg-surface-2"
+          >
+            <span className="truncate text-muted">
+              {c.code ? <span className="me-1 text-[10px] text-subtle">{c.code}</span> : null}
+              {criterionShort(c)}
+            </span>
+            <b className={cn('shrink-0 tabular-nums', c.unavailable ? 'font-normal text-subtle' : TONE_TEXT[c.tone])}>{c.indicator}</b>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function GroupStatsPanel({
   selection,
   live,
+  criteria,
+  canCriteria,
   date,
   isToday,
   pulse,
@@ -106,6 +160,8 @@ export default function GroupStatsPanel({
 }: {
   selection: NazoratSelection;
   live: GroupLive;
+  criteria: GroupCriteriaState;
+  canCriteria: boolean;
   date: string;
   isToday: boolean;
   pulse: number;
@@ -122,20 +178,21 @@ export default function GroupStatsPanel({
   const [overview, setOverview] = useState<Overview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [listing, setListing] = useState<PeopleStatusKey | null>(null);
+  // Kelish grafigidagi bosilgan ustun (soat) — shu soatda kelganlar ro'yxati.
+  const [arrivalHour, setArrivalHour] = useState<number | null>(null);
 
-  // Institut / kafedra bo'yicha sanoqlar (talaba guruhi tanlanmaganda).
+  // Institut va guruh — kelish grafigi (overview: kechikish chegarasi va
+  // institut ustunlari; guruh ustunlari — guruh talabalaridan); kafedra/
+  // bo'linma tanlanganda soatlik sanoq unga mos kelmaydi — o'rniga sanoqlari.
   useEffect(() => {
-    if (groupView) return;
     const controller = new AbortController();
-    Promise.all([
-      getPeopleStatus({ date, type: who, orgUnitId, pageSize: 1 }, { signal: controller.signal }),
-      getOverview(date, { signal: controller.signal }),
-    ])
-      .then(([page, data]) => {
-        setCounts(page.counts);
-        setOverview(data);
-        setError(null);
-      })
+    const request = orgUnitId
+      ? getPeopleStatus({ date, type: who, orgUnitId, pageSize: 1 }, { signal: controller.signal }).then((page) => {
+          setCounts(page.counts);
+        })
+      : getOverview(date, { signal: controller.signal }).then(setOverview);
+    request
+      .then(() => setError(null))
       .catch((err) => {
         if (!controller.signal.aborted) setError(err instanceof ApiError ? err.message : "Ma'lumotni olib bo'lmadi");
       });
@@ -144,6 +201,8 @@ export default function GroupStatsPanel({
 
   const seen = lessonSeenIds(live);
   const info = live.detail?.group;
+  // Guruh tanlanganda grafik yo'qolmaydi — o'sha guruh talabalarining kelishi.
+  const groupArrivals = useMemo(() => bucketsFromPeople(live.detail?.students ?? []), [live.detail]);
 
   const body = groupView ? (
     <div className="flex h-full min-h-0 flex-col gap-2 overflow-y-auto px-3 pb-3">
@@ -153,6 +212,17 @@ export default function GroupStatsPanel({
           <span className="ms-2 font-semibold text-fg">davomat {Math.round(info.totals.rate)}%</span>
         )}
       </div>
+      {live.detail && (
+        <ArrivalsChart
+          buckets={groupArrivals.buckets}
+          who="talaba"
+          lateAfter={overview?.lateAfterStudents}
+          isToday={isToday}
+          untimed={groupArrivals.untimed}
+          onPick={setArrivalHour}
+          className="min-h-[190px] shrink-0"
+        />
+      )}
       <StatusCounters
         items={groupCounters(live.detail?.students ?? [], null)}
         active={status}
@@ -173,25 +243,34 @@ export default function GroupStatsPanel({
           )}
         </div>
       )}
+      {canCriteria && <CriteriaSummary criteria={criteria} onOpen={() => selection.setView('kriteriyalar')} />}
     </div>
-  ) : (
+  ) : orgUnitId ? (
     <div className="flex h-full min-h-0 flex-col gap-2 overflow-y-auto px-3 pb-3">
       <StatusCounters
         items={INSTITUTE_KEYS.map((key) => ({ key, value: counts ? counts[COUNT_FIELD[key]!] : null }))}
         onPick={(key) => setListing(key as PeopleStatusKey)}
         size="sm"
       />
-      <div className={cn('text-[12px]', error ? 'text-danger' : 'text-muted')}>
-        {error ??
-          (!overview
-            ? 'Yuklanmoqda…'
-            : isToday
-              ? `Hozir ${overview.lessons.ongoing} ta dars ketmoqda · darsdagi o‘qituvchilar: ${overview.teachers.onTime} o‘z vaqtida, ${overview.teachers.late} kechikdi, ${overview.teachers.absent} kelmadi`
-              : `Shu kuni darsi bor o‘qituvchilar: ${overview.teachers.onTime} o‘z vaqtida, ${overview.teachers.late} kechikdi, ${overview.teachers.absent} kelmadi`)}
-      </div>
-      <p className="text-[11px] text-muted">
-        Sonni bosing — kimligi ko‘rinadi.{students ? ' Guruh bo‘yicha batafsil — chapdagi jadvaldan guruhni tanlang.' : ''}
-      </p>
+      <p className={cn('text-[11px]', error ? 'text-danger' : 'text-muted')}>{error ?? 'Sonni bosing — kimligi ko‘rinadi.'}</p>
+    </div>
+  ) : (
+    // Kelish oqimi — butun institut bo'yicha; panelning hamma joyini oladi.
+    <div className="flex h-full min-h-0 flex-col gap-2 overflow-y-auto px-3 pb-3">
+      {overview ? (
+        <ArrivalsChart
+          buckets={overview.arrivalsByHour}
+          who={who}
+          lateAfter={students ? overview.lateAfterStudents : overview.lateAfterStaff}
+          untimed={(students ? overview.arrivalsUntimedStudents : overview.arrivalsUntimedStaff) ?? 0}
+          isToday={isToday}
+          onPick={setArrivalHour}
+          className="min-h-[190px] flex-1"
+        />
+      ) : (
+        <div className={cn('text-[12px]', error ? 'text-danger' : 'text-muted')}>{error ?? 'Yuklanmoqda…'}</div>
+      )}
+      {overview && error && <p className="text-[11px] text-danger">{error}</p>}
     </div>
   );
 
@@ -233,6 +312,35 @@ export default function GroupStatsPanel({
         }
       >
         {listing && <StatusPeopleTable query={{ date, type: who, orgUnitId }} status={listing} refreshKey={pulse} maxHeight="60vh" />}
+      </Modal>
+      <Modal
+        open={arrivalHour !== null}
+        onClose={() => setArrivalHour(null)}
+        size="xl"
+        title={
+          arrivalHour !== null
+            ? `${groupView ? `${group} guruhi` : students ? 'Talabalar' : 'O‘qituvchi va xodimlar'}: ${hourRange(arrivalHour)} da kelganlar`
+            : ''
+        }
+        description={date}
+        footer={
+          arrivalHour !== null ? (
+            <PdfButton
+              path="/api/situation/pdf/people"
+              params={{ date, type: who, status: 'kelgan', arrivalHour, group: groupView ? group : undefined }}
+              filename={`${groupView ? `${group}-` : `${who}-`}kelgan-${String(arrivalHour).padStart(2, '0')}-${date}`}
+            />
+          ) : undefined
+        }
+      >
+        {arrivalHour !== null && (
+          <StatusPeopleTable
+            query={{ date, type: who, arrivalHour, group: groupView ? group : undefined }}
+            status="kelgan"
+            refreshKey={pulse}
+            maxHeight="60vh"
+          />
+        )}
       </Modal>
     </>
   );

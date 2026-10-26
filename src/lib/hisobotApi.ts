@@ -11,6 +11,8 @@ export type HisobotTone = 'neutral' | 'primary' | 'success' | 'warning' | 'dange
 
 export interface HisobotCriterion {
   key: string;
+  /** Buyurtmachi ro'yxatidagi raqam (6, 7, 8, 9, 10, 15, 19, 21, 22). */
+  code?: number | null;
   label: string;
   /** Bir qatorli tushuntirish: bu son nimani o'lchaydi (vaqtlar ish vaqti sozlamasidan). */
   description: string;

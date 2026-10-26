@@ -71,6 +71,10 @@ class TestMarkAbsencesForDay:
         student = await _person(db_session, "Kuzatilmaydigan Talaba", enrolled=True, person_type="talaba")
         staff = await _person(db_session, "Kuzatiladigan Xodim", enrolled=True)
         day = date(2026, 9, 2)
+        # Talabalar davomati moduli o'chiriladi (standart bo'yicha endi yoqiq).
+        seven = (await db_session.execute(select(AIModuleConfig).where(AIModuleConfig.code == 7))).scalar_one()
+        seven.active = False
+        await db_session.commit()
 
         await mark_absences_for_day(db_session, day)
 

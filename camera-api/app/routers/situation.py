@@ -60,6 +60,7 @@ from app.schemas.situation import (
     TrendPointOut,
 )
 from app.services import situation as svc
+from app.services.attendance_policy import load_policy
 from app.services.staff_export import NO_FACULTY_LABEL, course_label
 from app.timezone import local_now, to_local
 from app.timezone import business_date
@@ -102,6 +103,8 @@ async def _build_overview(db: AsyncSession, day) -> OverviewOut:
     lessons = await svc.day_lessons(db, day)
     names = await svc.faculty_names(db)
     students = svc.type_counts(rows, "talaba", pending)
+    policy = await load_policy(db)
+    untimed = await svc.arrivals_without_time(db, day)
     return OverviewOut(
         date=day.isoformat(),
         is_today=day == svc.today(),
@@ -117,6 +120,10 @@ async def _build_overview(db: AsyncSession, day) -> OverviewOut:
         by_faculty=[FacultyStatOut(**r) for r in svc.faculty_rows(rows, names, pending)],
         arrivals_by_hour=[HourBucketOut(**r) for r in await svc.arrivals_by_hour(db, day)],
         last_arrivals=[ArrivalOut(**r) for r in await svc.last_arrivals(db, day)],
+        late_after_students=policy.late_after("talaba").strftime("%H:%M"),
+        late_after_staff=policy.late_after("xodim").strftime("%H:%M"),
+        arrivals_untimed_students=untimed["students"],
+        arrivals_untimed_staff=untimed["staff"],
     )
 
 
@@ -234,6 +241,41 @@ async def _groups_list(db, day, faculty_id, course, search) -> list[GroupStatOut
 
 
 # ─────────────────────────────────────────── 4. Guruh
+
+@router.get("/groups-criteria")
+async def groups_criteria(
+    db: DbDep,
+    _: ReadDep,
+    date: DateQuery = None,
+    faculty_id: Annotated[str | None, Query(alias="facultyId")] = None,
+    course: Annotated[int | None, Query(ge=1, le=12)] = None,
+) -> dict:
+    """Nazorat → "Kriteriyalar bo'yicha": barcha guruhlar × barcha mezonlar
+    (app/services/hisobot.groups_criteria — hisobot bilan bir xil hisob).
+    Nazorat ruxsati bilan, hisobotlar parolisiz. Keshlanadi (svc.cached)."""
+    from app.services import hisobot
+
+    day = svc.resolve_day(date)
+    if faculty_id and faculty_id != hisobot.NO_FACULTY:
+        _uuid_or_404(faculty_id, "Fakultet topilmadi")
+    return await svc.cached(("groups_criteria", day, faculty_id, course),
+                            lambda: hisobot.groups_criteria(db, day, day, faculty_id, course))
+
+
+@router.get("/group-criteria")
+async def group_criteria(
+    db: DbDep, _: ReadDep, group: Annotated[str, Query(min_length=1, max_length=300)], date: DateQuery = None,
+) -> dict:
+    """Nazorat → guruh → "Kriteriyalar": har talaba qatorida hamma
+    kriteriyalar va video dalillar (app/services/hisobot.group_matrix —
+    hisobot bilan bir xil hisob). Nazorat ruxsati bilan, hisobotlar
+    parolisiz: bu bitta guruhning kunlik ko'rinishi. Guruh nomida "/"
+    bo'lishi mumkin ("MD-134/25") — shuning uchun so'rov parametri."""
+    from app.services import hisobot
+
+    day = svc.resolve_day(date)
+    return await hisobot.group_matrix(db, group.strip(), day, day)
+
 
 @router.get("/groups/{group_name:path}", response_model=GroupDetailOut)
 async def group_detail(group_name: str, db: DbDep, _: ReadDep, date: DateQuery = None) -> GroupDetailOut:
@@ -572,6 +614,7 @@ async def person_profile(
         faculty_id=str(person.faculty_id) if person.faculty_id else None,
         faculty=person.faculty.name if person.faculty else (NO_FACULTY_LABEL if person.type == "talaba" else None),
         unit=person.group_or_position, group=group or None, course=course,
+        reported_group=person.reported_group if person.type == "talaba" else None,
         position=person.position if person.type == "xodim" else None,
         photo_angles=sum(1 for key in (person.biometric_photo_key, person.biometric_photo_left_key,
                                        person.biometric_photo_right_key) if key),
@@ -745,6 +788,7 @@ async def people_by_status(
     search: Annotated[str | None, Query(max_length=100)] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(alias="pageSize", ge=1, le=500)] = 100,
+    arrival_hour: Annotated[int | None, Query(alias="arrivalHour", ge=0, le=23)] = None,
 ) -> StatusPeopleOut:
     """Sanoq ortidagi odamlar (kelgan = keldi + kech_keldi): "kech kelganlar 37" -> aynan kimlar. Filtrlar
     (fakultet/kurs/guruh/qidiruv) bilan; `counts` — shu filtrlardagi har
@@ -758,16 +802,16 @@ async def people_by_status(
     kelish xabarida qayta so'raydi, har so'rov esa ~10 000 qatorni o'qiydi."""
     day = svc.resolve_day(date)
     key = ("people_status", day, status_, type_, faculty_id, course, group, department_id, org_unit_id,
-           position_group, position, search, page, page_size)
+           position_group, position, search, page, page_size, arrival_hour)
     return await svc.cached(key, lambda: _people_by_status(
         db, day, status_, type_, faculty_id, course, group, department_id, org_unit_id, position_group, position,
-        search, page, page_size,
+        search, page, page_size, arrival_hour,
     ))
 
 
 async def _people_by_status(
     db, day, status_, type_, faculty_id, course, group, department_id, org_unit_id, position_group, position,
-    search, page, page_size,
+    search, page, page_size, arrival_hour=None,
 ) -> StatusPeopleOut:
     fid = _uuid_or_404(faculty_id, "Fakultet topilmadi") if faculty_id else None
     stmt = (
@@ -825,13 +869,21 @@ async def _people_by_status(
             continue
         if needle and needle not in svc.norm_name(name):
             continue
+        # Kelish grafigidagi ustun: shu soatda kelganlar (kunning birinchi
+        # ko'rinishi) — arrivals_by_hour bilan bir xil hisob.
+        if arrival_hour is not None and (check_in is None or check_in.hour != arrival_hour):
+            continue
         enrolled = bio == "tasdiqlangan"
         state = svc.person_status(record_status, enrolled, day)
         buckets = {"hammasi", state}
         if state in svc.PRESENT_STATUSES:
             buckets.add("kelgan")
         if not enrolled:
-            buckets.add("yuzsiz")
+            # Sanoqlar ustma-ust tushmaydi (buyurtmachi qarori, 2026-10-06):
+            # yuzsiz odam — faqat "Yuzi bazada yo'q" (har kuni bir xil son),
+            # holatlar faqat yuzi borlar orasida. HEMIS yozuvi bo'lsa ham.
+            # Jami = kelgan + kelmadi + hali kelmagan + ma'lumot yo'q + yuzsiz.
+            buckets = {"hammasi", "yuzsiz"}
         for bucket in buckets:
             setattr(counts, bucket, getattr(counts, bucket) + 1)
         if status_ in buckets:
@@ -1004,7 +1056,7 @@ from app.services import pdf_export  # noqa: E402
 
 STATUS_LABELS = {
     "hammasi": "Hammasi", "kelgan": "Keldi", "keldi": "O'z vaqtida keldi", "kech_keldi": "Kech keldi",
-    "kelmadi": "Kelmadi", "kutilmoqda": "Hali kelmagan", "yuzsiz": "Yuzi bazada yo'q", "dam_olish": "Dam olish",
+    "kelmadi": "Kelmadi", "kutilmoqda": "Hali kelmagan", "yuzsiz": "Ro'yxatdan o'tmagan", "dam_olish": "Dam olish",
     "malumot_yoq": "Ma'lumot yo'q",
 }
 POSITION_GROUP_LABELS = {"oqituvchi": "Professor-o'qituvchilar", "mamuriy": "Ma'muriy xodimlar", "texnik": "Texnik xodimlar"}
@@ -1042,12 +1094,13 @@ async def people_status_pdf(
     position: Annotated[str | None, Query(max_length=200)] = None,
     search: Annotated[str | None, Query(max_length=100)] = None,
     department_id: Annotated[str | None, Query(alias="departmentId", max_length=100)] = None,
+    arrival_hour: Annotated[int | None, Query(alias="arrivalHour", ge=0, le=23)] = None,
 ) -> Response:
     """people-status bilan bir xil filtrlar — natija PDF jadval (5000 qatorgacha)."""
     result = await people_by_status(
         db, user, date=date, status_=status_, type_=type_, faculty_id=faculty_id, course=course, group=group,
         department_id=department_id, org_unit_id=org_unit_id, position_group=position_group, position=position,
-        search=search, page=1, page_size=5000,
+        search=search, page=1, page_size=5000, arrival_hour=arrival_hour,
     )
     staff = type_ == "xodim"
     filters: list[tuple[str, str]] = [("Sana", result.date)]
@@ -1057,6 +1110,8 @@ async def people_status_pdf(
         filters.append(("Kurs", f"{course}-kurs"))
     if group:
         filters.append(("Guruh", group))
+    if arrival_hour is not None:
+        filters.append(("Kelgan vaqti", f"{arrival_hour:02d}:00–{arrival_hour:02d}:59"))
     if org_unit_id:
         name = "Tuzilmaga bog'lanmagan" if org_unit_id == UNASSIGNED else None
         if name is None:
@@ -1090,7 +1145,7 @@ async def people_status_pdf(
         title=f"{who} — {STATUS_LABELS.get(status_, status_)}",
         columns=columns, rows=rows, filters=filters, row_tones=tones,
         counts=[("Jami", c.hammasi), ("Keldi", c.kelgan), ("Kech keldi", c.kech_keldi), ("Kelmadi", c.kelmadi),
-                ("Hali kelmagan", c.kutilmoqda), ("Yuzi bazada yo'q", c.yuzsiz)],
+                ("Hali kelmagan", c.kutilmoqda), ("Ro'yxatdan o'tmagan", c.yuzsiz)],
         note=None if result.total <= 5000 else f"Birinchi 5000 ta qator (jami {result.total})",
     )
     return _pdf(await pdf_export.render_async(document), pdf_export.filename(f"{who}-{status_}", result.date))
@@ -1118,11 +1173,13 @@ async def groups_pdf(
         pdf_export.PdfColumn("Guruh", 1.6), pdf_export.PdfColumn("Fakultet", 2.6), pdf_export.PdfColumn("Kurs", 0.6, "CENTER"),
         pdf_export.PdfColumn("Jami", 0.7, "RIGHT"), pdf_export.PdfColumn("Keldi", 0.7, "RIGHT"),
         pdf_export.PdfColumn("Kech", 0.7, "RIGHT"), pdf_export.PdfColumn("Kelmadi", 0.8, "RIGHT"),
-        pdf_export.PdfColumn("Hali yo'q", 0.8, "RIGHT"), pdf_export.PdfColumn("Yuzsiz", 0.8, "RIGHT"),
+        pdf_export.PdfColumn("Ro'yxatdan o'tmagan", 1.1, "RIGHT"),
         pdf_export.PdfColumn("%", 0.6, "RIGHT"),
     ]
-    rows = [[g.name, g.faculty or "—", g.course or "—", g.total, g.present, g.late, g.absent, g.not_yet,
-             g.total - g.enrolled, "—" if g.rate is None else f"{round(g.rate)}%"] for g in groups]
+    # Ekrandagi jadval bilan bir xil ustunlar (2026-10-06: "Hali yo'q" va
+    # "Ma'lumotsiz" olib tashlandi, "Yuzsiz" -> "Ro'yxatdan o'tmagan").
+    rows = [[g.name, g.faculty or "—", g.course or "—", g.total, g.present, g.late, g.absent,
+             g.no_face, "—" if g.rate is None else f"{round(g.rate)}%"] for g in groups]
     document = pdf_export.PdfDocument(
         title="Talabalar — guruhlar bo'yicha davomat", columns=cols, rows=rows, filters=filters,
         counts=[("Guruhlar", len(groups)), ("Talabalar", sum(g.total for g in groups)),
@@ -1170,7 +1227,7 @@ async def group_pdf(
     document = pdf_export.PdfDocument(
         title=f"Guruh {name} — davomat", columns=cols, rows=rows, filters=filters, row_tones=tones,
         counts=[("Jami", t.total), ("Keldi", t.present), ("Kech", t.late), ("Kelmadi", t.absent),
-                ("Hali kelmagan", t.not_yet), ("Yuzi bazada yo'q", t.total - t.enrolled)],
+                ("Hali kelmagan", t.not_yet), ("Ro'yxatdan o'tmagan", t.no_face)],
         note=f"Shu kungi darslar: {lessons}" if lessons else None,
     )
     return _pdf(await pdf_export.render_async(document), pdf_export.filename(f"guruh-{name}", detail.date))

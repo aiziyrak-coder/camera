@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Search, X } from 'lucide-react';
+import { ArrowLeft, Building2, ChevronRight, Search, Video, X } from 'lucide-react';
 import { cn } from '../../ui';
 import { CodeText, MicroLabel } from '../../ui/intel';
 import LiveVideoPlayer from '../../components/LiveVideoPlayer';
@@ -13,12 +13,17 @@ import { usePageVisible } from '../../components/videowall/usePageVisible';
 import { buildCameraCodes, cameraCode, cameraPlaceCode } from '../../components/videowall/cameraCode';
 import type { CameraFeed } from '../../types';
 import Panel from '../Panel';
+import { prewarmWebrtc } from '../../lib/webrtcStream';
 import { EASE, panelIn, stagger } from '../motion';
 import { useVideoFlow } from '../useVideoFlow';
+import { mergeSeenPeople, type SeenPerson } from '../recognizedPeople';
+import { PersonQuickView, RecognizedRail } from './RecognizedRail';
 import {
   EMPTY_FILTER,
   WALL_LAYOUTS,
+  buildingCards,
   buildingOptions,
+  roomCards,
   cameraStats,
   filterCameras,
   floorLabel,
@@ -48,14 +53,26 @@ import {
  *   varaq fonda — 0.
  */
 
-/** Asosiy (katta) kamera shu oraliqda karuseldagi navbatdagisiga o'tadi. */
-export const ROTATE_MS = 60_000;
+/** Xona tanlangach video shuncha vaqt "yuklanmoqda" pardasi ostida ochiladi
+ *  (oqim shu paytda isinadi — parda ketganda tasvir tayyor). */
+export const CAMERA_LOAD_MS = 5_000;
+/** Parda kamida shuncha turadi — tayyor oqimda ham bir zumda "miltillab"
+ *  yo'qolmasin. Birinchi kadr kelishi bilan (lekin shundan oldin emas)
+ *  ochiladi; kadr kelmasa — CAMERA_LOAD_MS da baribir ochiladi. */
+export const CAMERA_LOAD_MIN_MS = 600;
 
-/** Navbatdagi kamera (oxiridan keyin — boshidan). */
-export function nextStage(pool: readonly string[], current: string | null): string | null {
-  if (pool.length === 0) return null;
-  const index = current ? pool.indexOf(current) : -1;
-  return pool[(index + 1) % pool.length];
+/** Parda qachon ochiladi: birinchi kadr + kamida MIN, yoki MAX tugadi. */
+export function coverDone(elapsedMs: number, firstFrame: boolean): boolean {
+  return elapsedMs >= CAMERA_LOAD_MS || (firstFrame && elapsedMs >= CAMERA_LOAD_MIN_MS);
+}
+
+/** Kadr balandligi bo'yicha qisqa nom: 2160 -> 4K, 1440 -> 2K, 1080 -> FHD, 720 -> 720p. */
+export function resolutionLabel(height: number | null | undefined): string | null {
+  if (!height || height <= 0) return null;
+  if (height >= 2000) return '4K';
+  if (height >= 1400) return '2K';
+  if (height >= 1000) return 'FHD';
+  return `${height}p`;
 }
 
 /** Tashqaridan (Ctrl+K) "shu kamerani kattalashtir" so'rovi. */
@@ -80,27 +97,17 @@ export default function CamerasPanel({
 
   const stats = useMemo(() => cameraStats(cameras), [cameras]);
   const codes = useMemo(() => buildCameraCodes(cameras), [cameras]);
-  // Karusel filtri (nom/zona/bino): katta kamera ham faqat filtrdagilar ichida almashadi.
-  const [pickFilter, setPickFilter] = useState<CameraFilter>(EMPTY_FILTER);
-  const pickBuildings = useMemo(() => buildingOptions(cameras), [cameras]);
-  const allLive = useMemo(() => rankCameras(cameras).filter(isStreaming), [cameras]);
-  const pool = useMemo(() => filterCameras(allLive, pickFilter), [allLive, pickFilter]);
-  const poolIds = useMemo(() => pool.map((c) => c.id), [pool]);
-  // Asosiy kamera: har ROTATE_MS da navbatdagisi; karuseldan bosilsa — o'sha
-  // (va hisob shu paytdan qaytadan boshlanadi).
+  // Kirishda hech bir kamera ochilmaydi: avval bino, keyin xona tanlanadi.
+  const [building, setBuilding] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
   const [stageId, setStageId] = useState<string | null>(null);
   const [pickedAt, setPickedAt] = useState(0);
-  useEffect(() => {
-    if (poolIds.length === 0) return;
-    if (!stageId || !poolIds.includes(stageId)) setStageId(poolIds[0]);
-  }, [poolIds, stageId]);
-  const rotating = !expanded && pageVisible && poolIds.length > 1;
-  useEffect(() => {
-    if (!rotating) return;
-    const timer = window.setInterval(() => setStageId((current) => nextStage(poolIds, current)), ROTATE_MS);
-    return () => window.clearInterval(timer);
-  }, [rotating, poolIds, pickedAt]);
-  const stage = pool.find((c) => c.id === stageId) ?? allLive.find((c) => c.id === stageId) ?? pool[0] ?? allLive[0] ?? null;
+  const buildings = useMemo(() => buildingCards(cameras), [cameras]);
+  const rooms = useMemo(() => {
+    if (query.trim()) return rankCameras(filterCameras(cameras, { ...EMPTY_FILTER, q: query }));
+    return building ? roomCards(cameras, building) : [];
+  }, [cameras, building, query]);
+  const stage = stageId ? cameras.find((c) => c.id === stageId) ?? null : null;
   const pick = (id: string) => {
     setStageId(id);
     setPickedAt(Date.now());
@@ -149,59 +156,58 @@ export default function CamerasPanel({
           </span>
         </div>
 
-        {!stage ? (
-          <div className="intel-grid m-1 flex flex-1 items-center justify-center rounded-[4px] border border-dashed border-border">
-            <MicroLabel>{error ? 'Aloqa yo‘q' : loading ? 'Yuklanmoqda' : 'Kamera yo‘q'}</MicroLabel>
-          </div>
-        ) : (
-          <div className="flex min-h-0 flex-1 flex-col gap-1 p-1">
+        <div className="flex min-h-0 flex-1 flex-col gap-1 p-1">
+          {stage ? (
             <StageCamera
-              key={stage.id}
+              key={`${stage.id}-${pickedAt}`}
               camera={stage}
               code={cameraCode(codes, stage.id)}
               playing={pageVisible && !expanded}
               onStreamUnavailable={refreshStreams}
+              onClose={() => setStageId(null)}
             />
-            <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-0.5 pt-0.5">
-              <label className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-control border border-border bg-surface px-2">
-                <Search size={13} aria-hidden="true" className="shrink-0 text-subtle" />
-                <input
-                  value={pickFilter.q}
-                  onChange={(event) => setPickFilter((f) => ({ ...f, q: event.target.value }))}
-                  placeholder="Kamera: nomi, xona yoki zona"
-                  aria-label="Kamerani qidirish"
-                  className="h-full min-w-0 flex-1 bg-transparent text-[12px] outline-none"
-                />
-                {pickFilter.q && (
-                  <button type="button" onClick={() => setPickFilter((f) => ({ ...f, q: '' }))} aria-label="Tozalash" className="text-subtle hover:text-fg">
-                    <X size={13} />
-                  </button>
-                )}
-              </label>
-              <select
-                value={pickFilter.building}
-                onChange={(event) => setPickFilter((f) => ({ ...f, building: event.target.value }))}
-                aria-label="Bino"
-                className="h-7 rounded-control border border-border bg-surface px-1.5 text-[12px]"
-              >
-                <option value="">Barcha binolar</option>
-                {pickBuildings.map((name) => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
-              </select>
-              <span className="text-[11px] tabular-nums text-muted">
-                {pool.length}/{allLive.length}
-              </span>
-            </div>
-            {pool.length === 0 ? (
-              <div className="flex h-[74px] shrink-0 items-center justify-center rounded-[4px] border border-dashed border-border text-[12px] text-muted">
-                Filtrga mos kamera yo‘q
-              </div>
-            ) : (
-              <CameraCarousel cameras={pool} codes={codes} activeId={stage.id} onPick={pick} paused={expanded} />
-            )}
+          ) : (
+            <PickPlaceholder
+              message={error ? 'Aloqa yo‘q' : loading && cameras.length === 0 ? 'Yuklanmoqda' : null}
+              building={building}
+            />
+          )}
+          <div className="flex shrink-0 items-center gap-1.5 px-0.5 pt-0.5">
+            <label className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-control border border-border bg-surface px-2.5">
+              <Search size={14} aria-hidden="true" className="shrink-0 text-subtle" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Kamera: nomi, xona yoki zona"
+                aria-label="Kamerani qidirish"
+                className="h-full min-w-0 flex-1 bg-transparent text-[12px] outline-none"
+              />
+              {query && (
+                <button type="button" onClick={() => setQuery('')} aria-label="Tozalash" className="text-subtle hover:text-fg">
+                  <X size={13} />
+                </button>
+              )}
+            </label>
           </div>
-        )}
+          {query.trim() || building ? (
+            <RoomStrip
+              title={query.trim() ? `Qidiruv: ${rooms.length} ta kamera` : building ?? ''}
+              rooms={rooms}
+              codes={codes}
+              activeId={stage?.id ?? null}
+              onPick={pick}
+              onBack={
+                query.trim()
+                  ? () => setQuery('')
+                  : () => {
+                      setBuilding(null);
+                    }
+              }
+            />
+          ) : (
+            <BuildingStrip buildings={buildings} onPick={setBuilding} loading={loading && cameras.length === 0} />
+          )}
+        </div>
       </div>
     </Panel>
   );
@@ -429,6 +435,7 @@ function FocusedCamera({
   // yoqilsa server bo'g'ilardi.
   const [scan, setScan] = useState<LiveDetectionResult | null>(null);
   const counts = scanCounts(scan);
+  const seen = useSeenPeople();
 
   return (
     <motion.div
@@ -443,7 +450,10 @@ function FocusedCamera({
             fit="contain"
             cameraId={camera.id}
             showDetections
-            onDetection={setScan}
+            onDetection={(result) => {
+              setScan(result);
+              seen.add(result);
+            }}
             onStreamUnavailable={onStreamUnavailable}
           />
         ) : (
@@ -452,7 +462,9 @@ function FocusedCamera({
         <DegradedLayer show={live && flow === 'stalled'} />
         {!live && <StateLayer camera={camera} />}
         {live && <ScanBadge counts={counts} />}
+        {live && <RecognizedRail people={seen.people} onPick={seen.pick} />}
       </div>
+      <PersonQuickView person={seen.picked} onClose={seen.close} />
 
       <div className="flex shrink-0 items-center gap-2 bg-black/70 px-3 py-2 text-white">
         <LiveDot on={flow === 'flowing'} />
@@ -560,6 +572,20 @@ function CameraTile({
   );
 }
 
+/** Shu kamerada tanilganlar (o'ng ustun) va bosilgan karta. Kamera
+ *  almashganda komponent qayta o'rnatiladi — ro'yxat ham yangidan. */
+function useSeenPeople() {
+  const [people, setPeople] = useState<SeenPerson[]>([]);
+  const [pickedId, setPickedId] = useState<string | null>(null);
+  return {
+    people,
+    add: (result: LiveDetectionResult | null) => setPeople((prev) => mergeSeenPeople(prev, result, Date.now())),
+    picked: people.find((person) => person.id === pickedId) ?? null,
+    pick: (person: SeenPerson) => setPickedId(person.id),
+    close: () => setPickedId(null),
+  };
+}
+
 /** Skaner natijasi: nechta yuz, nechtasi tanildi, nechtasi notanish. */
 export function scanCounts(scan: LiveDetectionResult | null) {
   if (!scan) return null;
@@ -572,7 +598,10 @@ export function scanCounts(scan: LiveDetectionResult | null) {
     else if (status === 'notanish') unknown += 1;
     else small += 1;
   }
-  return { total: scan.faces.length, known, unknown, small, hd: scan.source === 'asosiy' };
+  // Tahlil kadrining o'lchami (server asosiy oqimdan oladi) — VIDEO emas:
+  // brauzerga kichik oqim (720p/432p) keladi. Ilgari bu "4K" deb yozilib,
+  // video 4K da kelyapti degan noto'g'ri tasavvur berardi.
+  return { total: scan.faces.length, known, unknown, small, ai: resolutionLabel(scan.frameHeight) };
 }
 
 /** Video ustidagi skaner holati — AI hozir nimani ko'rayotgani. */
@@ -586,7 +615,11 @@ function ScanBadge({ counts }: { counts: ReturnType<typeof scanCounts> }) {
           <span className="text-emerald-300">Tanildi {counts.known}</span>
           <span className="text-rose-300">Notanish {counts.unknown}</span>
           {counts.small > 0 && <span className="text-white/60">Kichik {counts.small}</span>}
-          {counts.hd && <span className="rounded bg-white/15 px-1 text-[10px]">4K</span>}
+          {counts.ai && (
+            <span className="rounded bg-white/15 px-1 text-[10px]" title="Yuz tahlili server tomonda shu o'lchamdagi kadrda (video o'lchami emas)">
+              Tahlil {counts.ai}
+            </span>
+          )}
         </>
       ) : (
         <span>Skanerlanmoqda…</span>
@@ -643,11 +676,13 @@ function StageCamera({
   code,
   playing,
   onStreamUnavailable,
+  onClose,
 }: {
   camera: CameraFeed;
   code: string;
   playing: boolean;
   onStreamUnavailable: () => void;
+  onClose: () => void;
 }) {
   const holder = useRef<HTMLDivElement | null>(null);
   const live = playing && isStreaming(camera);
@@ -655,6 +690,25 @@ function StageCamera({
   const place = cameraPlaceCode(camera);
   const [scan, setScan] = useState<LiveDetectionResult | null>(null);
   const counts = scanCounts(scan);
+  const seen = useSeenPeople();
+  // "Video yuklanmoqda" pardasi: oqim orqada ulanadi, BIRINCHI KADR kelishi
+  // bilan (kamida CAMERA_LOAD_MIN_MS) ochiladi. Ilgari doim 5 s turardi —
+  // video odatda 1.5-2.5 s da tayyor bo'lsa ham (2026-10-06).
+  const videoHeight = useVideoHeight(holder, live);
+  const [openedAt] = useState(() => Date.now());
+  const [loadingCover, setLoadingCover] = useState(true);
+  const ready = videoHeight > 0 || !live;
+  useEffect(() => {
+    if (!loadingCover) return;
+    const elapsed = Date.now() - openedAt;
+    if (coverDone(elapsed, ready)) {
+      setLoadingCover(false);
+      return;
+    }
+    const wait = (ready ? CAMERA_LOAD_MIN_MS : CAMERA_LOAD_MS) - elapsed;
+    const timer = window.setTimeout(() => setLoadingCover(false), Math.max(0, wait));
+    return () => window.clearTimeout(timer);
+  }, [loadingCover, ready, openedAt]);
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[6px] bg-neutral-900">
@@ -666,79 +720,261 @@ function StageCamera({
             fit="contain"
             cameraId={camera.id}
             showDetections
-            onDetection={setScan}
+            onDetection={(result) => {
+              setScan(result);
+              seen.add(result);
+            }}
             onStreamUnavailable={onStreamUnavailable}
           />
         ) : (
           <CameraThumbnail cameraId={camera.id} alt={camera.name} className="h-full w-full" refreshMs={10_000} />
         )}
-        <DegradedLayer show={live && flow === 'stalled'} />
-        {!live && <StateLayer camera={camera} />}
-        {live && <ScanBadge counts={counts} />}
+        <DegradedLayer show={!loadingCover && live && flow === 'stalled'} />
+        {!live && !loadingCover && <StateLayer camera={camera} />}
+        {live && !loadingCover && <ScanBadge counts={counts} />}
+        {live && !loadingCover && <RecognizedRail people={seen.people} onPick={seen.pick} />}
+        <AnimatePresence>{loadingCover && <LoadingCover name={camera.name} place={place} />}</AnimatePresence>
       </div>
+      <PersonQuickView person={seen.picked} onClose={seen.close} />
       <div className="flex shrink-0 items-center gap-2 bg-black/70 px-3 py-1.5 text-white">
-        <LiveDot on={flow === 'flowing'} />
+        <LiveDot on={!loadingCover && flow === 'flowing'} />
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{camera.name}</span>
+        {videoHeight > 0 && (
+          <span className="shrink-0 rounded bg-white/15 px-1.5 py-px text-[10px] font-semibold tabular-nums text-white/80" title={`Video: ${videoHeight}p`}>
+            {resolutionLabel(videoHeight)}
+          </span>
+        )}
         {place && <CodeText className="text-[11px] text-white/60">{place}</CodeText>}
         <CodeText className="text-[11px] text-white/60">{code}</CodeText>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Kamerani yopish"
+          title="Yopish"
+          className="ms-1 grid h-6 w-6 place-items-center rounded-full text-white/70 transition hover:bg-white/15 hover:text-white"
+        >
+          <X size={14} />
+        </button>
       </div>
     </div>
   );
 }
 
-/** Pastki karusel — barcha tasvir uzatayotgan kameralar kichik kadr bilan
- *  (oqim emas: 99 ta oqim tarmoqni bo'g'ardi). Faol kamera ajratib
- *  ko'rsatiladi va ko'rinishga suriladi; bosilsa — asosiyga chiqadi. */
-function CameraCarousel({
-  cameras,
+/** Brauzer haqiqatda dekodlayotgan video balandligi (0 — hali kadr yo'q).
+ *  Birinchi kadrgacha 100 ms da (pardani tez ochish uchun), keyin 2 s da
+ *  tekshiriladi. */
+function useVideoHeight(holder: RefObject<HTMLDivElement | null>, active: boolean): number {
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    let timer: number | undefined;
+    const sample = () => {
+      const video = holder.current?.querySelector('video');
+      const current = video && video.readyState >= 2 && video.videoWidth > 0 ? video.videoHeight : 0;
+      setHeight(current);
+      timer = window.setTimeout(sample, current > 0 ? 2_000 : 100);
+    };
+    sample();
+    return () => window.clearTimeout(timer);
+  }, [holder, active]);
+  return active ? height : 0;
+}
+
+/** Xona kartasi ustida qisqa turilsa (120 ms — sichqoncha o'tib ketayotgan
+ *  bo'lsa emas) shu kameraning WebRTC ulanishi oldindan ochiladi. */
+const PREWARM_HOVER_MS = 120;
+function usePrewarmOnHover() {
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  return {
+    start: (cameraId: string) => {
+      window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(() => prewarmWebrtc(cameraId), PREWARM_HOVER_MS);
+    },
+    cancel: () => window.clearTimeout(timer.current),
+  };
+}
+
+/** Hech kamera tanlanmagan — markazda taklif (kirishda ataylab bo'sh:
+ *  har ochilish = bitta jonli oqim, u faqat kerak bo'lganda ulanadi). */
+function PickPlaceholder({ message, building }: { message: string | null; building: string | null }) {
+  return (
+    <div className="intel-grid relative flex min-h-0 flex-1 flex-col items-center justify-center gap-2 overflow-hidden rounded-[6px] border border-dashed border-border bg-surface-2/60 text-center">
+      <motion.span
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ duration: 0.35, ease: EASE }}
+        className="grid h-12 w-12 place-items-center rounded-full bg-primary-soft text-primary shadow-sm"
+        aria-hidden="true"
+      >
+        <Video size={22} />
+      </motion.span>
+      <span className="text-[15px] font-semibold text-fg">{message ?? 'Kamerani tanlang'}</span>
+      {!message && (
+        <span className="max-w-[320px] px-4 text-[12px] leading-snug text-muted">
+          {building ? `${building}: pastdan xonani tanlang` : 'Pastdan binoni, so‘ng xonani tanlang — jonli video shu yerda ochiladi'}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Xona tanlangach — "Video yuklanmoqda" pardasi (birinchi kadrgacha). */
+function LoadingCover({ name, place }: { name: string; place: string | null }) {
+  return (
+    <motion.div
+      initial={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.35, ease: EASE }}
+      className="absolute inset-0 z-[4] flex flex-col items-center justify-center gap-3 bg-neutral-900 text-white"
+      role="status"
+      aria-live="polite"
+    >
+      <span className="relative grid h-14 w-14 place-items-center" aria-hidden="true">
+        <motion.span
+          className="absolute inset-0 rounded-full border-2 border-white/15 border-t-sky-400"
+          animate={{ rotate: 360 }}
+          transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
+        />
+        <Video size={20} className="text-white/80" />
+      </span>
+      <span className="text-[14px] font-semibold">Video yuklanmoqda…</span>
+      <span className="max-w-[80%] truncate text-[12px] text-white/60">
+        {name}
+        {place ? ` · ${place}` : ''}
+      </span>
+      <span className="h-1 w-40 overflow-hidden rounded-full bg-white/10" aria-hidden="true">
+        <motion.span
+          className="block h-full rounded-full bg-sky-400"
+          initial={{ width: '0%' }}
+          animate={{ width: '92%' }}
+          transition={{ duration: CAMERA_LOAD_MS / 1000, ease: [0.1, 0.7, 0.3, 1] }}
+        />
+      </span>
+    </motion.div>
+  );
+}
+
+/** Binolar tasmasi: nomi va nechta kamera (shundan nechtasi tasvir uzatmoqda). */
+function BuildingStrip({
+  buildings,
+  onPick,
+  loading,
+}: {
+  buildings: ReturnType<typeof buildingCards>;
+  onPick: (name: string) => void;
+  loading: boolean;
+}) {
+  if (buildings.length === 0) {
+    return (
+      <div className="flex h-[78px] shrink-0 items-center justify-center rounded-[6px] border border-dashed border-border text-[12px] text-muted">
+        {loading ? 'Binolar yuklanmoqda…' : 'Kamera biriktirilgan bino yo‘q'}
+      </div>
+    );
+  }
+  return (
+    <div className="flex h-[78px] min-w-0 shrink-0 gap-1.5 overflow-x-auto pb-1" aria-label="Binolar">
+      {buildings.map((b, index) => (
+        <motion.button
+          key={b.name}
+          type="button"
+          onClick={() => onPick(b.name)}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25, delay: Math.min(index, 10) * 0.03, ease: EASE }}
+          title={b.name}
+          className="group flex h-full w-[168px] shrink-0 flex-col justify-between rounded-[8px] border border-border bg-surface px-2.5 py-2 text-left shadow-sm transition hover:border-primary hover:shadow-md"
+        >
+          <span className="flex items-start gap-2">
+            <span className="grid h-6 w-6 shrink-0 place-items-center rounded-[6px] bg-primary/10 text-primary" aria-hidden="true">
+              <Building2 size={14} />
+            </span>
+            <span className="line-clamp-2 min-w-0 flex-1 text-[12px] font-semibold leading-tight text-fg">{b.name}</span>
+            <ChevronRight size={14} className="mt-0.5 shrink-0 text-subtle transition group-hover:translate-x-0.5 group-hover:text-primary" aria-hidden="true" />
+          </span>
+          <span className="flex items-baseline justify-between text-[11px] text-muted">
+            <span>{b.total} ta kamera</span>
+            <span className="tabular-nums text-success">{b.streaming} jonli</span>
+          </span>
+        </motion.button>
+      ))}
+    </div>
+  );
+}
+
+/** Xonalar (kameralar) tasmasi — faqat nomi, rasm/video yo'q; bosilsa —
+ *  yuqorida yuklanish pardasi bilan jonli video. */
+function RoomStrip({
+  title,
+  rooms,
   codes,
   activeId,
   onPick,
-  paused,
+  onBack,
 }: {
-  cameras: CameraFeed[];
+  title: string;
+  rooms: CameraFeed[];
   codes: ReadonlyMap<string, string>;
-  activeId: string;
+  activeId: string | null;
   onPick: (id: string) => void;
-  paused: boolean;
+  onBack: () => void;
 }) {
-  const strip = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    // FAQAT karuselning o'zi suriladi. scrollIntoView ishlatilmaydi: u barcha
-    // aylanuvchi ota elementlarni ham suradi va butun konsol sahifasini
-    // yon tomonga siljitib yuborardi (2026-09-26, "yonga surilib qoldi").
-    const box = strip.current;
-    if (paused || !box) return;
-    const active = box.querySelector<HTMLElement>(`[data-camera="${CSS.escape(activeId)}"]`);
-    if (!active) return;
-    const left = active.offsetLeft - box.clientWidth / 2 + active.clientWidth / 2;
-    box.scrollTo?.({ left: Math.max(0, left), behavior: 'smooth' });
-  }, [activeId, paused]);
-
+  const hover = usePrewarmOnHover();
   return (
-    <div ref={strip} className="relative flex h-[74px] min-w-0 shrink-0 gap-1 overflow-x-auto pb-0.5" aria-label="Kameralar karuseli">
-      {cameras.map((camera) => {
-        const on = camera.id === activeId;
-        return (
-          <button
-            key={camera.id}
-            type="button"
-            data-camera={camera.id}
-            onClick={() => onPick(camera.id)}
-            aria-pressed={on}
-            title={camera.name}
-            className={cn(
-              'relative h-full w-[112px] shrink-0 overflow-hidden rounded-[4px] bg-neutral-900 ring-2 transition',
-              on ? 'ring-primary' : 'ring-transparent opacity-80 hover:opacity-100',
-            )}
-          >
-            {!paused && <CameraThumbnail cameraId={camera.id} alt={camera.name} className="h-full w-full" refreshMs={60_000} />}
-            <span className="absolute inset-x-0 bottom-0 truncate bg-black/65 px-1 text-left text-[9px] font-medium text-white">
-              {cameraCode(codes, camera.id)} · {camera.name}
-            </span>
-          </button>
-        );
-      })}
+    <div className="flex shrink-0 flex-col gap-1">
+      <div className="flex items-center gap-1.5 px-0.5">
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex h-6 items-center gap-1 rounded-full border border-border bg-surface px-2 text-[11px] font-medium text-muted transition hover:border-primary hover:text-primary"
+        >
+          <ArrowLeft size={12} aria-hidden="true" /> Binolar
+        </button>
+        <span className="min-w-0 truncate text-[12px] font-semibold text-fg">{title}</span>
+        <span className="ms-auto shrink-0 whitespace-nowrap text-[11px] tabular-nums text-muted">{rooms.length} ta xona</span>
+      </div>
+      {rooms.length === 0 ? (
+        <div className="flex h-[62px] items-center justify-center rounded-[6px] border border-dashed border-border text-[12px] text-muted">
+          Mos kamera topilmadi
+        </div>
+      ) : (
+        <div className="flex h-[62px] min-w-0 gap-1.5 overflow-x-auto pb-1" aria-label="Xonalar">
+          {rooms.map((camera) => {
+            const on = camera.id === activeId;
+            const streaming = isStreaming(camera);
+            const floor = typeof camera.floor === 'number' ? `${camera.floor}-qavat` : null;
+            return (
+              <button
+                key={camera.id}
+                type="button"
+                onClick={() => onPick(camera.id)}
+                // Ustida turilganda ulanish oldindan boshlanadi (lib/webrtcStream.ts).
+                onPointerEnter={() => streaming && hover.start(camera.id)}
+                onPointerLeave={hover.cancel}
+                onFocus={() => streaming && hover.start(camera.id)}
+                aria-pressed={on}
+                title={streaming ? camera.name : `${camera.name} — hozir tasvir yo‘q`}
+                className={cn(
+                  'flex h-full w-[150px] shrink-0 flex-col justify-between rounded-[8px] border px-3 py-1.5 text-left transition',
+                  on
+                    ? 'border-primary bg-primary-soft shadow-sm'
+                    : 'border-border bg-surface hover:border-primary hover:shadow-sm',
+                  !streaming && 'opacity-70',
+                )}
+              >
+                <span className="line-clamp-2 text-[12px] font-semibold leading-tight text-fg">{camera.name}</span>
+                <span className="flex items-center gap-1.5 text-[10px] text-muted">
+                  <span
+                    className={cn('h-1.5 w-1.5 shrink-0 rounded-full', streaming ? 'bg-success' : 'bg-subtle')}
+                    aria-hidden="true"
+                  />
+                  <span className="truncate">{[floor, cameraCode(codes, camera.id)].filter(Boolean).join(' · ')}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

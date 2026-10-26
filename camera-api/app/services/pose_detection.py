@@ -142,11 +142,25 @@ def choose_backend(configured: str, avx: bool | None) -> str:
     return BACKEND_YOLO if avx is False else BACKEND_MEDIAPIPE
 
 
+def _mediapipe_model_present() -> bool:
+    return Path(settings.pose_detection_model_path).is_file()
+
+
 def _resolve_backend() -> str:
     global _backend
     if _backend is None:
         avx = cpu_supports_avx()
         _backend = choose_backend(settings.pose_detection_backend, avx)
+        if (
+            _backend == BACKEND_MEDIAPIPE
+            and (settings.pose_detection_backend or "auto").strip().lower() == "auto"
+            and not _mediapipe_model_present()
+        ):
+            # Mediapipe modeli (pose_landmarker_lite.task) avtomatik
+            # yuklanmaydi — u yo'q bo'lsa poza umuman ishlamasdi (chekish
+            # #15 va o'qituvchi faolligi #21 jimgina o'chib qolardi).
+            # YOLO-pose og'irliklari birinchi chaqiruvda o'zi yuklanadi.
+            _backend = BACKEND_YOLO
         logger.info(
             "pose detection backend selected",
             extra={"backend": _backend, "configured": settings.pose_detection_backend, "cpu_avx": avx},

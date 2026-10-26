@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { PersonRouteDrawer } from './PersonRouteDrawer';
-import { ArrowLeft, CalendarDays, Footprints, GraduationCap, MapPin, RefreshCw, Route } from 'lucide-react';
+import { ArrowLeft, CalendarDays, FileVideo, Footprints, GraduationCap, MapPin, RefreshCw, Route } from 'lucide-react';
 import {
   Badge,
   Button,
@@ -66,8 +66,9 @@ import { errorText, useAsyncData } from '../../components/students/useAsyncData'
 import { GroupEnrollDrawer, type EnrollDrawerTarget } from '../../components/students/GroupEnrollDrawer';
 import { EnrollCta, StaffKpis, WeekdayPatternCard } from '../../components/attendance/PersonInsights';
 import { KpiReadout, StaleNote, StatusMark } from '../../components/attendance/readout';
+import PersonCriteriaTab from '../../components/videoAnalysis/PersonCriteriaTab';
 
-type TabId = 'davomat' | 'darslar' | 'harakatlar';
+type TabId = 'davomat' | 'darslar' | 'harakatlar' | 'kriteriyalar';
 const PRESETS = ['week', 'month', 'last30', 'lastMonth'] as const;
 const MAX_CALENDAR_MONTHS = 6;
 const MONTH_TTL_MS = 60_000;
@@ -341,6 +342,8 @@ export default function PersonPage() {
     // tab hisoblagichida ko'rsatish "bu davrda 20 marta ko'ringan" degan
     // yolg'on ma'no berardi.
     { id: 'harakatlar', label: "Qayerda ko'ringan", icon: Footprints, count: visitsCapped ? null : (data?.recentVisits.length ?? null) },
+    // Kunlik video tahlil: xalat, diqqat, chekish, o'qituvchi faolligi.
+    { id: 'kriteriyalar', label: 'Kriteriyalar', icon: FileVideo },
   ];
   const [tab, setTab] = useUrlTab(tabs, { defaultTab: 'davomat' });
 
@@ -431,6 +434,7 @@ export default function PersonPage() {
                           'Biriktirilmagan'
                         )}
                       </Fact>
+                      {person.reportedGroup && <Fact label="O‘zi yozgan guruh">{person.reportedGroup}</Fact>}
                     </>
                   ) : (
                     <>
@@ -574,6 +578,8 @@ export default function PersonPage() {
               </div>
             </>
           )}
+
+          {tab === 'kriteriyalar' && <PersonCriteriaTab personId={personId} isStudent={isStudent} />}
 
           {tab === 'darslar' && (
             <IntelPanel title="Darslar" code={`${data.lessons.length} ta`}>

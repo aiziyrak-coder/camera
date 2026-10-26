@@ -35,9 +35,13 @@ services:
       # Bitta jarayon: AI baribir bitta leader'da ishlaydi, ikkinchi
       # jarayon faqat xotira (modellar ~2-3 GB) sarflardi.
       WEB_CONCURRENCY: "1"
+      VIDEO_IMPORT_DIR: /data/nvr-eksport
     # Disk nazorati (app/jobs/event_clips.py) arxiv papkasini faqat o'qiydi.
+    # nvr-eksport — NVR tarmoqqa ulanmagan bo'lsa yozuvlar shu papkaga
+    # joylanadi ("fayl" turidagi NVR, docs/KUNLIK_VIDEO_TAHLIL.md).
     volumes:
       - ../recordings:/recordings:ro
+      - ../nvr-eksport:/data/nvr-eksport
     # !override: `extends` bazadagi api'ning depends_on'ini (profil bilan
     # o'chirilgan bitta-MediaMTX bilan birga) ko'chirib olmasin. MediaMTX
     # shardlari va migratsiyalar api orqali kafolatlanadi — api esa ularga

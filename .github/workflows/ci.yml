@@ -53,7 +53,8 @@ jobs:
   backend:
     name: Backend (migratsiyalar, pytest)
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    # Testlar ketma-ket (umumiy test bazasi): 60 daqiqaga sig'may qoldi.
+    timeout-minutes: 150
     defaults:
       run:
         working-directory: camera-api
@@ -123,24 +124,30 @@ jobs:
           python -m pip install --upgrade pip wheel
           # CPU torch avval — aks holda ultralytics PyPI'dagi CUDA torch'ni
           # (~3 GB nvidia-* paketlari bilan) tortadi.
-          pip install --index-url https://download.pytorch.org/whl/cpu torch==2.14.0 torchvision==0.29.0
+          pip install --index-url https://download.pytorch.org/whl/cpu torch==2.14.1 torchvision==0.29.1
           pip install -r requirements.txt -r requirements-dev.txt
 
       - name: MinIO va MediaMTX (health va storage testlari uchun)
         working-directory: .
         run: |
+          # MinIO 2025-yil oxirida rasmiy rasmlarini (quay.io, Docker Hub)
+          # va dl.min.io dagi fayllarni yopdi — anonim yuklash 401/410.
+          # Bitnami'ning arxivlangan rasmi ochiq; bucket'ni o'zi yaratadi
+          # (MINIO_DEFAULT_BUCKETS), shuning uchun mc rasmi kerak emas.
           docker run -d --name minio -p 9000:9000 \
             -e MINIO_ROOT_USER="$S3_ACCESS_KEY" -e MINIO_ROOT_PASSWORD="$S3_SECRET_KEY" \
-            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+            -e MINIO_DEFAULT_BUCKETS="$S3_BUCKET" \
+            bitnamilegacy/minio:2025.7.23-debian-12-r5
           docker run -d --name mediamtx -p 9997:9997 -p 8888:8888 -p 8554:8554 \
             -e MTX_API=yes -e MTX_APIADDRESS=:9997 \
             bluenviron/mediamtx:1.21.0
-          for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:9000/minio/health/live && break
+          # Bucket mavjud bo'lsa anonim so'rov 403 qaytaradi (yo'q bo'lsa 404).
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:9000/$S3_BUCKET" || true)
+            [ "$code" = "403" ] && break
             sleep 2
           done
-          docker run --rm --network host --entrypoint sh quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z -c \
-            "mc alias set local http://127.0.0.1:9000 $S3_ACCESS_KEY $S3_SECRET_KEY && mc mb -p local/$S3_BUCKET"
+          [ "$code" = "403" ] || { echo "::error::MinIO bucket tayyor emas (HTTP $code)"; docker logs minio | tail -30; exit 1; }
           for i in $(seq 1 30); do
             curl -sf http://127.0.0.1:9997/v3/paths/list >/dev/null && break
             sleep 2
@@ -160,8 +167,36 @@ jobs:
           # orasida ma'lum kichik farqlar bor (created_at NOT NULL, ikki indeks) —
           # ular alohida migratsiya bilan tuzatilgach yoqiladi.
 
+      # Har test 5 daqiqa bilan cheklangan: osilib qolgan test butun ishni
+      # 60 daqiqalik chegaraga olib bormaydi (2026-09-24 dagi ikki CI shunday
+      # bekor bo'lgan) — nomi va stek izi bilan yiqiladi.
       - name: Pytest
-        run: python -m pytest -q -p no:cacheprovider -W ignore::DeprecationWarning --durations=15
+        run: >-
+          python -m pytest -q -p no:cacheprovider -W ignore::DeprecationWarning --durations=15
+          --timeout=300 --junitxml=/tmp/pytest.xml
+
+      # To'liq log faqat tizimga kirganlarga ko'rinadi; yiqilgan va eng sekin
+      # testlar annotatsiya sifatida (ochiq repoda hammaga) chiqariladi.
+      - name: Test natijalari xulosasi
+        if: always()
+        run: |
+          [ -s /tmp/pytest.xml ] || exit 0
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("/tmp/pytest.xml").getroot()
+          cases = list(root.iter("testcase"))
+          failed = [c for c in cases if c.find("failure") is not None or c.find("error") is not None]
+          suite = root if root.tag == "testsuite" else root.find("testsuite")
+          print(f"::notice title=Pytest::{len(cases)} test, {len(failed)} yiqildi, {float(suite.get('time', 0)) / 60:.1f} daq")
+          for case in failed[:20]:
+              node = case.find("failure") if case.find("failure") is not None else case.find("error")
+              message = (node.get("message") or "").replace("\n", " ")[:300]
+              print(f"::error title={case.get('classname')}.{case.get('name')}::{message}")
+          slow = sorted(cases, key=lambda c: -float(c.get("time", 0)))[:8]
+          print("::notice title=Eng sekin testlar::" + "; ".join(
+              f"{c.get('classname').rsplit('.', 1)[-1]}.{c.get('name')} {float(c.get('time', 0)):.0f}s" for c in slow))
+          PY
 
       - name: "Smoke: API ishga tushadi (/health, /metrics)"
         env:

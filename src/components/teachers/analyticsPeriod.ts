@@ -7,7 +7,7 @@ import { todayInTashkent } from '../../lib/uzDate';
 /** Tahlil tablari uchun davr tanlovlari. */
 export const ANALYTICS_PRESETS: readonly FixedPreset[] = ['last7', 'last30', 'month', 'lastMonth'];
 
-/** Tahlil davri URL'da (`?dan=&gacha=`) — Tahlil / Reyting / Surunkali
+/** Tahlil davri URL'da (`?dan=&gacha=`) — Tahlil / Reyting / Takror kechikkan
  *  tablari orasida umumiy, havola bilan ulashiladi. Standart: 30 kun. */
 export function useAnalyticsPeriod(): [DateRangeValue, (value: DateRangeValue) => void] {
   const [params, setParams] = useSearchParams();

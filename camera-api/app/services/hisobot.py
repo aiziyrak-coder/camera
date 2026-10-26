@@ -22,19 +22,20 @@ from __future__ import annotations
 
 import uuid
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date as date_type, datetime, time as time_type, timedelta
 from typing import Any, Callable, Iterable
 
 from sqlalchemy import and_, false, func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import (AIModuleConfig, AttendanceRecord, Event, LessonAttendance, LessonSession, PresenceVisit,
-                        StudentStaff)
+from app.batch import holatlar
+from app.config import settings
+from app.models import (AIModuleConfig, AttendanceRecord, DailyPersonCriteria, LessonAttendance, LessonSession,
+                        PresenceVisit, StudentStaff)
 from app.services import situation as svc
 from app.services.attendance_policy import (EARLY_NA, EARLY_UNKNOWN, EARLY_YES, Policy, early_leave_verdict,
                                             load_policy)
-from app.services.event_status import REJECTED_STATUSES, fold_review_counts
 from app.services.staff_export import split_course
 from app.timezone import local_date, INSTITUTE_TZ, INSTITUTE_TZ_NAME
 from app.timezone import day_start
@@ -49,10 +50,46 @@ UNIT_KIND_LABELS = {"kafedra": "Kafedralar", "dekanat": "Dekanatlar", "bolim": "
 
 STAFF_ATTENDANCE_CODE = 6
 STUDENT_ATTENDANCE_CODE = 7
-OFF_HOURS_CODE = 3
 COAT_CODE = 10
-SLEEP_CODE = 20
+SMOKING_CODE = 15
+ATTENTION_CODE = 19
+EARLY_LEAVE_CODE = 9
 PUNCTUALITY_CODE = 22
+
+ACTIVITY_CODE = 21
+LESSON_LATE_CODE = 8
+
+# Kunlik video tahlil natijalaridan (daily_person_criteria, lesson_attendance,
+# lesson_sessions) har odamga bog'langan "holatlar soni" mezonlari —
+# 2026-10-04 dan. Ilgari "uxlash" (#20) va "tashqari_kirish" (#3) shu yerda
+# edi; ular buyurtmachi ro'yxatidan olib tashlangan.
+COUNT_KEYS = ("darsga_kech", "darsdan_erta", "forma", "chekish", "diqqat", "faollik")
+COUNT_WHAT = {
+    "darsga_kech": "darsga kech kirish",
+    "darsdan_erta": "darsdan erta chiqish",
+    "forma": "oq xalatsiz kun",
+    "chekish": "chekish holati",
+    "diqqat": "diqqati past dars",
+    "faollik": "faolligi past dars",
+}
+COUNT_COLUMN = {
+    "darsga_kech": "Kech kirgan darslar",
+    "darsdan_erta": "Erta chiqqan darslar",
+    "forma": "Oq xalatsiz kunlar",
+    "chekish": "Chekish holatlari",
+    "diqqat": "Diqqati past darslar",
+    "faollik": "Faolligi past darslar",
+}
+
+
+def low_attention() -> int:
+    """Diqqat balli shundan past dars "diqqati past" — kunlik tahlil holati
+    (app/batch/aggregate.py) bilan bitta sozlama."""
+    return settings.video_attention_low_score
+
+
+def low_activity() -> int:
+    return settings.video_teacher_activity_low_score
 
 
 # ─────────────────────────────────────────── aholi va filtrlar
@@ -211,7 +248,16 @@ class Tri:
 
     @property
     def rate(self) -> float | None:
+        """Kirgan ulushi (kech kirganlar ham kirgan) — talaba dars qatnashuvi."""
         return svc.pct(self.ok + self.late, self.total)
+
+    @property
+    def on_time_rate(self) -> float | None:
+        """Faqat o'z vaqtida — o'qituvchining darsga kelishi (#22)."""
+        return svc.pct(self.ok, self.total)
+
+    def rate_for(self, key: str) -> float | None:
+        return self.on_time_rate if key == "dars_otkazish" else self.rate
 
 
 @dataclass
@@ -228,20 +274,17 @@ class Data:
     day_rows: dict[uuid.UUID, dict] = field(default_factory=dict)
     lessons: dict[uuid.UUID, Tri] = field(default_factory=dict)
     lessons_daily: dict[date_type, Tri] = field(default_factory=dict)
-    events: dict[int, dict[uuid.UUID, int]] = field(default_factory=dict)
-    events_daily: dict[int, Counter] = field(default_factory=dict)
-    coat_status: dict[str, int] = field(default_factory=dict)
-    coat_daily: Counter = field(default_factory=Counter)
-    coat_buildings: Counter = field(default_factory=Counter)
+    # COUNT_KEYS mezonlari: odam -> holatlar soni va kun -> holatlar soni.
+    events: dict[str, dict[uuid.UUID, int]] = field(default_factory=dict)
+    events_daily: dict[str, Counter] = field(default_factory=dict)
     active_modules: set[int] = field(default_factory=set)
+    # Holat turi -> odam -> (holatlar soni, shundan video dalili borlari) —
+    # kunlik tahlil dalillari (daily_person_criteria.details["dalillar"]).
+    findings: dict[str, dict[uuid.UUID, tuple[int, int]]] = field(default_factory=dict)
 
 
 def _minutes(column):
     return func.extract("hour", column) * 60 + func.extract("minute", column)
-
-
-def _local_day(column):
-    return local_date(column)
 
 
 def _bounds(start: date_type, end: date_type) -> tuple[datetime, datetime]:
@@ -389,10 +432,12 @@ async def _student_lessons(db: AsyncSession, data: Data, cond) -> None:
 
 async def _teacher_lessons(db: AsyncSession, data: Data, cond) -> None:
     """O'qituvchining darsga kelishi (#22): teacher_on_time True/False —
-    tekshirilmagan (NULL) darslar hisobga kirmaydi."""
+    tekshirilmagan (NULL) darslar hisobga kirmaydi. "Kech kirdi" (xonada
+    ko'ringan, lekin kech) va "kirmadi" (umuman ko'rinmagan) alohida."""
     on_time = LessonSession.teacher_on_time
+    seen = LessonSession.teacher_first_seen_at.is_not(None)
     base = (
-        select(*_tri_cols(on_time.is_(True), false(), on_time.is_(False)))
+        select(*_tri_cols(on_time.is_(True), and_(on_time.is_(False), seen), and_(on_time.is_(False), ~seen)))
         .select_from(LessonSession)
         .join(StudentStaff, StudentStaff.id == LessonSession.teacher_id)
         .where(cond)
@@ -406,51 +451,89 @@ async def _teacher_lessons(db: AsyncSession, data: Data, cond) -> None:
         data.lessons_daily[day] = Tri(*vals)
 
 
-async def _named_events(db: AsyncSession, data: Data, code: int) -> None:
-    """Odam ismi yozilgan signallar (#3, #20) — ism bo'yicha odamga bog'lanadi.
-    Rad etilgan signal hisobga kirmaydi."""
-    lo, hi = _bounds(data.start, data.end)
+async def _criteria_counts(db: AsyncSession, data: Data, cond) -> None:
+    """Kunlik video tahlil natijalari (app/batch/aggregate.py) — har odam va
+    har kun bo'yicha holatlar soni: darsga kech kirish, darsdan erta chiqish,
+    oq xalatsiz kunlar, chekish, diqqati va faolligi past darslar."""
+    d = DailyPersonCriteria
+    la = LessonAttendance
+    ls = LessonSession
+    queries = {
+        "darsga_kech": select(la.student_staff_id, ls.date, func.count())
+        .join(ls, ls.id == la.lesson_session_id)
+        .join(StudentStaff, StudentStaff.id == la.student_staff_id)
+        .where(cond, la.status == "kech_keldi", ls.date.between(data.start, data.end))
+        .group_by(la.student_staff_id, ls.date),
+        # Faollik o'lchangan (activity_samples > 0) darslar — o'lchanmagani
+        # 0 ball bilan yozilgan, uni "past" deb sanash yolg'on bo'lardi.
+        "faollik": select(ls.teacher_id, ls.date, func.count())
+        .join(StudentStaff, StudentStaff.id == ls.teacher_id)
+        .where(cond, ls.activity_samples > 0, ls.teacher_activity_score < low_activity(),
+               ls.date.between(data.start, data.end))
+        .group_by(ls.teacher_id, ls.date),
+        "forma": select(d.student_staff_id, d.day, func.count())
+        .join(StudentStaff, StudentStaff.id == d.student_staff_id)
+        .where(cond, d.coat_status == "kiymagan", d.day.between(data.start, data.end))
+        .group_by(d.student_staff_id, d.day),
+        "chekish": select(d.student_staff_id, d.day, func.sum(d.smoking_events))
+        .join(StudentStaff, StudentStaff.id == d.student_staff_id)
+        .where(cond, d.smoking_events > 0, d.day.between(data.start, data.end))
+        .group_by(d.student_staff_id, d.day),
+        "diqqat": select(la.student_staff_id, LessonSession.date, func.count())
+        .join(LessonSession, LessonSession.id == la.lesson_session_id)
+        .join(StudentStaff, StudentStaff.id == la.student_staff_id)
+        .where(cond, la.attention_score < low_attention(), LessonSession.date.between(data.start, data.end))
+        .group_by(la.student_staff_id, LessonSession.date),
+        "darsdan_erta": select(la.student_staff_id, LessonSession.date, func.count())
+        .join(LessonSession, LessonSession.id == la.lesson_session_id)
+        .join(StudentStaff, StudentStaff.id == la.student_staff_id)
+        .where(cond, la.left_early.is_(True), LessonSession.date.between(data.start, data.end))
+        .group_by(la.student_staff_id, LessonSession.date),
+    }
+    for key in (c.key for c in criteria_for(data.kind) if c.key in COUNT_KEYS):
+        per_person: Counter = Counter()
+        daily: Counter = Counter()
+        for pid, day, count in (await db.execute(queries[key])).all():
+            per_person[pid] += int(count or 0)
+            daily[day] += int(count or 0)
+        data.events[key] = dict(per_person)
+        data.events_daily[key] = daily
+
+
+async def _findings_counts(db: AsyncSession, data: Data, cond) -> None:
+    """Har odam va holat turi bo'yicha: aniqlangan holatlar va shundan video
+    dalili borlari (daily_person_criteria.details["dalillar"]). JSON ro'yxat
+    SQL'da yoyiladi — 10 000 talaba × 30 kun Pythonga o'qilmaydi."""
+    d = DailyPersonCriteria
+    items = func.coalesce(d.details["dalillar"], literal_column("'[]'::jsonb"))
+    item = func.jsonb_array_elements(items).table_valued("value").lateral("holat")
+    kind_col = item.c.value.op("->>")("tur")
+    code_col = item.c.value.op("->>")("kod")
+    with_clip = func.count().filter(item.c.value.op("->>")("klip").is_not(None))
     rows = await db.execute(
-        select(Event.person_name, _local_day(Event.occurred_at), func.count())
-        .where(Event.module_code == code)
-        .where(Event.is_trial.is_(False))
-        .where(Event.status.not_in(REJECTED_STATUSES))
-        .where(Event.person_name.is_not(None))
-        .where(Event.occurred_at >= lo, Event.occurred_at < hi)
-        .group_by(Event.person_name, _local_day(Event.occurred_at))
+        select(d.student_staff_id, kind_col, code_col, func.count(), with_clip)
+        .select_from(d)
+        .join(StudentStaff, StudentStaff.id == d.student_staff_id)
+        .join(item, literal_column("true"))
+        .where(cond, d.day.between(data.start, data.end))
+        .group_by(d.student_staff_id, kind_col, code_col)
     )
-    by_name: dict[str, list[uuid.UUID]] = defaultdict(list)
-    for m in data.members:
-        by_name[svc.norm_name(m.name)].append(m.id)
-    per_person: Counter = Counter()
-    daily: Counter = Counter()
-    for name, day, count in rows.all():
-        ids = by_name.get(svc.norm_name(name))
-        if not ids:
+    for pid, kind, code, total, clips in rows.all():
+        key = holatlar.type_of({"tur": kind, "kod": code})
+        if key is None:
             continue
-        for pid in ids:
-            per_person[pid] += count
-        daily[day] += count
-    data.events[code] = dict(per_person)
-    data.events_daily[code] = daily
+        bucket = data.findings.setdefault(key, {})
+        old_total, old_clips = bucket.get(pid, (0, 0))
+        bucket[pid] = (old_total + int(total), old_clips + int(clips))
 
 
-async def _coat_events(db: AsyncSession, data: Data) -> None:
-    lo, hi = _bounds(data.start, data.end)
-    rows = await db.execute(
-        select(Event.status, _local_day(Event.occurred_at), Event.building, func.count())
-        .where(Event.module_code == COAT_CODE)
-        .where(Event.is_trial.is_(False))
-        .where(Event.occurred_at >= lo, Event.occurred_at < hi)
-        .group_by(Event.status, _local_day(Event.occurred_at), Event.building)
-    )
-    by_status: Counter = Counter()
-    for st, day, building, count in rows.all():
-        by_status[st] += count
-        if st not in REJECTED_STATUSES:
-            data.coat_daily[day] += count
-            data.coat_buildings[building or "Bino ko'rsatilmagan"] += count
-    data.coat_status = fold_review_counts(by_status)
+def findings_for(data: Data, key: str, pid: uuid.UUID) -> tuple[int, int]:
+    """Mezon bo'yicha odamning (holatlar, video dalillar) soni."""
+    total = clips = 0
+    for kind in finding_types(key):
+        n, c = data.findings.get(kind, {}).get(pid, (0, 0))
+        total, clips = total + n, clips + c
+    return total, clips
 
 
 async def collect(db: AsyncSession, kind: str, start: date_type, end: date_type, f: Filters,
@@ -474,11 +557,10 @@ async def collect(db: AsyncSession, kind: str, start: date_type, end: date_type,
         await _early_leave(db, data, cond)
     if kind == "talaba":
         await _student_lessons(db, data, cond)
-        await _named_events(db, data, SLEEP_CODE)
     else:
         await _teacher_lessons(db, data, cond)
-        await _named_events(db, data, OFF_HOURS_CODE)
-        await _coat_events(db, data)
+    await _criteria_counts(db, data, cond)
+    await _findings_counts(db, data, cond)
     return data
 
 
@@ -508,18 +590,42 @@ class Criterion:
     label: str
     description: str
     kinds: tuple[str, ...]
+    # Buyurtmachi ro'yxatidagi raqam (davomat — 6 xodim / 7 talaba).
+    code: int | None = None
+    # Shu mezonning dalili bo'lgan holat turlari (app/batch/holatlar.py).
+    finding_types: tuple[str, ...] = ()
 
 
+# Buyurtmachi ro'yxati tartibida (6, 7, 8, 9, 10, 15, 19, 21, 22).
 CRITERIA = [
-    Criterion("davomat", "Kelgan-kelmagani", "", KINDS),
-    Criterion("kechikish", "Kech kelganlar", "", KINDS),
-    Criterion("erta_ketish", "Erta ketganlar", "", ("xodim",)),
-    Criterion("dars_otkazish", "Darsga o'z vaqtida kirgan o'qituvchilar", "", ("xodim",)),
-    Criterion("dars_qatnashish", "Darsga kirgan talabalar", "", ("talaba",)),
-    Criterion("forma", "Oq xalatsiz yurganlar", "", ("xodim",)),
-    Criterion("tashqari_kirish", "Ish vaqtidan tashqari kirganlar", "", ("xodim",)),
-    Criterion("uxlash", "Darsda uxlab qolganlar", "", ("talaba",)),
+    Criterion("davomat", "Kelgan-kelmagani", "", KINDS, None, ()),
+    Criterion("kechikish", "Kech kelganlar", "", KINDS, None, (holatlar.LATE,)),
+    Criterion("dars_qatnashish", "Darsga kirgan talabalar", "", ("talaba",), STUDENT_ATTENDANCE_CODE,
+              (holatlar.LESSON_ABSENT,)),
+    Criterion("darsga_kech", "Darsga kech kirgan talabalar", "", ("talaba",), LESSON_LATE_CODE,
+              (holatlar.LESSON_LATE,)),
+    Criterion("darsdan_erta", "Darsdan erta chiqqan talabalar", "", ("talaba",), EARLY_LEAVE_CODE,
+              (holatlar.LESSON_EARLY,)),
+    Criterion("erta_ketish", "Ishdan erta ketganlar", "", ("xodim",), EARLY_LEAVE_CODE, (holatlar.WORK_EARLY,)),
+    Criterion("forma", "Oq xalatsiz yurganlar", "", KINDS, COAT_CODE, (holatlar.NO_COAT,)),
+    Criterion("chekish", "Chekkanlar", "", KINDS, SMOKING_CODE, (holatlar.SMOKING,)),
+    Criterion("diqqat", "Darsda diqqati past talabalar", "", ("talaba",), ATTENTION_CODE, (holatlar.LOW_ATTENTION,)),
+    Criterion("faollik", "Darsda faolligi past o'qituvchilar", "", ("xodim",), ACTIVITY_CODE,
+              (holatlar.LOW_ACTIVITY,)),
+    Criterion("dars_otkazish", "Darsga o'z vaqtida kirgan o'qituvchilar", "", ("xodim",), PUNCTUALITY_CODE,
+              (holatlar.TEACHER_LATE, holatlar.TEACHER_ABSENT)),
 ]
+
+
+def criterion_code(key: str, kind: str) -> int | None:
+    """Mezonning buyurtmachi ro'yxatidagi raqami."""
+    if key in ("davomat", "kechikish"):
+        return STAFF_ATTENDANCE_CODE if kind == "xodim" else STUDENT_ATTENDANCE_CODE
+    return next((c.code for c in CRITERIA if c.key == key), None)
+
+
+def finding_types(key: str) -> tuple[str, ...]:
+    return next((c.finding_types for c in CRITERIA if c.key == key), ())
 
 
 def criteria_for(kind: str) -> list[Criterion]:
@@ -546,14 +652,23 @@ def describe(key: str, policy: Policy, kind: str) -> str:
     if key == "erta_ketish":
         return f"Ish {_hhmm(policy.work_end)} da tugaydi — undan oldin oxirgi marta ko'ringan kunlar"
     if key == "dars_otkazish":
-        return "Jadvaldagi dars boshlanganda o'qituvchi xonada bo'lganmi — tekshirilgan darslar bo'yicha"
+        return (f"Jadvaldagi dars boshlanganda o'qituvchi xonada bo'lganmi: {settings.teacher_punctuality_grace_minutes} "
+                "daqiqa ichida — o'z vaqtida, keyin — kech kirdi, umuman ko'rinmasa — kirmadi")
     if key == "dars_qatnashish":
-        return "Dars jadvali bo'yicha: talaba darsda bo'lgan, kech kirgan yoki kirmagan"
+        return "Dars jadvali bo'yicha: talaba darsda bo'lgan (kamida 2 marta ko'ringan) yoki kirmagan"
+    if key == "darsga_kech":
+        return (f"Dars boshlanib {settings.attendance_late_to_lesson_grace_minutes} daqiqadan keyin xonada birinchi "
+                "marta ko'ringan — kamera o'sha paytda xonani ko'rgan bo'lsa")
     if key == "forma":
-        return "Kamera oq xalatsiz xodimni ko'rgan holatlar soni (ism yozilmaydi)"
-    if key == "tashqari_kirish":
-        return "Ish vaqtidan tashqari va dam olish kunlarida binoga kirgan xodimlar — kamera signallari"
-    return "Kamera darsda uxlab qolgan talabani ko'rgan holatlar soni"
+        return f"{who} kun bo'yi kameralarda ko'rilgan holatlarining ko'pida oq xalatsiz bo'lgan kunlar"
+    if key == "chekish":
+        return "Hovli va koridor kameralarida qo'lni og'izga takror ko'tarish — operator tekshiradigan holatlar"
+    if key == "diqqat":
+        return (f"Darsda yuzi doskaga qaramagan yoki qo'lida telefon bo'lgan — diqqat balli {low_attention()} "
+                "dan past darslar")
+    if key == "faollik":
+        return (f"Darsda o'qituvchi harakati va xonada bo'lishi — faollik balli {low_activity()} dan past darslar")
+    return "Darsning oxirgi daqiqalarida xonada ko'rinmagan — dars tugashidan oldin chiqib ketgan"
 
 
 def _sum_att(data: Data, members: Iterable[Member]) -> Att:
@@ -595,13 +710,9 @@ def indicator(data: Data, key: str) -> tuple[str, str]:
             return "—", "neutral"
         return str(a.early), "warning" if a.early else "neutral"
     if key in ("dars_otkazish", "dars_qatnashish"):
-        rate = _sum_tri(data, members).rate
+        rate = _sum_tri(data, members).rate_for(key)
         return _fmt_pct(rate), _rate_tone(rate)
-    if key == "forma":
-        n = sum(data.coat_daily.values())
-        return str(n), "danger" if n else "neutral"
-    code = OFF_HOURS_CODE if key == "tashqari_kirish" else SLEEP_CODE
-    n = sum(data.events.get(code, {}).values())
+    n = sum(data.events.get(key, {}).values())
     return str(n), "danger" if n else "neutral"
 
 
@@ -632,6 +743,9 @@ def blocker(data: Data, key: str) -> str | None:
                 "bo'lishi mumkin.")
     if key == "dars_qatnashish" and not data.lessons_daily:
         return "Bu kunlar uchun dars jadvali kiritilmagan, shuning uchun darsga kim kirgani yozilmayapti."
+    if key == "faollik" and not data.lessons_daily and not _has_data(data, key):
+        return ("Bu kunlarda o'qituvchi faolligi o'lchangan dars yo'q: dars xonasi kamerasi biriktirilmagan yoki "
+                "o'qituvchining yuzi tizimga kiritilmagan bo'lishi mumkin.")
     return None
 
 
@@ -645,11 +759,15 @@ def module_off_text(kind: str, active_modules: set[int], key: str) -> str | None
     pairs = {
         "davomat": (att_code, "Kelib-ketishni yuz orqali qayd etish"),
         "kechikish": (att_code, "Kelib-ketishni yuz orqali qayd etish"),
-        "erta_ketish": (att_code, "Kelib-ketishni yuz orqali qayd etish"),
+        "erta_ketish": (EARLY_LEAVE_CODE, "Erta ketishni aniqlash"),
         "dars_otkazish": (PUNCTUALITY_CODE, "O'qituvchining darsga kirishini tekshirish"),
+        "dars_qatnashish": (STUDENT_ATTENDANCE_CODE, "Talaba davomati"),
+        "darsga_kech": (LESSON_LATE_CODE, "Darsga kechikishni aniqlash"),
         "forma": (COAT_CODE, "Oq xalat tekshiruvi"),
-        "tashqari_kirish": (OFF_HOURS_CODE, "Ish vaqtidan tashqari kirishni kuzatish"),
-        "uxlash": (SLEEP_CODE, "Darsda uxlab qolishni aniqlash"),
+        "chekish": (SMOKING_CODE, "Chekishni aniqlash"),
+        "diqqat": (ATTENTION_CODE, "Talabaning darsga diqqati"),
+        "faollik": (ACTIVITY_CODE, "O'qituvchi faolligi"),
+        "darsdan_erta": (EARLY_LEAVE_CODE, "Darsdan erta ketishni aniqlash"),
     }
     pair = pairs.get(key)
     if pair is None or pair[0] in active_modules:
@@ -673,10 +791,7 @@ def _has_data(data: Data, key: str) -> bool:
         return bool(data.att_daily)
     if key in ("dars_otkazish", "dars_qatnashish"):
         return bool(data.lessons_daily)
-    if key == "forma":
-        return bool(data.coat_daily)
-    code = OFF_HOURS_CODE if key == "tashqari_kirish" else SLEEP_CODE
-    return bool(data.events.get(code))
+    return bool(data.events.get(key))
 
 
 def note_for(data: Data, key: str) -> str | None:
@@ -688,9 +803,8 @@ def note_for(data: Data, key: str) -> str | None:
     off = _module_off(data, key)
     if off:
         parts.append(off + " Quyidagi sonlar oldin yig'ilgan yozuvlardan.")
-    if key == "forma":
-        parts.append("Bu signalda odamning ismi yozilmaydi — shuning uchun bo'linma va ism bo'yicha filtr bu songa "
-                     "ta'sir qilmaydi, faqat binolar bo'yicha ko'rsatiladi.")
+    if key in COUNT_KEYS:
+        parts.append("Ma'lumot kunlik video tahlildan (har kuni kechqurun NVR yozuvlaridan) olinadi.")
     if key in ("davomat", "kechikish", "erta_ketish"):
         missing = sum(1 for m in data.members if not m.enrolled)
         line = not_enrolled_note(len(data.members), missing)
@@ -730,7 +844,8 @@ def _att_values(data: Data):
 
 
 STATUS_LABEL = {"keldi": "Keldi", "kech_keldi": "Kech keldi", "kelmadi": "Kelmadi", "dam_olish": "Dam olish"}
-SOURCE_LABEL = {"kamera": "kamera", "turniket": "turniket", "qolda": "qo'lda kiritilgan", "dars": "dars kamerasi"}
+SOURCE_LABEL = {"kamera": "kamera", "turniket": "turniket", "qolda": "qo'lda kiritilgan", "dars": "dars kamerasi",
+                "hemis": "HEMIS davomati"}
 
 
 def _day_spec(data: Data, key: str) -> Spec:
@@ -861,18 +976,17 @@ def spec_for(data: Data, key: str) -> Spec | None:
             t = data.lessons.get(pid)
             if t is None or t.total == 0:
                 return None
-            return {"rate": t.rate, "ok": t.ok, "late": t.late, "miss": t.miss, "total": t.total}
+            return {"rate": t.rate_for(key), "ok": t.ok, "late": t.late, "miss": t.miss, "total": t.total}
 
         def gv(ms):
             t = _sum_tri(data, ms)
-            return t.rate, f"{t.total} dars"
+            return t.rate_for(key), f"{t.total} dars"
         cols = [col("rate", "O'z vaqtida kirgan darslari" if teacher else "Darsga kirgan ulushi", "%", "up"),
-                col("total", "Jami darslar", "ta", "none")]
-        cols += ([col("miss", "Kech kirgan yoki kirmagan", "ta")] if teacher
-                 else [col("late", "Kech kirdi", "ta"), col("miss", "Kirmadi", "ta")])
+                col("total", "Jami darslar", "ta", "none"),
+                col("late", "Kech kirdi", "ta"), col("miss", "Kirmadi", "ta")]
         return Spec(cols, values, "rate", False, gv, "%")
-    if key in ("tashqari_kirish", "uxlash"):
-        counts = data.events.get(OFF_HOURS_CODE if key == "tashqari_kirish" else SLEEP_CODE, {})
+    if key in COUNT_KEYS:
+        counts = data.events.get(key, {})
 
         def values(pid):
             n = counts.get(pid, 0)
@@ -881,8 +995,8 @@ def spec_for(data: Data, key: str) -> Spec | None:
         def gv(ms):
             n = sum(counts.get(m.id, 0) for m in ms)
             return n, f"{sum(1 for m in ms if counts.get(m.id))} kishida uchragan"
-        return Spec([col("events", "Holatlar soni", "ta")], values, "events", True, gv, "ta")
-    return None  # forma — odamga bog'lanmaydi
+        return Spec([col("events", COUNT_COLUMN[key], "ta")], values, "events", True, gv, "ta")
+    return None
 
 
 def _trend(data: Data, key: str) -> dict:
@@ -898,12 +1012,9 @@ def _trend(data: Data, key: str) -> dict:
             value = data.att_daily[day].early if day in data.att_daily else 0
         elif key in ("dars_otkazish", "dars_qatnashish"):
             t = data.lessons_daily.get(day)
-            value = t.rate if t else None
-        elif key == "forma":
-            value = data.coat_daily.get(day, 0)
+            value = t.rate_for(key) if t else None
         else:
-            code = OFF_HOURS_CODE if key == "tashqari_kirish" else SLEEP_CODE
-            value = data.events_daily.get(code, Counter()).get(day, 0)
+            value = data.events_daily.get(key, Counter()).get(day, 0)
         points.append({"date": day.isoformat(), "value": value})
     rate = key in ("davomat", "dars_otkazish", "dars_qatnashish")
     return {"unit": "%" if rate else "ta", "points": points,
@@ -918,9 +1029,12 @@ _TREND_TITLE = {
     "erta_ketish": "Har kuni nechta erta ketish bo'lgan",
     "dars_otkazish": "Darslar har kuni o'z vaqtida boshlanganmi",
     "dars_qatnashish": "Har kuni darsga nechtasi kirgan",
-    "forma": "Har kuni nechta oq xalatsiz holat qayd etilgan",
-    "tashqari_kirish": "Har kuni nechta kirish qayd etilgan",
-    "uxlash": "Har kuni nechta uxlab qolish qayd etilgan",
+    "forma": "Har kuni nechta kishi oq xalatsiz yurgan",
+    "chekish": "Har kuni nechta chekish holati qayd etilgan",
+    "diqqat": "Har kuni nechta darsda diqqat past bo'lgan",
+    "darsdan_erta": "Har kuni nechta darsdan erta chiqilgan",
+    "darsga_kech": "Har kuni nechta darsga kech kirilgan",
+    "faollik": "Har kuni nechta darsda o'qituvchi faolligi past bo'lgan",
 }
 _TREND_AXIS = {
     "davomat": "Kelganlar ulushi, %",
@@ -928,9 +1042,12 @@ _TREND_AXIS = {
     "erta_ketish": "Erta ketish holatlari, ta",
     "dars_otkazish": "O'z vaqtida boshlangan darslar ulushi, %",
     "dars_qatnashish": "Darsga kirganlar ulushi, %",
-    "forma": "Holatlar soni, ta",
-    "tashqari_kirish": "Holatlar soni, ta",
-    "uxlash": "Holatlar soni, ta",
+    "forma": "Kishilar soni, ta",
+    "chekish": "Holatlar soni, ta",
+    "diqqat": "Darslar soni, ta",
+    "darsdan_erta": "Darslar soni, ta",
+    "darsga_kech": "Darslar soni, ta",
+    "faollik": "Darslar soni, ta",
 }
 _TREND_EXPLAIN = {
     "davomat": "Har bir ustun — o'sha kuni kelganlarning kelgan va kelmaganlar yig'indisiga nisbati.",
@@ -938,9 +1055,12 @@ _TREND_EXPLAIN = {
     "erta_ketish": "Har bir ustun — o'sha kuni ish tugashidan oldin oxirgi marta ko'ringanlar soni.",
     "dars_otkazish": "Har bir ustun — o'sha kuni tekshirilgan darslarning o'z vaqtida boshlangan ulushi.",
     "dars_qatnashish": "Har bir ustun — o'sha kungi dars yozuvlaridan darsda bo'lganlarning (kech kirganlar bilan) ulushi.",
-    "forma": "Har bir ustun — o'sha kuni qayd etilgan holatlar soni (xato deb belgilanganlarsiz).",
-    "tashqari_kirish": "Har bir ustun — o'sha kuni qayd etilgan holatlar soni (xato deb belgilanganlarsiz).",
-    "uxlash": "Har bir ustun — o'sha kuni qayd etilgan holatlar soni (xato deb belgilanganlarsiz).",
+    "forma": "Har bir ustun — o'sha kuni kuzatuvlarining ko'pida oq xalatsiz bo'lgan kishilar soni.",
+    "chekish": "Har bir ustun — o'sha kuni tanilgan odamga bog'langan chekish holatlari soni.",
+    "diqqat": "Har bir ustun — o'sha kuni diqqat balli past (sozlamadagi chegaradan) bo'lgan talaba-darslar soni.",
+    "darsdan_erta": "Har bir ustun — o'sha kuni dars tugashidan oldin chiqib ketilgan talaba-darslar soni.",
+    "darsga_kech": "Har bir ustun — o'sha kuni dars boshlanib ruxsat etilgan vaqtdan keyin xonaga kirgan talaba-darslar soni.",
+    "faollik": "Har bir ustun — o'sha kuni faollik balli past bo'lgan o'qituvchi darslari soni.",
 }
 
 
@@ -996,12 +1116,14 @@ def _tiles(data: Data, key: str) -> list[dict]:
         who = sum(1 for m in ms if m.id in data.lessons)
         if key == "dars_otkazish":
             return [
-                _tile("O'z vaqtida kirgan darslar ulushi", _fmt_pct(t.rate),
-                      hint=f"Tekshirilgan {t.total} darsdan o'z vaqtida boshlanganlari", tone=_rate_tone(t.rate)),
-                _tile("O'z vaqtida boshlangan", t.ok, "dars", None, "success"),
-                _tile("Kech boshlangan yoki o'tmagan", t.miss, "dars", "O'qituvchi dars boshida xonada ko'rinmagan",
+                _tile("O'z vaqtida kirgan darslar ulushi", _fmt_pct(svc.pct(t.ok, t.total)),
+                      hint=f"Tekshirilgan {t.total} darsdan o'z vaqtida boshlanganlari",
+                      tone=_rate_tone(svc.pct(t.ok, t.total))),
+                _tile("O'z vaqtida boshlangan", t.ok, "dars", f"{who} o'qituvchining darslari", "success"),
+                _tile("O'qituvchi kech kirgan", t.late, "dars", "Xonada ko'ringan, lekin ruxsat etilgan vaqtdan keyin",
+                      "warning"),
+                _tile("O'qituvchi kirmagan", t.miss, "dars", "Kamera xonani ko'rgan, o'qituvchi ko'rinmagan",
                       "danger"),
-                _tile("O'qituvchilar", who, "kishi", "Shu davrda tekshirilgan darsi bo'lganlar", "info"),
             ]
         return [
             _tile("Darsga kirganlar ulushi", _fmt_pct(t.rate),
@@ -1011,26 +1133,17 @@ def _tiles(data: Data, key: str) -> list[dict]:
             _tile("Darsga kech kirgan", t.late, "ta dars", None, "warning"),
             _tile("Darsga kirmagan", t.miss, "ta dars", f"{who} talabaning yozuvi bo'yicha", "danger"),
         ]
-    if key == "forma":
-        s = data.coat_status
-        return [
-            _tile("Oq xalatsiz ko'rilgan holatlar", sum(data.coat_daily.values()), "ta",
-                  "Operator xato deb belgilaganlari hisobga olinmagan", "danger"),
-            _tile("Operator tasdiqlagan", s.get("tasdiqlangan", 0), "ta", "Haqiqatan oq xalatsiz bo'lgan", "danger"),
-            _tile("Hali ko'rilmagan", s.get("yangi", 0), "ta", "Operator hali tekshirmagan", "warning"),
-            _tile("Xato deb belgilangan", s.get("rad_etilgan", 0), "ta", "Yuqoridagi songa kirmaydi", "neutral"),
-        ]
-    code = OFF_HOURS_CODE if key == "tashqari_kirish" else SLEEP_CODE
-    counts = data.events.get(code, {})
+    counts = data.events.get(key, {})
     ids = {m.id for m in ms}
     total = sum(n for pid, n in counts.items() if pid in ids)
     people = sum(1 for pid in counts if pid in ids)
+    unit = "kun" if key == "forma" else "ta"
     return [
-        _tile("Holatlar soni", total, "ta", "Operator xato deb belgilaganlari hisobga olinmagan",
+        _tile(COUNT_COLUMN[key], total, unit, "Kunlik video tahlil natijalari bo'yicha",
               "danger" if total else "neutral"),
         _tile("Necha kishida uchradi", people, "kishi", f"Ro'yxatdagi {len(ms)} kishidan",
               "warning" if people else "neutral"),
-        _tile("Bir kishiga o'rtacha", f"{total / people:.1f}".replace(".", ",") if people else "—", "ta",
+        _tile("Bir kishiga o'rtacha", f"{total / people:.1f}".replace(".", ",") if people else "—", unit,
               "Faqat holati aniqlangan kishilar bo'yicha"),
     ]
 
@@ -1115,24 +1228,17 @@ def summary_lines(data: Data, key: str, scope: str) -> list[str]:
             lines.append(f"Darsga kirganlar ulushi — {_fmt_pct(t.rate)} (kech kirganlar ham kirgan hisoblanadi).")
         else:
             lines.append(f"{scope}: {when} tekshirilgan {t.total} darsdan {t.ok} tasiga o'qituvchi o'z vaqtida "
-                         f"kirgan, {t.miss} tasiga kech kirgan yoki umuman kirmagan.")
-            lines.append(f"O'z vaqtida boshlangan darslar ulushi — {_fmt_pct(t.rate)}.")
-    elif key == "forma":
-        n = sum(data.coat_daily.values())
-        lines.append(f"{when.capitalize()} kamera {n} marta oq xalatsiz xodimni ko'rdi."
-                     if n else f"{when.capitalize()} oq xalatsiz xodim ko'rilmadi.")
-        lines.append("Bu signalda odamning ismi yozilmaydi, shuning uchun ro'yxat emas, faqat binolar bo'yicha "
-                     "taqsimot ko'rsatiladi.")
+                         f"kirgan, {t.late} tasiga kech kirgan, {t.miss} tasiga umuman kirmagan.")
+            lines.append(f"O'z vaqtida boshlangan darslar ulushi — {_fmt_pct(svc.pct(t.ok, t.total))}.")
     else:
-        code = OFF_HOURS_CODE if key == "tashqari_kirish" else SLEEP_CODE
-        counts = data.events.get(code, {})
+        counts = data.events.get(key, {})
         ids = {m.id for m in ms}
         n = sum(v for pid, v in counts.items() if pid in ids)
         people = sum(1 for pid in counts if pid in ids)
-        what = "ish vaqtidan tashqari kirish" if key == "tashqari_kirish" else "darsda uxlab qolish"
-        lines.append(f"{scope}: {when} {what} bo'yicha {n} ta holat qayd etildi — {people} kishida "
+        what = COUNT_WHAT[key]
+        lines.append(f"{scope}: {when} {n} ta {what} qayd etildi — {people} kishida "
                      f"(ro'yxatdagi {total} {who}dan)." if n
-                     else f"{scope}: {when} {what} bo'yicha birorta holat qayd etilmadi.")
+                     else f"{scope}: {when} {what} qayd etilmadi.")
 
     extra = note_for(data, key)
     if extra and extra not in lines:
@@ -1175,11 +1281,14 @@ _PEOPLE_TITLE = {
     "davomat": "Kim qancha kelgan",
     "kechikish": "Kim kech kelgan",
     "erta_ketish": "Kim erta ketgan",
-    "dars_otkazish": "Qaysi o'qituvchi darsga kech kirgan",
+    "dars_otkazish": "Qaysi o'qituvchi darsga kech kirgan yoki kirmagan",
     "dars_qatnashish": "Qaysi talaba darsga kirmagan",
-    "forma": "Odamlar",
-    "tashqari_kirish": "Kim ish vaqtidan tashqari kirgan",
-    "uxlash": "Kim darsda uxlab qolgan",
+    "forma": "Kim oq xalatsiz yurgan",
+    "chekish": "Kim chekkan",
+    "diqqat": "Qaysi talabaning diqqati past",
+    "darsdan_erta": "Kim darsdan erta chiqqan",
+    "darsga_kech": "Kim darsga kech kirgan",
+    "faollik": "Qaysi o'qituvchining darsdagi faolligi past",
 }
 _PEOPLE_HINT = {
     "davomat": "Eng kam kelgan kishi yuqorida. Faqat shu davrda kelgan yoki kelmagan deb yozilganlar ro'yxatda.",
@@ -1187,9 +1296,12 @@ _PEOPLE_HINT = {
     "erta_ketish": "Eng ko'p erta ketgan kishi yuqorida. Erta ketmaganlar ro'yxatga kirmaydi.",
     "dars_otkazish": "O'z vaqtida kirgan darslari eng kam o'qituvchi yuqorida.",
     "dars_qatnashish": "Darsga kirgan ulushi eng past talaba yuqorida.",
-    "forma": "Bu signalda ism yozilmaydi, shuning uchun ro'yxat yo'q.",
-    "tashqari_kirish": "Holati eng ko'p takrorlangan kishi yuqorida.",
-    "uxlash": "Holati eng ko'p takrorlangan kishi yuqorida.",
+    "forma": "Oq xalatsiz kunlari eng ko'p kishi yuqorida.",
+    "chekish": "Holati eng ko'p takrorlangan kishi yuqorida.",
+    "diqqat": "Diqqati past darslari eng ko'p talaba yuqorida.",
+    "darsdan_erta": "Eng ko'p erta chiqqan talaba yuqorida.",
+    "darsga_kech": "Eng ko'p kech kirgan talaba yuqorida.",
+    "faollik": "Faolligi past darslari eng ko'p o'qituvchi yuqorida.",
 }
 SORT_HINT = "Ustun nomini bosib tartibni o'zgartirish mumkin."
 
@@ -1199,9 +1311,12 @@ _BREAKDOWN_SUBTITLE = {
     "erta_ketish": "Har bir qatorda erta ketish holatlari soni",
     "dars_otkazish": "Har bir qatorda o'z vaqtida boshlangan darslar ulushi",
     "dars_qatnashish": "Har bir qatorda darsga kirganlar ulushi",
-    "forma": "Qaysi binoda necha marta qayd etilgan",
-    "tashqari_kirish": "Har bir qatorda holatlar soni",
-    "uxlash": "Har bir qatorda holatlar soni",
+    "forma": "Har bir qatorda oq xalatsiz kunlar soni",
+    "chekish": "Har bir qatorda holatlar soni",
+    "diqqat": "Har bir qatorda diqqati past darslar soni",
+    "darsdan_erta": "Har bir qatorda erta chiqilgan darslar soni",
+    "darsga_kech": "Har bir qatorda kech kirilgan darslar soni",
+    "faollik": "Har bir qatorda faolligi past darslar soni",
 }
 
 
@@ -1231,10 +1346,10 @@ def _empty_state(data: Data, key: str) -> dict:
     if key in ("dars_otkazish", "dars_qatnashish"):
         return {"title": "Tekshirilgan dars yo'q",
                 "description": f"{when.capitalize()} bu tanlov bo'yicha dars jadvalida tekshirilgan dars topilmadi."}
-    what = {"forma": "oq xalatsiz xodim", "tashqari_kirish": "ish vaqtidan tashqari kirish",
-            "uxlash": "darsda uxlab qolish"}[key]
+    what = COUNT_WHAT[key]
     return {"title": "Birorta holat qayd etilmagan",
-            "description": f"{when.capitalize()} {what} bo'yicha kamera hech nima qayd etmadi — bu yaxshi natija."}
+            "description": f"{when.capitalize()} {what} qayd etilmadi — bu yaxshi natija (yoki bu kunlar hali "
+                           "tahlil qilinmagan)."}
 
 
 def _row_out(m: Member, unit: str, values: dict) -> dict:
@@ -1242,23 +1357,36 @@ def _row_out(m: Member, unit: str, values: dict) -> dict:
             "photo_url": svc.photo_url(m.photo_key), "unit": unit, "values": values}
 
 
+EVIDENCE_COLUMN = {"key": "dalil", "label": "Video dalil", "unit": "ta", "better": "none", "type": "number"}
+
+
+def with_evidence(data: Data, key: str, spec: Spec | None) -> Spec | None:
+    """Odam qatoriga shu mezon bo'yicha video dalillar soni (2 daqiqalik
+    klip — odam kartasida ko'riladi). Dalil turi yo'q mezonda o'zgarmaydi."""
+    if spec is None or not finding_types(key):
+        return spec
+    base = spec.values
+
+    def values(pid):
+        row = base(pid)
+        if row is None:
+            return None
+        _total, clips = findings_for(data, key, pid)
+        return {**row, "dalil": clips or None}
+
+    return replace(spec, columns=[*spec.columns, EVIDENCE_COLUMN], values=values)
+
+
 def build_report(data: Data, key: str, group_title: str, group_of: Callable[[Member], GroupKey],
                  unit_label: Callable[[Member], str], limit: int | None = PEOPLE_LIMIT) -> dict:
-    spec = spec_for(data, key)
+    spec = with_evidence(data, key, spec_for(data, key))
     report: dict = {"tiles": _tiles(data, key), "trend": _trend(data, key), "note": note_for(data, key),
                     "blocked": blocker(data, key) is not None,
                     "columns": [], "people": [], "people_total": 0, "breakdown": None,
                     "people_title": _PEOPLE_TITLE[key], "people_hint": _PEOPLE_HINT[key],
                     "empty": None, "sort_key": None, "worst_desc": True}
-    if spec is None:  # forma
-        rows = [{"id": name, "name": name, "value": n, "detail": None, "headcount": None}
-                for name, n in data.coat_buildings.most_common()]
-        # drill=False: qatorlar — binolar, bo'linma emas; ustiga bosish
-        # "bolinma=<bino nomi>" filtri bilan butun hisobotni bo'shatib qo'yardi.
-        report["breakdown"] = {"title": "Binolar bo'yicha", "subtitle": "Qaysi binoda necha marta qayd etilgan",
-                               "unit": "ta", "better": "down", "rows": rows, "drill": False}
-        if not rows:
-            report["empty"] = _empty_state(data, key)
+    if spec is None:
+        report["empty"] = _empty_state(data, key)
         return report
 
     groups: dict[GroupKey, list[Member]] = defaultdict(list)
@@ -1345,7 +1473,8 @@ async def report(db: AsyncSession, kind: str, start: date_type, end: date_type, 
     for c in available:
         value, tone = indicator(data, c.key)
         stop = blocker(data, c.key)
-        criteria.append({"key": c.key, "label": c.label, "description": describe(c.key, data.policy, kind),
+        criteria.append({"key": c.key, "code": criterion_code(c.key, kind), "label": c.label,
+                         "description": describe(c.key, data.policy, kind),
                          "indicator": value, "tone": tone, "unavailable": stop, "available": stop is None})
     title, group_of = breakdown_level(kind, f, ctx.faculty_names, ctx.unit_of)
     body = build_report(data, key, title, group_of, unit_label_fn(ctx), limit)
@@ -1361,6 +1490,266 @@ async def report(db: AsyncSession, kind: str, start: date_type, end: date_type, 
         "criteria": criteria,
         "criterion": key,
         "report": body,
+    }
+
+
+# ─────────────────────────────────────────── guruh: talaba × mezon
+
+# Faqat kunlik video tahlildan (daily_person_criteria) keladigan mezonlar —
+# tahlil o'tmagan kunda ular "0" emas, "hali tahlil qilinmagan".
+NIGHTLY_ONLY = ("forma", "chekish")
+# Dars yozuvidan (lesson_attendance) — dars bo'lmagan kunda hisoblanmaydi.
+LESSON_BASED = ("darsga_kech", "darsdan_erta", "diqqat")
+
+
+def _cell(value: str, tone: str = "neutral", title: str = "", evidence: int = 0) -> dict:
+    return {"value": value, "tone": tone, "title": title, "evidence": evidence or None}
+
+
+def _tri_tone(rate: float | None) -> str:
+    if rate is None:
+        return "neutral"
+    return "success" if rate >= 100 else "danger" if rate <= 0 else "warning"
+
+
+def matrix_cell(data: Data, key: str, pid: uuid.UUID) -> dict:
+    """Bitta talabaning bitta mezon bo'yicha qisqa qiymati (guruh jadvali)."""
+    _total, clips = findings_for(data, key, pid)
+    one_day = data.start == data.end
+    if key in ("davomat", "kechikish"):
+        row = data.day_rows.get(pid) if one_day else None
+        a = data.att.get(pid)
+        if one_day:
+            status = (row or {}).get("status")
+            check_in = (row or {}).get("check_in")
+            at = f" {check_in.strftime('%H:%M')} da" if check_in else ""
+            if key == "davomat":
+                if status == "keldi":
+                    return _cell("keldi", "success", f"Keldi{at}", clips)
+                if status == "kech_keldi":
+                    return _cell("kech", "warning", f"Kech keldi{at}", clips)
+                if status == "kelmadi":
+                    return _cell("kelmadi", "danger", "Kun davomida kamerada ko'rinmadi", clips)
+                if status == "dam_olish":
+                    return _cell("dam", "neutral", "Dam olish kuni", clips)
+                return _cell("—", "neutral", "Bu kun uchun yozuv yo'q", clips)
+            if status == "kech_keldi":
+                return _cell(f"+{row['late']} daq", "warning", f"Kech keldi{at}", clips)
+            if status == "keldi":
+                return _cell("0", "neutral", f"O'z vaqtida keldi{at}", clips)
+            return _cell("—", "neutral", "Kelmagan yoki yozuv yo'q", clips)
+        if a is None or a.present + a.absent == 0:
+            return _cell("—", "neutral", "Bu davrda yozuv yo'q", clips)
+        if key == "davomat":
+            return _cell(f"{a.present}/{a.present + a.absent}", _rate_tone(a.rate),
+                         f"{a.present + a.absent} kundan {a.present} tasida kelgan (shundan {a.late} kunda kech)", clips)
+        return _cell(str(a.late), "warning" if a.late else "neutral",
+                     f"{a.late} kunda kech kelgan" if a.late else "Kech kelmagan", clips)
+    if key == "dars_qatnashish":
+        t = data.lessons.get(pid)
+        if t is None or t.total == 0:
+            return _cell("—", "neutral", "Tekshirilgan dars yo'q", clips)
+        return _cell(f"{t.ok + t.late}/{t.total}", _tri_tone(t.rate),
+                     f"{t.total} darsdan {t.ok + t.late} tasida bo'lgan ({t.late} tasiga kech), {t.miss} tasiga kirmagan",
+                     clips)
+    n = data.events.get(key, {}).get(pid, 0)
+    what = COUNT_WHAT.get(key, "holat")
+    if key == "chekish" and not n:
+        # Chekish — faqat aniqlangan holat soni; yo'q bo'lsa "—" (0 emas).
+        return _cell("—", "neutral", "Chekish qayd etilmagan", clips)
+    return _cell(str(n), "danger" if n else "neutral", f"{n} ta {what}" if n else f"{what.capitalize()} qayd etilmagan",
+                 clips)
+
+
+def coat_cell(seen_with: int, seen_without: int, base: dict, analysed: bool) -> dict:
+    """Oq xalat (buyurtmachi qarori, 2026-10-06): qoidabuzarlik qayd
+    etilmagan har talabada ✓; xalatsiz ko'rilgan bo'lsa — son (qizil). ✓ ning
+    izohi nima tekshirilganini aniq aytadi."""
+    if seen_without:
+        return base
+    if seen_with:
+        return _cell("✓", "success", f"Oq xalatda ko'rildi ({seen_with} kun)", base.get("evidence") or 0)
+    if analysed:
+        return _cell("✓", "success", "Oq xalatsiz holat qayd etilmagan")
+    return _cell("✓", "success", "Oq xalatsiz holat qayd etilmagan (bu kun video tahlil hali o'tkazilmagan)")
+
+
+def matrix_unavailable(data: Data, key: str, analysed: bool) -> str | None:
+    """Ustun nega hisoblanmayapti — "0" o'rniga sabab."""
+    stop = blocker(data, key)
+    if stop:
+        return stop
+    if key in NIGHTLY_ONLY and not analysed and not _has_data(data, key):
+        return ("Bu kun hali video tahlil qilinmagan: oq xalat va chekish NVR yozuvlaridan kechqurun aniqlanadi "
+                "(Video tahlil sahifasi).")
+    if key in LESSON_BASED and not data.lessons_daily and not _has_data(data, key):
+        return "Bu kun guruhning tekshirilgan darsi yo'q — dars jadvali yoki xona kamerasi biriktirilmagan."
+    return None
+
+
+async def group_matrix(db: AsyncSession, group: str, start: date_type, end: date_type) -> dict:
+    """Nazorat → guruh: har talaba qatorida hamma mezonlar (davomat, darsga
+    kirish, kech kirish, erta chiqish, oq xalat, chekish, diqqat) va video
+    dalillar soni. Sonlar /api/hisobot/report bilan bir xil hisobdan."""
+    kind = "talaba"
+    f = Filters(group=group)
+    ctx = await context(db, kind, start, end, f)
+    data = await collect(db, kind, start, end, f, ctx.scope, ctx.members)
+    ids = [m.id for m in ctx.members]
+    analysed = bool(ids) and bool(await db.scalar(
+        select(func.count()).select_from(DailyPersonCriteria)
+        .where(DailyPersonCriteria.student_staff_id.in_(ids), DailyPersonCriteria.day.between(start, end))
+    ))
+    criteria = []
+    for c in criteria_for(kind):
+        value, tone = indicator(data, c.key)
+        stop = matrix_unavailable(data, c.key, analysed)
+        if c.key == "forma" and stop and not blocker(data, c.key):
+            # Oq xalat ustuni doim ko'rsatiladi (✓ — qoidabuzarlik qayd
+            # etilmagan); tahlil o'tmagani izohda.
+            value, tone, stop = "0", "neutral", None
+        criteria.append({
+            "key": c.key, "code": criterion_code(c.key, kind), "label": c.label,
+            "description": describe(c.key, data.policy, kind),
+            "indicator": "—" if stop else value, "tone": "neutral" if stop else tone,
+            "unavailable": stop, "note": None if stop else note_for(data, c.key),
+        })
+    blocked = {c["key"] for c in criteria if c["unavailable"]}
+    # Oq xalat: kim xalatda, kim xalatsiz ko'rilgan (kunlik natija) — ✓ faqat ko'rilganga.
+    coat: dict = defaultdict(lambda: [0, 0])
+    if ids and analysed and "forma" not in blocked:
+        d = DailyPersonCriteria
+        for pid, status, n in (await db.execute(
+            select(d.student_staff_id, d.coat_status, func.count())
+            .where(d.student_staff_id.in_(ids), d.day.between(start, end), d.coat_status.in_(("kiygan", "kiymagan")))
+            .group_by(d.student_staff_id, d.coat_status)
+        )).all():
+            coat[pid][0 if status == "kiygan" else 1] += int(n)
+    people = []
+    for m in sorted(ctx.members, key=lambda m: svc.norm_name(m.name)):
+        cells = {c["key"]: (_cell("—", "neutral", c["unavailable"]) if c["key"] in blocked
+                            else matrix_cell(data, c["key"], m.id)) for c in criteria}
+        if "forma" in cells and "forma" not in blocked:
+            cells["forma"] = coat_cell(*coat.get(m.id, (0, 0)), cells["forma"], analysed)
+        people.append({"id": str(m.id), "full_name": m.name, "initials": svc.initials(m.name),
+                       "enrolled": m.enrolled, "cells": cells})
+    return {
+        "group": group,
+        "period": {"from": start.isoformat(), "to": end.isoformat(), "days": (end - start).days + 1},
+        "analysed": analysed,
+        "criteria": criteria,
+        "people": people,
+    }
+
+
+# Nazorat guruh jadvalida ko'rsatilmaydigan mezonlar (buyurtmachi qarori,
+# 2026-10-06; frontend: src/lib/groupCriteriaApi.ts HIDDEN_IN_GROUP).
+HIDDEN_IN_GROUP = ("dars_qatnashish", "darsga_kech", "darsdan_erta")
+
+
+def group_cell(view: Data, key: str, analysed: bool) -> dict:
+    """Bitta guruhning bitta mezon bo'yicha to'liq SONI (ixcham: value, tone,
+    kerak bo'lsa title). Nazorat qoidasi bilan bir xil (2026-10-06): davomat
+    va kechikish faqat yuzi borlar (ro'yxatdan o'tganlar) orasida."""
+    stop = blocker(view, key)
+    if stop:
+        return {"value": "—", "tone": "neutral", "title": stop}
+    if key in ("davomat", "kechikish"):
+        enrolled = [m for m in view.members if m.enrolled]
+        rows = [view.day_rows.get(m.id) or {} for m in enrolled]
+        present = sum(1 for r in rows if r.get("status") in PRESENT)
+        late = sum(1 for r in rows if r.get("status") == "kech_keldi")
+        if key == "kechikish":
+            return {"value": str(late), "tone": "warning" if late else "neutral"}
+        if not enrolled:
+            return {"value": "—", "tone": "neutral", "title": "Guruhda ro'yxatdan o'tgan talaba yo'q"}
+        rate = present * 100 / len(enrolled)
+        return {"value": f"{present}/{len(enrolled)}", "tone": _rate_tone(rate),
+                "title": f"Ro'yxatdan o'tgan {len(enrolled)} talabadan {present} tasi keldi ({late} tasi kech)"}
+    value, tone = indicator(view, key)
+    if key == "forma" and not analysed and value in ("0", "—"):
+        return {"value": "0", "tone": "neutral"}
+    if key == "chekish" and value == "0":
+        return {"value": "—", "tone": "neutral"}
+    return {"value": value, "tone": tone}
+
+
+DEMO_ATTENTION_MIN, DEMO_ATTENTION_MAX = 65, 90
+
+
+def demo_attention_percent(group: str, day: date_type) -> int:
+    """Namuna diqqat foizi (settings.demo_attention_percent): guruh + sana
+    bo'yicha barqaror, 65..90 oralig'ida — sahifa yangilanganda sakramaydi."""
+    import hashlib
+
+    digest = hashlib.sha256(f"{group}|{day.isoformat()}".encode()).digest()
+    span = DEMO_ATTENTION_MAX - DEMO_ATTENTION_MIN + 1
+    return DEMO_ATTENTION_MIN + int.from_bytes(digest[:4], "big") % span
+
+
+def demo_attention_cell(view: Data, group: str, day: date_type) -> dict:
+    """Davomati bor guruh — namuna foiz; kelgan yo'q — "—"."""
+    present = sum(1 for m in view.members if m.enrolled and (view.day_rows.get(m.id) or {}).get("status") in PRESENT)
+    if not present:
+        return {"value": "—", "tone": "neutral", "title": "Bu kun guruhdan kelgan talaba yo'q"}
+    pct = demo_attention_percent(group, day)
+    return {"value": f"{pct}%", "tone": "success" if pct >= 80 else "warning",
+            "title": f"Darsdagi diqqat darajasi: {pct}% (namuna qiymat — diqqat tahlili hali ishga tushmagan)"}
+
+
+async def groups_criteria(db: AsyncSession, start: date_type, end: date_type,
+                          faculty: str | None = None, course: int | None = None) -> dict:
+    """Nazorat → "Kriteriyalar bo'yicha": har guruh uchun har mezon bo'yicha
+    son (ustunma-ustun). Ma'lumot bir marta yig'iladi (collect), guruhlar
+    a'zolar bo'yicha bo'linadi. Guruh kaliti — Nazorat guruhlar ro'yxati bilan
+    bir xil (svc.aggregate_groups: nom, kurs — ko'pchilik ovozi)."""
+    kind = "talaba"
+    f = Filters(faculty=faculty)
+    ctx = await context(db, kind, start, end, f)
+    data = await collect(db, kind, start, end, f, ctx.scope, ctx.members)
+    ids = [m.id for m in ctx.members]
+    analysed = bool(ids) and bool(await db.scalar(
+        select(func.count()).select_from(DailyPersonCriteria)
+        .where(DailyPersonCriteria.student_staff_id.in_(ids), DailyPersonCriteria.day.between(start, end))
+    ))
+    criteria = [c for c in criteria_for(kind) if c.key not in HIDDEN_IN_GROUP]
+    by_group: dict[str, list[Member]] = defaultdict(list)
+    votes: dict[str, Counter] = defaultdict(Counter)
+    for m in ctx.members:
+        m_course, name = svc.student_group(m.raw)
+        if not name:
+            continue  # guruhi yozilmagan — Nazorat ro'yxatida ham yo'q
+        by_group[name].append(m)
+        votes[name][m_course] += 1
+    groups = []
+    for name, members in by_group.items():
+        g_course = votes[name].most_common(1)[0][0]
+        if course and g_course != course:
+            continue
+        view = replace(data, members=members)
+        groups.append({
+            "name": name,
+            "course": g_course,
+            "total": len(members),
+            "enrolled": sum(1 for m in members if m.enrolled),
+            "cells": {
+                c.key: demo_attention_cell(view, name, start)
+                if c.key == "diqqat" and settings.demo_attention_percent
+                else group_cell(view, c.key, analysed)
+                for c in criteria
+            },
+        })
+    groups.sort(key=lambda g: (-g["total"], g["name"]))
+    return {
+        "period": {"from": start.isoformat(), "to": end.isoformat(), "days": (end - start).days + 1},
+        "analysed": analysed,
+        "criteria": [
+            {"key": c.key, "code": criterion_code(c.key, kind),
+             "label": "Darsdagi diqqat darajasi (%)" if c.key == "diqqat" and settings.demo_attention_percent else c.label,
+             "description": describe(c.key, data.policy, kind)}
+            for c in criteria
+        ],
+        "groups": groups,
     }
 
 

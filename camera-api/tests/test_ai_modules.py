@@ -23,9 +23,13 @@ class TestAiModules:
         assert module_1["hasDetector"] is True
         zone = next(m for m in resp.json() if m["code"] == 2)
         assert zone["hasDetector"] is True
-        # Olib tashlangan modullar: #12 (beyjik, 2026-09-16) va ishonchsiz
-        # evristikalar #10, #13, #14, #15, #17, #23 (2026-09-24).
-        assert not {m["code"] for m in resp.json()} & {10, 12, 13, 14, 15, 17, 23}
+        # Olib tashlangan modullar: #12 (beyjik, 2026-09-16), #13, #14, #17, #23
+        # (2026-09-24). #10 (xalat) va #15 (chekish) 2026-10-04 da kunlik video
+        # tahlilda qaytdi (sinov rejimida).
+        codes = {m["code"] for m in resp.json()}
+        assert not codes & {12, 13, 14, 17, 23}
+        assert {10, 15} <= codes
+        assert all(m["maturity"] == "sinov" for m in resp.json() if m["code"] in (10, 15))
         # Aniqlik — statik raqam emas, ko'rib chiqilgan signallardan o'lchanadi.
         assert module_1["measuredPrecision"] is None
         assert module_1["accuracy"] == 0
@@ -36,17 +40,18 @@ class TestAiModules:
         rows = (await db_session.execute(select(AIModuleConfig))).scalars().all()
         assert rows and all(row.accuracy == 0 for row in rows)
 
-    async def test_student_attendance_module_is_off(self, client: AsyncClient, db_session: AsyncSession):
-        """#7 buyurtmachi qarori bilan to'xtatilgan — modul ro'yxatda qoladi."""
+    async def test_student_attendance_module_is_on(self, client: AsyncClient, db_session: AsyncSession):
+        """#7 2026-09-16 da to'xtatilgan edi; kunlik video tahlilda (2026-10-04)
+        dars xonalari ham ko'riladi va u qayta yoqilgan."""
         from app.jobs.module_status import is_module_active
 
         module = await _get_module(db_session, 7)
-        assert module.active is False
-        assert await is_module_active(db_session, 7) is False
+        assert module.active is True
+        assert await is_module_active(db_session, 7) is True
 
         headers = await auth_headers(client, "admin", "admin123")
         listed = (await client.get("/api/ai-modules", headers=headers)).json()
-        assert next(m for m in listed if m["code"] == 7)["active"] is False
+        assert next(m for m in listed if m["code"] == 7)["active"] is True
 
     async def test_activating_a_module_with_a_real_detector_but_zero_accuracy_succeeds(
         self, client: AsyncClient, db_session: AsyncSession
