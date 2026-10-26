@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Cigarette, Clock, DoorOpen, FileSpreadsheet, GraduationCap, Shirt, UserCheck, UserX, Users } from 'lucide-react';
+import { Clock, DoorOpen, FileSpreadsheet, GraduationCap, Shirt, UserCheck, UserX, Users } from 'lucide-react';
 import {
   Badge,
   Button,
@@ -227,7 +227,6 @@ export default function ResultsTab({ lastDay }: { lastDay: string | null }) {
           tone="danger"
           onClick={() => toggle('xalatsiz')}
         />
-        <StatTile label="Chekish" value={s?.smoking ?? '—'} icon={Cigarette} tone="danger" onClick={() => toggle('chekish')} />
       </div>
       {s && (s.teacherOnTime || s.teacherLate || s.teacherAbsent) ? (
         <div className="flex flex-wrap gap-2">

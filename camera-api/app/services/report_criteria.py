@@ -250,18 +250,6 @@ def _coat_criterion(counts: dict[str, int]) -> ReportCriterionOut:
     )
 
 
-def _smoking_criterion(counts: dict[str, int]) -> ReportCriterionOut:
-    criterion = _events_criterion(
-        "chekish",
-        "Chekish",
-        "Hovli va koridorlarda qo'lni og'izga takror ko'tarish — operator tasdiqlaydi",
-        (SMOKING_CODE,),
-        counts,
-        None if sum(counts.values()) else "Bu davrda bunday holat qayd etilmadi.",
-    )
-    return criterion
-
-
 def _events_criterion(
     key: str, title: str, subtitle: str, codes: tuple[int, ...], counts: dict[str, int], note: str | None
 ) -> ReportCriterionOut:
@@ -419,7 +407,6 @@ async def build_criteria(db: AsyncSession, population: str, period: Period) -> R
         )
 
     criteria.append(_coat_criterion(await _coat_counts(db, population, period)))
-    criteria.append(_smoking_criterion(await _event_counts(db, (SMOKING_CODE,), period, include_trial=True)))
 
     return ReportCriteriaOut(
         population=population,

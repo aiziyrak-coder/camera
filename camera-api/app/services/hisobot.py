@@ -608,7 +608,6 @@ CRITERIA = [
               (holatlar.LESSON_EARLY,)),
     Criterion("erta_ketish", "Ishdan erta ketganlar", "", ("xodim",), EARLY_LEAVE_CODE, (holatlar.WORK_EARLY,)),
     Criterion("forma", "Oq xalatsiz yurganlar", "", KINDS, COAT_CODE, (holatlar.NO_COAT,)),
-    Criterion("chekish", "Chekkanlar", "", KINDS, SMOKING_CODE, (holatlar.SMOKING,)),
     Criterion("diqqat", "Darsda diqqati past talabalar", "", ("talaba",), ATTENTION_CODE, (holatlar.LOW_ATTENTION,)),
     Criterion("faollik", "Darsda faolligi past o'qituvchilar", "", ("xodim",), ACTIVITY_CODE,
               (holatlar.LOW_ACTIVITY,)),

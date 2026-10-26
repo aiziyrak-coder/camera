@@ -64,16 +64,16 @@ def test_criteria_are_separate_per_kind():
     # 2026-10-04: uxlash (#20) va ish vaqtidan tashqari kirish (#3) olib tashlandi;
     # oq xalat, chekish, diqqat, darsga kech kirish, darsdan erta chiqish va
     # o'qituvchi faolligi — kunlik video tahlildan.
-    assert {"davomat", "kechikish", "dars_qatnashish", "darsga_kech", "darsdan_erta", "diqqat", "forma",
-            "chekish"} == student
-    assert {"davomat", "kechikish", "erta_ketish", "dars_otkazish", "faollik", "forma", "chekish"} == staff
+    # 2026-10-26: chekish (#15) olib tashlandi.
+    assert {"davomat", "kechikish", "dars_qatnashish", "darsga_kech", "darsdan_erta", "diqqat", "forma"} == student
+    assert {"davomat", "kechikish", "erta_ketish", "dars_otkazish", "faollik", "forma"} == staff
 
 
 def test_every_customer_criterion_has_a_report():
     """Buyurtmachi ro'yxatidagi 9 kriteriyaning har biri hisobotda bor va
     ro'yxat tartibida (6, 7, 8, 9, 10, 15, 19, 21, 22)."""
     codes = {hisobot.criterion_code(c.key, kind) for kind in hisobot.KINDS for c in hisobot.criteria_for(kind)}
-    assert codes == {6, 7, 8, 9, 10, 15, 19, 21, 22}
+    assert codes == {6, 7, 8, 9, 10, 19, 21, 22}  # 15 (chekish) — 2026-10-26 olib tashlandi
     order = [hisobot.criterion_code(c.key, "talaba") for c in hisobot.criteria_for("talaba")]
     assert order == sorted(order)
     order = [hisobot.criterion_code(c.key, "xodim") for c in hisobot.criteria_for("xodim")]
@@ -154,14 +154,13 @@ async def test_coat_and_smoking_are_named_per_person(client, admin, world, db_se
     await db_session.commit()
     params = {"from": world.yesterday.isoformat(), "to": world.today.isoformat()}
     data = await _get(client, admin, kind="talaba", criterion="forma", **params)
-    assert _ind(data, "forma") == "2" and _ind(data, "chekish") == "2"
+    assert _ind(data, "forma") == "2"
     assert [p["full_name"] for p in data["report"]["people"]] == ["Aliyev Anvar"]
     assert data["report"]["people"][0]["values"]["events"] == 2
     assert {p["value"] for p in data["report"]["trend"]["points"]} == {1}
-    staff = await _get(client, admin, kind="xodim", criterion="chekish", **params)
-    assert _ind(staff, "forma") == "0" and _ind(staff, "chekish") == "1"
-    assert [p["full_name"] for p in staff["report"]["people"]] == ["Rahimov Bobur"]
-    assert any("chekish" in line for line in staff["report"]["summary"])
+    staff = await _get(client, admin, kind="xodim", criterion="forma", **params)
+    assert _ind(staff, "forma") == "0"
+    assert all(c["key"] != "chekish" for c in staff["criteria"])
 
 
 async def test_staff_punctuality_lateness_and_units(client, admin, world):
@@ -393,7 +392,7 @@ async def test_group_matrix_lists_every_student_with_every_criterion(client, adm
     # Faol a'zolar alifbo tartibida; XDI-2301 (Komilov) va faol emaslar yo'q.
     assert names == ["Aliyev Anvar", "Botirova Nigora", "Choriyev Sardor", "Davronov Jasur", "Ergasheva Laylo"]
     keys = [c["key"] for c in body["criteria"]]
-    assert keys[:2] == ["davomat", "kechikish"] and {"forma", "chekish", "diqqat"} <= set(keys)
+    assert keys[:2] == ["davomat", "kechikish"] and {"forma", "diqqat"} <= set(keys) and "chekish" not in keys
     cells = {p["full_name"]: p["cells"] for p in body["people"]}
     assert cells["Aliyev Anvar"]["davomat"]["value"] == "keldi"
     assert cells["Botirova Nigora"]["davomat"]["value"] == "kech"

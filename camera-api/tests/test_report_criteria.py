@@ -156,25 +156,13 @@ class TestCriteriaCards:
         assert davomat_again["note"] and "yuzi" in davomat_again["note"]
 
     async def test_event_criteria_carry_module_codes(self, client: AsyncClient, db_session, people):
-        # Chekish (#15) sinov rejimida ham kartada sanaladi — operator
-        # uni «Tekshiruv»da tasdiqlaydi.
-        db_session.add(
-            Event(
-                camera_name="Hovli", building="1-bino", module_code=15,
-                module_name="Chekish / elektron sigareta", group="D", confidence=70,
-                severity="o'rta", status="yangi", is_trial=True,
-            )
-        )
-        await db_session.commit()
+        # 2026-10-26: chekish (#15) olib tashlandi — kartasi yo'q.
         headers = await auth_headers(client, "admin", "admin123")
         body = (
             await client.get("/api/reports/criteria", headers=headers, params={"population": "xodim", "period": "bugun"})
         ).json()
         keys = {item["key"] for item in body["criteria"]}
-        assert "off_hours" not in keys and "uxlash" not in keys
-        smoking = next(item for item in body["criteria"] if item["key"] == "chekish")
-        assert smoking["detail"] == "events" and smoking["moduleCodes"] == [15]
-        assert smoking["total"] == 1
+        assert "off_hours" not in keys and "uxlash" not in keys and "chekish" not in keys
         punctuality = next(item for item in body["criteria"] if item["key"] == "dars_intizomi")
         assert punctuality["moduleCodes"] == [22]
 

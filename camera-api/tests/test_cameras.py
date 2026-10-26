@@ -421,8 +421,9 @@ class TestCameraExcludedModules:
         # 2026-10-06: 1 (begona shaxs) qaytdi -> 10 ta; real vaqt testlari
         # uchun eski 3, 20, 26 ham bor (tests/legacy_modules.py).
         codes = {row["code"] for row in body}
-        assert {1, 6, 7, 8, 9, 10, 15, 19, 21, 22} <= codes
-        assert len(body) == 13
+        # 2026-10-26: chekish (#15) olib tashlandi.
+        assert {1, 6, 7, 8, 9, 10, 19, 21, 22} <= codes and 15 not in codes
+        assert len(body) == 12
         assert all("code" in row and "name" in row and "hasDetector" in row for row in body)
         assert not codes & {4, 5, 11, 12, 13, 14, 16, 17, 18, 23, 24, 25}
 

@@ -213,7 +213,7 @@ async def test_plan_creates_jobs_only_for_mapped_cameras(campus, db_session):
         kinds.setdefault(job.kind, set()).add(job.camera_id)
     assert kinds["kirish"] == {campus["cam_ids"]["door"]}
     assert kinds["dars"] == {campus["cam_ids"]["room"]}
-    assert kinds["chekish"] == {campus["cam_ids"]["yard"]}
+    assert "chekish" not in kinds  # 2026-10-26: chekish (#15) olib tashlandi
     assert run.jobs_total == len(jobs) and run.frames_planned > 0
     assert run.window_start == at(7, 0) and run.window_end == at(20, 0)
 
@@ -224,7 +224,7 @@ async def test_full_day_results(campus, db_session):
     assert run.status == "tugadi", run.error
     assert run.jobs_failed == 0
     stats = run.stats
-    assert stats["kelganlar"] == 4 and stats["chekish"] == 1
+    assert stats["kelganlar"] == 4 and not stats.get("chekish")
 
     records = {
         str(r.student_staff_id): r
@@ -243,7 +243,7 @@ async def test_full_day_results(campus, db_session):
         for r in (await db_session.execute(select(DailyPersonCriteria).where(DailyPersonCriteria.day == DAY))).scalars()
     }
     x = daily[people["X"]]
-    assert x.late_minutes == 40 and x.early_leave == "erta_ketdi" and x.smoking_events == 1
+    assert x.late_minutes == 40 and x.early_leave == "erta_ketdi" and not x.smoking_events
     assert x.coat_status is None  # buxgalter — xalat talab qilinmaydi va namuna yo'q
     t = daily[people["T"]]
     assert t.teacher_lessons == 1 and t.teacher_on_time == 1 and t.teacher_activity is not None
@@ -272,9 +272,7 @@ async def test_full_day_results(campus, db_session):
 
     events = (await db_session.execute(select(Event).order_by(Event.module_code))).scalars().all()
     by_code = {e.module_code: e for e in events}
-    assert set(by_code) == {10, 15}
-    assert by_code[15].person_name == "Xolmatov Buxgalter" and by_code[15].occurred_at == at(12, 0, 5)
-    assert by_code[15].is_trial and by_code[15].details["source"] == "video_tahlil"
+    assert set(by_code) == {10}  # chekish (#15) — 2026-10-26 olib tashlandi
     assert by_code[10].person_name == "Valiyeva Talaba" and by_code[10].snapshot_key == "dalil.jpg"
 
     visits = (await db_session.execute(select(func.count()).select_from(PresenceVisit))).scalar_one()
@@ -305,7 +303,7 @@ async def test_recompute_is_idempotent_and_keeps_manual_records(campus, db_sessi
         "lesson": await db_session.scalar(select(func.count()).select_from(LessonAttendance)),
         "obs_runs": await db_session.scalar(select(func.count(func.distinct(VideoObservation.run_id)))),
     }
-    assert counts == {"records": 5, "daily": 5, "events": 2, "lesson": 3, "obs_runs": 1}
+    assert counts == {"records": 5, "daily": 5, "events": 1, "lesson": 3, "obs_runs": 1}
     manual = await db_session.get(AttendanceRecord, record_id)
     assert manual.source == "qolda" and manual.check_in == time(8, 0)
 
@@ -612,7 +610,7 @@ async def test_every_finding_is_recorded_with_moment_and_camera(campus, db_sessi
 
     assert codes("S2") == [8, 9, 10, 19]  # darsga kech, darsdan erta, xalatsiz, diqqat past
     assert codes("S3") == [7]  # darsda ko'rinmadi
-    assert codes("X") == [6, 9, 15]  # ishga kech, ishdan erta, chekish
+    assert codes("X") == [6, 9]  # ishga kech, ishdan erta
     assert codes("S1") == [7]  # 08:20 — talaba uchun kech (08:10 dan keyin)
     # O'qituvchi 9 ta o'rta klipning 2 tasida (22%), harakat 50: 0,4*22 + 0,6*50 = 39 < 40.
     assert codes("T") == [21]
@@ -622,7 +620,6 @@ async def test_every_finding_is_recorded_with_moment_and_camera(campus, db_sessi
     assert datetime.fromisoformat(s2[19]["vaqt"]) == at(9, 27, 31)  # telefon ko'ringan payt
     x = {item["kod"]: item for item in daily[people["X"]].details["dalillar"]}
     assert x[6]["kamera_id"] == str(cams["door"]) and datetime.fromisoformat(x[6]["vaqt"]) == at(8, 40)
-    assert x[15]["kamera_id"] == str(cams["yard"])
     # Sinovda manba yo'q — klip kesilmadi, sababi yozildi (natija baribir bor).
     assert all(item["klip"] is None and item.get("klip_xato") for item in daily[people["S2"]].details["dalillar"])
 

@@ -187,7 +187,6 @@ export const RESULT_FILTERS = [
   { value: 'darsdan_erta', label: 'Darsdan erta chiqqanlar' },
   { value: 'diqqat_past', label: 'Diqqati past (<60)' },
   { value: 'xalatsiz', label: 'Oq xalatsiz' },
-  { value: 'chekish', label: 'Chekish holati' },
   { value: 'oqituvchi_kech', label: "O'qituvchi kechikkan/kelmagan" },
   { value: 'holatli', label: 'Holati (dalili) borlar' },
 ] as const;
