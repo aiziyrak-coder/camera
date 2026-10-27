@@ -270,9 +270,9 @@ async def test_results_excel_export(client, admin, operator, db_session):
     names = [ws.cell(row=r, column=1).value for r in range(5, ws.max_row + 1)]
     assert names == ["Aliyev A", "Boboyev B", "Karimova K"]
     aliyev = [ws.cell(row=5, column=c).value for c in range(1, 21)]
-    assert aliyev[3] == "Kech keldi" and aliyev[6] == 12 and aliyev[12] == "Kiymagan" and aliyev[14] == 1
+    assert aliyev[3] == "Kech keldi" and aliyev[6] == 12 and aliyev[12] == "Kiymagan"
     summary = {wb["Xulosa"].cell(row=r, column=1).value: wb["Xulosa"].cell(row=r, column=2).value for r in range(3, 18)}
-    assert summary["Kelmadi"] == 1 and summary["Chekish holatlari"] == 1
+    assert summary["Kelmadi"] == 1 and "Chekish holatlari" not in summary  # 2026-10-26 olib tashlandi
     only_staff = await client.get("/api/video-tahlil/natijalar/export.xlsx",
                                   params={"day": day.isoformat(), "type": "xodim"}, headers=admin)
     ws = load_workbook(BytesIO(only_staff.content))["Natijalar"]

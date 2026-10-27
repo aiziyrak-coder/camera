@@ -81,12 +81,6 @@ export default function PersonCriteriaTab({ personId, isStudent }: { personId: s
           <span className="text-muted">—</span>
         ),
     },
-    {
-      key: 'smoking',
-      header: 'Chekish',
-      align: 'right',
-      cell: (r) => (r.smokingEvents ? <span className="font-medium text-danger">{r.smokingEvents}</span> : '—'),
-    },
   ];
 
   return (

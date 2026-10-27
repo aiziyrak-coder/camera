@@ -55,7 +55,7 @@ export default function AppShell() {
   // menyudan (yoki xatcho'pdan) kirilsa, ro'yxat allaqachon ko'z oldida
   // turgan bo'lsa ham qizil "12" osilib qolaverardi.
   useEffect(() => {
-    if (location.pathname === '/hodisalar') setUnreadEvents(0);
+    if (location.pathname === '/tekshiruv') setUnreadEvents(0);
   }, [location.pathname]);
   useEffect(() => {
     if (!mobileNavOpen) return;
@@ -76,7 +76,7 @@ export default function AppShell() {
 
   const openEvents = useCallback(() => {
     setUnreadEvents(0);
-    navigate('/hodisalar');
+    navigate('/tekshiruv');
   }, [navigate]);
 
   const shellValue = useMemo(() => ({ setPageMeta: setMeta, presentation: presentation.active, inShell: true }), [presentation.active]);

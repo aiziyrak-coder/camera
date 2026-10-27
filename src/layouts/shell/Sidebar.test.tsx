@@ -29,7 +29,7 @@ function renderSidebar(pathname: string, collapsed = false) {
 
 describe('Sidebar', () => {
   it('shows full item labels without internal index codes', () => {
-    renderSidebar('/hodisalar');
+    renderSidebar('/tekshiruv');
     for (const item of NAV_SECTIONS.flatMap((section) => section.items)) {
       expect(screen.getByRole('link', { name: item.label })).toBeInTheDocument();
       expect(screen.queryByText(item.code)).not.toBeInTheDocument();
@@ -38,8 +38,8 @@ describe('Sidebar', () => {
   }, 20_000);
 
   it('marks the active item for screen readers, not only by colour', () => {
-    renderSidebar('/hodisalar');
-    const active = screen.getByRole('link', { name: 'Hodisalar' });
+    renderSidebar('/tekshiruv');
+    const active = screen.getByRole('link', { name: 'Tekshiruv' });
     expect(active).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('link', { name: 'Talabalar' })).not.toHaveAttribute('aria-current');
   });
@@ -47,18 +47,18 @@ describe('Sidebar', () => {
   it('counts the items in each section header', () => {
     renderSidebar('/');
     const monitoring = screen.getByRole('button', { name: /Monitoring/ });
-    expect(within(monitoring).getByLabelText('6 ta band')).toHaveTextContent('06');
+    expect(within(monitoring).getByLabelText('3 ta band')).toHaveTextContent('03');
   });
 
   it('keeps the selected date on attendance links only', () => {
     renderSidebar('/');
     expect(screen.getByRole('link', { name: 'Talabalar' })).toHaveAttribute('href', '/talabalar?sana=2026-09-21');
-    expect(screen.getByRole('link', { name: 'Hodisalar' })).toHaveAttribute('href', '/hodisalar');
+    expect(screen.getByRole('link', { name: 'Tekshiruv' })).toHaveAttribute('href', '/tekshiruv');
   });
 
   it('keeps every page reachable when collapsed', () => {
     renderSidebar('/', true);
-    expect(screen.getByRole('link', { name: 'Hodisalar' })).toBeInTheDocument();
-    expect(screen.queryByText('HOD')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Tekshiruv' })).toBeInTheDocument();
+    expect(screen.queryByText('TEK')).not.toBeInTheDocument();
   });
 });

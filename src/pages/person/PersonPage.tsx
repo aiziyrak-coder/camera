@@ -342,7 +342,7 @@ export default function PersonPage() {
     // tab hisoblagichida ko'rsatish "bu davrda 20 marta ko'ringan" degan
     // yolg'on ma'no berardi.
     { id: 'harakatlar', label: "Qayerda ko'ringan", icon: Footprints, count: visitsCapped ? null : (data?.recentVisits.length ?? null) },
-    // Kunlik video tahlil: xalat, diqqat, chekish, o'qituvchi faolligi.
+    // Kunlik video tahlil: xalat, diqqat, o'qituvchi faolligi.
     { id: 'kriteriyalar', label: 'Kriteriyalar', icon: FileVideo },
   ];
   const [tab, setTab] = useUrlTab(tabs, { defaultTab: 'davomat' });

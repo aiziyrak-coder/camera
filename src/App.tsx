@@ -5,7 +5,7 @@ import AppShell from './layouts/AppShell';
 import MinimalLayout from './layouts/MinimalLayout';
 import { RequireAuth, RequirePermission } from './layouts/guards';
 import { legacyRedirect } from './layouts/legacyRoutes';
-import { ALL_NAV_ITEMS, homeForRole, isPathAllowedForRole } from './layouts/shell/navConfig';
+import { ALL_NAV_ITEMS, ROLE_HOME, homeForRole, isPathAllowedForRole } from './layouts/shell/navConfig';
 import LoginPage from './pages/admin/LoginPage';
 import ResetPasswordPage from './pages/admin/ResetPasswordPage';
 import { useAuth } from './lib/auth';
@@ -29,16 +29,13 @@ const KafedrasPage = lazyPage(() => import('./pages/teachers/KafedrasPage'));
 const KafedraPage = lazyPage(() => import('./pages/teachers/KafedraPage'));
 const PersonPage = lazyPage(() => import('./pages/person/PersonPage'));
 const PersonLocatorPage = lazyPage(() => import('./pages/person/PersonLocatorPage'));
-const MapPage = lazyPage(() => import('./pages/map/MapPage'));
 const WorkHoursPage = lazyPage(() => import('./pages/settings/WorkHoursPage'));
 const SystemPage = lazyPage(() => import('./pages/settings/SystemPage'));
 const PrivacyPage = lazyPage(() => import('./pages/settings/PrivacyPage'));
 
 // Mavjud sahifalar — yangi manzillarda, 2-bosqichda dizayn tizimiga ko'chiriladi.
-const EventsPage = lazyPage(() => import('./pages/admin/EventsPage'));
 const ReviewPage = lazyPage(() => import('./pages/review/ReviewPage'));
 const DarsJadvaliPage = lazyPage(() => import('./pages/admin/DarsJadvaliPage'));
-const AccessPage = lazyPage(() => import('./pages/access/AccessPage'));
 const HisobotPage = lazyPage(() => import('./pages/admin/HisobotPage'));
 const VideoAnalysisPage = lazyPage(() => import('./pages/analysis/VideoAnalysisPage'));
 const VideoWallPage = lazyPage(() => import('./pages/admin/VideoWallPage'));
@@ -61,6 +58,21 @@ function VideoWallRoute() {
   const [params] = useSearchParams();
   if (params.get('view')) return <Navigate to={`/videodevor/ekran?${params.toString()}`} replace />;
   return <VideoWallPage />;
+}
+
+/** / — foydalanuvchiga ochiq birinchi menyu bo'limiga. */
+function HomeRedirect() {
+  const { role } = useAuth();
+  const { can } = usePermissions();
+  const roleHome = ROLE_HOME[role as keyof typeof ROLE_HOME];
+  if (roleHome) return <Navigate to={roleHome} replace />;
+  const first = ALL_NAV_ITEMS.find(
+    (item) =>
+      (!item.permission || can(item.permission, role)) &&
+      (!item.anyOf || item.anyOf.some((key) => can(key, role))) &&
+      isPathAllowedForRole(role, item.to),
+  );
+  return <Navigate to={first?.to ?? '/tuzilma'} replace />;
 }
 
 /** /sozlamalar — foydalanuvchiga ochiq birinchi sozlama bo'limiga. */
@@ -129,8 +141,9 @@ export default function App() {
           </Route>
 
           <Route element={<RequireAuth />}>
-            {/* Konsol — bosh ekran: yon menyusiz, bitta oyna. */}
-            <Route path="/" element={<ConsoleShell />} />
+            {/* Bosh sahifa — menyudagi birinchi ochiq bo'lim. Nazorat konsoli,
+                xarita, hodisalar va turniketlar olib tashlandi (2026-10-27). */}
+            <Route path="/" element={<HomeRedirect />} />
             {/* Videodevor — ikkinchi monitor uchun menyusiz, to'liq ekran. */}
             <Route element={<RequirePermission permission="viewLive" />}>
               <Route path="/videodevor/ekran" element={<VideoWallPage standalone />} />
@@ -163,16 +176,16 @@ export default function App() {
                 <Route path="/shaxs-qidirish" element={<PersonLocatorPage />} />
                 {/* Video arxiv o'chirilgan (2026-09-26): yozuvlar NVR'da. */}
                 <Route path="/arxiv" element={<Navigate to="/" replace />} />
-                <Route path="/xarita" element={<MapPage />} />
+                <Route path="/xarita" element={<Navigate to="/" replace />} />
                 {/* Olib tashlangan sahifa (2026-09-19): bo'sh edi, chalg'itardi. */}
                 <Route path="/darslar" element={<Navigate to="/" replace />} />
               </Route>
               <Route element={<RequirePermission permission="reviewEvents" />}>
-                <Route path="/hodisalar" element={<EventsPage />} />
+                <Route path="/hodisalar" element={<Navigate to="/tekshiruv" replace />} />
                 <Route path="/tekshiruv" element={<ReviewPage />} />
               </Route>
               <Route element={<RequirePermission permission="manageIntegrations" />}>
-                <Route path="/turniketlar" element={<AccessPage />} />
+                <Route path="/turniketlar" element={<Navigate to="/" replace />} />
               </Route>
               <Route element={<RequirePermission anyOf={['viewReports', 'manageAttendance', 'systemSettings']} />}>
                 <Route path="/kunlik-tahlil" element={<VideoAnalysisPage />} />

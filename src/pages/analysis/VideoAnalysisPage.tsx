@@ -15,7 +15,7 @@ type AnalysisTab = 'natijalar' | 'tahlil' | 'nvr';
 const ACTIVE_REFRESH_MS = 10_000;
 
 /** Kunlik video tahlil: kun oxirida NVR yozuvlaridan hisoblangan
- *  kriteriyalar (davomat, darslar, diqqat, xalat, chekish, o'qituvchi). */
+ *  kriteriyalar (davomat, darslar, diqqat, xalat, o'qituvchi). */
 export default function VideoAnalysisPage() {
   const { token, role } = useAuth();
   const { can } = usePermissions();

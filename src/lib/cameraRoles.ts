@@ -13,13 +13,13 @@ export const ROOM_TYPE_LABELS: Record<RoomType, string> = {
 
 /** Qaysi modullar shu turda ishlashi — admin tanlayotganda ko'rsatiladi. */
 export const ROOM_TYPE_HINTS: Record<RoomType, string> = {
-  kirish: 'Kunlik davomat, erta ketish, begona shaxs, oq xalat, chekish',
+  kirish: 'Kunlik davomat, erta ketish, begona shaxs, oq xalat',
   auditoriya: 'Dars davomati, darsga kechikish, diqqat, o‘qituvchi faolligi, oq xalat',
-  laboratoriya: 'Oq xalat, chekish',
-  koridor: 'Oq xalat, chekish',
-  ofis: 'Oq xalat, chekish',
-  cheklangan: 'Begona shaxs, oq xalat, chekish',
-  tashqi: 'Begona shaxs, chekish',
+  laboratoriya: 'Oq xalat',
+  koridor: 'Oq xalat',
+  ofis: 'Oq xalat',
+  cheklangan: 'Begona shaxs, oq xalat',
+  tashqi: 'Begona shaxs',
 };
 
 export const ROOM_TYPE_OPTIONS = (Object.keys(ROOM_TYPE_LABELS) as RoomType[]).map((value) => ({

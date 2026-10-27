@@ -134,15 +134,15 @@ describe('Kriteriyalar bo‘yicha — guruhlar jadvali', () => {
       analysed: false,
       criteria: [
         { key: 'davomat', code: 7, label: 'Kelgan-kelmagani', description: '' },
-        { key: 'chekish', code: 15, label: 'Chekkanlar', description: '' },
+        { key: 'forma', code: 10, label: 'Oq xalatsiz yurganlar', description: '' },
       ],
       groups: [
-        { name: 'TPI-126', course: 1, total: 23, enrolled: 12, cells: { davomat: { value: '8/12', tone: 'warning' as const }, chekish: { value: '—', tone: 'neutral' as const } } },
+        { name: 'TPI-126', course: 1, total: 23, enrolled: 12, cells: { davomat: { value: '8/12', tone: 'warning' as const }, forma: { value: '—', tone: 'neutral' as const } } },
       ],
     };
     render(<GroupsCriteriaTable data={data} rows={data.groups} loading={false} error={null} onOpen={(name) => opened.push(name)} />);
     expect(screen.getAllByText('Davomat').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Chekish').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Oq xalat').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Ro‘yxatdan o‘tgan').length).toBeGreaterThan(0);
     screen.getAllByText('8/12')[0].click();
     expect(opened).toEqual(['TPI-126']);

@@ -60,7 +60,6 @@ export const CRITERION_SHORT: Record<string, string> = {
   darsga_kech: 'Darsga kech',
   darsdan_erta: 'Erta chiqdi',
   forma: 'Oq xalat',
-  chekish: 'Chekish',
   diqqat: 'Diqqat',
   erta_ketish: 'Erta ketdi',
   dars_otkazish: 'Darsga kirdi',

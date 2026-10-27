@@ -4,7 +4,7 @@
  *  va hash saqlanadi. */
 const LEGACY_MAP: Record<string, string> = {
   '/admin': '/',
-  '/admin/events': '/hodisalar',
+  '/admin/events': '/tekshiruv',
   '/admin/students-staff': '/reestr',
   '/admin/attendance': '/talabalar',
   '/admin/presence': '/oqituvchilar',
@@ -18,7 +18,7 @@ const LEGACY_MAP: Record<string, string> = {
   '/admin/system-log': '/sozlamalar/tizim?tab=jurnal',
   '/admin/video-wall': '/videodevor',
   // Qavat rejalari endi xaritada.
-  '/admin/floor-plans': '/xarita',
+  '/admin/floor-plans': '/',
   '/admin/notifications': '/sozlamalar/bildirishnomalar',
   '/admin/integrations': '/sozlamalar/integratsiyalar',
   '/admin/privacy': '/sozlamalar/maxfiylik',

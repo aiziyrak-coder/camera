@@ -50,17 +50,17 @@ export const MODULE_PRESETS: { id: ModulePresetId; label: string; description: s
   {
     id: 'entrance',
     label: 'Kirish / koridor',
-    description: 'Davomat, erta ketish, begona shaxs, oq xalat, chekish — dars modullarisiz',
+    description: 'Davomat, erta ketish, begona shaxs, oq xalat — dars modullarisiz',
   },
   {
     id: 'indoor',
     label: 'Ichki xona / auditoriya',
-    description: 'Dars modullari, oq xalat, chekish — begona shaxs va kirish davomatisiz',
+    description: 'Dars modullari, oq xalat — begona shaxs va kirish davomatisiz',
   },
   {
     id: 'outdoor',
     label: 'Hovli / tashqi',
-    description: 'Begona shaxs va chekish — dars modullarisiz',
+    description: 'Faqat begona shaxs — dars modullarisiz',
   },
   {
     id: 'security',

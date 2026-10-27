@@ -162,13 +162,6 @@ export default function ResultsTab({ lastDay }: { lastDay: string | null }) {
         ),
     },
     {
-      key: 'smoking',
-      header: 'Chekish',
-      align: 'right',
-      hideOnMobile: true,
-      cell: (r) => (r.smokingEvents ? <span className="font-medium text-danger">{r.smokingEvents}</span> : <span className="text-muted">—</span>),
-    },
-    {
       key: 'teacher',
       header: "O'qituvchi",
       hideOnMobile: true,
@@ -282,7 +275,7 @@ export default function ResultsTab({ lastDay }: { lastDay: string | null }) {
           columns={columns}
           rows={page.items}
           rowKey={(r) => r.personId}
-          rowTone={(r) => (r.attendanceStatus === 'kelmadi' || r.coatStatus === 'kiymagan' || r.smokingEvents ? 'danger' : null)}
+          rowTone={(r) => (r.attendanceStatus === 'kelmadi' || r.coatStatus === 'kiymagan' ? 'danger' : null)}
           loading={page.loading && page.items.length === 0}
           error={page.error}
           onRetry={page.reload}

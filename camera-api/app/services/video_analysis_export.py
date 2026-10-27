@@ -28,7 +28,7 @@ _CELL_BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
 HEADERS = [
     "F.I.Sh.", "Turi", "Guruh / lavozim", "Davomat", "Kelgan", "Ketgan", "Kechikish, daq", "Ishdan erta ketish",
     "Darslar (kirgan/o'lchangan)", "Darsga kech", "Darsdan erta", "Diqqat (0-100)", "Oq xalat",
-    "Oq xalat (oq/kuzatuv)", "Chekish", "O'qituvchi: darslar", "Vaqtida", "Kech", "Kelmadi", "Faollik (0-100)",
+    "Oq xalat (oq/kuzatuv)", "O'qituvchi: darslar", "Vaqtida", "Kech", "Kelmadi", "Faollik (0-100)",
 ]
 WIDTHS = [34, 9, 24, 12, 9, 9, 11, 14, 14, 10, 10, 11, 12, 12, 9, 12, 9, 7, 9, 11]
 
@@ -60,7 +60,6 @@ def row_values(row, person) -> list:
         row.attention_score if row.attention_score is not None else "",
         COAT.get(row.coat_status or "", ""),
         f"{row.coat_white_samples}/{row.coat_samples}" if row.coat_samples else "",
-        row.smoking_events or "",
         row.teacher_lessons or "",
         row.teacher_on_time if row.teacher_lessons else "",
         row.teacher_late if row.teacher_lessons else "",
@@ -70,7 +69,7 @@ def row_values(row, person) -> list:
 
 
 def _flag(row) -> PatternFill | None:
-    if row.attendance_status == "kelmadi" or row.coat_status == "kiymagan" or row.smoking_events:
+    if row.attendance_status == "kelmadi" or row.coat_status == "kiymagan":
         return _RED
     if (row.late_minutes or 0) > 0 or row.early_leave == "erta_ketdi" or (row.lessons_late or 0) > 0:
         return _AMBER
@@ -119,7 +118,6 @@ def build_criteria_workbook(
         ("O'rtacha diqqat", _avg([r.attention_score for r in data])),
         ("Oq xalat kiygan", sum(1 for r in data if r.coat_status == "kiygan")),
         ("Oq xalat kiymagan", sum(1 for r in data if r.coat_status == "kiymagan")),
-        ("Chekish holatlari", sum(r.smoking_events or 0 for r in data)),
         ("O'qituvchi darslari: vaqtida", sum(r.teacher_on_time or 0 for r in data)),
         ("O'qituvchi darslari: kech", sum(r.teacher_late or 0 for r in data)),
         ("O'qituvchi darslari: kelmadi", sum(r.teacher_absent or 0 for r in data)),
@@ -139,7 +137,7 @@ def build_criteria_workbook(
 
 CRITERIA = {
     6: "Xodim davomati", 7: "Talaba davomati", 8: "Darsga kechikish", 9: "Darsdan/ishdan erta ketish",
-    10: "Oq xalat", 15: "Chekish", 19: "Darsga diqqat", 21: "O'qituvchi faolligi", 22: "O'qituvchining darsga kelishi",
+    10: "Oq xalat", 19: "Darsga diqqat", 21: "O'qituvchi faolligi", 22: "O'qituvchining darsga kelishi",
 }
 FINDING_HEADERS = ["F.I.Sh.", "Turi", "Guruh / lavozim", "Kriteriya", "Holat", "Vaqt", "Kamera", "Video dalil (2 daq)"]
 

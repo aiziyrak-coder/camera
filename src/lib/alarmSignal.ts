@@ -87,7 +87,7 @@ function notifyDesktop(event: AIEvent): void {
     });
     note.onclick = () => {
       window.focus();
-      window.location.assign('/hodisalar');
+      window.location.assign('/tekshiruv');
       note.close();
     };
   } catch {

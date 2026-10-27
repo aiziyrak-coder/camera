@@ -103,7 +103,6 @@ export const CRITERIA_NAMES: Record<number, string> = {
   8: 'Darsga kechikish',
   9: 'Erta ketish',
   10: 'Oq xalat',
-  15: 'Chekish',
   19: 'Darsga diqqat',
   21: "O'qituvchi faolligi",
   22: "O'qituvchining darsga kelishi",
@@ -220,7 +219,6 @@ export const JOB_KIND_LABELS: Record<string, string> = {
   kirish: 'Kirish/chiqish',
   dars: 'Darslar',
   umumiy: 'Boshqa kameralar',
-  chekish: 'Chekish (tashqi)',
 };
 
 export const JOB_STATUS_LABELS: Record<string, string> = {

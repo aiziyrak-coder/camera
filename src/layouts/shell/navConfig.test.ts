@@ -13,7 +13,8 @@ describe('navConfig', () => {
   it('finds the active item and its section', () => {
     expect(findActive('/talabalar/fakultet/3')?.item.label).toBe('Talabalar');
     expect(findActive('/sozlamalar/kameralar')?.section.label).toBe('Sozlamalar');
-    expect(findActive('/')?.item.label).toBe('Nazorat');
+    // Nazorat, xarita, hodisalar, turniketlar olib tashlandi (2026-10-27).
+    expect(findActive('/hodisalar')).toBeNull();
     expect(findActive('/sozlamalar/ui')).toBeNull();
   });
 
@@ -33,7 +34,7 @@ describe('navConfig', () => {
   it('filters the menu by permission and drops empty sections', () => {
     const sections = visibleSections((key) => key === 'viewLive', 'admin');
     expect(sections.map((s) => s.id)).toEqual(['monitoring', 'malumotlar']);
-    expect(sections[0].items.map((i) => i.to)).toEqual(['/', '/videodevor', '/xarita', '/shaxs-qidirish']);
+    expect(sections[0].items.map((i) => i.to)).toEqual(['/videodevor', '/shaxs-qidirish']);
   });
 
   it('shows the date picker only on attendance pages', () => {
@@ -47,7 +48,7 @@ describe('legacyRedirect', () => {
   it('maps old admin URLs and keeps query strings', () => {
     expect(legacyRedirect('/admin')).toBe('/');
     expect(legacyRedirect('/admin/')).toBe('/');
-    expect(legacyRedirect('/admin/events', '?id=42')).toBe('/hodisalar?id=42');
+    expect(legacyRedirect('/admin/events', '?id=42')).toBe('/tekshiruv?id=42');
     expect(legacyRedirect('/admin/attendance', '?person=abc-1')).toBe('/shaxs/abc-1');
     expect(legacyRedirect('/admin/attendance')).toBe('/talabalar');
     expect(legacyRedirect('/admin/students-staff', '?search=00+12')).toBe('/reestr?search=00+12');
