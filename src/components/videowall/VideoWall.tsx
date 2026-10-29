@@ -116,7 +116,6 @@ const SHORTCUTS: Array<[string, string]> = [
   ['T', "Aylanishni yoqish / to'xtatish"],
   ['Esc', 'Kattalashtirilgan katakdan chiqish'],
   ['Ikki marta bosish', 'Katakni kattalashtirish'],
-  ['Strelkalar (PTZ)', 'Kattalashtirilgan PTZ kamerani burish'],
 ];
 
 /** Yuqori/pastki chiziqdagi yorliq + qiymat juftligi (bir qatorda). */
@@ -532,7 +531,6 @@ export default function VideoWall({
           break;
         case 'ArrowLeft':
         case 'ArrowRight':
-          // Kattalashtirilgan PTZ katakda strelkalarni PtzControls oladi.
           if (maximized !== null) return;
           // Tablar va boshqa klaviatura bilan boshqariladigan elementlar o'zi ishlatadi.
           if (event.target instanceof HTMLElement && event.target.closest('[role="tablist"],[role="radiogroup"]')) return;

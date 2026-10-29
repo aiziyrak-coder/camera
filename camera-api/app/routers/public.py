@@ -120,8 +120,6 @@ def _to_public_camera(camera: Camera) -> PublicCameraOut:
         has_video=has_video,
         stream_url=signed_stream_url(camera.stream_url),
         floor=camera.floor,
-        # Protokolsiz PTZ ishlamaydi (har harakat 409) — panel ham ko'rsatilmasin.
-        ptz_enabled=bool(camera.ptz_enabled and camera.ptz_protocol),
     )
 
 

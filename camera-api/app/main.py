@@ -72,7 +72,6 @@ from app.routers import (
     notifications,
     org_structure,
     privacy,
-    ptz,
     public,
     reports,
     situation,
@@ -375,7 +374,6 @@ app.include_router(person_locator.router)
 app.include_router(notifications.router)
 app.include_router(integrations.router)
 app.include_router(access_control.router)
-app.include_router(ptz.router)
 app.include_router(xarita.router)
 app.include_router(metrics.router)
 app.include_router(privacy.router)

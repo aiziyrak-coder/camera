@@ -21,9 +21,6 @@ export interface CameraFeed {
   hasVideo?: boolean;
   /** Qavat raqami; belgilanmagan bo'lsa null (backend `Camera.floor`). */
   floor?: number | null;
-  /** PTZ boshqaruvi yoqilganmi. Ochiq ro'yxat buni qaytarmasa (undefined),
-   * boshqaruv paneli holatni GET /api/cameras/{id}/ptz dan o'zi so'raydi. */
-  ptzEnabled?: boolean;
 }
 
 /** GET /api/public/campus — bitta qavat kesimi. `floor: null` qavati
@@ -403,8 +400,6 @@ export interface Department {
 /** Kamera xona turi — backend app/services/camera_roles.py bilan bir xil. */
 export type RoomType = 'kirish' | 'auditoriya' | 'laboratoriya' | 'koridor' | 'ofis' | 'cheklangan' | 'tashqi';
 
-/** PTZ protokoli — backend app/schemas/ptz.py PtzProtocol bilan bir xil. */
-export type PtzProtocol = 'onvif' | 'isapi';
 
 export interface CameraConfig {
   id: string;
@@ -460,9 +455,6 @@ export interface CameraConfig {
    * kameralar uchun to'ldiriladi (qayta-import qilinganda IP emas, shu
    * bo'yicha aniqlanadi) — qo'lda qo'shilgan kameralarda null. */
   macAddress?: string | null;
-  /** PTZ boshqaruvi (app/services/ptz.py). Login/parol — RTSP bilan bir xil. */
-  ptzEnabled?: boolean;
-  ptzProtocol?: PtzProtocol | null;
   /** Kameraning HTTP (ONVIF/ISAPI) porti; null — 80. */
   onvifPort?: number | null;
 }

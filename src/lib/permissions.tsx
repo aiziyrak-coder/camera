@@ -21,7 +21,6 @@ export type PermissionKey =
   | 'manageLessons'
   | 'manageNotifications'
   | 'manageIntegrations'
-  | 'controlPtz'
   | 'managePrivacy';
 
 export const PERMISSION_LABELS: Record<PermissionKey, string> = {
@@ -41,7 +40,6 @@ export const PERMISSION_LABELS: Record<PermissionKey, string> = {
   manageLessons: 'Dars jadvali (HEMIS) va darsdagi davomat',
   manageNotifications: 'Bildirishnomalar (Telegram, SMS) sozlash',
   manageIntegrations: 'Integratsiyalar (HEMIS, turniket)',
-  controlPtz: 'PTZ kamerani boshqarish (burish, yaqinlashtirish)',
   managePrivacy: "Maxfiylik: rozilik, ma'lumotni eksport va o'chirish",
 };
 
@@ -73,7 +71,6 @@ export const DEFAULT_PERMISSIONS: PermissionMatrix = {
   // Backenddagi app/seed.py va alembic s1a2b3c4d5e6 bilan bir xil.
   manageNotifications: { superAdmin: true, admin: true, cameraSteward: false },
   manageIntegrations: { superAdmin: true, admin: false, cameraSteward: false },
-  controlPtz: { superAdmin: true, admin: true, cameraSteward: false },
   managePrivacy: { superAdmin: true, admin: false, cameraSteward: false },
 };
 

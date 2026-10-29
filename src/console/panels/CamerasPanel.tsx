@@ -6,8 +6,6 @@ import { CodeText, MicroLabel } from '../../ui/intel';
 import LiveVideoPlayer from '../../components/LiveVideoPlayer';
 import type { LiveDetectionResult } from '../../types';
 import CameraThumbnail from '../../components/videowall/CameraThumbnail';
-import PtzControls from '../../components/ptz/PtzControls';
-import { usePtzAvailability } from '../../components/ptz/usePtzAvailability';
 import { useWallCameras } from '../../components/videowall/useWallCameras';
 import { usePageVisible } from '../../components/videowall/usePageVisible';
 import { buildCameraCodes, cameraCode, cameraPlaceCode } from '../../components/videowall/cameraCode';
@@ -43,7 +41,7 @@ import {
  * oqimi = MediaMTX'da bitta o'quvchi; konsol soatlab ochiq turadi.
  *
  * Yoyilgan holat — butun devor: filtr, 4/9/16 setkasi va bitta kamerani
- * kattalashtirish (PTZ bilan, agar kamera qo'llab-quvvatlasa). Bu yerda
+ * kattalashtirish. Bu yerda
  * ichki siljish (scroll) ruxsat etilgan.
  *
  * Oqim hisobi (ataylab qattiq chegaralangan):
@@ -272,7 +270,6 @@ function CameraWall({
   }, [focusId]);
 
   const columns = layoutColumns(layout);
-  const ptzAvailable = usePtzAvailability(focus?.id ?? null, focus?.ptzEnabled);
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
@@ -398,7 +395,6 @@ function CameraWall({
             <FocusedCamera
               camera={focus}
               code={cameraCode(codes, focus.id)}
-              ptz={ptzAvailable}
               playing={pageVisible}
               onClose={() => setFocusId(null)}
               onStreamUnavailable={onStreamUnavailable}
@@ -414,14 +410,12 @@ function CameraWall({
 function FocusedCamera({
   camera,
   code,
-  ptz,
   playing,
   onClose,
   onStreamUnavailable,
 }: {
   camera: CameraFeed;
   code: string;
-  ptz: boolean;
   playing: boolean;
   onClose: () => void;
   onStreamUnavailable: () => void;
@@ -480,12 +474,6 @@ function FocusedCamera({
           <X size={15} aria-hidden="true" />
         </button>
       </div>
-
-      {ptz && (
-        <div className="absolute end-3 top-3 z-10 w-[min(220px,45%)]">
-          <PtzControls cameraId={camera.id} globalKeyboard defaultOpen={false} />
-        </div>
-      )}
     </motion.div>
   );
 }

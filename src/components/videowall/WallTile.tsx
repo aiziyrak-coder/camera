@@ -3,8 +3,6 @@ import { Loader2, Maximize2, Minimize2, Plus, X } from 'lucide-react';
 import { CodeText, MicroLabel, StatusLamp, cn, type IntelStatus } from '../../ui';
 import LiveVideoPlayer from '../LiveVideoPlayer';
 import CameraThumbnail from './CameraThumbnail';
-import PtzControls from '../ptz/PtzControls';
-import { usePtzAvailability } from '../ptz/usePtzAvailability';
 import { UNKNOWN_CAMERA_CODE, cameraPlaceCode } from './cameraCode';
 import { formatWallTime, useWallClock } from './wallClock';
 import type { TilePlayback } from '../../lib/videoWall';
@@ -101,7 +99,6 @@ export default function WallTile({
 }) {
   const [ref, inView] = useInView<HTMLDivElement>();
   const [dragOver, setDragOver] = useState(false);
-  const ptzAvailable = usePtzAvailability(maximized && camera && playback === 'live' ? camera.id : null, camera?.ptzEnabled);
 
   function handleDragOver(event: DragEvent) {
     if (!editable) return;
@@ -317,9 +314,6 @@ export default function WallTile({
         <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 z-20 w-0.5 bg-primary" />
       )}
 
-      {maximized && camera && ptzAvailable && (
-        <PtzControls key={camera.id} cameraId={camera.id} globalKeyboard className="absolute bottom-3 right-3 z-30" />
-      )}
     </div>
   );
 }

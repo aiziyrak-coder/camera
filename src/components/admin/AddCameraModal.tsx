@@ -1,15 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Gamepad2, Wifi } from 'lucide-react';
-import { forgetPtzAvailability } from '../ptz/usePtzAvailability';
+import { Wifi } from 'lucide-react';
 import { Checkbox, Notice } from '../settings/kit';
 import { Button, Field, Input, Modal, Select } from '../../ui';
 import { required, ipAddress, numberRange } from '../../lib/validation';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
-import { ptzApi, type PtzProbeResult } from '../../lib/ptzApi';
 import { useBuildings } from '../../lib/useBuildings';
 import { useCameraZones } from '../../lib/useCameraZones';
-import type { CameraConfig, PtzProtocol } from '../../types';
+import type { CameraConfig } from '../../types';
 
 interface FormState {
   name: string;
@@ -27,9 +25,6 @@ interface FormState {
   isEntrance: boolean;
   isPerimeter: boolean;
   isExit: boolean;
-  ptzEnabled: boolean;
-  ptzProtocol: PtzProtocol | '';
-  onvifPort: string;
 }
 
 function toForm(c?: CameraConfig | null): FormState {
@@ -52,13 +47,9 @@ function toForm(c?: CameraConfig | null): FormState {
     isEntrance: c?.isEntrance ?? false,
     isPerimeter: c?.isPerimeter ?? false,
     isExit: c?.isExit ?? false,
-    ptzEnabled: c?.ptzEnabled ?? false,
-    ptzProtocol: c?.ptzProtocol ?? '',
-    onvifPort: c?.onvifPort ? String(c.onvifPort) : '',
   };
 }
 
-type PtzProbeState = 'idle' | 'testing' | 'done';
 
 interface ConnectionTestResult {
   success: boolean;
@@ -81,12 +72,6 @@ const STATUS_OPTIONS = [
   { value: 'tamirda', label: "Ta'mirda" },
 ];
 
-const PTZ_PROTOCOL_OPTIONS = [
-  { value: 'onvif', label: 'ONVIF' },
-  { value: 'isapi', label: 'Hikvision ISAPI' },
-];
-
-const PTZ_KEYS: Array<keyof FormState> = ['ptzEnabled', 'ptzProtocol', 'onvifPort'];
 
 function SubHeading({ children }: { children: string }) {
   return <h3 className="intel-micro intel-micro-wrap !text-fg border-b border-border pb-1">{children}</h3>;
@@ -112,8 +97,6 @@ export default function AddCameraModal({
   const [testState, setTestState] = useState<TestState>('idle');
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
   const [saving, setSaving] = useState(false);
-  const [ptzProbeState, setPtzProbeState] = useState<PtzProbeState>('idle');
-  const [ptzProbe, setPtzProbe] = useState<PtzProbeResult | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -121,8 +104,6 @@ export default function AddCameraModal({
       setErrors({});
       setTestState('idle');
       setTestResult(null);
-      setPtzProbeState('idle');
-      setPtzProbe(null);
       // Oyna oxirgi ochilgandan beri zona (xona) ro'yxati o'zgargan
       // bo'lishi mumkin — avtoto'ldirish eskirmasin.
       reloadZones();
@@ -131,61 +112,7 @@ export default function AddCameraModal({
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
-    // PTZ maydonlari RTSP ulanishiga ta'sir qilmaydi — ulanish tekshiruvini
-    // qayta talab qilmaymiz.
-    if (!PTZ_KEYS.includes(key)) setTestState('idle');
-    if (key === 'ip' || key === 'onvifPort' || key === 'ptzProtocol' || key === 'rtspUsername' || key === 'rtspPassword') {
-      setPtzProbeState('idle');
-      setPtzProbe(null);
-    }
-  }
-
-  /** PTZ ulanishini tekshirish. Saqlangan kamerada login/parol bazadan
-   * olinadi (formada yangisi yozilgan bo'lsa — o'sha); yangi kamerada —
-   * formadan. Protokol tanlanmagan bo'lsa backend ONVIF, keyin ISAPI'ni
-   * sinab ko'radi va ishlaganini qaytaradi. */
-  async function runPtzProbe() {
-    const ipError = required(form.ip, 'IP manzil kiritilishi shart') ?? ipAddress(form.ip);
-    const portError =
-      form.onvifPort.trim() === '' ? undefined : numberRange(form.onvifPort, 1, 65535, '1–65535');
-    if (ipError || portError) {
-      setErrors((prev) => ({ ...prev, ip: ipError, onvifPort: portError }));
-      return;
-    }
-    setPtzProbeState('testing');
-    setPtzProbe(null);
-    const overrides = {
-      protocol: form.ptzProtocol || null,
-      onvifPort: form.onvifPort.trim() ? Number(form.onvifPort) : null,
-      username: form.rtspUsername.trim() || null,
-      password: form.rtspPassword || null,
-    };
-    try {
-      const result = isEdit
-        ? await ptzApi.probe(camera.id, overrides)
-        : await ptzApi.probeUnsaved({ ip: form.ip.trim(), ...overrides });
-      setPtzProbe(result);
-      if (result.success && result.protocol) {
-        setForm((f) => ({ ...f, ptzProtocol: result.protocol ?? f.ptzProtocol }));
-        setErrors((prev) => ({ ...prev, ptzProtocol: undefined }));
-      }
-    } catch (err) {
-      setPtzProbe({
-        success: false,
-        message: err instanceof ApiError ? err.message : 'Tarmoq xatosi',
-        protocol: null,
-        reachable: false,
-        authenticated: false,
-        ptzSupported: false,
-        presetsSupported: false,
-        presetCount: null,
-        deviceInfo: null,
-        latencyMs: null,
-        tried: [],
-      });
-    } finally {
-      setPtzProbeState('done');
-    }
+    setTestState('idle');
   }
 
   function validate(): boolean {
@@ -197,9 +124,6 @@ export default function AddCameraModal({
       fps: numberRange(form.fps, 1, 60, "1 dan 60 gacha bo'lgan qiymat kiriting"),
       floor: form.floor.trim() === '' ? undefined : numberRange(form.floor, -5, 50, '-5 dan 50 gacha'),
       port: numberRange(form.port, 1, 65535, "1 dan 65535 gacha bo'lgan port kiriting"),
-      onvifPort: form.onvifPort.trim() === '' ? undefined : numberRange(form.onvifPort, 1, 65535, '1–65535'),
-      ptzProtocol:
-        form.ptzEnabled && !form.ptzProtocol ? 'Protokolni tanlang' : undefined,
     };
     setErrors(next);
     return !Object.values(next).some(Boolean);
@@ -258,14 +182,10 @@ export default function AddCameraModal({
         isEntrance: form.isEntrance,
         isPerimeter: form.isPerimeter,
         isExit: form.isExit,
-        ptzEnabled: form.ptzEnabled,
-        ptzProtocol: form.ptzProtocol || null,
-        onvifPort: form.onvifPort.trim() ? Number(form.onvifPort) : null,
       };
       const saved = isEdit
         ? await api.patch<CameraConfig>(`/api/cameras/${camera.id}`, payload, token)
         : await api.post<CameraConfig>('/api/cameras', payload, token);
-      forgetPtzAvailability(saved.id);
       onSave(saved);
       onClose();
     } catch (err) {
@@ -412,62 +332,6 @@ export default function AddCameraModal({
           />
         </fieldset>
 
-        <fieldset className="flex flex-col gap-3 border border-border bg-surface-2 px-3 py-2.5">
-          <legend className="sr-only">PTZ boshqaruvi</legend>
-          <Checkbox
-            checked={form.ptzEnabled}
-            onChange={(e) => set('ptzEnabled', e.target.checked)}
-            label={
-              <span className="inline-flex items-center gap-1.5">
-                <Gamepad2 size={15} className="text-primary" aria-hidden="true" />
-                PTZ (buriladigan) kamera
-              </span>
-            }
-            description="Operator uni monitoringdan boshqaradi."
-          />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="PTZ protokoli" error={errors.ptzProtocol}>
-              <Select
-                value={form.ptzProtocol}
-                onChange={(value) => set('ptzProtocol', value as FormState['ptzProtocol'])}
-                placeholder="Aniqlanmagan"
-                options={PTZ_PROTOCOL_OPTIONS}
-               
-              />
-            </Field>
-            <Field label="HTTP (ONVIF) port" error={errors.onvifPort}>
-              <Input type="number" min={1} max={65535} placeholder="80" value={form.onvifPort} onChange={(e) => set('onvifPort', e.target.value)} />
-            </Field>
-          </div>
-          <div className="flex flex-col gap-2">
-            <Button icon={Gamepad2} onClick={runPtzProbe} loading={ptzProbeState === 'testing'} fullWidth>
-              {ptzProbeState === 'testing' ? 'PTZ tekshirilmoqda…' : 'PTZ ni tekshirish'}
-            </Button>
-            {ptzProbe && (
-              <Notice
-                tone={ptzProbe.success ? 'success' : 'danger'}
-                title={`${ptzProbe.message}${ptzProbe.latencyMs != null ? ` (${ptzProbe.latencyMs} ms)` : ''}`}
-                action={
-                  ptzProbe.success && !form.ptzEnabled ? (
-                    <Button size="sm" variant="primary" onClick={() => set('ptzEnabled', true)}>
-                      PTZ boshqaruvini yoqish
-                    </Button>
-                  ) : undefined
-                }
-              >
-                {(ptzProbe.deviceInfo || (ptzProbe.success && !ptzProbe.presetsSupported)) && (
-                  <>
-                    {ptzProbe.deviceInfo && <p>Qurilma: {ptzProbe.deviceInfo}</p>}
-                    {ptzProbe.success && !ptzProbe.presetsSupported && <p>Presetlar qo&apos;llab-quvvatlanmaydi</p>}
-                  </>
-                )}
-              </Notice>
-            )}
-            <p className="text-xs text-muted">
-              Login/parol — RTSP bilan bir xil. Protokol tanlanmasa, avval ONVIF, keyin Hikvision ISAPI sinaladi.
-            </p>
-          </div>
-        </fieldset>
 
         {!isEdit && (
           <div className="flex flex-col gap-2">

@@ -1433,8 +1433,6 @@ class Settings(BaseSettings):
     access_control_enabled: bool = True
     access_poll_interval_seconds: int = 10
 
-    # PTZ (app/services/ptz.py).
-    ptz_timeout_seconds: float = 5.0
 
     # Maxfiylik va saqlash muddati (app/jobs/cleanup.py).
     # Rozilik matni versiyasi — matn o'zgarsa oshiriladi.

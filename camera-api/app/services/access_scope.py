@@ -1,7 +1,7 @@
 """Bino doirasi — foydalanuvchi qaysi binolar kameralarini ko'ra oladi.
 
 User.allowed_building_ids: NULL yoki bo'sh ro'yxat — cheklov yo'q (barcha
-binolar). Aks holda kameralar, ularning hodisalari, PTZ va video arxivi
+binolar). Aks holda kameralar, ularning hodisalari va video arxivi
 faqat shu binolar bo'yicha. Super Admin HAR DOIM cheklovsiz: u doiralarni
 tayinlaydigan odam, o'zini qulflab qo'ya olmasligi kerak.
 

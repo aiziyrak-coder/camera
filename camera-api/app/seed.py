@@ -49,7 +49,6 @@ DEFAULT_PERMISSIONS = {
     # Platforma kengaytmasi (2026-09-19, alembic s1a2b3c4d5e6).
     "manageNotifications": (True, True, False),
     "manageIntegrations": (True, False, False),
-    "controlPtz": (True, True, False),
     "managePrivacy": (True, False, False),
 }
 
