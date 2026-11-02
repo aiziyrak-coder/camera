@@ -375,3 +375,34 @@ class TestSelfRegistration:
         rows = resp.json()
         assert [r["name"] for r in rows] == [faculties[0].name]
         assert set(rows[0]) == {"id", "name"}
+
+
+class TestStaleCopies:
+    """2026-11-02: faolsizlantirilgan, HEMIS'ga bog'lanmagan eski nusxa
+    JSHSHIRni ushlab, talabani "allaqachon o'tgansiz" / "faol emas" bilan
+    to'sardi. Endi u e'tiborga olinmaydi, talaba HEMIS yozuviga o'tadi."""
+
+    async def test_lookup_ignores_a_stale_copy(self, client: AsyncClient, db_session: AsyncSession):
+        db_session.add(StudentStaff(full_name="Ismoilova Diyora", type="talaba", group_or_position="52",
+                                    pinfl="60711086940017", active=False, biometrics_status="tasdiqlangan"))
+        await db_session.commit()
+        resp = await client.post("/api/public/enrollment/lookup", json={"code": ENROLL_CODE, "pinfl": "60711086940017"})
+        assert resp.status_code == 404
+
+    async def test_register_moves_the_id_to_the_hemis_record(self, client: AsyncClient, db_session: AsyncSession):
+        stale = StudentStaff(full_name="Ismoilova Diyora", type="talaba", group_or_position="52",
+                             pinfl="60711086940017", active=False, biometrics_status="tasdiqlangan")
+        hemis_row = StudentStaff(full_name="Ismoiljonova Diyoraxon Xayrullo qizi", type="talaba",
+                                 group_or_position="1-kurs, P-5226", hemis_id="344261101478")
+        db_session.add_all([stale, hemis_row])
+        await db_session.commit()
+        resp = await client.post(
+            "/api/public/enrollment/register",
+            json={"code": ENROLL_CODE, "fullName": "Ismoiljonova Diyoraxon Xayrullo qizi", "type": "talaba",
+                  "groupOrPosition": "52-26", "pinfl": "60711086940017"},
+        )
+        assert resp.status_code in (200, 201), resp.text
+        assert resp.json()["recordId"] == str(hemis_row.id)
+        await db_session.refresh(hemis_row)
+        await db_session.refresh(stale)
+        assert hemis_row.pinfl == "60711086940017" and stale.pinfl is None

@@ -145,6 +145,13 @@ def _as_uuid(value: str | None) -> uuid.UUID | None:
         return None
 
 
+def _is_stale_copy(record: StudentStaff) -> bool:
+    """Faol emas va HEMIS'ga bog'lanmagan yozuv — o'zi ochgan, tozalashda
+    faolsizlantirilgan nusxa (2026-11-02: Ismoiljonova, Kuanishbaev, G'afurova).
+    HEMIS'dagi (chetlatilgan, bitirgan) yozuv bunga kirmaydi — u "faol emas"."""
+    return not record.active and record.hemis_id is None
+
+
 def _normalize(series: str | None, number: str | None) -> tuple[str, str]:
     return (series or "").strip().upper(), (number or "").strip()
 
@@ -239,6 +246,11 @@ async def lookup_person(
     biometrika topshirishda ham shu identifikator qayta tekshiriladi.
     """
     record = await _find_person(db, body.pinfl, body.passport_series, body.passport_number)
+    if record is not None and _is_stale_copy(record):
+        # Faolsizlantirilgan, HEMIS'ga bog'lanmagan eski nusxa (o'zi ochgan,
+        # keyin tozalangan) — talabani "allaqachon o'tgansiz" / "faol emas"
+        # bilan to'smasin: u ism va guruh bo'yicha HEMIS yozuviga o'tadi.
+        record = None
     if record is None:
         # HEMIS talabalarning JSHSHIRini bermaydi — ro'yxatdan hali o'tmagan
         # talaba JSHSHIR bo'yicha topilmaydi; u ism va guruh bo'yicha o'z
@@ -395,6 +407,14 @@ async def register_self(
     series, number = _normalize(body.passport_series, body.passport_number)
 
     existing = await _find_person(db, body.pinfl, body.passport_series, body.passport_number)
+    if existing is not None and _is_stale_copy(existing):
+        # Eski nusxa JSHSHIR/pasportni bo'shatadi — ular shu odamning HEMIS
+        # yozuviga (yoki yangi yozuvga) yoziladi (noyob indeks to'qnashmasin).
+        existing.pinfl = None
+        existing.passport_series = None
+        existing.passport_number = None
+        await db.flush()
+        existing = None
     if existing is not None:
         # Yozuv allaqachon bor — yangisini yaratmaymiz, borini qaytaramiz.
         # Aks holda bitta odam uchun ikkita yozuv paydo bo'lardi va
