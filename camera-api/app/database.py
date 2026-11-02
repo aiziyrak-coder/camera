@@ -17,6 +17,13 @@ engine = create_async_engine(
     max_overflow=settings.db_max_overflow,
     pool_timeout=settings.db_pool_timeout_seconds,
     pool_pre_ping=True,
+    # Osilib qolgan (tranzaksiyasi ochiq, ishlatilmayotgan) ulanishlar
+    # bazaning ulanish chegarasini to'ldirib qo'ymasin.
+    connect_args={
+        "server_settings": {
+            "idle_in_transaction_session_timeout": str(settings.db_idle_in_transaction_timeout_seconds * 1000),
+        }
+    },
 )
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 

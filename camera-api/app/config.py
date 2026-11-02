@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     db_pool_size: int = 20
     db_max_overflow: int = 40
     db_pool_timeout_seconds: int = 30
+    # Tranzaksiya ochiq qolib bekor turgan ulanishni Postgres shuncha
+    # soniyadan keyin yopadi. 2026-11-02: AI worker 81 ulanish ushlab
+    # turgan, 59 tasi "idle in transaction" — baza (max_connections=100)
+    # "too many clients" bilan yangi so'rovlarni rad etardi. 0 — o'chiq.
+    db_idle_in_transaction_timeout_seconds: int = 300
     jwt_secret: str
     jwt_ttl_hours: int = 12
     cors_origin: str = "http://localhost:5173"
