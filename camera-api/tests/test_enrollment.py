@@ -338,9 +338,19 @@ class TestSelfRegistration:
         )
         assert resp.status_code == 422
 
-    async def test_faculties_are_listed_for_the_form(self, client: AsyncClient):
+    async def test_faculties_are_listed_for_the_form(self, client: AsyncClient, db_session: AsyncSession):
+        """Faqat talaba guruhi bor fakultetlar (2026-11-02): xodim bo'linmasi
+        bo'lgan "fakultet" formada chiqmaydi."""
+        from sqlalchemy import select
+
+        from app.models import Faculty, StudentGroup
+
+        faculties = (await db_session.execute(select(Faculty).order_by(Faculty.name))).scalars().all()
+        assert len(faculties) >= 2
+        db_session.add(StudentGroup(name="DI-101", course=1, faculty_id=faculties[0].id))
+        await db_session.commit()
         resp = await client.get("/api/public/enrollment/faculties")
         assert resp.status_code == 200
         rows = resp.json()
-        assert rows
+        assert [r["name"] for r in rows] == [faculties[0].name]
         assert set(rows[0]) == {"id", "name"}

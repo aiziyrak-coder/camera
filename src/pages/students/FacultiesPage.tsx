@@ -95,7 +95,6 @@ export default function FacultiesPage() {
   // Talabasi yo'q fakultet (HEMIS'da bor, lekin talaba biriktirilmagan)
   // taxtada joy egallab, "0 kishi" bilan chalg'itmasin — soni pastda aytiladi.
   const faculties = useMemo(() => data?.byFaculty.filter((f) => f.total > 0) ?? [], [data]);
-  const emptyFaculties = useMemo(() => data?.byFaculty.filter((f) => f.total === 0 && f.id !== null).length ?? 0, [data]);
   const available = data ? data.studentsDataAvailable : true;
   const views: TabItem<ViewId>[] = [
     { id: 'davomat', label: 'Davomat', icon: CalendarCheck },
@@ -216,11 +215,6 @@ export default function FacultiesPage() {
                   <StatusBoard items={sortedBoard} onOpen={(id) => navigate(withDate(situationPaths.faculty(id === 'none' ? null : id)))} />
                 </div>
                 <RagLegend />
-                {emptyFaculties > 0 && (
-                  <p className="px-3 pb-2 text-[11px] text-muted">
-                    Yana {emptyFaculties} ta fakultetga hali talaba biriktirilmagan — ro‘yxatda ko‘rsatilmadi.
-                  </p>
-                )}
               </IntelPanel>
 
               <LiveArrivals items={arrivals} live={isToday} linkFor={(id) => withDate(situationPaths.person(id))} className="self-start" />

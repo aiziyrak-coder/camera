@@ -249,8 +249,14 @@ async def list_faculties(db: Annotated[AsyncSession, Depends(get_db)]) -> list[E
 
     Ochiq, chunki forma ham ochiq — hisobi yo'q odam aynan shu yerda
     ro'yxatdan o'tadi. Faqat id va nom qaytariladi: talabalar soni kabi
-    ichki ko'rsatkichlar bu yerga kerak emas."""
-    result = await db.execute(select(Faculty).order_by(Faculty.name))
+    ichki ko'rsatkichlar bu yerga kerak emas.
+
+    Faqat talaba guruhi bor fakultetlar (2026-11-02, buyurtmachi: 4 fakultet
+    va Magistratura bo'limi): xodimlar bo'linmasi bo'lgan "fakultet"lar
+    (Malaka oshirish, Farmatsiya va h.k.) tanlansa, talaba HEMIS'ga
+    bog'lanmagan ortiqcha bo'limga tushib qolardi."""
+    has_groups = select(StudentGroup.id).where(StudentGroup.faculty_id == Faculty.id).exists()
+    result = await db.execute(select(Faculty).where(has_groups).order_by(Faculty.name))
     return [EnrollmentFacultyOut(id=str(f.id), name=f.name) for f in result.scalars().all()]
 
 
