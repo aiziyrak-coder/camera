@@ -323,7 +323,44 @@ async def _claim_unclaimed(db: AsyncSession, full_name: str, person_type: str, g
           "reported_group": r.reported_group, "active": r.active, "pinfl": r.pinfl,
           "biometric_embedding": r.biometric_embedding} for r in rows],
     )
-    return by_id[picked["id"]] if picked else None
+    if picked:
+        return by_id[picked["id"]]
+    return await _claim_by_full_name(db, full_name, person_type)
+
+
+async def _claim_by_full_name(db: AsyncSession, full_name: str, person_type: str) -> StudentStaff | None:
+    """Guruh bo'yicha topilmasa — to'liq F.I.Sh. (familiya, ism, otasining
+    ismi) bo'yicha YAGONA egasi yo'q HEMIS yozuvi.
+
+    2026-11-02: talaba ro'yxatdan noto'g'ri guruhni ("M-526" o'rniga
+    "P-5026A") tanlagan, guruh bo'yicha qidiruv o'z yozuvini topmay,
+    dublikat ochilgan. Otasining ismi bilan to'liq ism bir xil va bitta
+    bo'lsagina bog'lanadi — adashlarga yuz yopishmasin."""
+    from app.services.integrations.hemis import fuzzy_name_key
+
+    key = fuzzy_name_key(full_name)
+    if len(key.split()) < 3:
+        return None
+    surname = full_name.replace("'", " ").replace("ʻ", " ").split()[0]
+    if len(surname) < 4:
+        return None
+    rows = (
+        await db.execute(
+            select(StudentStaff).where(
+                StudentStaff.type == person_type,
+                StudentStaff.active.is_(True),
+                StudentStaff.hemis_id.is_not(None),
+                StudentStaff.full_name.ilike(f"%{surname[:4]}%"),
+            ).limit(500)
+        )
+    ).scalars().all()
+    same = [r for r in rows if fuzzy_name_key(r.full_name) == key]
+    if len(same) != 1:
+        return None
+    match = same[0]
+    if match.pinfl is not None or match.biometric_embedding is not None:
+        return None
+    return match
 
 
 @router.post("/register", response_model=EnrollmentLookupOut, status_code=status.HTTP_201_CREATED)

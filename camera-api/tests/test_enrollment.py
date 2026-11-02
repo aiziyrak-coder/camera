@@ -227,6 +227,27 @@ class TestSelfRegistration:
         assert record.biometrics_status == "yoq"
         assert record.biometric_embedding is None
 
+    async def test_wrong_group_still_links_by_full_name(self, client: AsyncClient, db_session: AsyncSession):
+        """2026-11-02: noto'g'ri guruh tanlangan ("M-526"), lekin to'liq F.I.Sh.
+        HEMIS'dagi bitta yozuvga mos — dublikat ochilmaydi, o'sha yozuvga bog'lanadi."""
+        hemis_row = StudentStaff(full_name="Davronov Muhammadamin G'ayratjon o'g'li", type="talaba",
+                                 group_or_position="1-kurs, P-5026A", hemis_id="344261101420")
+        db_session.add(hemis_row)
+        await db_session.commit()
+        resp = await client.post(
+            "/api/public/enrollment/register",
+            json={"code": ENROLL_CODE,
+                  "fullName": "Davronov Muhammadamin Gʻayratjon oʻgʻli",
+                  "type": "talaba",
+                  "groupOrPosition": "M-526 uz (Pediatr)",
+                  "pinfl": "51234567890123"},
+        )
+        assert resp.status_code in (200, 201)
+        assert resp.json()["recordId"] == str(hemis_row.id)
+        count = (await db_session.execute(
+            select(StudentStaff).where(StudentStaff.full_name.ilike("Davronov%")))).scalars().all()
+        assert len(count) == 1
+
     async def test_with_hemis_an_unknown_typed_group_goes_to_not_in_hemis(
         self, client: AsyncClient, db_session: AsyncSession, monkeypatch
     ):
