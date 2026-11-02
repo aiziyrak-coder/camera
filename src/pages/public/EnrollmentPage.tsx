@@ -381,7 +381,7 @@ export default function EnrollmentPage() {
               {notFound && (
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="secondary"
                   icon={UserPlus}
                   onClick={() => {
                     setError(null);
@@ -390,7 +390,7 @@ export default function EnrollmentPage() {
                   }}
                   fullWidth
                 >
-                  Ro&apos;yxatda yo&apos;qman — o&apos;zimni qo&apos;shish
+                  Ism va guruh bo&apos;yicha topish
                 </Button>
               )}
             </form>

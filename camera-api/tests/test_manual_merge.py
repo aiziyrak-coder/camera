@@ -183,3 +183,14 @@ def test_staff_needs_exact_name():
     assert pick_unclaimed("Dododbayev Azizjon Avazovich", "xodim", "asistent", [s])["id"] == "s"
     # Otasining ismi boshqa — adash, yangi yozuv.
     assert pick_unclaimed("Dodobayev Azizjon Karimovich", "xodim", "asistent", [s]) is None
+
+
+def test_group_written_with_separators_still_finds_the_hemis_record():
+    """2026-11-02: "66-26" / "57/26" yozilgan guruh HEMIS'dagi "S-6626" ga mos kelmasdi."""
+    from app.routers.enrollment import _joined_group_digits
+
+    assert _joined_group_digits("66-26").endswith("6626")
+    assert _joined_group_digits("57/26").endswith("5726")
+    assert _joined_group_digits("S-6626") == "S-6626"
+    hemis = _c("h", "Obidova Nilufarxon Erkinjon qizi", "1-kurs, S-6626")
+    assert pick_unclaimed("Obidova Nilufar", "talaba", _joined_group_digits("66-26"), [hemis])["id"] == "h"

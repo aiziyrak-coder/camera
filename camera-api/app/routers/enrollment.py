@@ -48,6 +48,7 @@ via the existing /api/students-staff/{id}/biometrics endpoint.
 
 import asyncio
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 import logging
@@ -239,7 +240,14 @@ async def lookup_person(
     """
     record = await _find_person(db, body.pinfl, body.passport_series, body.passport_number)
     if record is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Ma'lumot topilmadi. JSHSHIR yoki pasport ma'lumotini tekshiring.")
+        # HEMIS talabalarning JSHSHIRini bermaydi — ro'yxatdan hali o'tmagan
+        # talaba JSHSHIR bo'yicha topilmaydi; u ism va guruh bo'yicha o'z
+        # yozuviga bog'lanadi (/register -> _claim_unclaimed).
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            "JSHSHIR bo'yicha topilmadi. Bu odatiy hol: HEMIS ro'yxatida JSHSHIR bo'lmaydi. "
+            "Pastdagi «Ism va guruh bo'yicha topish» tugmasini bosing.",
+        )
     return _lookup_out(record)
 
 
@@ -277,8 +285,22 @@ async def list_units(db: Annotated[AsyncSession, Depends(get_db)]) -> list[dict]
     return [{"id": str(uid), "name": name, "kind": kind} for uid, name, kind in rows.all()]
 
 
+def _joined_group_digits(group_text: str) -> str:
+    """"66-26", "57/26", "47.26", "65 26" -> qo'shimcha "6626" ko'rinishi.
+
+    Talabalar guruh raqamini ajratib yozadi; HEMIS'da "S-6626". Ajratilgan
+    holda guruh mos kelmay, talaba o'z HEMIS yozuviga bog'lanmasdi va
+    dublikat ochilardi (2026-11-02, Obidova Nilufarxon)."""
+    parts = re.findall(r"\d+", group_text or "")
+    if len(parts) >= 2 and all(len(p) <= 3 for p in parts):
+        return group_text + " " + "".join(parts)
+    return group_text
+
+
 async def _claim_unclaimed(db: AsyncSession, full_name: str, person_type: str, group_text: str) -> StudentStaff | None:
     """Egasi yo'q (faol, JSHSHIRsiz, yuzsiz) yagona mos yozuv — person_dedupe.pick_unclaimed."""
+    if person_type == "talaba":
+        group_text = _joined_group_digits(group_text)
     stmt = select(StudentStaff).where(
         StudentStaff.type == person_type,
         StudentStaff.active.is_(True),

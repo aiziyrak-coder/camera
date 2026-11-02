@@ -52,7 +52,7 @@ describe('EnrollmentPage — xabarlar', () => {
     fireEvent.click(screen.getByRole('button', { name: /Davom etish/ }));
 
     expect(await screen.findByText("Ma'lumot topilmadi yoki kod noto'g'ri")).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /o'zimni qo'shish/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Ism va guruh bo'yicha topish/ })).toBeInTheDocument();
   });
 });
 
