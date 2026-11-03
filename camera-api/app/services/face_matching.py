@@ -69,6 +69,26 @@ class CandidateMatrix:
     # qator bo'lishi mumkin. Qatorlar odam bo'yicha guruhlangan; group_starts[k]
     # — k-odamning birinchi (ASL rasm) qatori. None — har qator = bitta odam.
     group_starts: np.ndarray | None = field(default=None, repr=False, compare=False)
+    # Bir odamning bir necha yozuvi (2026-11-03): ham talaba, ham xodim —
+    # JSHSHIRi bir xil, yuzi ham bir xil. identity[k] — k-yozuv tegishli
+    # odamning raqami; bunday yozuvlar bir-biriga "ikkinchi nomzod"
+    # bo'lmaydi, aks holda ajralish 0 bo'lib, odam umuman tanilmasdi.
+    # None — har yozuv alohida odam.
+    identity: np.ndarray | None = field(default=None, repr=False, compare=False)
+
+    def same_person(self, person_id: str, person_type: str) -> str | None:
+        """Shu odamning `person_type` turidagi boshqa yozuvi (bo'lsa)."""
+        if self.identity is None or self.person_types is None:
+            return None
+        try:
+            k = self.ids.index(person_id)
+        except ValueError:
+            return None
+        for j in np.flatnonzero(self.identity == self.identity[k]):
+            other = self.ids[int(j)]
+            if other != person_id and self.person_types.get(other) == person_type:
+                return other
+        return None
 
     @property
     def has_gallery(self) -> bool:
@@ -104,7 +124,7 @@ class CandidateMatrix:
         moslikka ishonchning o'zi. Bitta nomzod bo'lsa ikkinchisi -1."""
         embeddings = _normalize_rows(np.asarray(embeddings, dtype=np.float64))
         n = len(self.ids)
-        if self._faiss_index is not None and _FAISS_AVAILABLE and self.group_starts is None:
+        if self._faiss_index is not None and _FAISS_AVAILABLE and self.group_starts is None and self.identity is None:
             k = 2 if n >= 2 else 1
             sims, indices = self._faiss_index.search(embeddings.astype(np.float32), k)  # type: ignore[union-attr]
             best_idx = indices[:, 0].astype(np.int64)
@@ -119,7 +139,10 @@ class CandidateMatrix:
         if n >= 2:
             masked = similarities.copy()
             masked[rows, best_idx] = -np.inf
+            if self.identity is not None:
+                masked[self.identity[None, :] == self.identity[best_idx][:, None]] = -np.inf
             second = masked.max(axis=1)
+            second[~np.isfinite(second)] = -1.0
         else:
             second = np.full(len(embeddings), -1.0)
         return best_idx, best_sim, second
@@ -271,9 +294,30 @@ async def matrix_from_rows(rows: list) -> CandidateMatrix:
     return await asyncio.to_thread(_build_candidate_matrix, rows)
 
 
+def identity_groups(
+    ids: list[str], pinfls: dict[str, str | None], person_types: dict[str, str]
+) -> np.ndarray | None:
+    """Bir xil JSHSHIRli talaba + xodim juftiga umumiy raqam; bunday juft
+    bo'lmasa None. Faqat har xil turdagi juft: bir turdagi ikki yozuv —
+    dublikat (birlashtiriladi) yoki xato kiritilgan JSHSHIR, ularni bir odam
+    deb hisoblab ajralish tekshiruvidan chiqarib bo'lmaydi."""
+    first: dict[tuple[str, str], int] = {}
+    for k, person_id in enumerate(ids):
+        pinfl = pinfls.get(person_id)
+        if pinfl:
+            first.setdefault((pinfl, person_types.get(person_id, "")), k)
+    identity = np.arange(len(ids), dtype=np.int64)
+    shared = False
+    for (pinfl, person_type), k in first.items():
+        if person_type == "xodim" and (pinfl, "talaba") in first:
+            identity[k] = first[(pinfl, "talaba")]
+            shared = True
+    return identity if shared else None
+
+
 async def load_candidate_matrix(db: AsyncSession) -> CandidateMatrix:
     result = await db.execute(
-        select(StudentStaff.id, StudentStaff.biometric_embedding, StudentStaff.type).where(
+        select(StudentStaff.id, StudentStaff.biometric_embedding, StudentStaff.type, StudentStaff.pinfl).where(
             StudentStaff.biometric_embedding.is_not(None),
             # Faolsizlantirilgan (bitirgan, ishdan ketgan) odam tanilmaydi —
             # biometrikasi saqlash muddatigacha bazada tursa ham
@@ -288,9 +332,11 @@ async def load_candidate_matrix(db: AsyncSession) -> CandidateMatrix:
             StudentStaff.biometrics_status != "kutilmoqda",
         )
     )
-    rows = result.all()
-    if not rows:
+    found = result.all()
+    if not found:
         return CandidateMatrix(ids=[], matrix=np.empty((0, 0)), person_types={})
+    rows = [(row_id, embedding_json, person_type) for row_id, embedding_json, person_type, _ in found]
+    pinfls = {str(row_id): pinfl for row_id, _, _, pinfl in found}
     gallery_rows: list = []
     if settings.face_gallery_enabled:
         gallery_rows = list(
@@ -304,7 +350,9 @@ async def load_candidate_matrix(db: AsyncSession) -> CandidateMatrix:
                 )
             ).all()
         )
-    return await asyncio.to_thread(_build_candidate_matrix, rows, gallery_rows)
+    matrix = await asyncio.to_thread(_build_candidate_matrix, rows, gallery_rows)
+    matrix.identity = identity_groups(matrix.ids, pinfls, matrix.person_types or {})
+    return matrix
 
 
 # Ro'yxat versiyasi — worker'lar o'rtasida kesh bekor qilinishini ulashish.

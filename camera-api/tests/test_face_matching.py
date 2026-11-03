@@ -327,3 +327,30 @@ class TestRosterChangeReachesEveryWorker:
         )
         assert calls["n"] == 1
         assert all(len(r.ids) == 1 for r in results)
+
+
+class TestSamePersonRecords:
+    """Ham talaba, ham xodim (bir JSHSHIR, bir yuz) — 2026-11-03."""
+
+    def _matrix(self):
+        ids = ["talaba-1", "xodim-1", "boshqa"]
+        types = {"talaba-1": "talaba", "xodim-1": "xodim", "boshqa": "talaba"}
+        matrix = np.array([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+        identity = face_matching.identity_groups(ids, {"talaba-1": "123", "xodim-1": "123", "boshqa": None}, types)
+        return CandidateMatrix(ids=ids, matrix=matrix, person_types=types, identity=identity)
+
+    def test_own_second_record_is_not_a_rival(self):
+        cm = self._matrix()
+        match = cm.best_match([1.0, 0.0, 0.0], THRESHOLD, margin=0.05)
+        assert match is not None and match[0] in ("talaba-1", "xodim-1")
+        without = CandidateMatrix(ids=cm.ids, matrix=cm.matrix, person_types=cm.person_types)
+        assert without.best_match([1.0, 0.0, 0.0], THRESHOLD, margin=0.05) is None
+
+    def test_same_person_finds_student_record(self):
+        cm = self._matrix()
+        assert cm.same_person("xodim-1", "talaba") == "talaba-1"
+        assert cm.same_person("boshqa", "talaba") is None
+
+    def test_only_student_staff_pairs_are_grouped(self):
+        types = {"a": "talaba", "b": "talaba"}
+        assert face_matching.identity_groups(["a", "b"], {"a": "1", "b": "1"}, types) is None

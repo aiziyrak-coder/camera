@@ -169,8 +169,8 @@ def _face(height, emb=True):
 
 
 class _Matrix:
-    def __init__(self, match, person_type="talaba"):
-        self.match, self.ptype = match, person_type
+    def __init__(self, match, person_type="talaba", student_alias=None):
+        self.match, self.ptype, self.alias = match, person_type, student_alias
 
     def best_matches(self, _embeddings, _threshold, *, margin=0.0):
         return [self.match]
@@ -178,16 +178,19 @@ class _Matrix:
     def person_type(self, _pid):
         return self.ptype
 
+    def same_person(self, _pid, person_type):
+        return self.alias if person_type == "talaba" else None
+
 
 @pytest.fixture
 def faces(monkeypatch):
-    state = {"faces": [_face(200)], "match": None, "ptype": "talaba", "person": _person()}
+    state = {"faces": [_face(200)], "match": None, "ptype": "talaba", "alias": None, "person": _person()}
 
     async def fake_detect(_image, **_kw):
         return state["faces"]
 
     async def fake_matrix(_db):
-        return _Matrix(state["match"], state["ptype"])
+        return _Matrix(state["match"], state["ptype"], state["alias"])
 
     async def fake_by_id(_db, _pid):
         return state["person"]
@@ -237,6 +240,13 @@ async def test_not_matched_below_threshold_or_staff(client, faces):
     faces["match"], faces["ptype"] = (str(uuid.uuid4()), 0.9), "xodim"
     r = await client.post("/api/v1/integration/students/face-identify", headers=H, files={"image": ("a.jpg", JPEG, "image/jpeg")})
     assert r.status_code == 404 and r.json()["code"] == "not_matched"
+
+
+async def test_staff_match_resolves_to_same_persons_student_record(client, faces):
+    """Ham o'qituvchi, ham talaba: yuz xodim yozuviga tushsa ham talaba yozuvi qaytadi."""
+    faces["match"], faces["ptype"], faces["alias"] = (str(uuid.uuid4()), 0.9), "xodim", str(uuid.uuid4())
+    r = await client.post("/api/v1/integration/students/face-identify", headers=H, files={"image": ("a.jpg", JPEG, "image/jpeg")})
+    assert r.status_code == 200 and r.json()["matched_by"] == "face"
 
 
 async def test_rejects_non_image_and_oversize(client, faces, monkeypatch):

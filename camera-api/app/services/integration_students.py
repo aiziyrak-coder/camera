@@ -135,9 +135,15 @@ async def identify_face(db: AsyncSession, image: bytes) -> FaceMatch:
     match = candidates.best_matches(
         np.asarray([real[0].embedding]), settings.integration_face_threshold, margin=settings.integration_face_margin
     )[0]
-    if match is None or candidates.person_type(str(match[0])) not in (None, "talaba"):
+    if match is None:
         raise IdentifyError(404, "not_matched", "Mos talaba topilmadi")
-    person = await find_by_id(db, uuid.UUID(str(match[0])))
+    person_id = str(match[0])
+    if candidates.person_type(person_id) not in (None, "talaba"):
+        # Ham o'qituvchi, ham talaba bo'lgan odam — uning talaba yozuvi.
+        person_id = candidates.same_person(person_id, "talaba")
+        if person_id is None:
+            raise IdentifyError(404, "not_matched", "Mos talaba topilmadi")
+    person = await find_by_id(db, uuid.UUID(person_id))
     if person is None:
         raise IdentifyError(404, "not_matched", "Mos talaba topilmadi")
     return FaceMatch(person=person, confidence=match[1])
