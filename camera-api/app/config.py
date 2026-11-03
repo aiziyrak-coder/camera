@@ -607,7 +607,8 @@ class Settings(BaseSettings):
     # kelishilgan byudjet). Disk bo'sh joyi `recording_min_free_percent`
     # dan kamaysa yozuv avtomatik to'xtatiladi (app/jobs/event_clips.py).
     recording_enabled: bool = False
-    recording_retention_hours: int = 4
+    # Kunduzgi tahlil yozuvni 60+30 daqiqa kechikib o'qiydi — zaxira bilan 6 soat.
+    recording_retention_hours: int = 6
     recording_segment_minutes: int = 5
     recording_min_free_percent: float = 12.0
     recordings_dir: str = "/recordings"

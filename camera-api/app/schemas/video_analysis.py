@@ -7,7 +7,7 @@ from app.schemas.base import CamelModel
 
 class NvrIn(CamelModel):
     name: str = Field(min_length=1, max_length=120)
-    kind: str = Field("hikvision", pattern="^(hikvision|fayl)$")
+    kind: str = Field("hikvision", pattern="^(hikvision|fayl|server)$")
     ip: str | None = Field(None, max_length=64)
     http_port: int = Field(80, ge=1, le=65535)
     rtsp_port: int = Field(554, ge=1, le=65535)

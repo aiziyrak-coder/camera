@@ -132,7 +132,7 @@ export interface CriteriaSummary {
 export interface Nvr {
   id: string;
   name: string;
-  kind: 'hikvision' | 'fayl';
+  kind: 'hikvision' | 'fayl' | 'server';
   ip: string | null;
   httpPort: number;
   rtspPort: number;

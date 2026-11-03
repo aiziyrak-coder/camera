@@ -122,7 +122,7 @@ export default function NvrTab({ mappedCameras, activeCameras }: { mappedCameras
       cell: (n) => (
         <div className="min-w-0">
           <p className="truncate text-[13px] font-medium text-fg">{n.name}</p>
-          <CodeText className="text-[12px] text-muted">{n.kind === 'fayl' ? n.basePath : `${n.ip}:${n.httpPort}`}</CodeText>
+          <CodeText className="text-[12px] text-muted">{n.kind === 'server' ? 'MediaMTX yozuvi (server diski)' : n.kind === 'fayl' ? n.basePath : `${n.ip}:${n.httpPort}`}</CodeText>
         </div>
       ),
     },
@@ -147,7 +147,7 @@ export default function NvrTab({ mappedCameras, activeCameras }: { mappedCameras
       key: 'mode',
       header: 'Olish',
       hideOnMobile: true,
-      cell: (n) => <MicroLabel>{n.kind === 'fayl' ? 'papka' : `${n.fetchMode} · ${n.stream} · ${n.maxStreams} oqim`}</MicroLabel>,
+      cell: (n) => <MicroLabel>{n.kind === 'server' ? 'server yozuvi' : n.kind === 'fayl' ? 'papka' : `${n.fetchMode} · ${n.stream} · ${n.maxStreams} oqim`}</MicroLabel>,
     },
     {
       key: 'actions',

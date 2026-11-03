@@ -31,7 +31,7 @@ from sqlalchemy.sql import false, func, true
 
 from app.database import Base
 
-NVR_KINDS = ("hikvision", "fayl")
+NVR_KINDS = ("hikvision", "fayl", "server")
 RUN_STATUSES = ("navbatda", "ishlamoqda", "agregatsiya", "tugadi", "xato", "bekor")
 JOB_STATUSES = ("navbatda", "ishlamoqda", "tugadi", "xato", "yozuv_yoq", "bekor")
 
@@ -43,11 +43,15 @@ class NvrDevice(Base):
     orqali (HTTP, Digest), video RTSP playback yoki ISAPI download orqali.
     `fayl` — NVR'dan eksport qilingan yozuvlar papkasi:
     `<base_path>/<kanal>/<YYYYMMDD>_<HHMMSS>.<kengaytma>` (sinov va zaxira
-    yo'l: NVR tarmoqda bo'lmasa, yozuvni USB orqali olib kelish mumkin)."""
+    yo'l: NVR tarmoqda bo'lmasa, yozuvni USB orqali olib kelish mumkin).
+    `server` — serverning o'z yozuvi (MediaMTX, app/services/recording.py):
+    `<recordings_dir>/rec-<kamera id>/`. NVR'da xotira yo'q (2026-11-03),
+    shuning uchun yozuvni server o'zi oladi; kameralar unga avtomatik
+    bog'lanadi (app/jobs/video_analysis.link_server_recordings)."""
 
     __tablename__ = "nvr_devices"
     __table_args__ = (
-        CheckConstraint("kind IN ('hikvision', 'fayl')", name="ck_nvr_devices_kind"),
+        CheckConstraint("kind IN ('hikvision', 'fayl', 'server')", name="ck_nvr_devices_kind"),
         CheckConstraint("stream IN ('main', 'sub')", name="ck_nvr_devices_stream"),
         CheckConstraint("fetch_mode IN ('rtsp', 'download')", name="ck_nvr_devices_fetch_mode"),
     )

@@ -75,6 +75,32 @@ def analysis_window(day: date_type, *, now: datetime | None = None) -> tuple[dat
     return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
 
 
+SERVER_SOURCE_NAME = "Server yozuvi"
+
+
+async def link_server_recordings(db: AsyncSession) -> int:
+    """Yozuv yoqilgan bo'lsa (recording_enabled) — serverning o'z yozuvi
+    manbasi (kind="server") bo'lsin va NVR'ga bog'lanmagan har bir kamera
+    unga bog'lansin: NVR'da xotira yo'q, yozuvni MediaMTX o'zi oladi
+    (2026-11-03). Haqiqiy NVR'ga bog'langan kameralarga tegilmaydi.
+    Yangi bog'langan kameralar soni qaytadi."""
+    if not settings.recording_enabled:
+        return 0
+    source = (await db.execute(select(NvrDevice).where(NvrDevice.kind == "server").limit(1))).scalar_one_or_none()
+    if source is None:
+        source = NvrDevice(name=SERVER_SOURCE_NAME, kind="server", stream="sub", fetch_mode="rtsp", enabled=True)
+        db.add(source)
+        await db.flush()
+    cameras = (await db.execute(select(Camera).where(Camera.nvr_id.is_(None)))).scalars().unique().all()
+    for camera in cameras:
+        camera.nvr_id = source.id
+        # Kanal raqami server manbasida ishlatilmaydi (yo'l kamera id'sidan),
+        # lekin reja (planner) bog'langan kamerani shu bilan taniydi.
+        camera.nvr_channel = 0
+    await db.commit()
+    return len(cameras)
+
+
 async def lock_runs(db: AsyncSession) -> None:
     """Tahlil yaratishni ketma-ket qiladi (tranzaksiya oxirigacha). "Band
     emasmi?" tekshiruvi va yaratish orasida ikkinchi so'rov (ikki admin bir
@@ -691,6 +717,9 @@ async def video_analysis_loop() -> None:
     while True:
         try:
             async with SessionLocal() as db:
+                linked = await link_server_recordings(db)
+                if linked:
+                    logger.info("cameras linked to server recordings", extra={"cameras": linked})
                 run = await pick_run(db)
                 run_id = run.id if run is not None else None
             if run_id is not None:

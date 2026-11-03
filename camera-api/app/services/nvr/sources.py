@@ -435,20 +435,28 @@ class FolderSource(PlaybackSource):
         self.directory = Path(base_path) / str(channel)
         self.label = f" ({self.directory})"
 
+    def file_start(self, name: str) -> datetime | None:
+        match = _FILE_NAME.match(name)
+        if not match:
+            return None
+        try:
+            naive = datetime.strptime(match.group(1) + match.group(2), "%Y%m%d%H%M%S")
+        except ValueError:
+            return None
+        return naive.replace(tzinfo=INSTITUTE_TZ).astimezone(timezone.utc)
+
     async def files(self) -> list[RecordingFile]:
         if not self.directory.is_dir():
             return []
         found: list[tuple[datetime, Path]] = []
         for path in sorted(self.directory.iterdir()):
-            match = _FILE_NAME.match(path.name)
-            if not match or not path.is_file():
+            start = self.file_start(path.name)
+            if start is None or not path.is_file():
                 continue
-            try:
-                naive = datetime.strptime(match.group(1) + match.group(2), "%Y%m%d%H%M%S")
-            except ValueError:
-                continue
-            found.append((naive.replace(tzinfo=INSTITUTE_TZ).astimezone(timezone.utc), path))
+            found.append((start, path))
         out: list[RecordingFile] = []
+        if len(self._durations) > 50_000:  # o'chirilgan bo'laklar yig'ilib qolmasin
+            self._durations.clear()
         for start, path in found:
             key = (str(path), path.stat().st_mtime)
             duration = self._durations.get(key)
@@ -512,8 +520,36 @@ class FolderSource(PlaybackSource):
             raise VideoReadError(f"oraliqda yozuv yo'q{self.label}")
 
 
+_SERVER_FILE_NAME = re.compile(r"^(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})")
+
+
+class ServerRecordingSource(FolderSource):
+    """Serverning o'z yozuvi (app/services/recording.py): MediaMTX
+    `<recordings_dir>/rec-<kamera id>/%Y-%m-%d_%H-%M-%S-%f.mp4` bo'laklari.
+    MediaMTX konteynerida TZ yo'q — fayl nomidagi vaqt UTC. Hozir yozilayotgan
+    oxirgi bo'lak ham o'qiladi: ffprobe uning shu paytgacha yozilgan
+    uzunligini beradi (tahlil baribir kechikish bilan ishlaydi)."""
+
+    def __init__(self, recordings_dir: str, camera_id: str) -> None:
+        self.directory = Path(recordings_dir) / f"rec-{camera_id}"
+        self.label = f" ({self.directory})"
+
+    def file_start(self, name: str) -> datetime | None:
+        match = _SERVER_FILE_NAME.match(name)
+        if not match:
+            return None
+        try:
+            return datetime.strptime(match.group(1), "%Y-%m-%d_%H-%M-%S").replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+
+
 def source_for(nvr, camera) -> PlaybackSource:
     """NvrDevice + Camera -> manba. Kanal bog'lanmagan bo'lsa ValueError."""
+    if nvr.kind == "server":
+        from app.config import settings
+
+        return ServerRecordingSource(settings.recordings_dir, str(camera.id))
     if camera.nvr_channel is None:
         raise ValueError("kamera NVR kanaliga bog'lanmagan")
     if nvr.kind == "fayl":

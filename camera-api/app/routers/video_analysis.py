@@ -649,6 +649,10 @@ async def delete_nvr(nvr_id: uuid.UUID, request: Request, db: Db, user: Admin) -
 async def _channels(nvr: NvrDevice):
     from app.services.nvr.isapi import NvrChannel
 
+    if nvr.kind == "server":
+        if not settings.recording_enabled:
+            raise NvrError("Server yozuvi o'chirilgan (RECORDING_ENABLED)")
+        return []
     if nvr.kind == "fayl":
         from pathlib import Path
 
