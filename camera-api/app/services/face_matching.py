@@ -69,8 +69,8 @@ class CandidateMatrix:
     # qator bo'lishi mumkin. Qatorlar odam bo'yicha guruhlangan; group_starts[k]
     # — k-odamning birinchi (ASL rasm) qatori. None — har qator = bitta odam.
     group_starts: np.ndarray | None = field(default=None, repr=False, compare=False)
-    # Bir odamning bir necha yozuvi (2026-11-03): ham talaba, ham xodim —
-    # JSHSHIRi bir xil, yuzi ham bir xil. identity[k] — k-yozuv tegishli
+    # Bir odamning bir necha yozuvi (2026-11-03): ham talaba, ham xodim,
+    # ikkalasida bir xil yuz vektori. identity[k] — k-yozuv tegishli
     # odamning raqami; bunday yozuvlar bir-biriga "ikkinchi nomzod"
     # bo'lmaydi, aks holda ajralish 0 bo'lib, odam umuman tanilmasdi.
     # None — har yozuv alohida odam.
@@ -295,29 +295,30 @@ async def matrix_from_rows(rows: list) -> CandidateMatrix:
 
 
 def identity_groups(
-    ids: list[str], pinfls: dict[str, str | None], person_types: dict[str, str]
+    ids: list[str], face_keys: dict[str, str], person_types: dict[str, str]
 ) -> np.ndarray | None:
-    """Bir xil JSHSHIRli talaba + xodim juftiga umumiy raqam; bunday juft
-    bo'lmasa None. Faqat har xil turdagi juft: bir turdagi ikki yozuv —
-    dublikat (birlashtiriladi) yoki xato kiritilgan JSHSHIR, ularni bir odam
-    deb hisoblab ajralish tekshiruvidan chiqarib bo'lmaydi."""
+    """Ayni bir yuz vektori turgan talaba + xodim juftiga umumiy raqam;
+    bunday juft bo'lmasa None. Vektor baytma-bayt bir xil bo'lishi faqat
+    bitta rasm ikkala yozuvga qo'yilganda bo'ladi (JSHSHIR unikal, uni
+    ikkala yozuvga yozib bo'lmaydi). Faqat har xil turdagi juft: bir turdagi
+    ikki yozuv — dublikat, u birlashtiriladi."""
     first: dict[tuple[str, str], int] = {}
     for k, person_id in enumerate(ids):
-        pinfl = pinfls.get(person_id)
-        if pinfl:
-            first.setdefault((pinfl, person_types.get(person_id, "")), k)
+        key = face_keys.get(person_id)
+        if key:
+            first.setdefault((key, person_types.get(person_id, "")), k)
     identity = np.arange(len(ids), dtype=np.int64)
     shared = False
-    for (pinfl, person_type), k in first.items():
-        if person_type == "xodim" and (pinfl, "talaba") in first:
-            identity[k] = first[(pinfl, "talaba")]
+    for (key, person_type), k in first.items():
+        if person_type == "xodim" and (key, "talaba") in first:
+            identity[k] = first[(key, "talaba")]
             shared = True
     return identity if shared else None
 
 
 async def load_candidate_matrix(db: AsyncSession) -> CandidateMatrix:
     result = await db.execute(
-        select(StudentStaff.id, StudentStaff.biometric_embedding, StudentStaff.type, StudentStaff.pinfl).where(
+        select(StudentStaff.id, StudentStaff.biometric_embedding, StudentStaff.type).where(
             StudentStaff.biometric_embedding.is_not(None),
             # Faolsizlantirilgan (bitirgan, ishdan ketgan) odam tanilmaydi —
             # biometrikasi saqlash muddatigacha bazada tursa ham
@@ -332,11 +333,9 @@ async def load_candidate_matrix(db: AsyncSession) -> CandidateMatrix:
             StudentStaff.biometrics_status != "kutilmoqda",
         )
     )
-    found = result.all()
-    if not found:
+    rows = result.all()
+    if not rows:
         return CandidateMatrix(ids=[], matrix=np.empty((0, 0)), person_types={})
-    rows = [(row_id, embedding_json, person_type) for row_id, embedding_json, person_type, _ in found]
-    pinfls = {str(row_id): pinfl for row_id, _, _, pinfl in found}
     gallery_rows: list = []
     if settings.face_gallery_enabled:
         gallery_rows = list(
@@ -351,7 +350,8 @@ async def load_candidate_matrix(db: AsyncSession) -> CandidateMatrix:
             ).all()
         )
     matrix = await asyncio.to_thread(_build_candidate_matrix, rows, gallery_rows)
-    matrix.identity = identity_groups(matrix.ids, pinfls, matrix.person_types or {})
+    face_keys = {str(row_id): anchor_hash(embedding_json) for row_id, embedding_json, _ in rows}
+    matrix.identity = identity_groups(matrix.ids, face_keys, matrix.person_types or {})
     return matrix
 
 

@@ -330,13 +330,13 @@ class TestRosterChangeReachesEveryWorker:
 
 
 class TestSamePersonRecords:
-    """Ham talaba, ham xodim (bir JSHSHIR, bir yuz) — 2026-11-03."""
+    """Ham talaba, ham xodim (ikkala yozuvda bir xil yuz) — 2026-11-03."""
 
     def _matrix(self):
         ids = ["talaba-1", "xodim-1", "boshqa"]
         types = {"talaba-1": "talaba", "xodim-1": "xodim", "boshqa": "talaba"}
         matrix = np.array([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
-        identity = face_matching.identity_groups(ids, {"talaba-1": "123", "xodim-1": "123", "boshqa": None}, types)
+        identity = face_matching.identity_groups(ids, {"talaba-1": "h1", "xodim-1": "h1", "boshqa": "h2"}, types)
         return CandidateMatrix(ids=ids, matrix=matrix, person_types=types, identity=identity)
 
     def test_own_second_record_is_not_a_rival(self):
@@ -354,3 +354,21 @@ class TestSamePersonRecords:
     def test_only_student_staff_pairs_are_grouped(self):
         types = {"a": "talaba", "b": "talaba"}
         assert face_matching.identity_groups(["a", "b"], {"a": "1", "b": "1"}, types) is None
+
+
+async def test_loader_groups_a_persons_student_and_staff_records(db_session):
+    faculty = Faculty(name="Ikki rolli fakultet")
+    db_session.add(faculty)
+    await db_session.flush()
+    face = json.dumps([1.0, 0.0])
+    student = StudentStaff(full_name="Ikki rolli", type="talaba", faculty_id=faculty.id, group_or_position="1",
+                           biometric_embedding=face, biometrics_status="tasdiqlangan")
+    staff = StudentStaff(full_name="Ikki rolli", type="xodim", faculty_id=faculty.id, group_or_position="Kafedra",
+                         biometric_embedding=face, biometrics_status="tasdiqlangan")
+    db_session.add_all([student, staff])
+    await db_session.commit()
+
+    cm = await load_candidate_matrix(db_session)
+    assert cm.same_person(str(staff.id), "talaba") == str(student.id)
+    match = cm.best_match([1.0, 0.0], THRESHOLD, margin=0.05)
+    assert match is not None and match[0] in (str(student.id), str(staff.id))
