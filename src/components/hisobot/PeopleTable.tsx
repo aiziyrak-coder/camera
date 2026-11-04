@@ -76,6 +76,14 @@ export default function PeopleTable({ data }: { data: HisobotReport }) {
               </span>
             );
           }
+          if (column.type === 'text') {
+            // Uzun izoh qatorni 4–5 qatorga cho'zib yuborardi — bitta qator, to'liq matn sichqoncha ostida.
+            return (
+              <span className="block max-w-[22rem] truncate text-[13px]" title={text}>
+                {text}
+              </span>
+            );
+          }
           if (!rateColumn) return <CodeText className="text-[13px]">{text}</CodeText>;
           const tone = rag(numberOf(raw), RATE_RAG);
           return (

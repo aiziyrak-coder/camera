@@ -32,7 +32,7 @@ from app.timezone import to_local
 
 MAX_DAYS = 31
 STATUSES = ("keldi", "kech_keldi", "kelmadi", "olchanmadi", "kutilmoqda")
-FILTERS = ("hammasi", "kelmadi", "kech_keldi", "toliq", "olchanmadi")
+FILTERS = ("hammasi", "kelmadi", "kech_keldi", "toliq", "yuzsiz", "olchanmadi")
 SORTS = ("guruh", "ism", "kelmadi")
 _CHUNK = 5000
 WEEKDAYS = ("Du", "Se", "Ch", "Pa", "Ju", "Sh", "Ya")
@@ -109,13 +109,19 @@ class Row:
     totals: Totals = field(default_factory=Totals)
 
 
-def matches(totals: Totals, wanted: str) -> bool:
+def matches(row: "Row", wanted: str) -> bool:
+    totals = row.totals
     if wanted == "kelmadi":
         return totals.kelmadi > 0
     if wanted == "kech_keldi":
         return totals.kech_keldi > 0
     if wanted == "toliq":
-        return totals.attended > 0 and totals.kelmadi == 0 and totals.olchanmadi == 0
+        # O'lchangan darslarning hammasida bo'lgan. Hali tugamagan yoki kamera
+        # ko'rmagan darslar bunga xalaqit bermaydi — ilgari bugun ertalab
+        # hech kim "to'liq" bo'lmasdi.
+        return totals.attended > 0 and totals.kelmadi == 0
+    if wanted == "yuzsiz":
+        return not row.member.enrolled
     if wanted == "olchanmadi":
         return totals.olchanmadi > 0
     return True
@@ -177,40 +183,30 @@ async def _attendance(db: AsyncSession, lesson_ids: list[uuid.UUID], person_ids:
     return out
 
 
-async def build(
-    db: AsyncSession,
-    kind: str,
-    start: date_type,
-    end: date_type,
-    f: hisobot.Filters,
-    *,
-    status: str = "hammasi",
-    sort: str = "guruh",
-    page: int = 1,
-    page_size: int = 50,
-    now: datetime | None = None,
-) -> dict:
-    now = now or datetime.now(timezone.utc)
-    if (end - start).days + 1 > MAX_DAYS:
-        start = end - timedelta(days=MAX_DAYS - 1)
-    status = status if status in FILTERS else "hammasi"
-    sort = sort if sort in SORTS else "guruh"
+@dataclass
+class Computed:
+    rows: list[Row]
+    columns: list[dict]
+    members: int
+    units: dict[uuid.UUID, str]
+
+
+async def _compute(db: AsyncSession, kind: str, start: date_type, end: date_type, f: hisobot.Filters,
+                   now: datetime) -> Computed:
     single_day = start == end
     ctx = await hisobot.context(db, kind, start, end, f)
     members = ctx.members
     unit_label = hisobot.unit_label_fn(ctx)
-
-    lessons = (
-        await db.execute(
-            select(*LESSON_COLUMNS)
-            .where(LessonSession.date.between(start, end))
-            .where(LessonSession.scheduled_start_time.is_not(None))
-            .order_by(LessonSession.date, LessonSession.scheduled_start_time)
-        )
-    ).all()
-
     rows: dict[uuid.UUID, Row] = {}
     if kind == "talaba":
+        lessons = (
+            await db.execute(
+                select(*LESSON_COLUMNS)
+                .where(LessonSession.date.between(start, end))
+                .where(LessonSession.scheduled_start_time.is_not(None))
+                .order_by(LessonSession.date, LessonSession.scheduled_start_time)
+            )
+        ).all()
         by_group: dict[str, list] = {}
         for lesson in lessons:
             by_group.setdefault(lesson_group_key(lesson.group_name), []).append(lesson)
@@ -229,7 +225,12 @@ async def build(
                 state, first_seen = attendance.get((lesson.id, m.id), (None, None))
                 if state not in ("keldi", "kech_keldi", "kelmadi"):
                     state = "kutilmoqda" if lesson_end > now else "olchanmadi"
-                detail = None if lesson.camera_id else "Xonaga kamera bog'lanmagan"
+                if not m.enrolled:
+                    detail = "Yuzi kiritilmagan — kamera taniy olmaydi"
+                elif not lesson.camera_id:
+                    detail = "Xonaga kamera bog'lanmagan"
+                else:
+                    detail = None
                 cell = _cell(lesson.id, lesson.scheduled_start_time, lesson_end, lesson.subject, lesson.auditorium,
                              state, first_seen, detail, lesson.camera_id is not None)
                 _place(row, lesson.date, svc.hm(lesson.scheduled_start_time) or "—", state, cell, single_day)
@@ -250,40 +251,67 @@ async def build(
                          lesson.teacher_arrived, lesson.group_name, lesson.camera_id is not None)
             _place(row, lesson.date, svc.hm(lesson.start) or "—", state, cell, single_day)
 
-    counts = {key: 0 for key in FILTERS}
-    for row in rows.values():
-        for key in FILTERS:
-            if matches(row.totals, key):
-                counts[key] += 1
-    selected = [row for row in rows.values() if matches(row.totals, status)]
-    if sort == "ism":
-        selected.sort(key=lambda r: svc.norm_name(r.member.name))
-    elif sort == "kelmadi":
-        selected.sort(key=lambda r: (-r.totals.kelmadi, -r.totals.kech_keldi, svc.norm_name(r.member.name)))
-    else:
-        selected.sort(key=lambda r: (svc.norm_name(unit_label(r.member)), svc.norm_name(r.member.name)))
-
     if single_day:
         slot_names = sorted({key for row in rows.values() for key in row.cells})
         columns = [{"key": key, "label": f"{i + 1}-juftlik", "sub": key} for i, key in enumerate(slot_names)]
     else:
         days = [start + timedelta(days=i) for i in range((end - start).days + 1)]
         columns = [{"key": d.isoformat(), "label": d.strftime("%d.%m"), "sub": WEEKDAYS[d.weekday()]} for d in days]
+    return Computed(list(rows.values()), columns, len(members), {m.id: unit_label(m) for m in members})
+
+
+async def build(
+    db: AsyncSession,
+    kind: str,
+    start: date_type,
+    end: date_type,
+    f: hisobot.Filters,
+    *,
+    status: str = "hammasi",
+    sort: str = "guruh",
+    page: int = 1,
+    page_size: int = 50,
+    now: datetime | None = None,
+) -> dict:
+    now = now or datetime.now(timezone.utc)
+    if (end - start).days + 1 > MAX_DAYS:
+        start = end - timedelta(days=MAX_DAYS - 1)
+    status = status if status in FILTERS else "hammasi"
+    sort = sort if sort in SORTS else "guruh"
+    # Holat tugmasi, tartib va sahifa almashganda jadval qayta hisoblanmaydi:
+    # butun universitet bo'yicha ~2 s — ilgari har bosishda shuncha kutilardi
+    # va tugma "ishlamayotgandek" ko'rinardi (2026-11-04).
+    key = ("lesson_grid", kind, start, end, f.faculty, f.course, f.group, f.unit_kind, f.unit, f.q)
+    data: Computed = await svc.cached(key, lambda: _compute(db, kind, start, end, f, now))
+
+    counts = {key: 0 for key in FILTERS}
+    for row in data.rows:
+        for name in FILTERS:
+            if matches(row, name):
+                counts[name] += 1
+    selected = [row for row in data.rows if matches(row, status)]
+    unit_of = lambda r: data.units.get(r.member.id, "")  # noqa: E731
+    if sort == "ism":
+        selected.sort(key=lambda r: svc.norm_name(r.member.name))
+    elif sort == "kelmadi":
+        selected.sort(key=lambda r: (-r.totals.kelmadi, -r.totals.kech_keldi, svc.norm_name(r.member.name)))
+    else:
+        selected.sort(key=lambda r: (svc.norm_name(unit_of(r)), svc.norm_name(r.member.name)))
 
     page = max(1, page)
     page_size = max(10, min(200, page_size))
     chunk = selected[(page - 1) * page_size: page * page_size]
     total = Totals()
     for row in selected:
-        for key in ("keldi", "kech_keldi", "kelmadi", "olchanmadi", "kutilmoqda"):
-            setattr(total, key, getattr(total, key) + getattr(row.totals, key))
+        for name in ("keldi", "kech_keldi", "kelmadi", "olchanmadi", "kutilmoqda"):
+            setattr(total, name, getattr(total, name) + getattr(row.totals, name))
         total.lessons += row.totals.lessons
     return {
         "kind": kind,
         "date_from": start.isoformat(),
         "date_to": end.isoformat(),
-        "mode": "slots" if single_day else "days",
-        "columns": columns,
+        "mode": "slots" if start == end else "days",
+        "columns": data.columns,
         "counts": counts,
         "status": status,
         "sort": sort,
@@ -291,12 +319,13 @@ async def build(
         "page": page,
         "page_size": page_size,
         "totals": total.out(),
-        "without_lessons": len(members) - len(rows),
+        "without_lessons": data.members - len(data.rows),
         "rows": [
             {
                 "id": str(row.member.id),
                 "full_name": row.member.name,
-                "unit": unit_label(row.member),
+                "unit": unit_of(row),
+                "enrolled": row.member.enrolled,
                 "cells": row.cells,
                 "totals": row.totals.out(),
             }

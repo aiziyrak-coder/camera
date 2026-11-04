@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { LockKeyhole } from 'lucide-react';
 import { api, ApiError, REPORT_LOCKED_EVENT } from '../../lib/apiClient';
 import { reportToken, saveReportToken } from '../../lib/reportLock';
+import { useAuth } from '../../lib/auth';
 import { Button, Input } from '../../ui';
 
 /**
@@ -16,6 +17,7 @@ interface LockState {
 }
 
 export default function ReportGate({ children }: { children: ReactNode }) {
+  const { token } = useAuth();
   const [state, setState] = useState<'checking' | 'open' | 'locked'>(() => (reportToken() ? 'open' : 'checking'));
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -27,20 +29,31 @@ export default function ReportGate({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(REPORT_LOCKED_EVENT, onLocked);
   }, []);
 
+  // Holat so'rovi sessiya tokeni BILAN: ilgari u token ro'yxatga olinmasdan
+  // (AuthProvider effekti bolalarnikidan keyin ishlaydi) yuborilib 401
+  // olardi va qulf o'chiq bo'lsa ham parol oynasi chiqib qolardi.
   useEffect(() => {
-    if (state !== 'checking') return;
+    if (state !== 'checking' || !token) return;
+    let cancelled = false;
     api
-      .get<LockState>('/api/hisobot-kirish')
-      .then((res) => setState(res.locked ? 'locked' : 'open'))
-      .catch(() => setState('locked'));
-  }, [state]);
+      .get<LockState>('/api/hisobot-kirish', token)
+      .then((res) => {
+        if (!cancelled) setState(res.locked ? 'locked' : 'open');
+      })
+      .catch(() => {
+        if (!cancelled) setState('locked');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [state, token]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      const res = await api.post<LockState>('/api/hisobot-kirish', { password });
+      const res = await api.post<LockState>('/api/hisobot-kirish', { password }, token);
       if (res.token && res.expiresAt) saveReportToken(res.token, res.expiresAt);
       setPassword('');
       setState('open');

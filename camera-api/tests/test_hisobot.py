@@ -432,3 +432,13 @@ def test_coat_cell_ticks_only_students_seen_in_a_coat():
     assert "tahlil hali o'tkazilmagan" in hisobot.coat_cell(0, 0, base, False)["title"]
     bad = hisobot._cell("1", "danger", "1 ta oq xalatsiz kun", 1)
     assert hisobot.coat_cell(1, 1, bad, True) is bad  # xalatsiz ko'rilgan — son qoladi
+
+
+async def test_today_counts_people_not_yet_arrived_instead_of_100_percent(client, admin, world, monkeypatch):
+    """Kun tugamagan: yozuvi yo'q yuzli odam "hali kelmagan" — foiz undan ham hisoblanadi (2026-11-04)."""
+    monkeypatch.setattr(hisobot.svc, "pending_state", lambda day: True)
+    data = await _get(client, admin, kind="talaba", criterion="davomat")
+    tiles = {t["label"]: t for t in data["report"]["tiles"]}
+    assert "Hali kelmagan" in tiles and tiles["Hali kelmagan"]["value"] >= 1  # Davronov — yozuvi yo'q
+    share = tiles["Hozircha kelganlar ulushi"]["value"]
+    assert share != "100%"

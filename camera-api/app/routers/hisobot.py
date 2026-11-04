@@ -85,7 +85,7 @@ async def lessons(
     date_to: Annotated[str | None, Query(alias="to")] = None,
     faculty: str | None = None, course: Annotated[int | None, Query(ge=1, le=7)] = None,
     group: str | None = None, unit_kind: str | None = None, unit: str | None = None, q: str | None = None,
-    status: Literal["hammasi", "kelmadi", "kech_keldi", "toliq", "olchanmadi"] = "hammasi",
+    status: Literal["hammasi", "kelmadi", "kech_keldi", "toliq", "yuzsiz", "olchanmadi"] = "hammasi",
     sort: Literal["guruh", "ism", "kelmadi"] = "guruh",
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=10, le=200)] = 50,

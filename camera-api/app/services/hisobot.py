@@ -1063,6 +1063,16 @@ _TREND_EXPLAIN = {
 }
 
 
+def pending_today(data: Data) -> int:
+    """Bugun (kun hali tugamagan) yozuvi yo'q, yuzi kiritilgan odamlar —
+    "hali kelmagan". Ular kelmadi ham, keldi ham emas: foizdan chiqarib
+    tashlansa bugun ertalab "100%" chiqardi (2026-11-04, buyurtmachi)."""
+    today = svc.today()
+    if not (data.start == data.end == today) or svc.pending_state(today) is not True:
+        return 0
+    return sum(1 for m in data.members if m.enrolled and m.id not in data.day_rows)
+
+
 def _tiles(data: Data, key: str) -> list[dict]:
     ms = data.members
     enrolled = sum(1 for m in ms if m.enrolled)
@@ -1073,17 +1083,25 @@ def _tiles(data: Data, key: str) -> list[dict]:
         late_after = _hhmm(data.policy.late_after(data.kind))
         day_word = "kun" if len(_days(data.start, data.end)) > 1 else "kishi"
         if key == "davomat":
-            return [
-                _tile("Kelganlar ulushi", _fmt_pct(a.rate),
-                      hint=f"Kelgan va kelmagan {a.present + a.absent} {day_word}dan kelganlari",
-                      tone=_rate_tone(a.rate)),
+            pending = pending_today(data)
+            expected = a.present + a.absent + pending
+            rate = svc.pct(a.present, expected)
+            tiles = [
+                _tile("Hozircha kelganlar ulushi" if pending else "Kelganlar ulushi", _fmt_pct(rate),
+                      hint=(f"Kelishi kerak bo'lgan {expected} kishidan (kun tugamagan)" if pending
+                            else f"Kelgan va kelmagan {a.present + a.absent} {day_word}dan kelganlari"),
+                      tone=_rate_tone(rate) if not pending else "primary"),
                 _tile("Keldi", a.present, day_word,
                       f"Shundan {a.late} tasi kech keldi ({late_after} dan keyin)", "success"),
                 _tile("Kelmadi", a.absent, day_word,
                       f"{sum(1 for p in people_with if p.absent)} kishida kelmagan {day_word} bor", "danger"),
-                _tile("Yuzi kiritilgan", enrolled, "kishi",
-                      f"Ro'yxatdagi {len(ms)} kishidan. Faqat ularni kamera taniy oladi", "info"),
             ]
+            if pending:
+                tiles.append(_tile("Hali kelmagan", pending, "kishi",
+                                   "Kun tugamagan — hali kelishi mumkin, kamera ko'rmagan", "neutral"))
+            tiles.append(_tile("Yuzi kiritilgan", enrolled, "kishi",
+                               f"Ro'yxatdagi {len(ms)} kishidan. Faqat ularni kamera taniy oladi", "info"))
+            return tiles
         if key == "kechikish":
             late_people = sum(1 for p in people_with if p.late)
             return [

@@ -75,3 +75,14 @@ async def test_teachers_show_their_lessons(client, admin, world):
 async def test_requires_auth(client, world):
     res = await client.get("/api/hisobot/darslar")
     assert res.status_code in (401, 403)
+
+
+async def test_full_attendance_ignores_lessons_not_yet_over_and_flags_faceless(client, admin, world):
+    data = await _grid(client, admin, kind="talaba", group="DI-2301", status="toliq")
+    # Aliyev L1 ga keldi, L2 hali tugamagan — baribir "to'liq qatnashgan".
+    assert "Aliyev Anvar" in [r["full_name"] for r in data["rows"]]
+    everyone = await _grid(client, admin, kind="talaba", group="DI-2301")
+    assert all(r["enrolled"] for r in everyone["rows"]) or everyone["counts"]["yuzsiz"] > 0
+    faceless = await _grid(client, admin, kind="talaba", status="yuzsiz")
+    assert all(not r["enrolled"] for r in faceless["rows"])
+    assert all("Yuzi kiritilmagan" in (c["detail"] or "") for r in faceless["rows"] for c in r["cells"].values())

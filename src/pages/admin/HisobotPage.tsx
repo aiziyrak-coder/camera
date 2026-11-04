@@ -5,7 +5,6 @@ import {
   Button,
   CodeText,
   DateRangePicker,
-  DocumentHeader,
   ErrorState,
   IntelPanel,
   Readout,
@@ -30,7 +29,6 @@ import TabelView from '../../components/reports/TabelView';
 import { ApiError, api } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { usePermissions } from '../../lib/permissions';
-import { branding } from '../../lib/branding';
 import { downloadBlob } from '../../lib/download';
 import { useApiResource } from '../../lib/useApiResource';
 import { formatUzMonth } from '../../lib/uzDate';
@@ -80,18 +78,6 @@ const VIEWS: TabItem<HisobotView>[] = [
   { id: 'kpi', label: 'KPI', icon: Gauge },
 ];
 
-function stamp(): string {
-  try {
-    return new Intl.DateTimeFormat('ru-RU', {
-      dateStyle: 'short',
-      timeStyle: 'short',
-      timeZone: 'Asia/Tashkent',
-    }).format(new Date());
-  } catch {
-    return new Date().toISOString().slice(0, 16).replace('T', ' ');
-  }
-}
-
 export default function HisobotPage() {
   const [params, setParams] = useSearchParams();
   const state = useMemo(() => readState(params), [params]);
@@ -107,7 +93,7 @@ export default function HisobotPage() {
   const kpi = state.view === 'kpi';
   // Umumiy holat — o'z filtrlari va jonli ma'lumoti bilan (InstituteStatusView).
   const holat = state.view === 'holat';
-  const options = useApiResource<HisobotFilterOptions>(kpi || holat ? null : hisobotPaths.filters(kind));
+  const options = useApiResource<HisobotFilterOptions>(kpi ? null : hisobotPaths.filters(kind));
   const report = useApiResource<HisobotReport>(tabel || kpi || holat ? null : hisobotPaths.report(state));
   const sheet = useApiResource<TabelReport>(tabel ? tabelPaths.data(state) : null);
 
@@ -132,7 +118,6 @@ export default function HisobotPage() {
 
   const criterion = data?.criterion ?? state.criterion;
   const reference = useMemo(() => documentReference(state), [state]);
-  const generatedAt = useMemo(stamp, [state, data, sheetData]);
   const ready = kpi || holat || (tabel ? Boolean(sheetData) : Boolean(data));
   const loading = kpi || holat ? false : tabel ? sheet.loading : report.loading;
 
@@ -223,21 +208,8 @@ export default function HisobotPage() {
       }
     >
       <div className="flex min-w-0 flex-col gap-3">
-        {/* Hujjat blanki faqat tabelda: u qog'ozga chiqadi va imzolanadi.
-            Boshqa ko'rinishlarda sarlavha va uchta raqam yetarli. */}
-        {tabel ? (
-          <DocumentHeader
-            org={branding.orgFullName}
-            title="Davomat tabeli"
-            reference={reference}
-            generatedAt={generatedAt}
-            readouts={[
-              { label: 'Qamrov', value: scope ?? '—', title: scope ?? undefined },
-              { label: 'Oy', value: period },
-              { label: "Ro'yxatda", value: population },
-            ]}
-          />
-        ) : (
+        {/* Tabelning hujjat blanki TabelView ichida — bu yerda ikkinchi marta chiqardi. */}
+        {tabel || holat ? null : (
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border border-border bg-surface px-3 py-2">
             <Readout label="Qamrov" value={scope ?? '—'} title={scope ?? undefined} />
             <Readout label="Davr" value={period} />
@@ -279,7 +251,7 @@ export default function HisobotPage() {
               loading={report.loading}
             />
           )}
-          {!holat && <div className="px-3 pb-2">
+          {<div className="px-3 pb-2">
             {kpi ? (
               <DateRangePicker
                 value={{ preset: state.preset, from: state.from, to: state.to }}
@@ -303,7 +275,10 @@ export default function HisobotPage() {
 
         {/* 3. Javob. */}
         {holat ? (
-          <InstituteStatusView type={kind} />
+          <InstituteStatusView
+            type={kind}
+            filters={{ date: state.to, faculty: state.faculty, course: state.course, group: state.group, q: state.q }}
+          />
         ) : kpi ? (
           <KpiView from={state.from} to={state.to} />
         ) : tabel ? (

@@ -7,7 +7,7 @@ import type { Tone } from '../ui';
  *  bitta kunda juftliklar, bir necha kunda kunlar. */
 
 export type LessonCellStatus = 'keldi' | 'kech_keldi' | 'kelmadi' | 'olchanmadi' | 'kutilmoqda';
-export type LessonGridFilter = 'hammasi' | 'kelmadi' | 'kech_keldi' | 'toliq' | 'olchanmadi';
+export type LessonGridFilter = 'hammasi' | 'kelmadi' | 'kech_keldi' | 'toliq' | 'yuzsiz' | 'olchanmadi';
 export type LessonGridSort = 'guruh' | 'ism' | 'kelmadi';
 
 /** Bitta kun: juftlikdagi dars. */
@@ -49,6 +49,8 @@ export interface LessonGridRow {
   id: string;
   full_name: string;
   unit: string;
+  /** Yuzi kiritilmagan — kamera taniy olmaydi, darslari o'lchanmaydi. */
+  enrolled: boolean;
   cells: Record<string, LessonSlotCell | LessonDayCell>;
   totals: LessonGridTotals;
 }
@@ -83,6 +85,7 @@ export const FILTER_LABELS: Record<LessonGridFilter, string> = {
   kelmadi: 'Kelmaganlar',
   kech_keldi: 'Kech kelganlar',
   toliq: "To'liq qatnashganlar",
+  yuzsiz: "Yuzi yo'q",
   olchanmadi: "O'lchanmagan darsi bor",
 };
 

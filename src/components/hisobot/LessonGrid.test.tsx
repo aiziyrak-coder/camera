@@ -14,7 +14,7 @@ const GRID: LessonGridData = {
     { key: '08:00', label: '1-juftlik', sub: '08:00' },
     { key: '09:30', label: '2-juftlik', sub: '09:30' },
   ],
-  counts: { hammasi: 2, kelmadi: 1, kech_keldi: 0, toliq: 1, olchanmadi: 0 },
+  counts: { hammasi: 2, kelmadi: 1, kech_keldi: 0, toliq: 1, yuzsiz: 1, olchanmadi: 0 },
   status: 'hammasi',
   sort: 'guruh',
   total: 2,
@@ -27,6 +27,7 @@ const GRID: LessonGridData = {
       id: 'p1',
       full_name: 'Aliyev Anvar',
       unit: 'Davolash ishi · 2-kurs · DI-2301',
+      enrolled: true,
       cells: {
         '08:00': { status: 'keldi', lesson_id: 'l1', subject: 'Anatomiya', room: '205', start: '08:00', end: '09:20',
           first_seen: '08:01', detail: null, camera: true },
@@ -39,6 +40,7 @@ const GRID: LessonGridData = {
       id: 'p2',
       full_name: 'Botirova Nigora',
       unit: 'Davolash ishi · 2-kurs · DI-2301',
+      enrolled: false,
       cells: {
         '08:00': { status: 'keldi', lesson_id: 'l1', subject: 'Anatomiya', room: '205', start: '08:00', end: '09:20',
           first_seen: '08:02', detail: null, camera: true },
@@ -81,6 +83,9 @@ describe('LessonGrid', () => {
     fireEvent.click(screen.getByRole('button', { name: /Kelmaganlar/ }));
     expect(paths.at(-1)).toContain('status=kelmadi');
     expect(paths.at(-1)).toContain('group=DI-2301');
+
+    expect(screen.getAllByText("yuzi yo'q")).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: /O'lchanmagan darsi bor/ })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Aliyev Anvar' }));
     expect(paths.some((p) => p.startsWith('/api/situation/people/p1?'))).toBe(true);

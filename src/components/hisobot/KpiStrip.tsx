@@ -25,8 +25,10 @@ export default function KpiStrip({
   thresholds?: RagThresholds;
 }) {
   if (tiles.length === 0) return null;
+  // Plitkalar soni 3–5: to'r ham shuncha ustun — oxirgi qatorda bo'sh katak qolmasin.
+  const columns = tiles.length >= 5 ? 'lg:grid-cols-5' : tiles.length === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-4';
   return (
-    <ul className="grid grid-cols-2 gap-px bg-border lg:grid-cols-4">
+    <ul className={cn('grid grid-cols-2 gap-px bg-border', columns)}>
       {tiles.map((tile) => {
         const tone = tileRag(tile, thresholds);
         return (

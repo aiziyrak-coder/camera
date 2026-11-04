@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { DateRangePicker, FilterBar, type DateRangeValue, type FilterFieldEntry } from '../../ui';
+import { DatePicker, DateRangePicker, FilterBar, type DateRangeValue, type FilterFieldEntry } from '../../ui';
+import { todayInTashkent } from '../../lib/uzDate';
 import { useDebouncedValue } from '../../lib/useDebouncedValue';
 import {
   PERIOD_PRESETS,
@@ -33,6 +34,8 @@ export default function ReportFilters({ state, options, onChange, onReset }: Rep
 
   const period: DateRangeValue = { preset: state.preset, from: state.from, to: state.to };
   const students = state.section === 'talabalar';
+  // "Umumiy holat" — bir kunlik jonli holat: oraliq emas, sana tanlanadi.
+  const singleDay = state.view === 'holat';
 
   const fields: FilterFieldEntry[] = [
     // Davr doim tanlangan bo'ladi, shuning uchun "faol filtr" deb
@@ -43,6 +46,17 @@ export default function ReportFilters({ state, options, onChange, onReset }: Rep
       render:
         state.view === 'tabel' ? (
           <MonthPicker value={state.month} onChange={(month) => onChange({ month })} />
+        ) : singleDay ? (
+          <DatePicker
+            value={state.to}
+            onChange={(day) =>
+              onChange(day === todayInTashkent() ? { preset: 'today' } : { preset: 'custom', from: day, to: day })
+            }
+            size="sm"
+            quick
+            stepper
+            ariaLabel="Sana"
+          />
         ) : (
           <DateRangePicker
             value={period}
@@ -76,7 +90,7 @@ export default function ReportFilters({ state, options, onChange, onReset }: Rep
       placeholder: 'Hammasi',
       options: groupOptions(options, state.faculty, state.course).map((g) => ({ value: g, label: g })),
     },
-    !students && {
+    !students && !singleDay && {
       kind: 'select',
       label: 'Turi:',
       value: state.unitKind,
@@ -84,7 +98,7 @@ export default function ReportFilters({ state, options, onChange, onReset }: Rep
       placeholder: 'Hammasi',
       options: (options?.unit_kinds ?? []).map((k) => ({ value: k.id, label: k.label })),
     },
-    !students && {
+    !students && !singleDay && {
       kind: 'select',
       label: "Bo'linma:",
       value: state.unit,

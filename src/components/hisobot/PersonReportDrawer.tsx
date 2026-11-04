@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, TriangleAlert } from 'lucide-react';
 import {
   ButtonLink,
   CodeText,
@@ -81,6 +81,13 @@ export default function PersonReportDrawer({ person, onClose, defaultTo }: Props
           <SkeletonCard />
         ) : (
           <div className={cn('flex flex-col gap-3', profile.loading && 'opacity-70 transition-opacity')}>
+            {data.person.biometricsStatus !== 'tasdiqlangan' && (
+              <p role="status" className="flex items-start gap-2 border border-warning/50 bg-warning-soft px-3 py-2 text-[13px] text-fg">
+                <TriangleAlert size={15} className="mt-0.5 shrink-0 text-warning" aria-hidden="true" />
+                Yuzi kiritilmagan — kamera bu odamni taniy olmaydi, shuning uchun kunlari va darslari
+                «O&apos;lchanmadi». Yuzini ro&apos;yxatdan o&apos;tkazing.
+              </p>
+            )}
             <Totals data={data} />
             <Days data={data} />
           </div>
@@ -112,7 +119,10 @@ function Totals({ data }: { data: PersonProfile }) {
       : l.teacherStatus === 'oz_vaqtida' || l.teacherStatus === 'kechikdi',
   ).length;
   const missed = lessons.filter((l) => (student ? l.attendanceStatus === 'kelmadi' : l.teacherStatus === 'kelmadi')).length;
-  const lessonRate = attended + missed ? Math.round((1000 * attended) / (attended + missed)) / 10 : null;
+  // Maxraj — faqat O'LCHANGAN darslar: kamera ko'rmagan dars "kelmadi" emas.
+  const measured = attended + missed;
+  const unmeasured = lessons.length - measured;
+  const lessonRate = measured ? Math.round((1000 * attended) / measured) / 10 : null;
   return (
     <div className="grid grid-cols-2 gap-x-6 gap-y-2 border border-border bg-surface px-3 py-2 sm:grid-cols-4">
       <Readout label="Kelgan kunlar" value={<CodeText className="text-success">{t.present}</CodeText>} />
@@ -122,13 +132,17 @@ function Totals({ data }: { data: PersonProfile }) {
         label="Kunlik davomat"
         value={<CodeText className={RAG_TEXT[rag(t.rate, RATE_RAG)]}>{t.rate === null ? '—' : `${t.rate}%`}</CodeText>}
       />
-      <Readout label={student ? 'Darsga qatnashdi' : "Dars o'tdi"} value={<CodeText>{attended}/{lessons.length}</CodeText>} />
+      <Readout
+        label={student ? 'Darsga qatnashdi' : "Dars o'tdi"}
+        value={<CodeText>{attended}/{measured}</CodeText>}
+        title={unmeasured ? `Yana ${unmeasured} ta dars o'lchanmagan (kamera ko'rmagan yoki yuzi yo'q)` : undefined}
+      />
       <Readout label={student ? 'Dars qoldirdi' : 'Darsga kelmadi'} value={<CodeText className="text-danger">{missed}</CodeText>} />
       <Readout
         label="Dars davomati"
         value={<CodeText className={RAG_TEXT[rag(lessonRate, RATE_RAG)]}>{lessonRate === null ? '—' : `${lessonRate}%`}</CodeText>}
       />
-      <Readout label="O'rtacha kelish" value={<CodeText>{t.avgArrival ?? '—'}</CodeText>} />
+      <Readout label="O'lchanmagan darslar" value={<CodeText className="text-muted">{unmeasured}</CodeText>} />
     </div>
   );
 }

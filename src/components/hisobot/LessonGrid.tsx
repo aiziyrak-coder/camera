@@ -1,6 +1,20 @@
 import { useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { Button, CodeText, EmptyState, ErrorState, IntelPanel, Select, SkeletonTable, TONE_SOFT, TONE_TEXT, cn, focusRing } from '../../ui';
+import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import {
+  Button,
+  CodeText,
+  EmptyState,
+  ErrorState,
+  IntelPanel,
+  Select,
+  SkeletonTable,
+  TONE_SOFT,
+  TONE_TEXT,
+  cn,
+  focusRing,
+  formatUzDate,
+  formatUzRange,
+} from '../../ui';
 import { RAG_TEXT, RATE_RAG, rag } from '../../ui/rag';
 import { useApiResource } from '../../lib/useApiResource';
 import type { HisobotState } from '../../lib/hisobotApi';
@@ -29,12 +43,15 @@ import PersonReportDrawer from './PersonReportDrawer';
  */
 
 const PAGE_SIZE = 50;
-const FILTER_ORDER: LessonGridFilter[] = ['hammasi', 'kelmadi', 'kech_keldi', 'toliq', 'olchanmadi'];
+// "O'lchanmagan darsi bor" ko'rsatilmaydi: bugun deyarli hammada bor (dars
+// hali o'tmagan yoki xonada kamera yo'q) — filtr foydasiz edi.
+const FILTER_ORDER: LessonGridFilter[] = ['hammasi', 'kelmadi', 'kech_keldi', 'toliq', 'yuzsiz'];
 const FILTER_TONE: Record<LessonGridFilter, string> = {
   hammasi: 'text-fg',
   kelmadi: TONE_TEXT.danger,
   kech_keldi: TONE_TEXT.warning,
   toliq: TONE_TEXT.success,
+  yuzsiz: TONE_TEXT.neutral,
   olchanmadi: TONE_TEXT.neutral,
 };
 const LEGEND: LessonCellStatus[] = ['keldi', 'kech_keldi', 'kelmadi', 'olchanmadi', 'kutilmoqda'];
@@ -57,7 +74,7 @@ export default function LessonGrid({ state }: { state: HisobotState }) {
 
   return (
     <IntelPanel
-      title={staff ? "O'qituvchilar: darslarga kelishi" : "Darslar bo'yicha davomat"}
+      title={`${staff ? "O'qituvchilar: darslarga kelishi" : "Darslar bo'yicha davomat"} — ${periodLabel(state)}`}
       code={data ? `${data.total.toLocaleString('ru-RU')} kishi` : undefined}
     >
       <div className="flex flex-col gap-3">
@@ -93,6 +110,11 @@ export default function LessonGrid({ state }: { state: HisobotState }) {
             size="sm"
             className="sm:ms-auto sm:w-56"
           />
+          {resource.loading && (
+            <span role="status" className="flex items-center gap-1.5 text-[12px] text-muted">
+              <Loader2 size={14} className="animate-spin" aria-hidden="true" /> Yuklanmoqda…
+            </span>
+          )}
         </div>
 
         {data && <Summary data={data} staff={staff} />}
@@ -111,7 +133,7 @@ export default function LessonGrid({ state }: { state: HisobotState }) {
             }
           />
         ) : (
-          <div className={cn(resource.loading && 'opacity-70 transition-opacity')}>
+          <div className={cn(resource.loading && 'pointer-events-none opacity-50 transition-opacity')} aria-busy={resource.loading}>
             <Table data={data} staff={staff} onOpen={(row) => setPerson({ id: row.id, name: row.full_name })} />
             <div className="print-hide mt-2 flex flex-wrap items-center gap-3">
               <Legend />
@@ -137,6 +159,10 @@ export default function LessonGrid({ state }: { state: HisobotState }) {
       />
     </IntelPanel>
   );
+}
+
+function periodLabel(state: HisobotState): string {
+  return state.from === state.to ? formatUzDate(state.from, { weekday: true }) : formatUzRange(state.from, state.to);
 }
 
 function Summary({ data, staff }: { data: LessonGridData; staff: boolean }) {
@@ -208,7 +234,14 @@ function Table({ data, staff, onOpen }: { data: LessonGridData; staff: boolean; 
                   >
                     {row.full_name}
                   </button>
-                  <span className="block max-w-[260px] truncate text-[11px] text-muted">{row.unit}</span>
+                  <span className="block max-w-[260px] truncate text-[11px] text-muted">
+                    {!row.enrolled && (
+                      <span className="me-1 bg-warning-soft px-1 font-medium text-warning" title="Yuzi kiritilmagan — kamera taniy olmaydi">
+                        yuzi yo&apos;q
+                      </span>
+                    )}
+                    {row.unit}
+                  </span>
                 </th>
                 {data.columns.map((col) => {
                   const cell = row.cells[col.key];
