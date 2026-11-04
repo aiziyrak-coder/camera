@@ -62,3 +62,27 @@ async def test_cameras_are_linked_to_server_recordings(db_session, monkeypatch):
     await db_session.refresh(on_nvr)
     assert free.nvr_id == sources[0].id and free.nvr_channel == 0
     assert on_nvr.nvr_id == nvr.id and on_nvr.nvr_channel == 5
+
+
+async def test_door_camera_is_recorded_from_the_main_stream(monkeypatch):
+    """Eshik kamerasi asosiy oqimdan yoziladi (2026-11-04): substream yuzi kelishni aniqlashga yetmaydi."""
+    from app.services import recording, stream_sync
+
+    urls = {}
+
+    async def fake_register(camera_id, url):
+        urls[camera_id] = url
+
+    monkeypatch.setattr(settings, "recording_enabled", True)
+    monkeypatch.setattr(recording, "register_recording", fake_register)
+    door = Camera(id=__import__("uuid").uuid4(), name="Asosiy kirish", ip="10.0.0.9", port=554, zone="A",
+                  resolution="4K", status="faol", rtsp_path="/Streaming/Channels/101", is_entrance=True)
+    room = Camera(id=__import__("uuid").uuid4(), name="51-xona", ip="10.0.0.8", port=554, zone="A",
+                  resolution="4K", status="faol", rtsp_path="/Streaming/Channels/101", room_type="auditoriya")
+    for camera in (door, room):
+        await stream_sync._sync_recording(camera)
+    assert urls[str(door.id)].endswith("/Streaming/Channels/101")
+    assert urls[str(room.id)].endswith(settings.rtsp_substream_path)
+    monkeypatch.setattr(settings, "recording_door_main_stream", False)
+    await stream_sync._sync_recording(door)
+    assert urls[str(door.id)].endswith(settings.rtsp_substream_path)

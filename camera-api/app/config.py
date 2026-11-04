@@ -612,6 +612,8 @@ class Settings(BaseSettings):
     recording_segment_minutes: int = 5
     recording_min_free_percent: float = 12.0
     recordings_dir: str = "/recordings"
+    # Eshik (kirish/chiqish) kameralari asosiy oqimdan yoziladi (app/services/stream_sync.py).
+    recording_door_main_stream: bool = True
     # Dars xonasi kameralarining 4K surati (app/jobs/classroom_snapshots.py).
     # O'lchov (2026-11-04): substream (1280x720) da talaba yuzi ~15 px —
     # birorta yuz tanilmaydi; o'sha xonaning 4K surati (3840x2160) da yuz

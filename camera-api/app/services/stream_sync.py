@@ -12,6 +12,7 @@ from app.config import settings
 from app.crypto import decrypt
 from app.models import Camera
 from app.rtsp import build_rtsp_url
+from app.services.camera_roles import is_door_camera
 from app.services.video_gateway import register_camera_stream, unregister_camera_stream
 
 logger = logging.getLogger("app.stream_sync")
@@ -45,7 +46,11 @@ async def _sync_recording(camera: Camera) -> None:
         return
     try:
         if camera.status == "faol":
-            await recording.register_recording(str(camera.id), _rtsp_url_for(camera))
+            # Eshik kamerasi asosiy oqimdan yoziladi (2026-11-04): substream
+            # 768x432 da kirayotgan odamning yuzi kelish vaqtini aniqlashga
+            # yetmaydi; asosiy oqim 2560x1440, ~6 Mbit/s — soatiga ~2.6 GB.
+            main = settings.recording_door_main_stream and is_door_camera(camera)
+            await recording.register_recording(str(camera.id), _rtsp_url_for(camera, substream=not main))
         else:
             await recording.unregister_recording(str(camera.id))
     except Exception:
