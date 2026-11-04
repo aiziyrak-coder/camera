@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, CalendarCheck, LayoutGrid, RefreshCw, Rows3, ScanFace, SearchX, Users } from 'lucide-react';
+import { ArrowLeft, CalendarCheck, RefreshCw, ScanFace, SearchX, Users } from 'lucide-react';
 import {
   Button,
   ButtonLink,
@@ -11,7 +11,6 @@ import {
   IntelPanel,
   Page,
   SearchInput,
-  Select,
   Skeleton,
   SkeletonCards,
   Tabs,
@@ -24,11 +23,9 @@ import {
   type TabItem,
 } from '../../ui';
 import { RATE_RAG, rag } from '../../ui/rag';
-import { RagLegend, StatusBoard, type BoardItem } from '../../components/hisobot/board';
-import { KpiReadout, RateCell, RuledSection, StaleNote, worstFirst } from '../../components/attendance/readout';
+import { KpiReadout, RateCell, StaleNote } from '../../components/attendance/readout';
 import { NO_FACULTY_ID, getFaculty, getGroups, situationPaths, type CourseBlock, type Counts, type GroupStat } from '../../lib/situationApi';
 import { courseLabel, enrolledPct, groupsToCourses, hasAttendanceData, normalizeText, sortGroups, sumCounts, type GroupSortKey } from '../../lib/studentAttendance';
-import { usePersistedState } from '../../lib/usePersistedState';
 import { useViewDate } from '../../lib/viewDate';
 import PdfButton from '../../components/situation/PdfButton';
 import { useAsyncData } from '../../components/students/useAsyncData';
@@ -48,12 +45,6 @@ interface FacultyView {
   totals: Counts;
   courses: CourseBlock[];
 }
-
-const SORTS: { value: GroupSortKey; label: string }[] = [
-  { value: 'rate-asc', label: 'Past davomat' },
-  { value: 'rate-desc', label: 'Yuqori davomat' },
-  { value: 'name', label: 'Nomi bo\'yicha' },
-];
 
 async function loadFaculty(id: string, date: string, signal: AbortSignal): Promise<FacultyView> {
   if (id === NO_FACULTY_ID) {
@@ -116,8 +107,7 @@ export default function FacultyPage() {
   );
   // Standart tartib — YOMONI BIRINCHI: rahbar ekranni ochganda avval chora
   // kerak bo'lgan guruhni ko'radi. Tanlov saqlanadi (ilgari ham shunday edi).
-  const [sort, setSort] = usePersistedState<GroupSortKey>('talabalar.fakultet.saralash', 'rate-asc');
-  const [view, setView] = usePersistedState<'cards' | 'table'>('talabalar.fakultet.korinish', 'cards');
+  const sort: GroupSortKey = 'rate-asc';
   // Talabasi yo'q fakultet "Yuz topshirish" bilan ochilmaydi — yig'iladigan
   // yuz ham yo'q, foydalanuvchi bo'sh kampaniya ko'rinishiga tushib qolardi.
   const defaultMode: ViewId = data && data.totals.total > 0 && !hasAttendanceData(data.totals) ? 'yuz' : 'davomat';
@@ -161,24 +151,6 @@ export default function FacultyPage() {
   const scopeLabel = searching ? "Topilgan guruhlar bo'yicha" : course === 'all' ? "Fakultet bo'yicha" : (blocks[0]?.label ?? 'Kurs bo\'yicha');
 
   /** Guruhlar → holat taxtasi kataklari. */
-  const boardOf = useCallback(
-    (groups: GroupStat[]): BoardItem[] =>
-      groups.map((g) => ({
-        id: g.name,
-        name: g.name,
-        value: measured(g) ? g.rate : null,
-        unit: '%',
-        detail:
-          g.total === 0
-            ? "Talaba yo'q"
-            : measured(g)
-              ? `${formatNumber(g.present)} / ${formatNumber(g.present + g.absent + g.notYet)} keldi`
-              : `Yuzi ro'yxatda ${formatPercent(enrolledPct(g))}`,
-        headcount: g.total,
-      })),
-    [],
-  );
-
   const columns: DataTableColumn<GroupStat>[] = [
     { key: 'name', header: 'Guruh', cell: (g) => <span className="text-[13px] font-medium text-fg">{g.name}</span>, sortValue: (g) => g.name },
     // Ilgari kursi ko'rsatilmagan guruhda izohsiz "—" turardi — endi sababi yoziladi.
@@ -296,26 +268,9 @@ export default function FacultyPage() {
             </IntelPanel>
           )}
 
-          <Toolbar
-            end={
-              <>
-                {/* Jadvalda saralash ustun sarlavhalari orqali bo'ladi —
-                    ikkinchi tanlagich faqat chalg'itardi: ikkita raqobatdosh
-                    saralash bir-birini bekor qilardi. */}
-                {view === 'cards' && <Select value={sort} onChange={(v) => setSort(v as GroupSortKey)} options={SORTS} ariaLabel="Saralash" />}
-                <Tabs
-                  variant="segmented"
-                  ariaLabel="Ko'rinish"
-                  value={view}
-                  onChange={setView}
-                  tabs={[
-                    { id: 'cards', label: 'Taxta', icon: LayoutGrid },
-                    { id: 'table', label: 'Jadval', icon: Rows3 },
-                  ]}
-                />
-              </>
-            }
-          >
+          {/* Guruhlar — kartalar emas, filtrli jadval (2026-11-04, buyurtmachi
+              so'rovi): kurs tugmalari va qidiruv tepada, saralash ustunlarda. */}
+          <Toolbar>
             <SearchInput value={query} onChange={setQuery} placeholder="Guruh nomi…" />
           </Toolbar>
 
@@ -337,7 +292,7 @@ export default function FacultyPage() {
                 </Button>
               }
             />
-          ) : view === 'table' ? (
+          ) : (
             <IntelPanel title="Guruhlar" code={`${tableRows.length} qator`}>
               <DataTable
                 ariaLabel="Guruhlar"
@@ -348,30 +303,6 @@ export default function FacultyPage() {
                 rowRag={(g) => (measured(g) ? rag(g.rate, RATE_RAG) : 'yoq')}
                 dense
               />
-            </IntelPanel>
-          ) : (
-            <IntelPanel title="Guruhlar" code={`${flat.length} ta`} bodyClassName="flex flex-col">
-              {/* Kurs bloklari — suzib yurgan kartalar emas, chiziq bilan
-                  ajratilgan bo'limlar. */}
-              {blocks
-                .filter((b) => b.groups.length > 0)
-                .map((block) => (
-                  <RuledSection
-                    key={block.label}
-                    title={block.label}
-                    meta={
-                      <span className="intel-code text-[11px] text-muted">
-                        {block.groups.length} guruh · {formatNumber(block.totals.total)} talaba
-                      </span>
-                    }
-                  >
-                    <StatusBoard
-                      items={sort === 'name' ? boardOf(block.groups) : worstFirst(boardOf(block.groups))}
-                      onOpen={(groupName) => navigate(withDate(situationPaths.group(groupName)))}
-                    />
-                  </RuledSection>
-                ))}
-              <RagLegend />
             </IntelPanel>
           )}
 

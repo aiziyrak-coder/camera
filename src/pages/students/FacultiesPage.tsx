@@ -8,6 +8,7 @@ import {
   IconButton,
   IntelPanel,
   Page,
+  Select,
   SkeletonCards,
   SkeletonTiles,
   Toolbar,
@@ -18,10 +19,8 @@ import {
   useUrlTab,
   type TabItem,
 } from '../../ui';
-import { RagLegend, StatusBoard, type BoardItem } from '../../components/hisobot/board';
-import { KpiReadout, StaleNote, worstFirst } from '../../components/attendance/readout';
+import { KpiReadout, StaleNote } from '../../components/attendance/readout';
 import { getOverview, situationPaths, type Overview } from '../../lib/situationApi';
-import { enrolledPct, hasAttendanceData } from '../../lib/studentAttendance';
 import { useLiveAttendance, type LiveAttendanceMessage } from '../../lib/realtime';
 import { useViewDate } from '../../lib/viewDate';
 import { LiveArrivals, type ArrivalItem } from '../../components/attendance/LiveArrivals';
@@ -103,31 +102,7 @@ export default function FacultiesPage() {
   const defaultView: ViewId = available ? 'davomat' : 'yuz';
   const [view, setView] = useUrlTab(views, { param: VIEW_PARAM, defaultTab: defaultView });
 
-  // Taxtadagi kataklar. Yuzi yetarli yig'ilmagan fakultetda foiz BOR, lekin
-  // u guruhning kichik qismidan chiqqan — unga svetofor qo'yish yolg'on
-  // hukm bo'lardi, shuning uchun qiymat "o'lchanmagan" deb uzatiladi va
-  // sababi ikkinchi qatorda yoziladi.
-  const board = useMemo<BoardItem[]>(
-    () =>
-      faculties.map((f) => {
-        const measured = f.total > 0 && hasAttendanceData(f);
-        return {
-          id: f.id ?? 'none',
-          name: f.name,
-          value: measured ? f.rate : null,
-          unit: '%',
-          detail:
-            f.total === 0
-              ? "Talaba yo'q"
-              : measured
-                ? `${formatNumber(f.present)} / ${formatNumber(f.present + f.absent + f.notYet)} keldi`
-                : `Yuzi ro'yxatda ${formatPercent(enrolledPct(f))}`,
-          headcount: f.total,
-        };
-      }),
-    [faculties],
-  );
-  const sortedBoard = useMemo(() => worstFirst(board), [board]);
+
 
   return (
     <Page
@@ -211,10 +186,23 @@ export default function FacultiesPage() {
                     },
                   ]}
                 />
-                <div className="border-t border-border">
-                  <StatusBoard items={sortedBoard} onOpen={(id) => navigate(withDate(situationPaths.faculty(id === 'none' ? null : id)))} />
+                {/* Fakultet kartalari o'rniga filtr (2026-11-04, buyurtmachi so'rovi):
+                    tanlangan fakultet sahifasi ochiladi. */}
+                <div className="border-t border-border px-3 py-2">
+                  <Select
+                    label="Fakultet:"
+                    placeholder="Fakultetni tanlang"
+                    value=""
+                    onChange={(id) => {
+                      if (id) navigate(withDate(situationPaths.faculty(id === 'none' ? null : id)));
+                    }}
+                    options={faculties.map((f) => ({
+                      value: f.id ?? 'none',
+                      label: `${f.name} (${formatNumber(f.total)} talaba)`,
+                    }))}
+                    className="sm:max-w-md"
+                  />
                 </div>
-                <RagLegend />
               </IntelPanel>
 
               <LiveArrivals items={arrivals} live={isToday} linkFor={(id) => withDate(situationPaths.person(id))} className="self-start" />

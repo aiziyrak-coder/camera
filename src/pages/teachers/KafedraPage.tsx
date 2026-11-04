@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { BarChart3, BookOpen, CalendarCheck, Rows3, ScanFace, Table2, Users } from 'lucide-react';
+import { BarChart3, BookOpen, CalendarCheck, ScanFace, Users } from 'lucide-react';
 import PdfButton from '../../components/situation/PdfButton';
 import { UnitEnrollDrawer } from '../../components/teachers/UnitEnrollDrawer';
 import {
@@ -21,7 +21,6 @@ import {
   SearchInput,
   Select,
   StatusBadge,
-  Tabs,
   Toolbar,
   cn,
   formatPercent,
@@ -35,8 +34,7 @@ import {
   type TabItem,
 } from '../../ui';
 import { RATE_RAG, rag } from '../../ui/rag';
-import { RagLegend, StatusBoard, type BoardItem } from '../../components/hisobot/board';
-import { KpiReadout, RateCell, StaleNote, StatusMark, worstFirst } from '../../components/attendance/readout';
+import { KpiReadout, RateCell, StaleNote, StatusMark } from '../../components/attendance/readout';
 import { LessonDrawer } from '../../components/lessons/LessonDrawer';
 import { LessonsTable } from '../../components/lessons/LessonsTable';
 import { TodayLessons } from '../../components/teachers/TeacherBits';
@@ -52,7 +50,6 @@ import type { FixedPreset } from '../../lib/reportPeriods';
 
 type TabId = 'oqituvchilar' | 'tahlil' | 'darslar';
 /** Saqlangan eski `'grid'` ("yuzlar") ham taxtaga tushadi. */
-type View = 'board' | 'table';
 
 const PERIOD_PRESETS: readonly FixedPreset[] = ['last7', 'last30', 'month'];
 const SORT_OPTIONS: { value: TeacherSort; label: string }[] = [
@@ -112,7 +109,6 @@ export default function KafedraPage() {
 
   // Darsga o'z vaqtida kirish davri: standart — ko'rilayotgan sanagacha 30 kun.
   const [period, setPeriod] = useKafedraPeriod(date);
-  const [view, setView] = usePersistedState<View>('kafedra.view', 'board');
   const [sort, setSort] = usePersistedState<TeacherSort>('kafedra.sort', 'lateness');
   const [search, setSearch] = useState('');
   const [enrollOpen, setEnrollOpen] = useState(false);
@@ -173,7 +169,6 @@ export default function KafedraPage() {
   const notFound = detail.error && !data && /topilmadi|404/i.test(detail.error);
   const title = data?.name ?? (notFound ? "Bo'linma topilmadi" : "Bo'linma");
   const crumbs = [{ label: "Xodimlar va o'qituvchilar", to: '/oqituvchilar' }];
-  const effectiveView: View = presentation || view !== 'table' ? 'board' : 'table';
 
   if (detail.loading && !data && !detail.error) {
     return (
@@ -201,23 +196,7 @@ export default function KafedraPage() {
       defaultTab="oqituvchilar"
       toolbar={
         data && tab === 'oqituvchilar' ? (
-          <Toolbar
-            end={
-              !presentation && (
-                <Tabs
-                  variant="segmented"
-                  size="sm"
-                  value={effectiveView}
-                  onChange={setView}
-                  ariaLabel="Ko'rinish"
-                  tabs={[
-                    { id: 'board' as const, label: 'Taxta', icon: Rows3 },
-                    { id: 'table' as const, label: 'Jadval', icon: Table2 },
-                  ]}
-                />
-              )
-            }
-          >
+          <Toolbar>
             <SearchInput value={search} onChange={setSearch} placeholder="Ism bo'yicha…" ariaLabel="O'qituvchini qidirish" />
             {data.teachers.some((t) => t.biometricsStatus !== 'tasdiqlangan') && (
               <Button size="sm" variant="soft" icon={ScanFace} onClick={() => setEnrollOpen(true)}>
@@ -277,7 +256,7 @@ export default function KafedraPage() {
           {tab === 'oqituvchilar' ? (
             // key: boshqa bo'linmaga o'tilganda ochiq drawer va tanlov
             // eski bo'linmaning xodimida qolib ketmasin.
-            <TeachersSection key={data.id} data={data} date={date} view={effectiveView} sort={effectiveSort} search={search} withDate={withDate} />
+            <TeachersSection key={data.id} data={data} date={date} sort={effectiveSort} search={search} withDate={withDate} />
           ) : tab === 'tahlil' ? (
             <ReportGate>
               <UnitAnalyticsSection unitId={data.id} unitName={data.name} kind={data.kind} from={period.from} to={period.to} />
@@ -348,7 +327,8 @@ function KafedraKpis({ data }: { data: KafedraDetail }) {
   );
 }
 
-function TeachersSection({ data, date, view, sort, search, withDate }: { data: KafedraDetail; date: string; view: View; sort: TeacherSort; search: string; withDate: (path: string) => string }) {
+// Xodimlar — kartalar emas, qidiruvli jadval (2026-11-04, buyurtmachi so'rovi).
+function TeachersSection({ data, date, sort, search, withDate }: { data: KafedraDetail; date: string; sort: TeacherSort; search: string; withDate: (path: string) => string }) {
   // Dars jadvali yo'q bo'lsa dars ustunlari/qatorlari chizilmaydi:
   // har satrda "Darsi yo'q" va har joyda "—" turishining ma'nosi yo'q.
   const hasTodayLessons = data.teachers.some((t) => t.lessonsScheduled > 0);
@@ -359,28 +339,6 @@ function TeachersSection({ data, date, view, sort, search, withDate }: { data: K
     const filtered = search.trim() ? data.teachers.filter((t) => matchesName(t.fullName, search)) : data.teachers;
     return sortTeachers(filtered, sort);
   }, [data.teachers, search, sort]);
-
-  const board = useMemo<BoardItem[]>(
-    () =>
-      rows.map((t) => ({
-        id: t.id,
-        name: t.fullName,
-        value: presenceRate(t),
-        unit: '%',
-        detail: [
-          t.position,
-          `${t.periodPresentDays} kun keldi`,
-          t.periodLateDays > 0 ? `${t.periodLateDays} kech` : null,
-          t.periodAbsentDays > 0 ? `${t.periodAbsentDays} kelmagan` : null,
-          hasPeriodLessons ? `darsga o'z vaqtida ${formatPercent(t.onTimeRate)}` : null,
-        ]
-          .filter(Boolean)
-          .join(' · '),
-        headcount: null,
-      })),
-    [rows, hasPeriodLessons],
-  );
-  const sortedBoard = useMemo(() => (sort === 'name' ? board : worstFirst(board)), [board, sort]);
 
   const columns: DataTableColumn<KafedraTeacher>[] = [
     {
@@ -467,15 +425,6 @@ function TeachersSection({ data, date, view, sort, search, withDate }: { data: K
         />
       ) : rows.length === 0 ? (
         <EmptyState icon={Users} compact title="Hech kim topilmadi" />
-      ) : view === 'board' ? (
-        <IntelPanel title="Xodimlar" code={`${rows.length} ta`}>
-          <StatusBoard
-            items={sortedBoard}
-            emptyText="Bu davrda yozuv yo'q"
-            onOpen={(id) => setSelected(rows.find((t) => t.id === id) ?? null)}
-          />
-          <RagLegend />
-        </IntelPanel>
       ) : (
         <IntelPanel title="Xodimlar" code={`${rows.length} qator`}>
           <DataTable

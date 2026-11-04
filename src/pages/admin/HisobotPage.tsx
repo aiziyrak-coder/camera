@@ -25,7 +25,6 @@ import InstituteStatusView from '../../components/hisobot/InstituteStatusView';
 import ReportSchedulesDialog from '../../components/hisobot/ReportSchedulesDialog';
 import PeopleTable from '../../components/hisobot/PeopleTable';
 import LessonGrid from '../../components/hisobot/LessonGrid';
-import { RagLegend, StatusBoard, boardRag, type BoardItem } from '../../components/hisobot/board';
 import ReportFilters from '../../components/reports/ReportFilters';
 import TabelView from '../../components/reports/TabelView';
 import { ApiError, api } from '../../lib/apiClient';
@@ -39,7 +38,6 @@ import {
   PERIOD_PRESETS,
   SECTION_KIND,
   documentReference,
-  drillPatch,
   hisobotPaths,
   readState,
   writeState,
@@ -56,8 +54,8 @@ import DayOffNotice from '../../components/situation/DayOffNotice';
  * Hisobotlar — rahbar uchun.
  *
  * To'rtta ko'rinish, bittadan vazifa bilan:
- *   HOLAT TAXTASI — "qayerda muammo bor?" Bo'linmalar svetofor bilan,
- *                   yomoni birinchi. Bosilsa o'sha bo'linmaga kiradi.
+ *   DAVOMAT JADVALI — asosiy ko'rsatkichlar va har dars bo'yicha kim
+ *                   keldi/kelmadi (bo'linma kartalari yo'q — filtr bor).
  *   RO'YXAT       — "kim?" Har qator bitta odam.
  *   OYLIK TABEL   — imzolanadigan hujjat (kun-kun jadval).
  *   KPI           — rahbariyat paneli: davomat, yuzni tanish, xavfsizlik,
@@ -76,7 +74,7 @@ const SECTIONS: TabItem<HisobotSection>[] = [
 
 const VIEWS: TabItem<HisobotView>[] = [
   { id: 'holat', label: 'Umumiy holat', icon: Activity },
-  { id: 'taxta', label: 'Holat taxtasi', icon: LayoutGrid },
+  { id: 'taxta', label: 'Davomat jadvali', icon: LayoutGrid },
   { id: 'royxat', label: "Ro'yxat", icon: List },
   { id: 'tabel', label: 'Oylik tabel', icon: CalendarDays },
   { id: 'kpi', label: 'KPI', icon: Gauge },
@@ -157,34 +155,7 @@ export default function HisobotPage() {
     }
   }
 
-  // Taxtadagi kataklar — serverning "kesim" qatorlaridan.
-  const board: BoardItem[] = useMemo(() => {
-    const rows = data?.report.breakdown?.rows ?? [];
-    const unit = data?.report.breakdown?.unit ?? '';
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      value: row.value,
-      unit,
-      detail: row.detail,
-      headcount: row.headcount,
-    }));
-  }, [data, state.section]);
 
-  // Yomoni birinchi: rahbar ekranning yuqorisidan chora kerak bo'lgan
-  // joyni topadi, pastga qarab tinchlanadi.
-  const sortedBoard = useMemo(() => {
-    const order = { qizil: 0, sariq: 1, yashil: 2, yoq: 3 } as const;
-    return [...board].sort((a, b) => {
-      const byTone = order[boardRag(a, RATE_RAG)] - order[boardRag(b, RATE_RAG)];
-      if (byTone !== 0) return byTone;
-      return (a.value ?? Infinity) - (b.value ?? Infinity);
-    });
-  }, [board]);
-
-
-  // Binolar kesimi (forma) bo'linma filtri emas — ustiga bosib bo'lmaydi.
-  const canDrill = data ? data.report.breakdown?.drill !== false && drillPatch(state, '_') !== null : false;
 
   const scope = kpi ? 'Butun institut' : tabel ? sheetData?.scope : data?.scope;
   const period = kpi
@@ -359,24 +330,10 @@ export default function HisobotPage() {
             </IntelPanel>
 
 
-            {state.view === 'taxta' ? (
-              <>
-
-                <IntelPanel
-                  title={data.report.breakdown?.title ?? "Bo'linmalar holati"}
-                  code={`${board.length} ta`}
-                >
-                  <StatusBoard
-                    items={sortedBoard}
-                    onOpen={canDrill ? (id) => {
-                      const patch = drillPatch(state, id);
-                      if (patch) update(patch);
-                    } : undefined}
-                  />
-                  <RagLegend />
-                </IntelPanel>
-              </>
-            ) : (
+            {/* Bo'linma kartalari olib tashlandi (2026-11-04, buyurtmachi so'rovi):
+                fakultet/kurs/guruh filtrda bor. "Davomat jadvali" ko'rinishida
+                faqat asosiy ko'rsatkichlar va darslar jadvali qoladi. */}
+            {state.view === 'taxta' ? null : (
               <IntelPanel
                 title={data.report.people_title}
                 code={`${data.report.people_total.toLocaleString('ru-RU')} ta`}

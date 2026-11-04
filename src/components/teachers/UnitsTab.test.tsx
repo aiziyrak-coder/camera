@@ -76,7 +76,7 @@ describe("UnitsTab — «Xodimlar keldi» plitkasi", () => {
   it('shows the fraction over the same denominator as the percentage', async () => {
     renderTab([unit({ staffTotal: 20, enrolled: 12, present: 10, late: 2, absent: 2, noData: 8, rate: 83.3 })]);
     await screen.findByText(/Yuzi bazada bor/);
-    expect(screen.getByText('/ 12')).toBeTruthy();
+    expect(screen.getAllByText('/ 12').length).toBeGreaterThan(0);
     expect(screen.queryByText('/ 20')).toBeNull();
   });
 });
@@ -114,37 +114,31 @@ describe("UnitsTab — bo'linma turi filtri URL da", () => {
       unit({ id: 'd1', name: 'Davolash dekanati', kind: 'dekanat' }),
     ];
     renderTab(rows, true, '/oqituvchilar?tur=dekanat');
-    await waitFor(() => expect(screen.getByText('Davolash dekanati')).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByText('Davolash dekanati').length).toBeGreaterThan(0));
     expect(screen.queryByText('Anatomiya kafedrasi')).toBeNull();
   });
 
   it('falls back to all units for an unknown ?tur=', async () => {
     const rows = [unit({ id: 'k1', name: 'Anatomiya kafedrasi', kind: 'kafedra' })];
     renderTab(rows, true, '/oqituvchilar?tur=yoq-narsa');
-    await waitFor(() => expect(screen.getByText('Anatomiya kafedrasi')).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByText('Anatomiya kafedrasi').length).toBeGreaterThan(0));
   });
 });
 
-describe('UnitsTab — taxtadagi raqamlar foiz maxraji bilan mos', () => {
-  /** Taxta katagidagi ikkinchi qator — foizning izohi. */
-  function boardDetail(): string {
-    return screen.getByTitle(/Normal anatomiya kafedrasi —/).textContent ?? '';
-  }
-
-  // "Hali kelmagan" xodimlar ro'yxatda umuman ko'rinmasdi: uch raqam
-  // qo'shilib foiz maxrajiga teng chiqmasdi va sababi topilmasdi.
-  it('shows the people who have not arrived yet, inside the same denominator', async () => {
+describe("UnitsTab — jadvaldagi raqamlar foiz maxraji bilan mos", () => {
+  // Bo'linma kartalari olib tashlandi (2026-11-04): "keldi" ustunida
+  // maxraj AYNAN foiz maxraji — hali kelmaganlar ham ichida.
+  it('counts the people who have not arrived yet inside the same denominator', async () => {
     renderTab([unit({ staffTotal: 10, enrolled: 9, present: 4, late: 1, absent: 1, notYet: 4, noData: 1, rate: 44.4 })]);
-    await waitFor(() => expect(screen.getByText('Normal anatomiya kafedrasi')).toBeTruthy());
-    // 4 + 1 + 4 = 9 — foiz maxraji; "hali kelmagan" ham alohida aytiladi.
-    expect(boardDetail()).toContain('4 / 9 keldi');
-    expect(boardDetail()).toContain('4 hali kelmagan');
+    await waitFor(() => expect(screen.getAllByText('Normal anatomiya kafedrasi').length).toBeGreaterThan(0));
+    expect(screen.getAllByText('/ 9').length).toBeGreaterThan(0);
+    expect(screen.queryByText('/ 10')).toBeNull();
   });
 
-  it('says nothing about pending people when there are none', async () => {
+  it('shows no unit cards — only the filterable table', async () => {
     renderTab([unit({ staffTotal: 10, enrolled: 10, present: 8, late: 1, absent: 2, notYet: 0, rate: 80 })]);
-    await waitFor(() => expect(screen.getByText('Normal anatomiya kafedrasi')).toBeTruthy());
-    expect(boardDetail()).toContain('8 / 10 keldi');
-    expect(boardDetail()).not.toContain('hali kelmagan');
+    await waitFor(() => expect(screen.getAllByText('Normal anatomiya kafedrasi').length).toBeGreaterThan(0));
+    expect(screen.queryByTitle(/Normal anatomiya kafedrasi —/)).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Taxta' })).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, LayoutGrid, Rows3 } from 'lucide-react';
+import { Building2 } from 'lucide-react';
 import {
   Badge,
   cn,
@@ -15,22 +15,17 @@ import {
   formatPercent,
   formatUzRange,
   rangeForPreset,
-  useShell,
   type DataTableColumn,
 } from '../../ui';
 import { RATE_RAG, rag } from '../../ui/rag';
-import { RagLegend, StatusBoard, type BoardItem } from '../hisobot/board';
-import { KpiReadout, RateCell, worstFirst } from '../attendance/readout';
+import { KpiReadout, RateCell } from '../attendance/readout';
 import { getAnalyticsUnits, getLessons, situationPaths, type KafedraStat, type UnitKind } from '../../lib/situationApi';
 import { summarizeKafedras, summarizePunctuality, unitKindLabel } from '../../lib/teachersApi';
-import { usePersistedState } from '../../lib/usePersistedState';
 import { useUrlChoice } from './analyticsPeriod';
 import { DeltaBadge } from '../analytics';
 import { TeacherSearch } from './TeacherSearch';
 import { useLoader, type Loader } from './useLoader';
 
-/** Saqlangan eski qiymat `'cards'` ham shu yerga tushadi — taxta. */
-type View = 'board' | 'table';
 type KindFilter = 'kafedra' | 'dekanat' | 'bolim' | 'lavozim' | 'all';
 const KIND_FILTER_IDS: readonly KindFilter[] = ['all', 'kafedra', 'dekanat', 'bolim', 'lavozim'];
 
@@ -39,9 +34,7 @@ const LESSON_PAGE_SIZE = 500;
 
 /** "Bo'linmalar" tabi: tur bo'yicha filtr, holat taxtasi / zich jadval, 7 kunlik trend. */
 export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<KafedraStat[]>; date: string; isToday: boolean; withDate: (path: string) => string }) {
-  const { presentation } = useShell();
   const navigate = useNavigate();
-  const [view, setView] = usePersistedState<View>('oqituvchilar.view', 'board');
   // Bo'linma turi URL'da (`?tur=`), localStorage'da emas: ilgari havolani
   // ulashgan odam "Kafedralar" ni ko'rib turardi, qabul qiluvchi esa o'z
   // brauzeridagi eski tanlovni — ikkalasi boshqa ro'yxat ko'rardi.
@@ -88,35 +81,6 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
   // (present + absent + notYet). Jami xodimga bo'lish yuzi ro'yxatdan
   // o'tmagan ~80 xodimni "kelmagan" qilib ko'rsatardi.
   const staffRate = summary.rate;
-  const effectiveView: View = presentation || view !== 'table' ? 'board' : 'table';
-
-  /** Bo'linma → taxta katagi. Ikkinchi qatorda foizning MAXRAJI ham,
-   *  hali kelmaganlar ham yoziladi: uch raqam qo'shilib maxrajga teng
-   *  chiqmasa odam sababini topolmasdi. */
-  const board = useMemo<BoardItem[]>(
-    () =>
-      rows.map((k) => {
-        const decided = k.present + k.absent + k.notYet;
-        return {
-          id: k.id,
-          name: k.name,
-          value: decided > 0 ? k.rate : null,
-          unit: '%',
-          detail: [
-            unitKindLabel(k),
-            decided > 0 ? `${k.present} / ${decided} keldi` : "Holati aniqlangan xodim yo'q",
-            k.late > 0 ? `${k.late} kech` : null,
-            k.absent > 0 ? `${k.absent} kelmadi` : null,
-            k.notYet > 0 ? `${k.notYet} hali kelmagan` : null,
-          ]
-            .filter(Boolean)
-            .join(' · '),
-          headcount: k.staffTotal,
-        };
-      }),
-    [rows],
-  );
-  const sortedBoard = useMemo(() => worstFirst(board), [board]);
 
   const columns: DataTableColumn<KafedraStat>[] = [
     {
@@ -212,23 +176,8 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
 
   return (
     <>
-      <Toolbar
-        end={
-          !presentation && (
-            <Tabs
-              variant="segmented"
-              size="sm"
-              value={effectiveView}
-              onChange={setView}
-              ariaLabel="Ko'rinish"
-              tabs={[
-                { id: 'board' as const, label: 'Taxta', icon: LayoutGrid },
-                { id: 'table' as const, label: 'Jadval', icon: Rows3 },
-              ]}
-            />
-          )
-        }
-      >
+      {/* Bo'linmalar — kartalar emas: tur filtri va jadval (2026-11-04, buyurtmachi so'rovi). */}
+      <Toolbar>
         <Tabs variant="segmented" size="sm" value={kind} onChange={setKind} ariaLabel="Bo'linma turi" tabs={kindTabs} />
         <TeacherSearch />
       </Toolbar>
@@ -303,11 +252,6 @@ export function UnitsTab({ loader, date, isToday, withDate }: { loader: Loader<K
           title={kind === 'all' ? "Bo'linmalar yo'q" : `${kindTabs.find((t) => t.id === kind)?.label} topilmadi`}
           description="Ro'yxat xodimlar reestridan yig'iladi."
         />
-      ) : effectiveView === 'board' ? (
-        <IntelPanel title="Bo'linmalar" code={`${rows.length} ta`} bodyClassName="flex flex-col">
-          <StatusBoard items={sortedBoard} onOpen={(id) => navigate(withDate(situationPaths.kafedra(id)))} />
-          <RagLegend />
-        </IntelPanel>
       ) : (
         <IntelPanel title="Bo'linmalar" code={`${rows.length} qator`}>
           <DataTable

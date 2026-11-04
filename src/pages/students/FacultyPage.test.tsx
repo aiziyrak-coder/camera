@@ -92,25 +92,23 @@ describe('Fakultet sahifasi', () => {
     expect(screen.queryByTestId('kampaniya')).not.toBeInTheDocument();
   });
 
-  it('kurs sarlavhasidagi jami qidiruvdan keyin ko\'rinayotgan guruhlarga mos keladi', async () => {
-    // Ilgari "N guruh" qidiruvdan keyingi sondan, "M talaba · davomat X%"
-    // esa butun kursdan olinardi — bitta qatorda ikki xil to'plam.
+  it('qidiruv jadvalni topilgan guruhlar bilan cheklaydi', async () => {
+    // Guruh kartalari olib tashlandi (2026-11-04): ro'yxat — filtrli jadval.
     renderPage();
-    await waitFor(() => expect(screen.getByText(/3 guruh · 30 talaba/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText('DI-2301').length).toBeGreaterThan(0));
 
     fireEvent.change(screen.getByPlaceholderText('Guruh nomi…'), { target: { value: 'DI-2302' } });
-    await waitFor(() => expect(screen.getByText(/1 guruh/)).toBeInTheDocument());
-    const header = screen.getByText(/1 guruh/);
-    expect(header.textContent).toContain('10 talaba');
-    expect(header.textContent).not.toContain('30 talaba');
+    await waitFor(() => expect(screen.queryAllByText('DI-2301')).toHaveLength(0));
+    expect(screen.getAllByText('DI-2302').length).toBeGreaterThan(0);
+    expect(screen.getByRole('table', { name: 'Guruhlar' })).toBeInTheDocument();
   });
 
   it("qidiruv URL'dan o'qiladi — chuqur havola bir xil ro'yxatni beradi", async () => {
     // Ilgari qidiruv faqat komponent holatida edi: havolani ulashganda yoki
     // sahifani yangilaganda ro'yxat to'liq holatga qaytib ketardi.
     renderPage('/talabalar/fakultet/f1?qidiruv=DI-2302');
-    await waitFor(() => expect(screen.getByText('DI-2302')).toBeInTheDocument());
-    expect(screen.queryByText('DI-2301')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByText('DI-2302').length).toBeGreaterThan(0));
+    expect(screen.queryAllByText('DI-2301')).toHaveLength(0);
     expect(screen.getByPlaceholderText('Guruh nomi…')).toHaveValue('DI-2302');
   });
 
