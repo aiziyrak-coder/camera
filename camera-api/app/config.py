@@ -612,6 +612,28 @@ class Settings(BaseSettings):
     recording_segment_minutes: int = 5
     recording_min_free_percent: float = 12.0
     recordings_dir: str = "/recordings"
+    # Dars xonasi kameralarining 4K surati (app/jobs/classroom_snapshots.py).
+    # O'lchov (2026-11-04): substream (1280x720) da talaba yuzi ~15 px —
+    # birorta yuz tanilmaydi; o'sha xonaning 4K surati (3840x2160) da yuz
+    # 40-55 px, bir kadrda guruhning yarmi taniladi. 4K videoni uzluksiz
+    # yozish soatiga ~40 GB, uni dekodlash esa CPU'ni yeydi; surat esa har
+    # `interval` soniyada bitta JPEG (~0.7 MB): 61 xona, daqiqada bitta —
+    # ~2.5 GB/soat, dekodlash yo'q. Reja dars boshini daqiqada bir, o'rtasini
+    # 5 daqiqada bir ko'radi — 60 s dan zichroq surat kerak emas. Kunduzgi
+    # tahlil dars xonasi uchun shu suratlarni o'qiydi.
+    classroom_snapshots_enabled: bool = False
+    classroom_snapshot_interval_seconds: int = 60
+    classroom_snapshots_dir: str = "/snapshots"
+    classroom_snapshot_retention_hours: int = 8
+    classroom_snapshot_timeout_seconds: float = 10.0
+    classroom_snapshot_http_port: int = 80
+    classroom_snapshot_concurrency: int = 8
+    # Ulanmagan kamera har urinishda timeout kuttirmasin — shuncha vaqt o'tkazib yuboriladi.
+    classroom_snapshot_retry_after_seconds: int = 300
+    # 4K suratda detektor kirishining uzun tomoni: 1280 da 45 px lik yuz
+    # 15 px bo'lib qoladi va topilmaydi; 1920 da 22 px — topiladi (vektor
+    # baribir asl 4K kadrdan hisoblanadi).
+    classroom_snapshot_det_side: int = 1920
     mediamtx_playback_port: int = 9996
     # Hodisa klipi: hodisadan oldin/keyin necha soniya, MinIO'da necha kun.
     event_clip_enabled: bool = True
@@ -1523,6 +1545,12 @@ class Settings(BaseSettings):
     # bitta klip — xalat (#10) va "binoda bo'lgan" ko'rinishlari uchun.
     # 0 — bunday kameralar ko'rilmaydi.
     video_analysis_general_step_minutes: int = 10
+    # Jadvalda bo'sh turgan dars xonasi ham juftlik vaqtlarida dars kabi
+    # ko'riladi (app/batch/planner.py) — dars aslida o'tgan xonani topish uchun.
+    video_analysis_idle_room_slots: bool = True
+    # Xonada guruhning 2+ talabasi aniq tanilsa, qolgan yuzlar shu guruh
+    # ro'yxati bilan qayta solishtiriladi (app/batch/analyzer.py _group_rematch).
+    video_analysis_group_rematch: bool = True
     # Chekish (#15) — "tashqi"/"koridor" turidagi kameralar: har shuncha
     # daqiqada uzunroq klip (takroriy qo'l-og'iz harakatini ko'rish uchun).
     video_analysis_smoking_step_minutes: int = 5

@@ -17,6 +17,7 @@ from app.jobs.camera_health import camera_health_loop
 from app.jobs.cleanup import cleanup_loop
 from app.jobs.leader_lock import release_leadership, try_become_leader
 from app.jobs.ai_scheduler import ai_scheduler_loop, daily_mode_sweep_loops, standalone_sweep_loops
+from app.jobs.classroom_snapshots import classroom_snapshots_loop
 from app.jobs.video_analysis import video_analysis_loop
 from app.jobs.lesson_attendance import lesson_attendance_loop
 from app.jobs.lesson_quality_ai import lesson_quality_ai_loop
@@ -158,6 +159,7 @@ def _start_daily_mode_loops(tasks: list[asyncio.Task]) -> None:
         access_poll_loop(),
         camera_health_loop(),
         video_analysis_loop(),
+        classroom_snapshots_loop(),
         *daily_mode_sweep_loops(),
     ):
         tasks.append(asyncio.create_task(loop_coro))

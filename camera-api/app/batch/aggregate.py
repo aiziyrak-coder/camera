@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections import defaultdict
+from dataclasses import replace
 from datetime import datetime, time as time_type, timedelta, timezone
 
 from sqlalchemy import and_, delete, false, or_, select
@@ -39,6 +40,7 @@ from app.batch.rules import (
     day_attendance,
     group_by_person,
     lesson_result,
+    pick_lesson_job,
     presence_visits,
     smoking_incidents,
 )
@@ -347,12 +349,18 @@ async def aggregate_run(db: AsyncSession, run: VideoAnalysisRun, *, now: datetim
     student_lessons: dict[str, list] = defaultdict(list)
     teacher_lessons: dict[str, list] = defaultdict(list)
     punctuality_events: list[tuple[LessonSession, object]] = []
-    for job in lesson_jobs:
-        row = lesson_rows.get(job.lesson_id)
+    # Juftlik vaqtidagi barcha dars-xona vazifalari (jadvaldagi va bo'sh xonalar):
+    # dars guruhi aslida ko'ringan xonadan baholanadi (rules.pick_lesson_job).
+    room_jobs = [job for job in jobs if job.kind == KIND_LESSON and job.clips]
+    room_mismatches: list[dict] = []
+    for own_job in lesson_jobs:
+        row = lesson_rows.get(own_job.lesson_id)
         if row is None or row.scheduled_start_time is None:
             continue
         end = row.scheduled_end_time or row.scheduled_start_time + timedelta(minutes=settings.lesson_duration_minutes)
-        lesson = LessonInfo(
+        if row.group_name not in rosters:
+            rosters[row.group_name] = await _group_roster(db, row.group_name, day_end)
+        scheduled = LessonInfo(
             id=str(row.id),
             group_name=row.group_name,
             teacher_id=str(row.teacher_id) if row.teacher_id else None,
@@ -360,8 +368,22 @@ async def aggregate_run(db: AsyncSession, run: VideoAnalysisRun, *, now: datetim
             start=row.scheduled_start_time,
             end=end,
         )
-        if row.group_name not in rosters:
-            rosters[row.group_name] = await _group_roster(db, row.group_name, day_end)
+        job, own_seen, seen = pick_lesson_job(scheduled, own_job, room_jobs, obs_by_job, rosters[row.group_name])
+        lesson = scheduled
+        if job is not own_job:
+            lesson = replace(scheduled, camera_id=job.camera_id)
+            stats["dars_boshqa_xonada"] += 1
+            if len(room_mismatches) < 200:
+                room_mismatches.append(
+                    {
+                        "guruh": row.group_name,
+                        "vaqt": _hhmm(scheduled.start),
+                        "jadvalda": getattr(cameras.get(own_job.camera_id or ""), "name", None) or row.auditorium,
+                        "aslida": getattr(cameras.get(job.camera_id or ""), "name", None),
+                        "talabalar": seen,
+                        "jadval_xonasida": own_seen,
+                    }
+                )
         result = lesson_result(
             lesson, job, obs_by_job.get(job.id, []), rosters[row.group_name], staff_ids, window_end=run.window_end
         )
@@ -615,6 +637,8 @@ async def aggregate_run(db: AsyncSession, run: VideoAnalysisRun, *, now: datetim
         if lessons:
             stats["dars_kechikish"] += sum(1 for l in lessons if l.status == "kech_keldi")
             stats["darsdan_erta_ketish"] += sum(1 for l in lessons if l.left_early)
+    if room_mismatches:
+        stats["xona_nomuvofiq"] = room_mismatches
     stats["kunlik_qatorlar"] = rows_written
     stats["kuzatuvlar"] = len(observations)
     stats["tanilgan_odamlar"] = len([p for p, items in by_person.items() if items])

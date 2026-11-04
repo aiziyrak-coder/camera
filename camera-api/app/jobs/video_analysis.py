@@ -24,8 +24,8 @@ from datetime import date as date_type, datetime, time as time_type, timedelta, 
 from sqlalchemy import case, delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.batch.analyzer import Analyzer, JobContext
-from app.batch.planner import DAYTIME_TRIGGER, Clip, LessonSlot, build_plan
+from app.batch.analyzer import Analyzer, JobContext, group_key
+from app.batch.planner import DAYTIME_TRIGGER, KIND_LESSON, Clip, LessonSlot, build_plan
 from app.config import settings
 from app.database import SessionLocal
 from app.models import (
@@ -33,6 +33,7 @@ from app.models import (
     Camera,
     LessonSession,
     NvrDevice,
+    StudentStaff,
     VideoAnalysisJob,
     VideoAnalysisRun,
     VideoObservation,
@@ -73,6 +74,16 @@ def analysis_window(day: date_type, *, now: datetime | None = None) -> tuple[dat
     # NVR yozuvni bir necha daqiqa kechikib yopadi — oxirgi 2 daqiqa olinmaydi.
     end = min(end, now - timedelta(minutes=2))
     return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+
+
+async def student_groups(db: AsyncSession) -> dict[str, str]:
+    """Faol talaba id -> guruh (guruh bo'yicha qayta solishtirish uchun)."""
+    rows = await db.execute(
+        select(StudentStaff.id, StudentStaff.group_or_position).where(
+            StudentStaff.type == "talaba", StudentStaff.active.is_(True)
+        )
+    )
+    return {str(person_id): key for person_id, raw in rows.all() if (key := group_key(raw))}
 
 
 SERVER_SOURCE_NAME = "Server yozuvi"
@@ -227,6 +238,7 @@ class RunExecutor:
         self.deadline: datetime | None = None
         self._nvr_slots: dict[uuid.UUID, asyncio.Semaphore] = {}
         self._evidence: set = set()
+        self._groups: dict[str, str] | None = None
 
     def _nvr_slot(self, nvr: NvrDevice) -> asyncio.Semaphore:
         slot = self._nvr_slots.get(nvr.id)
@@ -269,6 +281,7 @@ class RunExecutor:
             day = run.day
             self.deadline = run_deadline(day, run.started_at)
             candidates = await load_candidate_matrix(db)
+            self._groups = await student_groups(db) if settings.video_analysis_group_rematch else None
             existing_evidence = (
                 await db.execute(
                     select(VideoObservation.student_staff_id).where(
@@ -430,6 +443,9 @@ class RunExecutor:
                 candidates=candidates,
                 teacher_id=teacher_id,
                 evidence_registry=self._evidence,
+                # Faqat dars xonasi: kirish vazifasida guruh konteksti yo'q,
+                # tanilmagan izlar esa minglab bo'ladi.
+                groups=self._groups if job.kind == KIND_LESSON else None,
             )
             attempts = job.attempts
             run_id = job.run_id

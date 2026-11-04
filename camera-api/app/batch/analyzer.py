@@ -18,6 +18,7 @@ import asyncio
 import logging
 import threading
 import uuid
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date as date_type, datetime
@@ -80,9 +81,15 @@ class JobOutcome:
     covered: list[list[int]] = field(default_factory=list)
     smoking: list[dict] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    # Hech kimga moslanmagan izlar: (klip indeksi, iz, birlashtirilgan vektor).
+    pending: list = field(default_factory=list, repr=False)
+    group_matches: int = 0
 
     def result_json(self) -> dict:
-        return {"smoking": self.smoking, "errors": self.errors[-5:]}
+        result = {"smoking": self.smoking, "errors": self.errors[-5:]}
+        if self.group_matches:
+            result["guruh_boyicha"] = self.group_matches
+        return result
 
 
 @dataclass
@@ -96,6 +103,9 @@ class JobContext:
     teacher_id: str | None = None
     # (kun, odam) — xalat dalili shu kun allaqachon saqlanganlar (bitta yetadi).
     evidence_registry: set | None = None
+    # Talaba id -> guruh (group_key). Berilsa, vazifa oxirida guruh bo'yicha
+    # qayta solishtiriladi (Analyzer._group_rematch).
+    groups: dict[str, str] | None = None
 
 
 def _decode(jpeg: bytes) -> np.ndarray | None:
@@ -225,6 +235,46 @@ def _smoking_detect_sync(jpeg: bytes) -> list:
     return out
 
 
+# Guruh bo'yicha qayta solishtirish (Analyzer._group_rematch).
+GROUP_MIN_ANCHORS = 2
+GROUP_OUTSIDER_SLACK = 0.02
+
+
+def group_key(group_or_position: str | None) -> str | None:
+    """"1-kurs, W-126" -> "W-126" (talaba importi kursni oldiga yozadi)."""
+    if not group_or_position:
+        return None
+    key = group_or_position.split(",")[-1].strip()
+    return key or None
+
+
+def _overlaps(a: ObservationData, b: ObservationData) -> bool:
+    return a.person_id == b.person_id and a.seen_at <= b.last_seen_at and b.seen_at <= a.last_seen_at
+
+
+def _observation(track: Track, person_id: str, similarity: float, margin: float, clip_index: int) -> ObservationData:
+    # Diqqat namunasi: telefon bo'lsa — chalg'igan (yuz yo'nalishidan qat'i nazar).
+    frontal = sum(1 for s in track.samples if s.frontal and not s.phone)
+    phone = sum(1 for s in track.samples if s.phone)
+    coat_judged = [s for s in track.samples if s.coat is not None]
+    coat_fractions = [s.coat_fraction for s in track.samples if s.coat_fraction is not None]
+    return ObservationData(
+        person_id=person_id,
+        seen_at=track.first_at,
+        last_seen_at=track.last_at,
+        similarity=round(float(similarity), 4),
+        margin=round(float(margin), 4),
+        frames=min(len(track.samples), 32000),
+        face_px=min(track.face_px, 32000),
+        frontal_frames=frontal,
+        phone_frames=phone,
+        coat_frames=len(coat_judged),
+        coat_white_frames=sum(1 for s in coat_judged if s.coat),
+        coat_fraction=round(float(np.mean(coat_fractions)), 3) if coat_fractions else None,
+        clip_index=clip_index,
+    )
+
+
 class Analyzer:
     """Tashqi modellar shu yerda chaqiriladi — testlar ularni almashtiradi."""
 
@@ -233,6 +283,13 @@ class Analyzer:
         from app.services.inference_gate import PRIORITY_BACKGROUND
 
         return await detect_faces(jpeg, priority=PRIORITY_BACKGROUND)
+
+    async def faces_hd(self, jpeg: bytes, det_side: int) -> list:
+        """Katta kadr (4K surat): detektor kattaroq kirishda ishlaydi."""
+        from app.services.face_recognition import detect_faces
+        from app.services.inference_gate import PRIORITY_BACKGROUND
+
+        return await detect_faces(jpeg, priority=PRIORITY_BACKGROUND, det_max_side=det_side)
 
     async def objects(self, jpeg: bytes, class_ids: list[int]) -> list:
         from app.services.object_detection import detect_objects
@@ -285,6 +342,8 @@ class Analyzer:
                 continue
             if frames:
                 outcome.covered.append([index, frames, faces])
+        self._group_rematch(ctx, outcome)
+        outcome.pending = []
         await self._store_coat_evidence(ctx, outcome, coat_evidence)
         return outcome
 
@@ -340,7 +399,8 @@ class Analyzer:
                 last_analyzed_at = frame.at
             if frame_index % face_stride:
                 continue
-            faces = await self.faces(frame.jpeg)
+            det_side = getattr(frame, "det_side", None)
+            faces = await (self.faces_hd(frame.jpeg, det_side) if det_side else self.faces(frame.jpeg))
             if not faces:
                 finished_tracks += builder.add(frame.at, [])
                 continue
@@ -444,49 +504,89 @@ class Analyzer:
             strict_margin=settings.attendance_ai_strict_margin,
         )
         accepted: list[tuple[Track, ObservationData]] = []
-        for (track, _vector), match in zip(consistency_ok, matches, strict=True):
+        for (track, vector), match in zip(consistency_ok, matches, strict=True):
             if match.person_id is None:
+                if ctx.groups:
+                    outcome.pending.append((clip_index, track, vector))
                 continue
-            # Diqqat namunasi: telefon bo'lsa — chalg'igan (yuz yo'nalishidan qat'i nazar).
-            frontal = sum(1 for s in track.samples if s.frontal and not s.phone)
-            phone = sum(1 for s in track.samples if s.phone)
-            coat_judged = [s for s in track.samples if s.coat is not None]
-            coat_fractions = [s.coat_fraction for s in track.samples if s.coat_fraction is not None]
-            observation = ObservationData(
-                person_id=str(match.person_id),
-                seen_at=track.first_at,
-                last_seen_at=track.last_at,
-                similarity=round(float(match.similarity), 4),
-                margin=round(float(match.similarity - max(match.second_similarity, 0.0)), 4)
+            margin = (
+                match.similarity - max(match.second_similarity, 0.0)
                 if match.second_similarity >= 0
-                else round(float(match.similarity), 4),
-                frames=min(len(track.samples), 32000),
-                face_px=min(track.face_px, 32000),
-                frontal_frames=frontal,
-                phone_frames=phone,
-                coat_frames=len(coat_judged),
-                coat_white_frames=sum(1 for s in coat_judged if s.coat),
-                coat_fraction=round(float(np.mean(coat_fractions)), 3) if coat_fractions else None,
-                clip_index=clip_index,
+                else match.similarity
             )
-            accepted.append((track, observation))
+            accepted.append((track, _observation(track, str(match.person_id), match.similarity, margin, clip_index)))
         # Bir odam bir paytda ikki joyda bo'lmaydi: vaqt bo'yicha kesishgan
         # ikki iz bir odamga moslansa — kuchsizrog'i tashlanadi.
         accepted.sort(key=lambda item: -item[1].similarity)
         kept: list[tuple[Track, ObservationData]] = []
         for track, observation in accepted:
-            clash = any(
-                other.person_id == observation.person_id
-                and other.seen_at <= observation.last_seen_at
-                and observation.seen_at <= other.last_seen_at
-                for _t, other in kept
-            )
-            if not clash:
+            if not any(_overlaps(other, observation) for _t, other in kept):
                 kept.append((track, observation))
         for track, observation in kept:
             observation._track_ref = track  # type: ignore[attr-defined] — dalil bog'lash uchun
             outcome.observations.append(observation)
         return kept
+
+    def _group_rematch(self, ctx: JobContext, outcome: JobOutcome) -> None:
+        """Guruh bo'yicha qayta solishtirish (2026-11-04).
+
+        Butun universitet (~8 000 kishi) bilan solishtirganda xona kamerasidagi
+        kichik yuz uchun "ikkinchi eng o'xshash" doim topiladi — ajralish
+        (margin) yetmaydi va yuz tanilmay qoladi. Vazifada bir guruhning
+        kamida GROUP_MIN_ANCHORS talabasi ISHONCHLI tanilgan bo'lsa, xonada
+        shu guruh o'tirgani ma'lum: qolgan izlar faqat shu guruh(lar)
+        ro'yxati (va dars o'qituvchisi) bilan solishtiriladi. Qoida o'sha:
+        o'xshashlik >= relaxed chegara, ro'yxat ichida ajralish >= relaxed
+        margin, va ro'yxatdan tashqaridagi hech kim sezilarli darajada
+        o'xshashroq emas (GROUP_OUTSIDER_SLACK). Bunday kuzatuv odatdagi
+        "kuchsiz" moslik sifatida yoziladi — agregatsiya uni baribir ikkinchi
+        ko'rinish bilan tasdiqlaydi (rules.is_weak, lesson_result.present).
+        O'lchov: tasodifiy shu o'lchamdagi ro'yxatlarda bu qoida 90 yuzdan
+        birortasini ham noto'g'ri moslamadi."""
+        if not ctx.groups or not outcome.pending:
+            return
+        candidates = ctx.candidates
+        anchors = Counter(
+            ctx.groups.get(obs.person_id)
+            for obs in outcome.observations
+            if obs.similarity >= settings.attendance_ai_match_threshold
+            and obs.margin >= settings.attendance_ai_strict_margin
+        )
+        groups = {group for group, count in anchors.items() if group and count >= GROUP_MIN_ANCHORS}
+        if not groups:
+            return
+        members = np.asarray(
+            [i for i, pid in enumerate(candidates.ids) if ctx.groups.get(pid) in groups or pid == ctx.teacher_id],
+            dtype=np.int64,
+        )
+        if len(members) < 2:
+            return
+        threshold = settings.attendance_ai_relaxed_threshold
+        min_margin = settings.attendance_ai_relaxed_margin
+        floor = settings.face_gallery_anchor_floor
+        found: list[tuple[Track, ObservationData]] = []
+        for clip_index, track, vector in outcome.pending:
+            vec = np.asarray(vector, dtype=np.float64)[None, :]
+            vec = vec / max(float(np.linalg.norm(vec)), 1e-9)
+            sims = candidates._person_similarities(vec)[0]
+            sub = sims[members]
+            order = np.argsort(-sub)
+            best, second = float(sub[order[0]]), float(sub[order[1]])
+            index = int(members[order[0]])
+            if best < threshold or best - second < min_margin:
+                continue
+            if float(sims.max()) - best > GROUP_OUTSIDER_SLACK:
+                continue  # ro'yxatdan tashqaridagi kimdir aniq o'xshashroq
+            if candidates.has_gallery and float(candidates.anchor_similarities(vec, np.array([index]))[0]) < floor:
+                continue
+            found.append((track, _observation(track, candidates.ids[index], best, best - second, clip_index)))
+        found.sort(key=lambda item: -item[1].similarity)
+        for track, observation in found:
+            if any(_overlaps(other, observation) for other in outcome.observations):
+                continue
+            observation._track_ref = track  # type: ignore[attr-defined]
+            outcome.observations.append(observation)
+            outcome.group_matches += 1
 
     async def _teacher_activity(
         self, ctx: JobContext, observations: list[tuple[Track, ObservationData]], _tracks, kept: list[Frame]

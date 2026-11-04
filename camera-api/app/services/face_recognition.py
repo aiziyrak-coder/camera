@@ -799,6 +799,11 @@ async def detect_faces(
                     _detect_faces_sync, image_bytes, threshold, analyse, roi, tuple(skip_boxes), landmarks, False, embed, det_max_side
                 )
                 return await asyncio.get_running_loop().run_in_executor(_get_enrollment_executor(), call)
+            if det_max_side is not None:
+                # Katta kadr (4K surat, app/batch/analyzer.py faces_hd).
+                return await asyncio.to_thread(
+                    _detect_faces_sync, image_bytes, threshold, analyse, roi, tuple(skip_boxes), landmarks, False, True, det_max_side
+                )
             return await asyncio.to_thread(
                 _detect_faces_sync, image_bytes, threshold, analyse, roi, tuple(skip_boxes), landmarks
             )

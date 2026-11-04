@@ -213,3 +213,23 @@ def test_everywhere_mode_keeps_identity_when_smoking_is_off():
     plan = build_plan(cameras=[cam], lessons=[], window_start=W_START, window_end=W_END,
                       active_codes={6, 7, 10}, everywhere=True)
     assert plan.jobs and all(set(clip.purposes) == {P_IDENTITY, P_COAT} for job in plan.jobs for clip in job.clips)
+
+
+def test_idle_classroom_is_watched_during_lesson_slots(monkeypatch):
+    """Jadvalda bo'sh xona ham juftlik vaqtida dars kabi ko'riladi (2026-11-04):
+    dars aslida qaysi xonada o'tganini aniqlash uchun."""
+    busy, idle = Cam(name="51-xona", room_type="auditoriya"), Cam(name="60-xona", room_type="auditoriya")
+    start = W_START + timedelta(hours=2)
+    lessons = [
+        LessonSlot(uuid.uuid4(), busy.id, start, start + timedelta(minutes=80)),
+        LessonSlot(uuid.uuid4(), busy.id, start, start + timedelta(minutes=80)),  # ikki guruh, bitta juftlik
+    ]
+    plan = build_plan(cameras=[busy, idle], lessons=lessons, window_start=W_START, window_end=W_END, active_codes=ALL)
+    idle_jobs = [job for job in plan.jobs if job.camera_id == idle.id]
+    assert len(idle_jobs) == 1 and idle_jobs[0].kind == KIND_LESSON and idle_jobs[0].lesson_session_id is None
+    assert [c.phase for c in idle_jobs[0].clips] == [c.phase for c in lesson_clips(start, start + timedelta(minutes=80), ALL, W_END)]
+    # Band xonaga ortiqcha "bo'sh juftlik" vazifasi qo'shilmaydi.
+    assert all(job.lesson_session_id is not None for job in plan.jobs if job.camera_id == busy.id)
+    monkeypatch.setattr(settings, "video_analysis_idle_room_slots", False)
+    plan = build_plan(cameras=[busy, idle], lessons=lessons, window_start=W_START, window_end=W_END, active_codes=ALL)
+    assert not [job for job in plan.jobs if job.camera_id == idle.id]

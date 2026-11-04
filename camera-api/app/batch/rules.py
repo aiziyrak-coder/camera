@@ -326,6 +326,55 @@ def attention_score(frames: int, frontal: int, phone: int) -> float | None:
     return total / frames
 
 
+# Darsni boshqa xonadan baholash uchun shu xonada guruhning kamida shuncha
+# talabasi ko'rinishi kerak (bitta talaba — boshqa darsdan adashgan bo'lishi mumkin).
+ROOM_EVIDENCE_MIN_STUDENTS = 2
+# Boshqa xona vazifasining kliplari shu darsning juftlik vaqtiga mos bo'lsin.
+ROOM_SLOT_TOLERANCE = timedelta(minutes=15)
+
+
+def roster_seen(observations: list[Obs], roster: set[str], start: datetime, end: datetime) -> set[str]:
+    return {
+        obs.person_id
+        for obs in observations
+        if obs.person_id in roster and start <= obs.seen_at <= end and (is_strong(obs) or is_weak(obs))
+    }
+
+
+def pick_lesson_job(
+    lesson: LessonInfo,
+    own: JobInfo,
+    candidates: list[JobInfo],
+    obs_by_job: dict[str, list[Obs]],
+    roster: list[str],
+) -> tuple[JobInfo, int, int]:
+    """Dars qaysi xonada baholanadi: (vazifa, o'z xonasidagi guruh
+    talabalari, tanlangan xonadagi guruh talabalari).
+
+    O'lchov (2026-11-04): 8 xonadan 4 tasida kamera jadvaldagidan boshqa
+    guruhni ko'rsatdi — dars ko'chgan yoki kamera nomi/binosi almashgan.
+    Jadvalga ko'r-ko'rona ishonilsa, butun guruh "kelmadi" bo'lib yoziladi.
+    Shuning uchun dars o'sha juftlik vaqtida guruh talabalari eng ko'p
+    ko'ringan dars-xona vazifasidan baholanadi (o'z xonasi teng bo'lsa —
+    o'z xonasi)."""
+    members = set(roster)
+    window_start = lesson.start - timedelta(minutes=10)
+    own_seen = len(roster_seen(obs_by_job.get(own.id, []), members, window_start, lesson.end))
+    own_first = min((clip.start for clip in own.clips), default=None)
+    best, best_seen = own, own_seen
+    for job in candidates:
+        if job.id == own.id or not job.clips or own_first is None:
+            continue
+        if abs(min(clip.start for clip in job.clips) - own_first) > ROOM_SLOT_TOLERANCE:
+            continue
+        seen = len(roster_seen(obs_by_job.get(job.id, []), members, window_start, lesson.end))
+        if seen > best_seen:
+            best, best_seen = job, seen
+    if best is not own and best_seen < ROOM_EVIDENCE_MIN_STUDENTS:
+        return own, own_seen, own_seen
+    return best, own_seen, best_seen
+
+
 def lesson_result(
     lesson: LessonInfo,
     job: JobInfo,

@@ -18,6 +18,7 @@ from app.batch.rules import (
     is_strong,
     is_weak,
     lesson_result,
+    pick_lesson_job,
     presence_visits,
     reliable,
     smoking_incidents,
@@ -400,3 +401,36 @@ def test_arrival_coverage_without_door_cameras_uses_every_job():
     assert arrival_coverage(jobs, at(12, 0)) == 0.5
     assert arrival_coverage([], at(12, 0)) is None
     assert arrival_coverage([_door_job(14, 15, True)], at(12, 0)) is None  # oynada klip yo'q
+
+
+def test_lesson_is_judged_in_the_room_where_its_group_was_seen():
+    """Jadvaldagi xona noto'g'ri (2026-11-04: 8 xonadan 4 tasida): guruh
+    boshqa xonada ko'rinsa, dars o'sha xonadan baholanadi."""
+    own = lesson_job()
+    other = JobInfo(id="j2", camera_id="room2", kind="dars", clips=own.clips,
+                    covered=set(range(len(own.clips))), lesson_id=None)
+    m0, m1 = idx(own, PHASE_MID, 0), idx(own, PHASE_MID, 1)
+
+    def seen(job, person, index):
+        clip = job.clips[index]
+        return Obs(person, job.camera_id, job.id, index, clip.start, clip.end, 0.6, 0.2)
+
+    roster = ["a", "b", "c"]
+    obs_by_job = {"j": [seen(own, "stranger", m0)],
+                  "j2": [seen(other, p, i) for p in ("a", "b") for i in (m0, m1)]}
+    job, own_seen, best_seen = pick_lesson_job(LESSON, own, [own, other], obs_by_job, roster)
+    assert job is other and (own_seen, best_seen) == (0, 2)
+    result = lesson_result(LESSON, job, obs_by_job["j2"], roster, set(), window_end=W_END)
+    assert result.students["a"].status in ("keldi", "kech_keldi") and result.students["c"].status == "kelmadi"
+
+    # Bitta talaba — dalil yetarli emas; o'z xonasida teng bo'lsa — o'z xonasi.
+    lone = {"j": [], "j2": [seen(other, "a", m0)]}
+    assert pick_lesson_job(LESSON, own, [own, other], lone, roster)[0] is own
+    tie = {"j": [seen(own, "a", m0), seen(own, "b", m0)], "j2": [seen(other, "a", m0), seen(other, "b", m0)]}
+    assert pick_lesson_job(LESSON, own, [own, other], tie, roster)[0] is own
+    # Boshqa juftlik vaqtidagi vazifa hisobga olinmaydi.
+    later = JobInfo(id="j3", camera_id="room3", kind="dars",
+                    clips=lesson_clips(L_START + timedelta(hours=2), L_END + timedelta(hours=2), ALL, W_END),
+                    covered=set(), lesson_id=None)
+    far = {"j": [], "j3": [seen(later, p, 0) for p in ("a", "b")]}
+    assert pick_lesson_job(LESSON, own, [own, later], far, roster)[0] is own

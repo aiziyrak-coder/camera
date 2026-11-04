@@ -254,6 +254,17 @@ def build_plan(
         elif lesson.end <= window_start or lesson.start >= window_end:
             continue
         lessons_by_camera.setdefault(lesson.camera_id, []).append(lesson)
+    # Jadvaldagi juftlik vaqtlari. Bo'sh turgan dars xonasi ham shu vaqtlarda
+    # dars kabi ko'riladi: o'lchov (2026-11-04) — jadvaldagi xona va kamera
+    # ko'p hollarda mos emas (dars boshqa xonaga ko'chgan, kamera nomi
+    # almashgan), "bo'sh" xonada esa boshqa guruh o'tirgan bo'ladi.
+    # Agregatsiya (app/batch/aggregate.py) darsni guruh talabalari aslida
+    # ko'ringan xonadan baholaydi.
+    slot_ends: dict[datetime, datetime] = {}
+    for items in lessons_by_camera.values():
+        for lesson in items:
+            slot_ends[lesson.start] = max(slot_ends.get(lesson.start, lesson.end), lesson.end)
+    slots = sorted(slot_ends.items())
 
     for camera in cameras:
         if camera.nvr_id is None or camera.nvr_channel is None:
@@ -288,6 +299,15 @@ def build_plan(
                     plan.jobs.append(
                         PlannedJob(camera_id=camera.id, kind=KIND_LESSON, clips=clips, lesson_session_id=lesson.id)
                     )
+            if room_type in CLASSROOM_TYPES and s.video_analysis_idle_room_slots:
+                for start, end in slots:
+                    if any(lesson.start < end and lesson.end > start for lesson in camera_lessons):
+                        continue
+                    clips = lesson_clips(start, end, codes, window_end)
+                    if lessons_ending_after is None:
+                        clips = [clip for clip in clips if clip.start >= window_start - timedelta(hours=1)]
+                    if clips:
+                        plan.jobs.append(PlannedJob(camera_id=camera.id, kind=KIND_LESSON, clips=clips))
             if not everywhere:
                 if not camera_lessons:
                     plan.skipped_cameras[str(camera.id)] = "bugun bu xonada dars yo'q"

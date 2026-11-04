@@ -326,3 +326,40 @@ def test_mixed_track_of_two_people_is_rejected():
     kept = FakeAnalyzer()._finalize(context([clip(4)]), 0, [mixed, clean], outcome)
     assert [obs.person_id for _t, obs in kept] == ["A"]
     assert len(outcome.observations) == 1 and outcome.observations[0].frames == 2
+
+
+def _orthonormal(n, seed=21):
+    q, _ = np.linalg.qr(np.random.default_rng(seed).normal(size=(512, n)))
+    return [q[:, i] for i in range(n)]
+
+
+async def test_group_rematch_recognizes_faces_lost_in_the_crowd():
+    """Xonada guruhning 2 talabasi aniq tanilgan: qolgan yuz faqat guruh
+    ro'yxati bilan solishtiriladi (2026-11-04). Ro'yxatdan tashqaridagi
+    kimdir aniq o'xshashroq bo'lsa — baribir tanilmaydi."""
+    a, b, c, d, noise = _orthonormal(5)
+    matrix = CandidateMatrix(ids=["A", "B", "C", "D"], matrix=np.stack([a, b, c, d]))
+    groups = {"A": "G1", "B": "G1", "C": "G1", "D": "G2"}
+    lost = unit(0.47 * c + 0.42 * d + 0.776 * noise)  # global ajralish 0.05 < 0.08
+    outsider = unit(0.45 * c + 0.50 * d + 0.74 * noise)  # D (boshqa guruh) aniq o'xshashroq
+    images = [jpeg(seed=40 + i) for i in range(3)]
+    faces_map = {
+        images[0]: [face(a, box=(100, 100, 160, 170)), face(b, box=(300, 100, 360, 170))],
+        images[1]: [face(lost)],
+        images[2]: [face(outsider)],
+    }
+    source = FakeSource({i: [images[i]] for i in range(3)})
+    clips = [clip(offset=60 * i) for i in range(3)]
+
+    def ctx(with_groups):
+        return JobContext(job_id=uuid.uuid4(), day=date(2026, 10, 5), camera_id=uuid.uuid4(), camera_name="xona",
+                          clips=clips, candidates=matrix, groups=groups if with_groups else None)
+
+    without = await FakeAnalyzer(faces=faces_map).run(ctx(False), FakeSource({i: [images[i]] for i in range(3)}))
+    assert sorted(o.person_id for o in without.observations) == ["A", "B"]
+
+    outcome = await FakeAnalyzer(faces=faces_map).run(ctx(True), source)
+    assert sorted(o.person_id for o in outcome.observations) == ["A", "B", "C"]
+    rematched = next(o for o in outcome.observations if o.person_id == "C")
+    assert rematched.clip_index == 1 and 0.42 <= rematched.similarity < 0.50 and rematched.margin >= 0.08
+    assert outcome.group_matches == 1 and outcome.result_json()["guruh_boyicha"] == 1 and outcome.pending == []

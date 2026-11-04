@@ -37,6 +37,9 @@ _READ_CHUNK = 256 * 1024
 class Frame:
     at: datetime
     jpeg: bytes
+    # Yuz detektori kirishining uzun tomoni; None — standart (face_det_max_side).
+    # 4K suratda standart 1280 yuzni topib bo'lmas darajada kichraytiradi.
+    det_side: int | None = None
 
 
 class VideoReadError(Exception):
@@ -544,12 +547,130 @@ class ServerRecordingSource(FolderSource):
             return None
 
 
+# app/batch/planner.py CLASSROOM_TYPES bilan bir xil (u modul bu yerga import qilinmaydi).
+CLASSROOM_SNAPSHOT_TYPES = frozenset({"auditoriya", "laboratoriya"})
+
+_SNAPSHOT_NAME = re.compile(r"^(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.jpg$")
+
+
+def snapshot_name(at: datetime) -> str:
+    return at.astimezone(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S") + ".jpg"
+
+
+def snapshot_dir(base: str, camera_id: str) -> Path:
+    return Path(base) / f"snap-{camera_id}"
+
+
+class SnapshotSource(PlaybackSource):
+    """Dars xonasi kamerasining 4K suratlari (app/jobs/classroom_snapshots.py):
+    `<dir>/snap-<kamera id>/%Y-%m-%d_%H-%M-%S.jpg` (UTC), har `interval`
+    soniyada bittadan.
+
+    Reja kliplari video uchun tuzilgan (masalan 3 s, 1 kadr/s). Suratlar esa
+    siyrak, shuning uchun har surat o'z vaqtining ±interval/2 atrofini
+    "qoplaydi": klip shu oraliqqa tushgan suratlarni oladi, bo'lmasa klip
+    o'rtasiga eng yaqin (±interval/2 ichida) bitta suratni. Surat yo'q
+    oraliq — `fallback` (serverning o'z yozuvi) dan o'qiladi: kamera surat
+    bermay qolgan bo'lsa ham tahlil to'xtamaydi."""
+
+    def __init__(
+        self, base: str, camera_id: str, *, interval: float, det_side: int, fallback: PlaybackSource | None = None
+    ) -> None:
+        self.directory = snapshot_dir(base, camera_id)
+        self.interval = max(1.0, float(interval))
+        self.det_side = det_side
+        self.fallback = fallback
+        self.label = f" ({self.directory})"
+
+    def shots(self) -> list[tuple[datetime, Path]]:
+        if not self.directory.is_dir():
+            return []
+        found: list[tuple[datetime, Path]] = []
+        for path in self.directory.iterdir():
+            match = _SNAPSHOT_NAME.match(path.name)
+            if not match:
+                continue
+            try:
+                at = datetime.strptime(match.group(1), "%Y-%m-%d_%H-%M-%S").replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+            found.append((at, path))
+        found.sort()
+        return found
+
+    def _reach(self) -> timedelta:
+        return timedelta(seconds=self.interval / 2)
+
+    def _shots_for(self, start: datetime, end: datetime, shots: list[tuple[datetime, Path]]) -> list[tuple[datetime, Path]]:
+        reach = self._reach()
+        inside = [(at, path) for at, path in shots if start <= at < end]
+        if inside:
+            return inside
+        middle = start + (end - start) / 2
+        near = [(abs((at - middle).total_seconds()), at, path) for at, path in shots if start - reach <= at < end + reach]
+        if not near:
+            return []
+        _gap, at, path = min(near)
+        return [(at, path)]
+
+    async def available(self, start: datetime, end: datetime) -> list[RecordingSpan] | None:
+        reach = self._reach()
+        spans = [
+            RecordingSpan(max(at - reach, start), min(at + reach, end))
+            for at, _path in await asyncio.to_thread(self.shots)
+            if at + reach > start and at - reach < end
+        ]
+        if self.fallback is not None:
+            spans += await self.fallback.available(start, end) or []
+        return merge_spans(spans)
+
+    async def export(self, start, end, out_path, *, height, timeout):
+        if self.fallback is None:
+            raise VideoReadError(f"suratdan video klip yasab bo'lmaydi{self.label}")
+        await self.fallback.export(start, end, out_path, height=height, timeout=timeout)
+
+    async def clip(self, start, end, fps, *, max_side, timeout, should_stop=None):
+        chosen = self._shots_for(start, end, await asyncio.to_thread(self.shots))
+        if not chosen:
+            if self.fallback is None:
+                raise VideoReadError(f"oraliqda surat yo'q{self.label}")
+            async for frame in self.fallback.clip(
+                start, end, fps, max_side=max_side, timeout=timeout, should_stop=should_stop
+            ):
+                yield frame
+            return
+        produced = 0
+        for at, path in chosen:
+            if should_stop is not None and should_stop():
+                break
+            try:
+                data = await asyncio.to_thread(path.read_bytes)
+            except OSError:
+                continue  # tozalash shu payt o'chirgan bo'lishi mumkin
+            if data[:2] != b"\xff\xd8":
+                continue
+            produced += 1
+            yield Frame(at=at, jpeg=data, det_side=self.det_side)
+        if produced == 0:
+            raise VideoReadError(f"surat o'qilmadi{self.label}")
+
+
 def source_for(nvr, camera) -> PlaybackSource:
     """NvrDevice + Camera -> manba. Kanal bog'lanmagan bo'lsa ValueError."""
     if nvr.kind == "server":
         from app.config import settings
+        from app.services.camera_roles import effective_room_type
 
-        return ServerRecordingSource(settings.recordings_dir, str(camera.id))
+        recording = ServerRecordingSource(settings.recordings_dir, str(camera.id))
+        if settings.classroom_snapshots_enabled and effective_room_type(camera) in CLASSROOM_SNAPSHOT_TYPES:
+            return SnapshotSource(
+                settings.classroom_snapshots_dir,
+                str(camera.id),
+                interval=settings.classroom_snapshot_interval_seconds,
+                det_side=settings.classroom_snapshot_det_side,
+                fallback=recording,
+            )
+        return recording
     if camera.nvr_channel is None:
         raise ValueError("kamera NVR kanaliga bog'lanmagan")
     if nvr.kind == "fayl":
