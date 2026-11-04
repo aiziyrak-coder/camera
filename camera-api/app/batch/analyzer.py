@@ -84,6 +84,8 @@ class JobOutcome:
     # Hech kimga moslanmagan izlar: (klip indeksi, iz, birlashtirilgan vektor).
     pending: list = field(default_factory=list, repr=False)
     group_matches: int = 0
+    # Galereya nomzodlari: (odam id, vektor, yuz px, GradedMatch) — qat'iy moslikdan.
+    gallery: list = field(default_factory=list, repr=False)
 
     def result_json(self) -> dict:
         result = {"smoking": self.smoking, "errors": self.errors[-5:]}
@@ -514,7 +516,9 @@ class Analyzer:
                 if match.second_similarity >= 0
                 else match.similarity
             )
-            accepted.append((track, _observation(track, str(match.person_id), match.similarity, margin, clip_index)))
+            observation = _observation(track, str(match.person_id), match.similarity, margin, clip_index)
+            observation._match = match  # type: ignore[attr-defined] — galereya nomzodi uchun
+            accepted.append((track, observation))
         # Bir odam bir paytda ikki joyda bo'lmaydi: vaqt bo'yicha kesishgan
         # ikki iz bir odamga moslansa — kuchsizrog'i tashlanadi.
         accepted.sort(key=lambda item: -item[1].similarity)
@@ -525,7 +529,24 @@ class Analyzer:
         for track, observation in kept:
             observation._track_ref = track  # type: ignore[attr-defined] — dalil bog'lash uchun
             outcome.observations.append(observation)
+            self._gallery_candidate(track, observation, outcome)
         return kept
+
+    @staticmethod
+    def _gallery_candidate(track: Track, observation: ObservationData, outcome: JobOutcome) -> None:
+        """Qat'iy moslikning eng katta yuzi — galereya nomzodi (shartlarni
+        app/services/face_gallery.py maybe_add oxirigacha tekshiradi)."""
+        match = getattr(observation, "_match", None)
+        if not settings.video_gallery_enabled or match is None or match.grade != "strict":
+            return
+        best = max(
+            (s for s in track.samples if s.embedding is not None and s.quality >= settings.video_gallery_min_quality),
+            key=lambda s: s.face_px,
+            default=None,
+        )
+        if best is None or best.face_px < settings.video_gallery_min_face_px:
+            return
+        outcome.gallery.append((observation.person_id, best.embedding, best.face_px, match))
 
     def _group_rematch(self, ctx: JobContext, outcome: JobOutcome) -> None:
         """Guruh bo'yicha qayta solishtirish (2026-11-04).

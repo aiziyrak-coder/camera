@@ -47,8 +47,9 @@ def _face_px(face) -> int:
     return int(float(bbox[3]) - float(bbox[1]))
 
 
-def qualifies(face, match: GradedMatch) -> bool:
-    """Kadr darajasidagi shartlar (bazaga murojaatsiz)."""
+def qualifies(face, match: GradedMatch, *, min_face_px: int | None = None) -> bool:
+    """Kadr darajasidagi shartlar (bazaga murojaatsiz). `min_face_px` —
+    yuz o'lchami chegarasi (None: face_gallery_min_face_px)."""
     if not (settings.face_gallery_enabled and settings.face_gallery_auto_add):
         return False
     if match.person_id is None or match.grade != "strict":
@@ -58,7 +59,7 @@ def qualifies(face, match: GradedMatch) -> bool:
         return False
     if match.similarity - match.second_similarity < settings.face_gallery_min_margin:
         return False
-    if _face_px(face) < settings.face_gallery_min_face_px:
+    if _face_px(face) < (settings.face_gallery_min_face_px if min_face_px is None else min_face_px):
         return False
     if getattr(face, "embedding", None) is None:
         return False
@@ -72,9 +73,10 @@ async def maybe_add(
     camera_id: uuid.UUID | str | None = None,
     *,
     now: float | None = None,
+    min_face_px: int | None = None,
 ) -> bool:
     """Shartlar bajarilsa namunani qo'shadi (commit — chaqiruvchida). True — qo'shildi."""
-    if not qualifies(face, match):
+    if not qualifies(face, match, min_face_px=min_face_px):
         return False
     person_key = str(match.person_id)
     moment = time.monotonic() if now is None else now

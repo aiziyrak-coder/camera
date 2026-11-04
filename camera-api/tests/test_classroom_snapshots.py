@@ -146,3 +146,39 @@ async def test_analyzer_uses_large_detector_for_snapshot_frames():
     outcome = await analyzer.run(ctx, Source())
     assert analyzer.sides == [1920] and analyzer.face_calls == 0
     assert outcome.faces == 1 and ctx.candidates is CANDIDATES
+
+
+async def test_daytime_analysis_adds_classroom_gallery_samples(db_session):
+    """4K suratdagi 40-55 px yuz ham galereyaga tushadi (real vaqt chegarasi 56 px)."""
+    import json
+
+    import numpy as np
+    from sqlalchemy import func, select
+
+    from app.jobs.video_analysis import _add_gallery_samples
+    from app.models import Faculty, FaceGalleryEmbedding, StudentStaff
+    from app.services import face_gallery
+    from app.services.face_matching import GradedMatch
+
+    face_gallery.reset_for_tests()
+    faculty = Faculty(name="Galereya fakulteti")
+    db_session.add(faculty)
+    await db_session.flush()
+    anchor = np.zeros(512)
+    anchor[0] = 1.0
+    person = StudentStaff(full_name="Galereya Talaba", type="talaba", faculty_id=faculty.id, group_or_position="1-kurs, G-1",
+                          biometric_embedding=json.dumps(anchor.tolist()), biometrics_status="tasdiqlangan")
+    db_session.add(person)
+    await db_session.commit()
+    seen = anchor.copy()
+    seen[1] = 0.6  # asl rasm bilan o'xshashlik ~0.86, takror emas (< 0.90)
+    match = GradedMatch(str(person.id), 0.86, 0.3, "strict", 0.86)
+    outcome = SimpleNamespace(gallery=[(str(person.id), seen, 45, match)])
+    assert await _add_gallery_samples(db_session, outcome, None) == 1
+    await db_session.commit()
+    count = (await db_session.execute(select(func.count()).select_from(FaceGalleryEmbedding))).scalar()
+    assert count == 1 and outcome.gallery == []
+    # Real vaqt chegarasi (56 px) bilan 45 px lik yuz qo'shilmasdi.
+    face_gallery.reset_for_tests()
+    small = SimpleNamespace(bbox=(0, 0, 45, 45), embedding=seen)
+    assert not face_gallery.qualifies(small, match)

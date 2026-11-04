@@ -363,3 +363,18 @@ async def test_group_rematch_recognizes_faces_lost_in_the_crowd():
     rematched = next(o for o in outcome.observations if o.person_id == "C")
     assert rematched.clip_index == 1 and 0.42 <= rematched.similarity < 0.50 and rematched.margin >= 0.08
     assert outcome.group_matches == 1 and outcome.result_json()["guruh_boyicha"] == 1 and outcome.pending == []
+
+
+async def test_strict_large_match_becomes_a_gallery_candidate():
+    """Kunduzgi tahlil galereyani to'ldiradi (2026-11-04): qat'iy tanilgan, yetarlicha katta yuz — nomzod."""
+    image_big, image_small = jpeg(seed=60), jpeg(seed=61)
+    faces_map = {
+        image_big: [face(A, box=(100, 100, 150, 160), det=0.9)],  # 60 px
+        image_small: [face(B, box=(300, 100, 320, 125), det=0.9)],  # 25 px
+    }
+    outcome = await FakeAnalyzer(faces=faces_map).run(
+        context([clip(offset=0), clip(offset=60)]), FakeSource({0: [image_big], 1: [image_small]})
+    )
+    assert {o.person_id for o in outcome.observations} == {"A", "B"}
+    assert [(pid, px) for pid, _vec, px, _m in outcome.gallery] == [("A", 60)]
+    assert outcome.gallery[0][3].grade == "strict"

@@ -278,6 +278,16 @@ class Settings(BaseSettings):
     # Galereya namunasi orqali topilgan moslik uchun qo'shimcha talab:
     # asl rasm bilan o'xshashlik ham kamida shuncha bo'lsin.
     face_gallery_anchor_floor: float = 0.30
+    # Kunduzgi tahlil ham galereyani to'ldiradi (2026-11-04): real vaqt
+    # tahlili o'chgach (kunlik rejim) galereya 3-noyabrdan beri o'smagan edi.
+    # Dars xonasining 4K suratidagi yuz 40-55 px — real vaqt chegarasidan
+    # (56) kichik, lekin aynan shu kamera va burchakdagi namuna keyingi
+    # darslarda talabani tanishga eng ko'p yordam beradi. Moslik shartlari
+    # (asl rasm bilan >= face_gallery_min_similarity, ajralish >= min_margin)
+    # o'zgarmaydi — boshqa odamning yuzi galereyaga kirib qolmasin.
+    video_gallery_enabled: bool = True
+    video_gallery_min_face_px: int = 40
+    video_gallery_min_quality: float = 0.40
     # Kadrlar bo'yicha yuz izini birlashtirish (app/services/face_tracks.py).
     # Auditoriyada o'tirgan odam bir joyda qoladi: shu joydagi yuzning
     # bir necha kadrdagi vektorlari o'rtachalanadi — shovqin kamayadi va

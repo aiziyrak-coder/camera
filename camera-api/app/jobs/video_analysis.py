@@ -76,6 +76,28 @@ def analysis_window(day: date_type, *, now: datetime | None = None) -> tuple[dat
     return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
 
 
+async def _add_gallery_samples(db: AsyncSession, outcome, camera_id) -> int:
+    """Qat'iy tanilgan yuzlar galereyaga (app/services/face_gallery.py).
+    Xatosi vazifani buzmaydi — galereya faqat keyingi tanishni yaxshilaydi."""
+    from types import SimpleNamespace
+
+    from app.services import face_gallery
+
+    added = 0
+    for person_id, embedding, face_px, match in outcome.gallery:
+        face = SimpleNamespace(bbox=(0.0, 0.0, float(face_px), float(face_px)), embedding=embedding)
+        try:
+            async with db.begin_nested():
+                if await face_gallery.maybe_add(
+                    db, face, match, camera_id, min_face_px=settings.video_gallery_min_face_px
+                ):
+                    added += 1
+        except Exception:  # noqa: BLE001
+            logger.warning("video gallery sample failed", extra={"person_id": person_id}, exc_info=True)
+    outcome.gallery = []
+    return added
+
+
 async def student_groups(db: AsyncSession) -> dict[str, str]:
     """Faol talaba id -> guruh (guruh bo'yicha qayta solishtirish uchun)."""
     rows = await db.execute(
@@ -494,12 +516,15 @@ class RunExecutor:
             ]
             for start in range(0, len(rows), _OBSERVATION_BATCH):
                 await db.execute(VideoObservation.__table__.insert(), rows[start : start + _OBSERVATION_BATCH])
+            gallery_added = await _add_gallery_samples(db, outcome, camera_id)
             job = await db.get(VideoAnalysisJob, job_id)
             job.frames = outcome.frames
             job.faces = outcome.faces
             job.observations = len(rows)
             job.covered = outcome.covered
             job.result = outcome.result_json()
+            if gallery_added:
+                job.result = {**job.result, "galereya": gallery_added}
             job.finished_at = datetime.now(timezone.utc)
             if self.cancelled:
                 job.status = "bekor"
