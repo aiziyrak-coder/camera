@@ -137,7 +137,7 @@ async def test_analyzer_uses_large_detector_for_snapshot_frames():
     class Hd(FakeAnalyzer):
         sides: list = []
 
-        async def faces_hd(self, data, det_side):
+        async def faces_hd(self, data, det_side, landmarks=True):
             self.sides.append(det_side)
             return self.face_map.get(data, [])
 

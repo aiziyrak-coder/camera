@@ -69,6 +69,9 @@ class MarkerAnalyzer(Analyzer):
     def __init__(self):
         self.calls = 0
 
+    async def faces_lite(self, data):
+        return await self.faces(data)
+
     async def faces(self, data):
         self.calls += 1
         image = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)

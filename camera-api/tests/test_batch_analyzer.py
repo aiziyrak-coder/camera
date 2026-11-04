@@ -87,6 +87,9 @@ class FakeAnalyzer(Analyzer):
         self.face_calls += 1
         return self.face_map.get(data, [])
 
+    async def faces_lite(self, data):
+        return await self.faces(data)
+
     async def objects(self, data, class_ids):
         return [o for o in self.object_map.get(data, []) if o.class_id in class_ids]
 
@@ -378,3 +381,23 @@ async def test_strict_large_match_becomes_a_gallery_candidate():
     assert {o.person_id for o in outcome.observations} == {"A", "B"}
     assert [(pid, px) for pid, _vec, px, _m in outcome.gallery] == [("A", 60)]
     assert outcome.gallery[0][3].grade == "strict"
+
+
+async def test_landmarks_are_computed_only_for_attention_clips():
+    """68 nuqta (har yuzga ~0.16 s) faqat diqqat kliplarida; davomat kliplari tezroq yo'ldan."""
+    image = jpeg(seed=70)
+    calls = []
+
+    class Counting(FakeAnalyzer):
+        async def faces(self, data):
+            calls.append("full")
+            return self.face_map.get(data, [])
+
+        async def faces_lite(self, data):
+            calls.append("lite")
+            return self.face_map.get(data, [])
+
+    analyzer = Counting(faces={image: [face(A)]})
+    clips = [clip(seconds=1, purposes=(P_IDENTITY,)), clip(seconds=1, purposes=(P_IDENTITY, P_ATTENTION), offset=60)]
+    await analyzer.run(context(clips), FakeSource({0: [image], 1: [image]}))
+    assert calls == ["lite", "full"]

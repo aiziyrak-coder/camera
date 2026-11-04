@@ -286,12 +286,21 @@ class Analyzer:
 
         return await detect_faces(jpeg, priority=PRIORITY_BACKGROUND)
 
-    async def faces_hd(self, jpeg: bytes, det_side: int) -> list:
+    async def faces_hd(self, jpeg: bytes, det_side: int, landmarks: bool = True) -> list:
         """Katta kadr (4K surat): detektor kattaroq kirishda ishlaydi."""
         from app.services.face_recognition import detect_faces
         from app.services.inference_gate import PRIORITY_BACKGROUND
 
-        return await detect_faces(jpeg, priority=PRIORITY_BACKGROUND, det_max_side=det_side)
+        return await detect_faces(jpeg, priority=PRIORITY_BACKGROUND, det_max_side=det_side, landmarks=landmarks)
+
+    async def faces_lite(self, jpeg: bytes) -> list:
+        """68 nuqtasiz: davomat kliplari (dars boshi/oxiri, kirish) uchun.
+        Belgilar faqat diqqat (frontallik) uchun kerak, har yuzga ~0.16 s
+        oladi — ArcFace'ning deyarli yarmi (o'lchandi, 2026-09-24)."""
+        from app.services.face_recognition import detect_faces
+        from app.services.inference_gate import PRIORITY_BACKGROUND
+
+        return await detect_faces(jpeg, priority=PRIORITY_BACKGROUND, landmarks=False)
 
     async def objects(self, jpeg: bytes, class_ids: list[int]) -> list:
         from app.services.object_detection import detect_objects
@@ -363,6 +372,8 @@ class Analyzer:
         long_clip = (clip.end - clip.start).total_seconds() > LONG_CLIP_SECONDS
         keep_frames = bool(purposes & {P_ACTIVITY, P_SMOKING}) and not long_clip
         face_stride = SMOKING_FACE_STRIDE if P_SMOKING in purposes else 1
+        # Uyqu/frontallik (68 nuqta) faqat diqqat klipida o'qiladi.
+        need_landmarks = P_ATTENTION in purposes
         builder = TrackBuilder(TRACK_GAP_SECONDS)
         kept: list[Frame] = []
         track_frames: dict[int, list] = {}  # frame_index -> faces (smoking bog'lash uchun)
@@ -402,7 +413,12 @@ class Analyzer:
             if frame_index % face_stride:
                 continue
             det_side = getattr(frame, "det_side", None)
-            faces = await (self.faces_hd(frame.jpeg, det_side) if det_side else self.faces(frame.jpeg))
+            if det_side:
+                faces = await self.faces_hd(frame.jpeg, det_side, landmarks=need_landmarks)
+            elif need_landmarks:
+                faces = await self.faces(frame.jpeg)
+            else:
+                faces = await self.faces_lite(frame.jpeg)
             if not faces:
                 finished_tracks += builder.add(frame.at, [])
                 continue
