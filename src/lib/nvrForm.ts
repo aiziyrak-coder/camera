@@ -2,7 +2,7 @@ import type { Nvr, NvrInput } from './videoAnalysisApi';
 
 export interface NvrForm {
   name: string;
-  kind: 'hikvision' | 'fayl';
+  kind: Nvr['kind'];
   ip: string;
   httpPort: string;
   rtspPort: string;

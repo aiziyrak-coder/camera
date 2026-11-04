@@ -5,6 +5,7 @@
   GET /api/hisobot/export.xlsx (report bilan bir xil parametrlar) — Excel
   GET /api/hisobot/tabel?kind=&oy=YYYY-MM&<filtrlar>  — oylik davomat tabeli
   GET /api/hisobot/tabel.xlsx (tabel bilan bir xil parametrlar) — chop etish uchun
+  GET /api/hisobot/darslar?kind=&from=&to=&<filtrlar>&status=&sort=&page=  — darslar bo'yicha davomat jadvali
 
 Hisob-kitob app/services/hisobot.py da.
 """
@@ -24,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
-from app.services import hisobot, situation as svc, tabel as tabel_svc
+from app.services import hisobot, lesson_grid, situation as svc, tabel as tabel_svc
 
 router = APIRouter(prefix="/api/hisobot", tags=["hisobot"])
 
@@ -74,6 +75,26 @@ async def export(
         content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}", "X-Report-Title": quote(label)},
+    )
+
+
+@router.get("/darslar")
+async def lessons(
+    db: DbDep, _: ReadDep, kind: KindQuery = "talaba",
+    date_from: Annotated[str | None, Query(alias="from")] = None,
+    date_to: Annotated[str | None, Query(alias="to")] = None,
+    faculty: str | None = None, course: Annotated[int | None, Query(ge=1, le=7)] = None,
+    group: str | None = None, unit_kind: str | None = None, unit: str | None = None, q: str | None = None,
+    status: Literal["hammasi", "kelmadi", "kech_keldi", "toliq", "olchanmadi"] = "hammasi",
+    sort: Literal["guruh", "ism", "kelmadi"] = "guruh",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=10, le=200)] = 50,
+) -> dict:
+    """Qatorlar — odamlar, ustunlar — juftliklar (bitta kun) yoki kunlar; katakda dars holati."""
+    start, end = svc.resolve_range(date_from, date_to, default_days=1)
+    return await lesson_grid.build(
+        db, kind, start, end, _filters(faculty, course, group, unit_kind, unit, q),
+        status=status, sort=sort, page=page, page_size=page_size,
     )
 
 

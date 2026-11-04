@@ -24,6 +24,7 @@ import KpiView from '../../components/hisobot/KpiView';
 import InstituteStatusView from '../../components/hisobot/InstituteStatusView';
 import ReportSchedulesDialog from '../../components/hisobot/ReportSchedulesDialog';
 import PeopleTable from '../../components/hisobot/PeopleTable';
+import LessonGrid from '../../components/hisobot/LessonGrid';
 import { RagLegend, StatusBoard, boardRag, type BoardItem } from '../../components/hisobot/board';
 import ReportFilters from '../../components/reports/ReportFilters';
 import TabelView from '../../components/reports/TabelView';
@@ -61,6 +62,9 @@ import DayOffNotice from '../../components/situation/DayOffNotice';
  *   OYLIK TABEL   — imzolanadigan hujjat (kun-kun jadval).
  *   KPI           — rahbariyat paneli: davomat, yuzni tanish, xavfsizlik,
  *                   kameralar — bir ekranda, oldingi davrga nisbatan.
+ *
+ * Taxta va ro'yxat ostida — darslar bo'yicha davomat jadvali (LessonGrid):
+ * har odam, har dars; ism bosilsa — odamning barcha kunlardagi hisoboti.
  *
  * Butun holat URL'da: havola ulashiladi, "orqaga" ishlaydi.
  */
@@ -381,6 +385,8 @@ export default function HisobotPage() {
               </IntelPanel>
             )}
 
+            {/* Pastda — har bir dars bo'yicha kim keldi, kim kelmadi. */}
+            <LessonGrid state={state} />
           </div>
         )}
       </div>
