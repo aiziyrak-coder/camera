@@ -342,6 +342,27 @@ async def aggregate_run(db: AsyncSession, run: VideoAnalysisRun, *, now: datetim
             )
         ).scalars().unique()
     } if lesson_jobs else {}
+    # Kamera bog'lanmagan xonadagi darslar: guruh qaysidir kamerali xonada
+    # ko'rinsa, dars o'sha xonadan baholanadi (2026-11-04: W-126 jadvalda
+    # kamerasiz "21-xona (3-bino)" da, aslida 11 talabasi "46-xona" kamerasida).
+    # O'z vazifasi yo'q — bo'sh "virtual" vazifa; guruh topilmasa dars o'tkaziladi.
+    if any(job.kind == KIND_LESSON for job in jobs):
+        cameraless = (
+            await db.execute(
+                select(LessonSession).where(
+                    LessonSession.date == day,
+                    LessonSession.camera_id.is_(None),
+                    LessonSession.scheduled_start_time.is_not(None),
+                    LessonSession.scheduled_start_time < run.window_end,
+                    or_(LessonSession.scheduled_end_time.is_(None), LessonSession.scheduled_end_time <= run.window_end),
+                )
+            )
+        ).scalars().unique().all()
+        for row in cameraless:
+            lesson_rows[str(row.id)] = row
+            lesson_jobs.append(
+                JobInfo(id=f"jadval-{row.id}", camera_id=None, kind=KIND_LESSON, clips=[], covered=set(), lesson_id=str(row.id))
+            )
     obs_by_job: dict[str, list[Obs]] = defaultdict(list)
     for obs in observations:
         obs_by_job[obs.job_id].append(obs)
@@ -369,6 +390,8 @@ async def aggregate_run(db: AsyncSession, run: VideoAnalysisRun, *, now: datetim
             end=end,
         )
         job, own_seen, seen = pick_lesson_job(scheduled, own_job, room_jobs, obs_by_job, rosters[row.group_name])
+        if not job.clips:
+            continue  # kamerasiz dars, guruh hech bir kamerali xonada ko'rinmadi — o'lchanmaydi
         lesson = scheduled
         if job is not own_job:
             lesson = replace(scheduled, camera_id=job.camera_id)

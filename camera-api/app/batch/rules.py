@@ -360,10 +360,14 @@ def pick_lesson_job(
     members = set(roster)
     window_start = lesson.start - timedelta(minutes=10)
     own_seen = len(roster_seen(obs_by_job.get(own.id, []), members, window_start, lesson.end))
-    own_first = min((clip.start for clip in own.clips), default=None)
+    # Kamerasiz dars (o'z vazifasi yo'q): juftlik boshlanish oynasi reja qoidasi bo'yicha.
+    own_first = min(
+        (clip.start for clip in own.clips),
+        default=lesson.start - timedelta(minutes=settings.video_analysis_lesson_start_before_minutes),
+    )
     best, best_seen = own, own_seen
     for job in candidates:
-        if job.id == own.id or not job.clips or own_first is None:
+        if job.id == own.id or not job.clips:
             continue
         if abs(min(clip.start for clip in job.clips) - own_first) > ROOM_SLOT_TOLERANCE:
             continue

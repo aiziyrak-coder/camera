@@ -434,3 +434,15 @@ def test_lesson_is_judged_in_the_room_where_its_group_was_seen():
                     covered=set(), lesson_id=None)
     far = {"j": [], "j3": [seen(later, p, 0) for p in ("a", "b")]}
     assert pick_lesson_job(LESSON, own, [own, later], far, roster)[0] is own
+
+
+def test_cameraless_lesson_is_found_in_a_camera_room():
+    """Jadvalda kamerasiz xona: o'z vazifasi yo'q, guruh shu juftlikda kamerali xonada ko'rinsa — o'sha xona."""
+    room = lesson_job()
+    virtual = JobInfo(id="jadval-L1", camera_id=None, kind="dars", clips=[], covered=set(), lesson_id="L1")
+    m0 = idx(room, PHASE_MID, 0)
+    clip = room.clips[m0]
+    seen = [Obs(p, "room", "j", m0, clip.start, clip.end, 0.6, 0.2) for p in ("a", "b")]
+    job, own_seen, best_seen = pick_lesson_job(LESSON, virtual, [room], {"j": seen}, ["a", "b", "c"])
+    assert job is room and (own_seen, best_seen) == (0, 2)
+    assert pick_lesson_job(LESSON, virtual, [room], {"j": seen[:1]}, ["a", "b", "c"])[0] is virtual
