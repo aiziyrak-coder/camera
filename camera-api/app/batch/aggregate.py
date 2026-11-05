@@ -24,7 +24,7 @@ from collections import defaultdict
 from dataclasses import replace
 from datetime import datetime, time as time_type, timedelta, timezone
 
-from sqlalchemy import and_, delete, false, or_, select
+from sqlalchemy import and_, delete, false, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.batch import coat as coat_rules
@@ -90,6 +90,11 @@ def _hhmm(moment: datetime | None) -> str:
 
 def _job_info(job: VideoAnalysisJob) -> JobInfo:
     covered = {int(item[0]) for item in (job.covered or []) if item and int(item[1] or 0) > 0}
+    clip_faces = {
+        int(item[0]): (int(item[1] or 0), int(item[2] or 0))
+        for item in (job.covered or [])
+        if item and len(item) >= 3 and int(item[1] or 0) > 0
+    }
     return JobInfo(
         id=str(job.id),
         camera_id=str(job.camera_id) if job.camera_id else None,
@@ -99,6 +104,7 @@ def _job_info(job: VideoAnalysisJob) -> JobInfo:
         lesson_id=str(job.lesson_session_id) if job.lesson_session_id else None,
         faces=job.faces,
         result=job.result,
+        clip_faces=clip_faces,
     )
 
 
@@ -137,6 +143,39 @@ async def _group_roster(db: AsyncSession, group_name: str, day_end: datetime) ->
         )
     ).scalars().all()
     return [str(pid) for pid in rows]
+
+
+def _shared_room_jobs(lesson_jobs: list[JobInfo], lesson_rows: dict) -> dict[tuple, JobInfo]:
+    """(kamera, dars boshlanishi) -> o'sha xona va juftlikning eng ko'p o'qilgan vazifasi."""
+    shared: dict[tuple, JobInfo] = {}
+    for job in lesson_jobs:
+        row = lesson_rows.get(job.lesson_id)
+        if not job.camera_id or row is None or not job.clips:
+            continue
+        key = (job.camera_id, row.scheduled_start_time)
+        best = shared.get(key)
+        if best is None or len(job.covered) > len(best.covered):
+            shared[key] = job
+    return shared
+
+
+async def _group_faceless(db: AsyncSession, group_name: str, day_end: datetime) -> int:
+    """Guruhning yuzi bazada yo'q (biometrikasi tasdiqlanmagan) faol talabalari."""
+    from app.jobs.lesson_attendance import group_member_clause
+
+    return (
+        await db.execute(
+            select(func.count(StudentStaff.id)).where(
+                StudentStaff.type == "talaba",
+                StudentStaff.active.is_(True),
+                or_(
+                    StudentStaff.biometrics_status != "tasdiqlangan",
+                    StudentStaff.biometrics_confirmed_at >= day_end,
+                ),
+                group_member_clause(group_name),
+            )
+        )
+    ).scalar_one()
 
 
 async def _write_attendance(
@@ -363,10 +402,33 @@ async def aggregate_run(db: AsyncSession, run: VideoAnalysisRun, *, now: datetim
             lesson_jobs.append(
                 JobInfo(id=f"jadval-{row.id}", camera_id=None, kind=KIND_LESSON, clips=[], covered=set(), lesson_id=str(row.id))
             )
+        # Bir xonada bir vaqtda bir necha guruh (ma'ruza): reja bitta vazifa
+        # tuzadi (app/batch/planner.py) — qolgan guruhlar darsi o'sha vazifadan.
+        twins = (
+            await db.execute(
+                select(LessonSession).where(
+                    LessonSession.date == day,
+                    LessonSession.camera_id.is_not(None),
+                    LessonSession.id.not_in([uuid.UUID(key) for key in lesson_rows]) if lesson_rows else true(),
+                    LessonSession.scheduled_start_time.is_not(None),
+                    LessonSession.scheduled_start_time < run.window_end,
+                    or_(LessonSession.scheduled_end_time.is_(None), LessonSession.scheduled_end_time <= run.window_end),
+                )
+            )
+        ).scalars().unique().all()
+        shared = _shared_room_jobs(lesson_jobs, lesson_rows)
+        for row in twins:
+            job = shared.get((str(row.camera_id), row.scheduled_start_time))
+            if job is None:
+                continue
+            lesson_rows[str(row.id)] = row
+            lesson_jobs.append(replace(job, lesson_id=str(row.id)))
     obs_by_job: dict[str, list[Obs]] = defaultdict(list)
     for obs in observations:
         obs_by_job[obs.job_id].append(obs)
     rosters: dict[str, list[str]] = {}
+    faceless: dict[str, int] = {}
+    unrecognised_rooms: list[dict] = []
     student_lessons: dict[str, list] = defaultdict(list)
     teacher_lessons: dict[str, list] = defaultdict(list)
     punctuality_events: list[tuple[LessonSession, object]] = []
@@ -374,13 +436,23 @@ async def aggregate_run(db: AsyncSession, run: VideoAnalysisRun, *, now: datetim
     # dars guruhi aslida ko'ringan xonadan baholanadi (rules.pick_lesson_job).
     room_jobs = [job for job in jobs if job.kind == KIND_LESSON and job.clips]
     room_mismatches: list[dict] = []
+    shared = _shared_room_jobs(lesson_jobs, lesson_rows)
+    # 1-bosqich: har dars qaysi xona vazifasidan baholanadi.
+    picked: list[tuple] = []
     for own_job in lesson_jobs:
         row = lesson_rows.get(own_job.lesson_id)
         if row is None or row.scheduled_start_time is None:
             continue
+        if own_job.camera_id and not own_job.covered:
+            # O'z vazifasi o'qilmagan (yozuv topilmadi, xato), xuddi shu xona va
+            # juftlikdagi boshqa guruh vazifasi o'qilgan — o'shandan.
+            twin = shared.get((own_job.camera_id, row.scheduled_start_time))
+            if twin is not None and twin.covered:
+                own_job = replace(twin, lesson_id=own_job.lesson_id)
         end = row.scheduled_end_time or row.scheduled_start_time + timedelta(minutes=settings.lesson_duration_minutes)
         if row.group_name not in rosters:
             rosters[row.group_name] = await _group_roster(db, row.group_name, day_end)
+            faceless[row.group_name] = await _group_faceless(db, row.group_name, day_end)
         scheduled = LessonInfo(
             id=str(row.id),
             group_name=row.group_name,
@@ -392,6 +464,16 @@ async def aggregate_run(db: AsyncSession, run: VideoAnalysisRun, *, now: datetim
         job, own_seen, seen = pick_lesson_job(scheduled, own_job, room_jobs, obs_by_job, rosters[row.group_name])
         if not job.clips:
             continue  # kamerasiz dars, guruh hech bir kamerali xonada ko'rinmadi — o'lchanmaydi
+        picked.append((own_job, row, scheduled, job, own_seen, seen))
+    # Ma'ruza: bir xonada bir necha guruh — xonadagi tanilmagan yuzlarning
+    # "kutilgani" barcha shu guruhlarning yuzi bazada yo'q talabalari.
+    groups_by_job: dict[str, set[str]] = defaultdict(set)
+    for _, row, _, job, _, _ in picked:
+        groups_by_job[job.id].add(row.group_name)
+    room_faceless = {job_id: sum(faceless[g] for g in groups) for job_id, groups in groups_by_job.items()}
+
+    # 2-bosqich: natijalar.
+    for own_job, row, scheduled, job, own_seen, seen in picked:
         lesson = scheduled
         if job is not own_job:
             lesson = replace(scheduled, camera_id=job.camera_id)
@@ -408,8 +490,26 @@ async def aggregate_run(db: AsyncSession, run: VideoAnalysisRun, *, now: datetim
                     }
                 )
         result = lesson_result(
-            lesson, job, obs_by_job.get(job.id, []), rosters[row.group_name], staff_ids, window_end=run.window_end
+            lesson,
+            job,
+            obs_by_job.get(job.id, []),
+            rosters[row.group_name],
+            staff_ids,
+            window_end=run.window_end,
+            faceless=room_faceless[job.id],
         )
+        if result.measured and not result.absence_checked:
+            stats["dars_kelmadi_tekshirilmadi"] += 1
+            if len(unrecognised_rooms) < 200:
+                unrecognised_rooms.append(
+                    {
+                        "guruh": row.group_name,
+                        "vaqt": _hhmm(lesson.start),
+                        "xona": getattr(cameras.get(job.camera_id or ""), "name", None),
+                        "yuzlar": round(result.headcount or 0, 1),
+                        "tanildi": result.identified,
+                    }
+                )
         await db.execute(delete(LessonAttendance).where(LessonAttendance.lesson_session_id == row.id))
         span = f"{row.group_name}, {_hhmm(lesson.start)}–{_hhmm(lesson.end)}"
         for student_id, student in result.students.items():
@@ -662,6 +762,8 @@ async def aggregate_run(db: AsyncSession, run: VideoAnalysisRun, *, now: datetim
             stats["darsdan_erta_ketish"] += sum(1 for l in lessons if l.left_early)
     if room_mismatches:
         stats["xona_nomuvofiq"] = room_mismatches
+    if unrecognised_rooms:
+        stats["tanish_yetmadi"] = unrecognised_rooms
     stats["kunlik_qatorlar"] = rows_written
     stats["kuzatuvlar"] = len(observations)
     stats["tanilgan_odamlar"] = len([p for p, items in by_person.items() if items])

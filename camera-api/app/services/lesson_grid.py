@@ -222,11 +222,16 @@ async def _compute(db: AsyncSession, kind: str, start: date_type, end: date_type
                 lesson_end = lesson.scheduled_end_time or lesson.scheduled_start_time + timedelta(
                     minutes=settings.lesson_duration_minutes
                 )
+                evaluated = (lesson.id, m.id) in attendance
                 state, first_seen = attendance.get((lesson.id, m.id), (None, None))
                 if state not in ("keldi", "kech_keldi", "kelmadi"):
                     state = "kutilmoqda" if lesson_end > now else "olchanmadi"
                 if not m.enrolled:
                     detail = "Yuzi kiritilmagan — kamera taniy olmaydi"
+                elif evaluated and state == "olchanmadi":
+                    # Dars baholangan, lekin xonadagi yuzlarning ko'pi tanilmagan
+                    # yoki talaba bir marta noaniq ko'ringan (app/batch/rules.py).
+                    detail = "Kamera aniq tanimadi — «kelmadi» deb yozilmadi"
                 elif not lesson.camera_id:
                     detail = "Xonaga kamera bog'lanmagan"
                 else:

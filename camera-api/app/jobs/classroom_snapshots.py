@@ -146,9 +146,30 @@ class SnapshotCollector:
 
 
 async def classroom_cameras() -> list[Camera]:
+    """Dars xonasi kameralari: turi auditoriya/laboratoriya YOKI bugun jadvalda
+    shu kameraga bog'langan dars bor (turi belgilanmagan "25-xona" kabi —
+    2026-11-04 da ular suratsiz qolib, darsi substreamdan baholandi)."""
+    from app.models import LessonSession
+    from app.services.camera_roles import is_door_camera
+    from app.timezone import local_now
+
     async with SessionLocal() as db:
         cameras = (await db.execute(select(Camera).where(Camera.status == "faol"))).scalars().all()
-    return [camera for camera in cameras if effective_room_type(camera) in CLASSROOM_SNAPSHOT_TYPES]
+        lesson_cameras = set(
+            (
+                await db.execute(
+                    select(LessonSession.camera_id)
+                    .where(LessonSession.date == local_now().date(), LessonSession.camera_id.is_not(None))
+                    .distinct()
+                )
+            ).scalars().all()
+        )
+    return [
+        camera
+        for camera in cameras
+        if effective_room_type(camera) in CLASSROOM_SNAPSHOT_TYPES
+        or (camera.id in lesson_cameras and not is_door_camera(camera))
+    ]
 
 
 async def classroom_snapshots_loop() -> None:

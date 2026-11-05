@@ -381,6 +381,47 @@ async def test_job_failing_every_time_is_marked_failed(campus, db_session, monke
     assert run.jobs_failed > 0
 
 
+async def test_two_groups_in_one_hall_share_one_job(campus, db_session):
+    """Ma'ruza: bir xonada bir vaqtda ikki guruh — kadrlar bitta vazifada
+    bir marta o'qiladi, ikkinchi guruh darsi ham o'shandan baholanadi."""
+    before = datetime.combine(DAY - timedelta(days=30), time(9), tzinfo=timezone.utc)
+    s4 = StudentStaff(full_name="Ergasheva Talaba", type="talaba", group_or_position="DI-102",
+                      biometrics_status="tasdiqlangan", biometric_embedding=embedding(), biometrics_confirmed_at=before)
+    s5 = StudentStaff(full_name="Nazarov Talaba", type="talaba", group_or_position="DI-102",
+                      biometrics_status="tasdiqlangan", biometric_embedding=embedding(), biometrics_confirmed_at=before)
+    db_session.add_all([s4, s5])
+    await db_session.flush()
+    twin = LessonSession(date=DAY, group_name="DI-102", faculty="Davolash", teacher="Toshmatov", subject="Anatomiya",
+                         teacher_id=uuid.UUID(campus["people"]["T"]), camera_id=campus["cam_ids"]["room"],
+                         scheduled_start_time=at(9, 0), scheduled_end_time=at(10, 20))
+    db_session.add(twin)
+    await db_session.commit()
+    people = {**campus["people"], "S4": str(s4.id), "S5": str(s5.id)}
+    script = full_day_script()
+    script.seen += [Seen("S4", "201-xona", at(8, 56)), Seen("S4", "201-xona", at(9, 27, 31))]
+
+    run = await run_day(script, people)
+    assert run.status == "tugadi", run.error
+    jobs = (
+        await db_session.execute(
+            select(VideoAnalysisJob).where(VideoAnalysisJob.run_id == run.id, VideoAnalysisJob.kind == "dars")
+        )
+    ).scalars().all()
+    assert len(jobs) == 1
+    rows = {
+        str(r.student_staff_id): r.status
+        for r in (await db_session.execute(select(LessonAttendance).where(LessonAttendance.lesson_session_id == twin.id))).scalars()
+    }
+    assert rows == {str(s4.id): "keldi", str(s5.id): "kelmadi"}
+    first = {
+        str(r.student_staff_id): r.status
+        for r in (
+            await db_session.execute(select(LessonAttendance).where(LessonAttendance.lesson_session_id == campus["lesson"]))
+        ).scalars()
+    }
+    assert first[people["S1"]] == "keldi" and first[people["S3"]] == "kelmadi"
+
+
 async def test_uncovered_lesson_is_not_absence(campus, db_session):
     script = full_day_script()
     script.uncovered = {"201-xona"}

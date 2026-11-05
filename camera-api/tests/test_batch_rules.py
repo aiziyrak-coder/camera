@@ -211,7 +211,9 @@ def test_single_sighting_is_not_presence():
     items = [clip_obs(job, idx(job, PHASE_MID, 0), "ghost"), clip_obs(job, idx(job, PHASE_MID, 0), "anchor"),
              clip_obs(job, idx(job, PHASE_MID, 1), "anchor")]
     result = lesson_result(LESSON, job, items, ["ghost", "anchor"], set(), window_end=W_END)
-    assert result.students["ghost"].status == "kelmadi"
+    # Bir marta ko'ringan — "keldi" uchun yetmaydi, lekin "kelmadi" ham emas:
+    # kamera uni ko'rgan bo'lishi mumkin (noaniq — o'lchanmadi).
+    assert result.students["ghost"].status is None
     # Darsga faqat o'rtasida ko'rindi — keldi, lekin kechikib.
     assert result.students["anchor"].status == "kech_keldi"
 
@@ -228,6 +230,53 @@ def test_no_coverage_means_unmeasured_not_absent():
     result = lesson_result(LESSON, job, [], ["a", "b"], set(), window_end=W_END)
     assert not result.measured
     assert result.students["a"].status is None and result.students["b"].status is None
+
+
+def _with_faces(job: JobInfo, per_frame: int) -> JobInfo:
+    """Har o'qilgan klipda kadrda `per_frame` ta yuz (VideoAnalysisJob.covered)."""
+    job.clip_faces = {i: (1, per_frame) for i in job.covered}
+    return job
+
+
+def _present_items(job: JobInfo, people: list[str]) -> list[Obs]:
+    s, m = PHASE_START, PHASE_MID
+    return [item for person in people for item in (clip_obs(job, idx(job, s, 5), person), clip_obs(job, idx(job, m, 0), person))]
+
+
+def test_crowded_room_mostly_unrecognised_marks_nobody_absent():
+    """2026-11-04: kamera xonada 30 yuz ko'rdi, 3 tasini tanidi — qolgan 27
+    tasi kim ekani noma'lum. Ko'rinmagan talabalar "kelmadi" emas."""
+    job = _with_faces(lesson_job(), 30)
+    roster = ["a", "b", "c"] + [f"x{i}" for i in range(20)]
+    result = lesson_result(LESSON, job, _present_items(job, ["a", "b", "c"]), roster, set(), window_end=W_END)
+    assert result.measured and not result.absence_checked
+    assert result.headcount == 30 and result.identified == 3
+    assert result.students["a"].status == "keldi"
+    assert all(result.students[f"x{i}"].status is None for i in range(20))
+    # O'qituvchi ham ko'rinmadi — u ham tanilmagan yuzlar orasida bo'lishi mumkin.
+    assert result.teacher.status == "aniqlanmadi"
+
+
+def test_room_fully_recognised_marks_unseen_absent():
+    job = _with_faces(lesson_job(), 4)
+    result = lesson_result(LESSON, job, _present_items(job, ["a", "b", "c"]), ["a", "b", "c", "z"], set(), window_end=W_END)
+    assert result.absence_checked
+    assert result.students["z"].status == "kelmadi"
+
+
+def test_faceless_students_explain_unrecognised_faces():
+    """Yuzi bazada yo'q 5 talaba xonada — tanilmagan 5 yuz kutilgan."""
+    job = _with_faces(lesson_job(), 9)
+    result = lesson_result(
+        LESSON, job, _present_items(job, ["a", "b", "c", "d"]), ["a", "b", "c", "d", "z"], set(),
+        window_end=W_END, faceless=5,
+    )
+    assert result.absence_checked
+    assert result.students["z"].status == "kelmadi"
+    blocked = lesson_result(
+        LESSON, job, _present_items(job, ["a", "b", "c", "d"]), ["a", "b", "c", "d", "z"], set(), window_end=W_END
+    )
+    assert not blocked.absence_checked and blocked.students["z"].status is None
 
 
 def test_camera_working_but_nobody_recognized_is_unmeasured():

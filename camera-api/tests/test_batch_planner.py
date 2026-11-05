@@ -228,8 +228,10 @@ def test_idle_classroom_is_watched_during_lesson_slots(monkeypatch):
     idle_jobs = [job for job in plan.jobs if job.camera_id == idle.id]
     assert len(idle_jobs) == 1 and idle_jobs[0].kind == KIND_LESSON and idle_jobs[0].lesson_session_id is None
     assert [c.phase for c in idle_jobs[0].clips] == [c.phase for c in lesson_clips(start, start + timedelta(minutes=80), ALL, W_END)]
-    # Band xonaga ortiqcha "bo'sh juftlik" vazifasi qo'shilmaydi.
-    assert all(job.lesson_session_id is not None for job in plan.jobs if job.camera_id == busy.id)
+    # Band xonaga ortiqcha "bo'sh juftlik" vazifasi qo'shilmaydi; ikki guruh
+    # bitta juftlikda — kadrlar bir xil, vazifa bitta (agregatsiya ulashadi).
+    busy_jobs = [job for job in plan.jobs if job.camera_id == busy.id]
+    assert len(busy_jobs) == 1 and busy_jobs[0].lesson_session_id == lessons[0].id
     monkeypatch.setattr(settings, "video_analysis_idle_room_slots", False)
     plan = build_plan(cameras=[busy, idle], lessons=lessons, window_start=W_START, window_end=W_END, active_codes=ALL)
     assert not [job for job in plan.jobs if job.camera_id == idle.id]

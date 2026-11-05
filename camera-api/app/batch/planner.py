@@ -291,11 +291,19 @@ def build_plan(
 
         camera_lessons = lessons_by_camera.get(camera.id, [])
         if camera_lessons or room_type in CLASSROOM_TYPES:
-            for lesson in sorted(camera_lessons, key=lambda item: item.start):
+            # Bir xonada bir vaqtda bir necha guruh (ma'ruza) — bitta vazifa:
+            # kadrlar bir xil, har guruh uchun qayta o'qish behuda (2026-11-04:
+            # 328 dars vazifasidan 84 tasi takror edi). Qolgan guruhlar darsi
+            # agregatsiyada shu vazifadan baholanadi (aggregate._shared_room_jobs).
+            planned_starts: set[datetime] = set()
+            for lesson in sorted(camera_lessons, key=lambda item: (item.start, -item.end.timestamp())):
+                if lesson.start in planned_starts:
+                    continue
                 clips = lesson_clips(lesson.start, lesson.end, codes, window_end)
                 if lessons_ending_after is None:
                     clips = [clip for clip in clips if clip.start >= window_start - timedelta(hours=1)]
                 if clips:
+                    planned_starts.add(lesson.start)
                     plan.jobs.append(
                         PlannedJob(camera_id=camera.id, kind=KIND_LESSON, clips=clips, lesson_session_id=lesson.id)
                     )

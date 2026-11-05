@@ -60,6 +60,8 @@ class JobInfo:
     lesson_id: str | None = None
     faces: int = 0
     result: dict | None = None
+    # Klip bo'yicha o'qilgan kadrlar va ulardagi yuzlar: {indeks: (kadrlar, yuzlar)}.
+    clip_faces: dict[int, tuple[int, int]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -291,6 +293,11 @@ class LessonResult:
     # Xona haqiqatan ko'rilgan payt (darsga kelmaganlik dalili): birinchi
     # qoplangan o'rta klip, bo'lmasa boshlanish klipi.
     room_at: datetime | None = None
+    # Xonadagi odamlar (kadrdagi yuzlar medianasi) va ulardan tanilganlar.
+    headcount: float | None = None
+    identified: int = 0
+    # Ko'rinmaganlarga "kelmadi" yozildimi (xonada tanilmagan yuz ko'p bo'lsa — yo'q).
+    absence_checked: bool = False
 
 
 def phase_coverage(job: JobInfo) -> dict[str, float]:
@@ -331,6 +338,49 @@ def attention_score(frames: int, frontal: int, phone: int) -> float | None:
 ROOM_EVIDENCE_MIN_STUDENTS = 2
 # Boshqa xona vazifasining kliplari shu darsning juftlik vaqtiga mos bo'lsin.
 ROOM_SLOT_TOLERANCE = timedelta(minutes=15)
+
+
+# "Kelmadi" — faqat xonadagi deyarli hamma tanilgan bo'lsa. O'lchov
+# (2026-11-04, ertalabki darslar substreamdan): kamera xonada 30-48 yuz
+# ko'rgan, tanigani 0-5 ta — qolgan butun guruh "kelmadi" bo'lib yozilgan
+# (08:00 da 44 keldi / 437 kelmadi). Tanilmagan yuz — guruhning
+# o'zi bo'lishi mumkin: kim ekanini bilmay turib hech kimni ayblab bo'lmaydi.
+ABSENCE_UNKNOWN_MIN = 2
+ABSENCE_UNKNOWN_RATIO = 0.2
+
+
+def _mid_indices(job: JobInfo, start: datetime, end: datetime) -> set[int]:
+    return {
+        index
+        for index, clip in enumerate(job.clips)
+        if (clip.phase or PHASE_MID) == PHASE_MID and start <= clip.start <= end
+    }
+
+
+def room_headcount(job: JobInfo, start: datetime, end: datetime) -> float | None:
+    """Dars o'rtasida kadrdagi yuzlar sonining medianasi (kirib-chiqayotganlar
+    — boshlanish/tugash kliplari — hisobga kirmaydi). Ma'lumot yo'q — None."""
+    mid = _mid_indices(job, start, end)
+    values = sorted(faces / frames for index, (frames, faces) in job.clip_faces.items() if index in mid and frames > 0)
+    if not values:
+        return None
+    return values[len(values) // 2]
+
+
+def room_identified(job: JobInfo, observations: list[Obs], start: datetime, end: datetime) -> int:
+    """Dars o'rtasida xonada tanilgan turli odamlar (guruhdan tashqari ham)."""
+    mid = _mid_indices(job, start, end)
+    return len({obs.person_id for obs in observations if obs.clip_index in mid and (is_strong(obs) or is_weak(obs))})
+
+
+def absence_reliable(headcount: float | None, identified: int, faceless: int) -> bool:
+    """Xonadagi tanilmagan yuzlar (yuzi bazada yo'q talabalardan tashqari) oz
+    bo'lsa — ko'rinmagan talaba haqiqatan yo'q. Kadrdagi yuzlar sanog'i bo'lmasa
+    (eski vazifalar) — avvalgi qoida."""
+    if headcount is None:
+        return True
+    unknown = max(0, round(headcount) - identified - faceless)
+    return unknown <= max(ABSENCE_UNKNOWN_MIN, ABSENCE_UNKNOWN_RATIO * headcount)
 
 
 def roster_seen(observations: list[Obs], roster: set[str], start: datetime, end: datetime) -> set[str]:
@@ -387,11 +437,14 @@ def lesson_result(
     staff_ids: set[str],
     *,
     window_end: datetime,
+    faceless: int = 0,
 ) -> LessonResult:
     """Bitta darsning hamma kriteriyalari.
 
     `observations` — shu vazifaning (dars xonasi) BARCHA kuzatuvlari.
-    `roster` — guruh talabalari (biometrikasi tasdiqlangan, faol)."""
+    `roster` — guruh talabalari (biometrikasi tasdiqlangan, faol).
+    `faceless` — guruhning yuzi bazada yo'q faol talabalari soni (ular
+    xonada bo'lsa ham tanilmaydi — tanilmagan yuzlarning "kutilgan" qismi)."""
     coverage = phase_coverage(job)
     start_cov = coverage.get(PHASE_START, 0.0)
     mid_cov = coverage.get(PHASE_MID, 0.0)
@@ -413,6 +466,9 @@ def lesson_result(
 
     confirmed_anyone = any(present(items) for items in by_person.values())
     measured = body_cov >= MIN_PHASE_COVERAGE and confirmed_anyone
+    headcount = room_headcount(job, lesson.start, lesson.end)
+    identified = room_identified(job, observations, lesson.start, lesson.end)
+    absence_checked = measured and absence_reliable(headcount, identified, faceless)
     grace = timedelta(minutes=settings.attendance_late_to_lesson_grace_minutes)
     late_after = lesson.start + grace
     end_known = lesson.end <= window_end and end_cov >= MIN_PHASE_COVERAGE
@@ -427,8 +483,10 @@ def lesson_result(
     for student_id in roster:
         items = by_person.get(student_id, [])
         if not items or not present(items):
+            # Bir marta ko'ringan (tasdiqlanmagan) talaba — "kelmadi" emas:
+            # kamera uni ko'rgan bo'lishi mumkin, faqat ishonch yetmadi.
             students[student_id] = StudentLessonResult(
-                status="kelmadi" if measured else None,
+                status="kelmadi" if absence_checked and not items else None,
                 first_seen=min((o.seen_at for o in items), default=None),
                 last_seen=max((o.last_seen_at for o in items), default=None),
                 sightings=len(items),
@@ -473,7 +531,9 @@ def lesson_result(
 
     teacher = None
     if lesson.teacher_id:
-        teacher = teacher_result(lesson, job, by_person.get(lesson.teacher_id, []), by_person, staff_ids, measured)
+        teacher = teacher_result(
+            lesson, job, by_person.get(lesson.teacher_id, []), by_person, staff_ids, absence_checked
+        )
     covered_clips = [job.clips[i] for i in sorted(job.covered) if 0 <= i < len(job.clips)]
     room_clip = next((clip for clip in covered_clips if clip.phase == PHASE_MID), None) or next(iter(covered_clips), None)
     return LessonResult(
@@ -485,6 +545,9 @@ def lesson_result(
         attention_samples=attention_frames,
         coverage=coverage,
         room_at=room_clip.start if room_clip is not None else None,
+        headcount=headcount,
+        identified=identified,
+        absence_checked=absence_checked,
     )
 
 

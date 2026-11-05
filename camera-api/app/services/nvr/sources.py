@@ -662,7 +662,13 @@ def source_for(nvr, camera) -> PlaybackSource:
         from app.services.camera_roles import effective_room_type
 
         recording = ServerRecordingSource(settings.recordings_dir, str(camera.id))
-        if settings.classroom_snapshots_enabled and effective_room_type(camera) in CLASSROOM_SNAPSHOT_TYPES:
+        # Surat bor kamera (turi belgilanmagan, lekin darsi bor xona ham —
+        # app/jobs/classroom_snapshots.classroom_cameras) suratdan o'qiladi.
+        snapshots = settings.classroom_snapshots_enabled and (
+            effective_room_type(camera) in CLASSROOM_SNAPSHOT_TYPES
+            or snapshot_dir(settings.classroom_snapshots_dir, str(camera.id)).is_dir()
+        )
+        if snapshots:
             return SnapshotSource(
                 settings.classroom_snapshots_dir,
                 str(camera.id),
