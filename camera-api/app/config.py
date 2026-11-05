@@ -636,7 +636,10 @@ class Settings(BaseSettings):
     classroom_snapshots_enabled: bool = False
     classroom_snapshot_interval_seconds: int = 60
     classroom_snapshots_dir: str = "/snapshots"
-    classroom_snapshot_retention_hours: int = 8
+    # Kunduzgi tahlil soatlab orqada qolishi mumkin (2026-11-05: 4-6 soat);
+    # surat o'chib ketsa dars substreamdan (tanib bo'lmas) baholanadi. 30 soat —
+    # kun va tungi qayta hisoblash; 39 xona ~20 GB.
+    classroom_snapshot_retention_hours: int = 30
     classroom_snapshot_timeout_seconds: float = 10.0
     classroom_snapshot_http_port: int = 80
     classroom_snapshot_concurrency: int = 8
