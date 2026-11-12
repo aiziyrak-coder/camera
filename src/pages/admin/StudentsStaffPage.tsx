@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import {
   Briefcase,
-  CalendarCheck,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -18,7 +17,6 @@ import {
 import {
   Avatar,
   Button,
-  ButtonLink,
   CodeText,
   ConfirmDialog,
   DataTable,
@@ -56,7 +54,6 @@ import { useAuth } from '../../lib/auth';
 import { usePermissions } from '../../lib/permissions';
 import { RAG_LABEL, RAG_LETTER, RAG_TEXT, RATE_RAG, rag } from '../../ui/rag';
 import { NO_FACULTY_KEY, NO_FACULTY_LABEL, PERSON_LABELS, STATUS_FILTERS, type PersonType, type StatusFilter } from '../../lib/peopleFilters';
-import { situationPaths } from '../../lib/situationApi';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { invalidateServerPageCache, useServerPage } from '../../lib/useServerPage';
 import type { BiometricsCoverage, StudentStaffRecord } from '../../types';
@@ -323,13 +320,7 @@ export default function StudentsStaffPage() {
       cell: (person) => (
         <span className="flex min-w-0 items-center gap-3">
           <Avatar name={person.fullName} src={person.biometricPhotoUrl} size="sm" />
-          <Link
-            to={situationPaths.person(person.id)}
-            onClick={(e) => e.stopPropagation()}
-            className={cn('min-w-0 truncate rounded font-medium text-fg hover:text-primary hover:underline', focusRing)}
-          >
-            {person.fullName}
-          </Link>
+          <span className="min-w-0 truncate font-medium text-fg">{person.fullName}</span>
         </span>
       ),
     },
@@ -352,17 +343,7 @@ export default function StudentsStaffPage() {
             cell: (person: StudentStaffRecord) => {
               const group = person.group || (person.course ? null : person.groupOrPosition);
               if (!group) return <span className="text-subtle">—</span>;
-              const name = person.group ? (
-                <Link
-                  to={situationPaths.group(person.group)}
-                  onClick={(e) => e.stopPropagation()}
-                  className={cn('rounded text-fg hover:text-primary hover:underline', focusRing)}
-                >
-                  {group}
-                </Link>
-              ) : (
-                group
-              );
+              const name = group;
               if (!person.reportedGroup) return name;
               // HEMIS'da topilmagan: bo'limdan so'rash uchun o'zi yozgani ham ko'rinsin.
               return (
@@ -456,9 +437,6 @@ export default function StudentsStaffPage() {
               Ko&apos;rib chiqish
             </Button>
           )}
-          <ButtonLink to={situationPaths.person(person.id)} size="sm" variant="ghost" icon={CalendarCheck} title="Davomat va profil">
-            Davomat
-          </ButtonLink>
           <IconButton
             icon={Pencil}
             label={`${person.fullName} — tahrirlash`}

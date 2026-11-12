@@ -1,22 +1,4 @@
-import {
-  BellRing,
-  BookUser,
-  CalendarRange,
-  Clock,
-  Cctv,
-  ChartColumn,
-  Contact,
-  FileVideo,
-  GraduationCap,
-  Lock,
-  MonitorPlay,
-  Network,
-  ServerCog,
-  ShieldCheck,
-  Search,
-  UserCheck,
-  type LucideIcon,
-} from 'lucide-react';
+import { BellRing, Contact, Lock, Network, ServerCog, ShieldCheck, type LucideIcon } from 'lucide-react';
 import type { Role } from '../../lib/auth';
 import type { PermissionKey } from '../../lib/permissions';
 
@@ -42,36 +24,10 @@ export interface NavSection {
 
 export const NAV_SECTIONS: NavSection[] = [
   {
-    id: 'monitoring',
-    label: 'Monitoring',
-    items: [
-      { to: '/videodevor', code: 'KAM', label: 'Jonli kameralar', icon: MonitorPlay, permission: 'viewLive' },
-      { to: '/shaxs-qidirish', code: 'QID', label: 'Shaxs qidirish', icon: Search, permission: 'viewLive' },
-      { to: '/tekshiruv', code: 'TEK', label: 'Tekshiruv', icon: UserCheck, permission: 'reviewEvents' },
-    ],
-  },
-  {
-    id: 'davomat',
-    label: 'Davomat',
-    items: [
-      { to: '/talabalar', code: 'TLB', label: 'Talabalar', icon: GraduationCap, anyOf: ['manageAttendance', 'viewReports'] },
-      { to: '/oqituvchilar', code: 'XOD', label: 'Xodimlar', icon: BookUser, anyOf: ['manageAttendance', 'viewReports'] },
-      { to: '/dars-jadvali', code: 'DRS', label: 'Dars jadvali', icon: CalendarRange, anyOf: ['manageAttendance', 'viewReports', 'manageLessons'] },
-    ],
-  },
-  {
-    id: 'tahlil',
-    label: 'Tahlil',
-    items: [
-      { to: '/kunlik-tahlil', code: 'KTH', label: 'Kunlik tahlil', icon: FileVideo, anyOf: ['viewReports', 'manageAttendance', 'systemSettings'] },
-      { to: '/hisobotlar', code: 'HIS', label: 'Hisobotlar', icon: ChartColumn, permission: 'viewReports' },
-    ],
-  },
-  {
     id: 'malumotlar',
     label: "Ma'lumotlar",
     items: [
-      { to: '/reestr', code: 'RST', label: 'Shaxslar reestri', icon: Contact, permission: 'registerPeople' },
+      { to: '/reestr', code: 'RST', label: 'Yuzlar bazasi', icon: Contact, permission: 'registerPeople' },
       // Ruxsatsiz: o'qish hammaga ochiq, o'zgartirish tugmalari sahifaning
       // o'zida manageOrgStructure bo'yicha yashiriladi.
       { to: '/tuzilma', code: 'TUZ', label: 'Tashkiliy tuzilma', icon: Network },
@@ -81,11 +37,9 @@ export const NAV_SECTIONS: NavSection[] = [
     id: 'sozlamalar',
     label: 'Sozlamalar',
     items: [
-      { to: '/sozlamalar/kameralar', code: 'SKM', label: 'Kameralar', icon: Cctv, permission: 'editCameraLocation' },
-      { to: '/sozlamalar/ish-vaqti', code: 'SIV', label: 'Ish vaqti', icon: Clock, permission: 'manageAttendance' },
       { to: '/sozlamalar/bildirishnomalar', code: 'SBL', label: 'Bildirishnomalar', icon: BellRing, permission: 'manageNotifications' },
       { to: '/sozlamalar/foydalanuvchilar', code: 'SFD', label: 'Foydalanuvchilar', icon: ShieldCheck, permission: 'manageRoles' },
-      { to: '/sozlamalar/tizim', code: 'STZ', label: 'Tizim holati', icon: ServerCog, permission: 'systemSettings' },
+      { to: '/sozlamalar/tizim', code: 'STZ', label: 'Tizim va HEMIS', icon: ServerCog, permission: 'systemSettings' },
       { to: '/sozlamalar/maxfiylik', code: 'SMX', label: 'Maxfiylik', icon: Lock, permission: 'managePrivacy' },
     ],
   },
@@ -100,12 +54,12 @@ export const ALL_NAV_ITEMS: NavItem[] = NAV_SECTIONS.flatMap((section) => sectio
  * (davomat, hodisalar, hisobotlar) shunchaki keraksiz va chalg'ituvchi.
  * Haqiqiy chegara baribir backendda — bu ro'yxat menyuni tozalaydi. */
 export const ROLE_PAGES: Partial<Record<Role, string[]>> = {
-  'kamera-masuli': ['/tuzilma', '/sozlamalar/kameralar'],
+  'kamera-masuli': ['/tuzilma'],
 };
 
 /** Cheklangan rol kirgandan keyin qayerga tushadi (kunlik ish — kameralar). */
 export const ROLE_HOME: Partial<Record<Role, string>> = {
-  'kamera-masuli': '/sozlamalar/kameralar',
+  'kamera-masuli': '/tuzilma',
 };
 
 export const ROLE_LABEL: Record<Role, string> = {
@@ -160,7 +114,7 @@ export function findActive(pathname: string): { section: NavSection; item: NavIt
 
 /** Global sana tanlagichi ko'rinadigan (davomat) sahifalar. */
 // /shaxs — o'z davr tanlagichi bor (global sana u yerda ishlamaydi).
-const DATE_ROUTES = ['/', '/talabalar', '/oqituvchilar'];
+const DATE_ROUTES: string[] = [];
 
 export function usesViewDate(pathname: string): boolean {
   return DATE_ROUTES.some((to) => matchesPath(pathname, to));

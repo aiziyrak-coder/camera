@@ -129,11 +129,12 @@ function PaletteDialog({ onClose, sections, can, role }: Omit<CommandPaletteProp
   const debounced = useDebouncedValue(query.trim(), 200);
   const remoteQ = debounced.length >= 2 ? debounced : '';
 
-  // Davomat sahifalari hisobot ko'ruvchiga ham ochiq (App.tsx) — qidiruv ham.
-  const canDavomat = can('manageAttendance') || can('viewReports');
+  // Platforma 2026-11-12 da tozalandi: davomat va kamera sahifalari yo'q —
+  // qidiruv faqat sahifalar va yuzlar bazasi (reestr) bo'yicha.
+  const canDavomat = false;
   const canRegistry = can('registerPeople');
-  const canPeople = canRegistry || canDavomat;
-  const canCameras = can('viewLive') || can('editCameraLocation');
+  const canPeople = canRegistry;
+  const canCameras = false;
 
   const groupsRes = useRemote(canDavomat && remoteQ ? `g:${remoteQ}` : null, (signal) => getGroups({ search: remoteQ }, { signal }));
   // Bo'linmalar kam — bir marta olinib, mijozda filtrlanadi.

@@ -29,7 +29,7 @@ function renderSidebar(pathname: string, collapsed = false) {
 
 describe('Sidebar', () => {
   it('shows full item labels without internal index codes', () => {
-    renderSidebar('/tekshiruv');
+    renderSidebar('/reestr');
     for (const item of NAV_SECTIONS.flatMap((section) => section.items)) {
       expect(screen.getByRole('link', { name: item.label })).toBeInTheDocument();
       expect(screen.queryByText(item.code)).not.toBeInTheDocument();
@@ -38,27 +38,26 @@ describe('Sidebar', () => {
   }, 20_000);
 
   it('marks the active item for screen readers, not only by colour', () => {
-    renderSidebar('/tekshiruv');
-    const active = screen.getByRole('link', { name: 'Tekshiruv' });
+    renderSidebar('/reestr');
+    const active = screen.getByRole('link', { name: 'Yuzlar bazasi' });
     expect(active).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('link', { name: 'Talabalar' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('link', { name: 'Tashkiliy tuzilma' })).not.toHaveAttribute('aria-current');
   });
 
   it('counts the items in each section header', () => {
     renderSidebar('/');
-    const monitoring = screen.getByRole('button', { name: /Monitoring/ });
-    expect(within(monitoring).getByLabelText('3 ta band')).toHaveTextContent('03');
+    const settings = screen.getByRole('button', { name: /Sozlamalar/ });
+    expect(within(settings).getByLabelText('4 ta band')).toHaveTextContent('04');
   });
 
-  it('keeps the selected date on attendance links only', () => {
+  it('does not carry the date to non-attendance links', () => {
     renderSidebar('/');
-    expect(screen.getByRole('link', { name: 'Talabalar' })).toHaveAttribute('href', '/talabalar?sana=2026-09-21');
-    expect(screen.getByRole('link', { name: 'Tekshiruv' })).toHaveAttribute('href', '/tekshiruv');
+    expect(screen.getByRole('link', { name: 'Yuzlar bazasi' })).toHaveAttribute('href', '/reestr');
   });
 
   it('keeps every page reachable when collapsed', () => {
     renderSidebar('/', true);
-    expect(screen.getByRole('link', { name: 'Tekshiruv' })).toBeInTheDocument();
-    expect(screen.queryByText('TEK')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Yuzlar bazasi' })).toBeInTheDocument();
+    expect(screen.queryByText('RST')).not.toBeInTheDocument();
   });
 });

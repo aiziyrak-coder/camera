@@ -38,7 +38,8 @@ export default function AppShell() {
   // Hodisalarni ko'rish huquqi bo'lmasa, server WebSocket'ni baribir yopadi
   // (4403) — ulanishga umuman urinmaymiz. event_updated — mavjud hodisaning
   // holati o'zgargani, yangi hodisa emas.
-  const canReviewEvents = can('reviewEvents', role);
+  // Hodisalar moduli olib tashlandi (2026-11-12) — jonli ulanish o'chiq.
+  const canReviewEvents = false;
   const [unreadEvents, setUnreadEvents] = useState(0);
   const liveStatus = useLiveEvents((event) => {
     if (event.kind !== 'event_updated') setUnreadEvents((n) => n + 1);

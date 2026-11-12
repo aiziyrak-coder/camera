@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { BookOpen, Building2, Landmark, Network, Pencil, Plus, Trash2, Users2 } from 'lucide-react';
 import {
   Button,
@@ -25,7 +24,7 @@ import AddBuildingModal from '../../components/admin/AddBuildingModal';
 import { ApiError, api, isAbortError } from '../../lib/apiClient';
 import { useAuth } from '../../lib/auth';
 import { usePermissions } from '../../lib/permissions';
-import { getOrgTree, situationPaths, type OrgNode } from '../../lib/situationApi';
+import { getOrgTree, type OrgNode } from '../../lib/situationApi';
 import PdfButton from '../../components/situation/PdfButton';
 import type { Building, Department, Faculty, StudentGroup } from '../../types';
 
@@ -134,13 +133,11 @@ function Count({ value }: { value: number | null | undefined }) {
 export default function OrgStructurePage() {
   const { token, role } = useAuth();
   const { can } = usePermissions();
-  const navigate = useNavigate();
   const toast = useToast();
   // O'qish hammaga ochiq (kamera mas'uli binolar ro'yxatini ko'radi),
   // o'zgartirish tugmalari faqat huquqi borlarga. Server ham tekshiradi.
   const canEdit = can('manageOrgStructure', role);
   // Fakultet/guruh/kafedra sahifalari davomat huquqini talab qiladi.
-  const canOpenAttendance = can('manageAttendance', role);
 
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -157,7 +154,7 @@ export default function OrgStructurePage() {
   const [addOpen, setAddOpen] = useState<TabId | null>(null);
   // HEMIS tuzilmasi (rektorat → fakultet → kafedra, bo'limlar) — davomat
   // sanoqlari bilan. Faqat davomat/hisobot huquqi borlarga.
-  const canSeeTree = canOpenAttendance || can('viewReports', role);
+  const canSeeTree = can('manageAttendance', role) || can('viewReports', role);
   const [tree, setTree] = useState<OrgNode[] | null>(null);
   const [treeError, setTreeError] = useState<string | null>(null);
   useEffect(() => {
@@ -530,7 +527,6 @@ export default function OrgStructurePage() {
                   columns={treeColumns}
                   rows={query ? shownTree : tree ?? []}
                   rowKey={(n) => n.id}
-                  onRowClick={canOpenAttendance ? (n) => n.total > 0 && navigate(situationPaths.kafedra(n.id)) : undefined}
                   emptyTitle={query ? "Bo'linma topilmadi" : "HEMIS tuzilmasi hali kelmagan"}
                   manualSort
                 />
@@ -567,7 +563,6 @@ export default function OrgStructurePage() {
               columns={facultyColumns}
               rows={shownFaculties}
               rowKey={(f) => f.id}
-              onRowClick={canOpenAttendance ? (f) => navigate(situationPaths.faculty(f.id)) : undefined}
               defaultSort={{ key: 'name', dir: 'asc' }}
               emptyTitle={query ? 'Fakultet topilmadi' : "Fakultet qo'shilmagan"}
               emptyAction={emptyAction('fakultetlar')}
@@ -583,7 +578,6 @@ export default function OrgStructurePage() {
               columns={groupColumns}
               rows={shownGroups}
               rowKey={(g) => g.id}
-              onRowClick={canOpenAttendance ? (g) => navigate(situationPaths.group(g.name)) : undefined}
               defaultSort={{ key: 'name', dir: 'asc' }}
               emptyTitle={filtersActive ? 'Guruh topilmadi' : "Guruh qo'shilmagan"}
               emptyAction={emptyAction('guruhlar')}
@@ -600,7 +594,6 @@ export default function OrgStructurePage() {
                 columns={departmentColumns}
                 rows={shownDepartments}
                 rowKey={(d) => d.id}
-                onRowClick={canOpenAttendance ? (d) => navigate(situationPaths.kafedra(d.id)) : undefined}
                 defaultSort={{ key: 'name', dir: 'asc' }}
                 emptyTitle={query ? 'Kafedra topilmadi' : "Kafedra qo'shilmagan"}
                 emptyAction={emptyAction('kafedralar')}
