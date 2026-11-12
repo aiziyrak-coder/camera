@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "Nazorat — Farg'ona JSSTI",
-  "short_name": "Nazorat",
-  "description": "Videokuzatuv, AI hodisalar va davomat monitoringi",
+  "name": "Yuzlar bazasi — Farg'ona JSSTI",
+  "short_name": "Yuzlar",
+  "description": "Talaba va xodimlar yuzini ro‘yxatdan o‘tkazish",
   "lang": "uz",
   "dir": "ltr",
   "start_url": "/?source=pwa",
@@ -14,8 +14,8 @@
     "browser"
   ],
   "orientation": "any",
-  "background_color": "#E8EDFF",
-  "theme_color": "#4F46E5",
+  "background_color": "#F6F7F9",
+  "theme_color": "#1F8A5B",
   "categories": [
     "security",
     "productivity",
@@ -45,44 +45,6 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
-    }
-  ],
-  "shortcuts": [
-    {
-      "name": "Hodisalar",
-      "short_name": "Hodisalar",
-      "url": "/admin/events?source=pwa",
-      "icons": [
-        {
-          "src": "/icons/icon-192.png",
-          "sizes": "192x192",
-          "type": "image/png"
-        }
-      ]
-    },
-    {
-      "name": "Videodevor",
-      "short_name": "Videodevor",
-      "url": "/videodevor?source=pwa",
-      "icons": [
-        {
-          "src": "/icons/icon-192.png",
-          "sizes": "192x192",
-          "type": "image/png"
-        }
-      ]
-    },
-    {
-      "name": "Davomat",
-      "short_name": "Davomat",
-      "url": "/admin/attendance?source=pwa",
-      "icons": [
-        {
-          "src": "/icons/icon-192.png",
-          "sizes": "192x192",
-          "type": "image/png"
-        }
-      ]
     }
   ]
 }

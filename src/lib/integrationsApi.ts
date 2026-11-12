@@ -1,7 +1,7 @@
 import { api, buildQuery, type CallOptions, type Page } from './apiClient';
 import { config } from './config';
 import { ipAddress } from './validation';
-import type { Tone } from '../ui/tones';
+type Tone = 'info' | 'success' | 'warning' | 'danger' | 'neutral';
 
 /* ── Turlar (camera-api/app/schemas/integrations.py bilan mos) ── */
 

@@ -8,5 +8,5 @@ export const branding = {
   /** To'liq nom (kirish sahifasi). */
   orgFullName: env.VITE_ORG_FULL_NAME?.trim() || "Farg'ona jamoat salomatligi tibbiyot instituti",
   /** Tizim nomi. */
-  systemName: env.VITE_SYSTEM_NAME?.trim() || 'Nazorat',
+  systemName: env.VITE_SYSTEM_NAME?.trim() || 'Yuzlar bazasi',
 } as const;
