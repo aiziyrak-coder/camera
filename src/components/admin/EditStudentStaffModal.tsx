@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Camera, Combine, Loader2 } from 'lucide-react';
 import { Avatar, Button, ConfirmDialog, ErrorState, Field, Input, Modal, Select } from '../../ui';
 import FaceCapture from './FaceCapture';
@@ -54,8 +54,11 @@ export default function EditStudentStaffModal({
   onClose,
   onSave,
   onMergeRequest,
+  focusPinfl = false,
 }: {
   record: StudentStaffRecord | null;
+  /** Ochilganda kursor JSHSHIR maydonida ("JSHSHIR yo'q — kiritish" dan). */
+  focusPinfl?: boolean;
   onClose: () => void;
   onSave: (record: StudentStaffRecord) => void;
   /** "JSHSHIR boshqa yozuvga biriktirilgan" — o'sha yozuv bilan birlashtirish (MergePeopleModal). */
@@ -201,6 +204,10 @@ export default function EditStudentStaffModal({
 
   const isStudent = form?.type === 'talaba';
   const identityLocked = loadingDetail || !original;
+  const pinflRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (focusPinfl && !identityLocked) pinflRef.current?.focus();
+  }, [focusPinfl, identityLocked]);
   // Saqlanmagan o'zgarish bormi: tafsilot kelgan bo'lsa unga, aks holda
   // ro'yxatdagi yozuvga solishtiramiz.
   const baseline = original ?? (record ? toForm(record) : null);
@@ -305,6 +312,7 @@ export default function EditStudentStaffModal({
                 inputMode="numeric"
                 autoComplete="off"
                 maxLength={20}
+                ref={pinflRef}
                 value={form.pinfl}
                 disabled={identityLocked}
                 onChange={(e) => set('pinfl', e.target.value)}

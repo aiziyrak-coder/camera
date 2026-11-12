@@ -194,6 +194,11 @@ export default function StudentsStaffPage() {
   const [dupOpen, setDupOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<StudentStaffRecord | null>(null);
+  // "JSHSHIR yo'q" belgisidan ochilganda — kursor darhol JSHSHIR maydonida.
+  const [editFocusPinfl, setEditFocusPinfl] = useState(false);
+  // Faqat JSHSHIRi yo'qlar: ular ochiq sahifada JSHSHIR bilan yuzini
+  // ro'yxatdan o'tkaza olmaydi (HEMIS xodimlar ro'yxati JSHSHIR bermaydi).
+  const [pinflMissing, setPinflMissing] = useState(false);
   const [deleting, setDeleting] = useState<StudentStaffRecord | null>(null);
   // Qo'lda birlashtirish: kim bilan va (tahrirlashdan kelsa) qaysi JSHSHIR bo'yicha qidiriladi.
   const [mergeTarget, setMergeTarget] = useState<{ person: StudentStaffRecord; search: string } | null>(null);
@@ -248,6 +253,7 @@ export default function StudentsStaffPage() {
       biometricsStatus: awaitingOnly ? AWAITING_APPROVAL_FILTER : statusFilter || undefined,
       search: search.trim() || undefined,
       sort,
+      pinflMissing: pinflMissing ? 'true' : undefined,
     },
     pageSize,
     { post: true },
@@ -391,6 +397,20 @@ export default function StudentsStaffPage() {
           ) : (
             <StatusLamp status={BIOMETRICS_META[person.biometricsStatus].status} label={BIOMETRICS_META[person.biometricsStatus].label} />
           )}
+          {person.hasPinfl === false && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditFocusPinfl(true);
+                setEditing(person);
+              }}
+              title="JSHSHIR yozilmagan — bu odam ochiq sahifada JSHSHIR bilan yuzini ro'yxatdan o'tkaza olmaydi. Bosing va JSHSHIRni kiriting."
+              className={cn('self-start rounded text-[11px] font-medium text-danger underline-offset-2 hover:underline', focusRing)}
+            >
+              JSHSHIR yo&apos;q — kiritish
+            </button>
+          )}
           {person.biometricsStatus !== 'yoq' && (person.photoAngles ?? 0) < 3 && (
             <span className="text-[11px] text-warning" title="3 tomonlama (old, chap, o'ng) ro'yxatdan o'tmagan — havola orqali qayta o'tishi kerak">
               {person.photoAngles ?? 0}/3 burchak
@@ -439,7 +459,15 @@ export default function StudentsStaffPage() {
           <ButtonLink to={situationPaths.person(person.id)} size="sm" variant="ghost" icon={CalendarCheck} title="Davomat va profil">
             Davomat
           </ButtonLink>
-          <IconButton icon={Pencil} label={`${person.fullName} — tahrirlash`} size="sm" onClick={() => setEditing(person)} />
+          <IconButton
+            icon={Pencil}
+            label={`${person.fullName} — tahrirlash`}
+            size="sm"
+            onClick={() => {
+              setEditFocusPinfl(false);
+              setEditing(person);
+            }}
+          />
           <IconButton
             icon={Combine}
             label={`${person.fullName} — ikkinchi yozuvi bilan birlashtirish`}
@@ -481,6 +509,22 @@ export default function StudentsStaffPage() {
       options: (current?.byCourse ?? [])
         .filter((row) => row.courseNumber !== null)
         .map((row) => ({ value: String(row.courseNumber), label: `${row.course} (${formatNumber(row.total)})` })),
+    },
+    {
+      kind: 'custom',
+      active: pinflMissing,
+      onClear: () => setPinflMissing(false),
+      render: (
+        <Button
+          size="sm"
+          variant={pinflMissing ? 'primary' : 'secondary'}
+          aria-pressed={pinflMissing}
+          onClick={() => setPinflMissing((v) => !v)}
+          title="JSHSHIR yozilmagan odamlar — ular ochiq sahifada JSHSHIR bilan yuzini ro'yxatdan o'tkaza olmaydi"
+        >
+          JSHSHIR yo&apos;q
+        </Button>
+      ),
     },
     // Yuz holati — segmentli tablar; faolligi va tozalanishi shu yerda.
     {
@@ -734,6 +778,7 @@ export default function StudentsStaffPage() {
       />
       <EditStudentStaffModal
         record={editing}
+        focusPinfl={editFocusPinfl}
         onClose={() => setEditing(null)}
         onSave={() => {
           setEditing(null);

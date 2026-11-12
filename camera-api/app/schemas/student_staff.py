@@ -32,6 +32,8 @@ class StudentStaffOut(CamelModel):
     position: str | None = None
     # Ro'yxatdan o'tishda saqlangan tomonlar soni (old, chap, o'ng): 0..3.
     photo_angles: int = 0
+    # JSHSHIR bor-yo'qligi (raqamning o'zi ro'yxatda yuborilmaydi).
+    has_pinfl: bool = True
     biometric_photo_left_url: str | None = None
     biometric_photo_right_url: str | None = None
     # Tekshiruvga nega qoldi va HEMIS surati (solishtirish uchun) — faqat kutayotganlarda.
@@ -110,6 +112,9 @@ class StudentStaffFilterIn(CamelModel):
     search: str | None = Field(default=None, max_length=200)
     biometrics_status: str | None = None
     course: int | None = Field(default=None, ge=1, le=10)
+    # Faqat JSHSHIRi yo'qlar: ular ochiq sahifada JSHSHIR bilan yuzini
+    # ro'yxatdan o'tkaza olmaydi (HEMIS xodimlar ro'yxati JSHSHIR bermaydi).
+    pinfl_missing: bool = False
 
 
 class StudentStaffSearchIn(StudentStaffFilterIn):

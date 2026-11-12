@@ -160,6 +160,8 @@ export interface StudentStaffRecord {
   position?: string | null;
   /** Ro'yxatdan o'tishda saqlangan tomonlar (old, chap, o'ng): 0..3. */
   photoAngles?: number;
+  /** JSHSHIR yozilganmi (raqamning o'zi ro'yxatda kelmaydi). */
+  hasPinfl?: boolean;
   /** Tasdiq kutayotganlarda: chap va o'ng tomon rasmlari. */
   biometricPhotoLeftUrl?: string | null;
   biometricPhotoRightUrl?: string | null;

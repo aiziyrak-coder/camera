@@ -125,6 +125,7 @@ def _to_out(record: StudentStaff, faculty_name: str, org_unit: str | None = None
     return StudentStaffOut(
         org_unit=org_unit,
         position=record.position if record.type == "xodim" else None,
+        has_pinfl=bool(record.pinfl),
         photo_angles=sum(
             1 for key in (record.biometric_photo_key, record.biometric_photo_left_key, record.biometric_photo_right_key)
             if key
@@ -208,6 +209,7 @@ def _filtered_query(
     biometrics: str | None,
     course: int | None = None,
     sort: str = "name",
+    pinfl_missing: bool = False,
 ):
     """Ro'yxat va eksport AYNAN bir xil filtrdan foydalanadi.
 
@@ -237,6 +239,8 @@ def _filtered_query(
         stmt = stmt.where(AWAITING_APPROVAL)
     elif biometrics:
         stmt = stmt.where(StudentStaff.biometrics_status == biometrics)
+    if pinfl_missing:
+        stmt = stmt.where(or_(StudentStaff.pinfl.is_(None), StudentStaff.pinfl == ""))
     if course:
         # Kurs group_or_position boshida yoziladi ("2-kurs, DI-1625") —
         # qarang staff_export.split_course. "1-kurs%" "11-kurs" ga mos kelmaydi.
@@ -291,7 +295,9 @@ async def search_students_staff(
     """GET ro'yxat bilan bir xil, lekin filtr (JSHSHIR bo'lishi mumkin bo'lgan
     qidiruv matni bilan) so'rov tanasida — URL/access logga tushmaydi."""
     page_params = PageParams(page=body.page, page_size=body.page_size)
-    stmt = _filtered_query(body.type, body.faculty, body.search, body.biometrics_status, body.course, body.sort)
+    stmt = _filtered_query(
+        body.type, body.faculty, body.search, body.biometrics_status, body.course, body.sort, body.pinfl_missing
+    )
     records, total = await paginate(db, stmt, page_params)
     return build_page(await _outs(db, records), total, page_params)
 
@@ -499,7 +505,7 @@ async def export_students_staff_post(
 ) -> Response:
     """GET /export bilan bir xil fayl; filtr so'rov tanasida (URL'da JSHSHIR qolmaydi)."""
     return await _export_response(
-        db, body.kind, body.type, body.faculty, body.search, body.biometrics_status, body.course
+        db, body.kind, body.type, body.faculty, body.search, body.biometrics_status, body.course, body.pinfl_missing
     )
 
 
@@ -511,6 +517,7 @@ async def _export_response(
     search: str | None,
     biometrics: str | None,
     course: int | None,
+    pinfl_missing: bool = False,
 ) -> Response:
     now = local_now()
     stamp = now.strftime("%Y-%m-%d")
@@ -522,7 +529,8 @@ async def _export_response(
         content = await asyncio.to_thread(build_stats_workbook, data, scope, now, type)
         filename = f"{slug}-statistika-{stamp}.xlsx"
     else:
-        records = (await db.execute(_filtered_query(type, faculty, search, biometrics, course))).scalars().all()
+        query = _filtered_query(type, faculty, search, biometrics, course, pinfl_missing=pinfl_missing)
+        records = (await db.execute(query)).scalars().all()
         rows = sorted(
             (
                 PersonRow(

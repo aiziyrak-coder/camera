@@ -26,12 +26,14 @@ vi.mock('../../lib/apiClient', () => ({
 }));
 
 const seenParams: Record<string, string | undefined>[] = [];
+// Sahifa qatorlari (har testda almashtiriladi).
+let pageItems: unknown[] = [];
 vi.mock('../../lib/useServerPage', () => ({
   invalidateServerPageCache: vi.fn(),
   useServerPage: (_path: string, params: Record<string, string | undefined>) => {
     seenParams.push(params);
     return {
-      items: [],
+      items: pageItems,
       page: 1,
       setPage: vi.fn(),
       totalPages: 1,
@@ -81,5 +83,32 @@ describe('StudentsStaffPage — ?search=', () => {
       expect(seenParams[seenParams.length - 1].search).toBe('Karimov');
     });
     await waitFor(() => expect(window.location.search).not.toContain('search=Karimov'));
+  });
+});
+
+describe("StudentsStaffPage — JSHSHIR yo'q", () => {
+  it("filtr so'rovga boradi, belgi tahrirlash oynasini ochadi", async () => {
+    seenParams.length = 0;
+    pageItems = [
+      {
+        id: 'p1',
+        fullName: "Nurmatov Baxtibek Ulug'jon o'g'li",
+        type: 'xodim',
+        faculty: '',
+        groupOrPosition: 'Mikrobiologiya',
+        biometricsStatus: 'yoq',
+        initials: 'NB',
+        hasPinfl: false,
+      },
+    ];
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: "JSHSHIR yo'q" }));
+    await waitFor(() => expect(seenParams[seenParams.length - 1].pinflMissing).toBe('true'));
+
+    // Jadval keng va tor ekran uchun ikki marta chiziladi.
+    fireEvent.click(screen.getAllByRole('button', { name: /JSHSHIR yo'q — kiritish/ })[0]);
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    pageItems = [];
   });
 });

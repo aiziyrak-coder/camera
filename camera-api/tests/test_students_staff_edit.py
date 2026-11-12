@@ -150,3 +150,40 @@ class TestFailedLoginMasking:
         names = (await db_session.execute(select(AuditLog.user_name))).scalars().all()
         assert FAKE_PINFL not in names
         assert any(n.startswith("30") and n.endswith("17") and "*" in n for n in names)
+
+
+class TestMissingPinfl:
+    """HEMIS xodimlar ro'yxati JSHSHIR bermaydi — bunday odam ochiq sahifada
+    JSHSHIR bilan yuzini ro'yxatdan o'tkaza olmaydi (2026-11-12: Nurmatov B.).
+    Kadrlar bo'limi ularni ro'yxatdan topib, JSHSHIRni o'zi biriktiradi."""
+
+    async def test_filter_flag_and_attach(self, client, db_session, two_people):
+        _, other = two_people
+        nopin = StudentStaff(full_name="Pinsizov Xodim Uchinchi", type="xodim", group_or_position="Mikrobiologiya",
+                             biometrics_status="yoq")
+        db_session.add(nopin)
+        await db_session.commit()
+        headers = await auth_headers(client, "admin", "admin123")
+
+        resp = await client.post("/api/students-staff/search", headers=headers,
+                                 json={"type": "xodim", "pinflMissing": True})
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        assert [item["id"] for item in items] == [str(nopin.id)]
+        assert items[0]["hasPinfl"] is False and "pinfl" not in items[0]
+        full = (await client.post("/api/students-staff/search", headers=headers, json={"type": "xodim"})).json()["items"]
+        assert {item["id"]: item["hasPinfl"] for item in full}[str(other.id)] is True
+
+        # Boshqa odamning JSHSHIRi — rad etiladi, kimniki ekani aytiladi.
+        clash = await client.patch(f"/api/students-staff/{nopin.id}", headers=headers,
+                                   json=_base(nopin, groupOrPosition="Mikrobiologiya", pinfl=OTHER_PINFL))
+        assert clash.status_code == 409 and "Boshqaov" in clash.json()["detail"]
+
+        ok = await client.patch(f"/api/students-staff/{nopin.id}", headers=headers,
+                                json=_base(nopin, groupOrPosition="Mikrobiologiya", pinfl=" 3000 0000 0000 33 "))
+        assert ok.status_code == 200, ok.text
+        await db_session.refresh(nopin)
+        assert nopin.pinfl == "30000000000033"
+        after = await client.post("/api/students-staff/search", headers=headers,
+                                  json={"type": "xodim", "pinflMissing": True})
+        assert after.json()["items"] == []
