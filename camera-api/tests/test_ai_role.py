@@ -14,12 +14,8 @@ class TestWorkerWaitsForTheLock:
             attempts["n"] += 1
             return attempts["n"] >= 3
 
-        async def no_sync():
-            return None
-
         monkeypatch.setattr(main, "try_become_leader", busy_twice)
-        monkeypatch.setattr(main, "_sync_streams_once", no_sync)
-        monkeypatch.setattr(main, "_start_ai_loops", lambda tasks: started.append(True))
+        monkeypatch.setattr(main, "_start_leader_loops", lambda tasks: started.append(True))
         monkeypatch.setattr(main.settings, "ai_worker_lock_retry_seconds", 0)
         monkeypatch.setitem(main._leader_state, "is_leader", False)
 

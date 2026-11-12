@@ -54,36 +54,6 @@ class TestGateOrder:
         assert PRIORITY_LIVE < PRIORITY_ATTENDANCE < PRIORITY_BACKGROUND
 
 
-class TestAttendanceUsesItsPriority:
-    async def test_process_camera_frame_forwards_priority_to_detection(self, db_session, monkeypatch):
-        seen: list[int] = []
-
-        async def fake_detect(frame_bytes, *, priority, **_options):
-            seen.append(priority)
-            return []
-
-        monkeypatch.setattr(attendance_ai, "detect_faces", fake_detect)
-        candidates = CandidateMatrix(ids=["p1"], matrix=np.array([[1.0, 0.0]]))
-
-        await attendance_ai.process_camera_frame(b"x", db_session, None, candidates=candidates)
-        await attendance_ai.process_camera_frame(
-            b"x", db_session, None, candidates=candidates, inference_priority=PRIORITY_ATTENDANCE
-        )
-        assert seen == [PRIORITY_BACKGROUND, PRIORITY_ATTENDANCE]
-
-    def test_entrance_camera_loop_requests_attendance_priority(self):
-        # Kirish kamerasi kuzatuvchisi ham, bir martalik tekshiruv ham
-        # process_camera_frame'ni PRIORITY_ATTENDANCE bilan chaqiradi.
-        # Kuzatuvchi: operator ko'rayotgan kamera PRIORITY_LIVE, qolganlari ATTENDANCE.
-        source = inspect.getsource(attendance_ai._analyse_entrance_frame)
-        assert "inference_priority=PRIORITY_LIVE if live else PRIORITY_ATTENDANCE" in source
-        assert "inference_priority=PRIORITY_ATTENDANCE" in inspect.getsource(
-            attendance_ai.run_entrance_exit_attendance_sweep_once
-        )
-        # Xona kameralari (unified_face_sweep) esa tegilmagan — fon navbatida qoladi.
-        from app.jobs import unified_face_sweep
-
-        assert "PRIORITY_ATTENDANCE" not in inspect.getsource(unified_face_sweep)
 
 
 class TestCancelledWaitersDoNotLeakSlots:

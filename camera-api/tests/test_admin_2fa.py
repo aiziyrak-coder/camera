@@ -14,15 +14,6 @@ def _required(monkeypatch):
     monkeypatch.setattr(settings, "admin_2fa_required", True)
 
 
-async def test_admin_without_2fa_can_only_reach_the_setup(client: AsyncClient, seeded):
-    headers = await auth_headers(client, "admin", "admin123")
-    blocked = await client.get("/api/events", headers=headers)
-    assert blocked.status_code == 403 and blocked.headers.get("x-2fa-required") == "1"
-    # Sessiya va 2FA sozlash ochiq — aks holda uni yoqib bo'lmasdi.
-    me = await client.get("/api/auth/me", headers=headers)
-    assert me.status_code == 200 and me.json()["twoFactorRequired"] is True
-    assert (await client.get("/api/auth/2fa", headers=headers)).status_code == 200
-    assert (await client.post("/api/auth/2fa/boshlash", headers=headers)).status_code == 200
 
 
 async def test_non_admin_roles_are_not_forced(client: AsyncClient, db_session, seeded):

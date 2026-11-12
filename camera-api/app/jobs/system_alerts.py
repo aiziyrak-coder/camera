@@ -31,7 +31,6 @@ from sqlalchemy import select
 from app.config import settings
 from app.database import SessionLocal
 from app.models import IntegrationSyncRun
-from app.services.ai_watchdog import ai_stall_message
 from app.services.integrations import hemis
 from app.services.notifications import dispatcher
 from app.services.notifications.messages import Message
@@ -94,7 +93,6 @@ CHECK_FAILED = "<tekshiruv-yiqildi>"
 async def collect_problems(db, now: datetime) -> dict[str, str]:
     problems: dict[str, str] = {}
     checks = (
-        ("ai", lambda: ai_stall_message(db)),
         ("hemis", lambda: hemis_problem(db, now)),
     )
     for key, check in checks:

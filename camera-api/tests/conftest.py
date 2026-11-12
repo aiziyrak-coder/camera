@@ -37,6 +37,24 @@ async def _setup_schema():
     await test_engine.dispose()
 
 
+def _optional(module: str, attr: str | None = None):
+    """Platforma tozalangandan (2026-11-12) keyin ayrim modullar yo'q —
+    ularning test holatini tiklash ham kerak emas."""
+    import importlib
+
+    try:
+        mod = importlib.import_module(module)
+    except ImportError:
+        return None
+    return getattr(mod, attr, None) if attr else mod
+
+
+def _call(fn) -> None:
+    if fn is not None:
+        fn()
+
+
+
 @pytest.fixture(autouse=True)
 def _behaviour_hours_off():
     """Takes the wall clock out of the test suite.
@@ -69,17 +87,22 @@ def _fresh_live_focus():
     bo'lishilmasin; API kuzatuvchi natijasini kutmaydi (testda kuzatuvchi
     yo'q) — eski yo'l darhol ishlaydi. Kutishning o'z testlari uni yoqadi."""
     from app.config import settings
-    from app.routers import public
-    from app.services import live_focus
+
+    live_focus = _optional("app.services.live_focus")
+    public = _optional("app.routers.public")
+
+    def reset():
+        if live_focus is not None:
+            live_focus.reset_for_tests()
+        if public is not None:
+            public._no_watcher_until.clear()
 
     original = settings.live_result_first_wait_seconds
     settings.live_result_first_wait_seconds = 0.0
-    live_focus.reset_for_tests()
-    public._no_watcher_until.clear()
+    reset()
     yield
     settings.live_result_first_wait_seconds = original
-    live_focus.reset_for_tests()
-    public._no_watcher_until.clear()
+    reset()
 
 
 @pytest.fixture(autouse=True)
@@ -87,28 +110,25 @@ def _fresh_inference_cache():
     """Kadr natijalari keshi (app/services/inference_cache.py) testlar
     orasida bo'lishilmasin: ko'p test bir xil soxta kadr baytlarini
     ishlatadi, lekin modelni har xil soxtalashtiradi."""
-    from app.services.inference_cache import inference_cache
+    resets = []
+    cache = _optional("app.services.inference_cache", "inference_cache")
+    if cache is not None:
+        resets.append(cache.clear)
+    resets.append(_optional("app.jobs.lesson_quality_ai", "reset_sampling_for_tests"))
+    tracks = _optional("app.services.face_tracks", "track_store")
+    if tracks is not None:
+        resets.append(tracks.clear)
+    for module in ("app.services.face_gallery", "app.services.stream_promotion", "app.services.static_faces"):
+        resets.append(_optional(module, "reset_for_tests"))
+    zoom = _optional("app.services.face_zoom", "zoom_limiter")
+    if zoom is not None:
+        resets.append(zoom.reset)
 
-    from app.jobs.lesson_quality_ai import reset_sampling_for_tests
-
-    from app.services import face_gallery, face_zoom, static_faces, stream_promotion
-    from app.services.face_tracks import track_store
-
-    inference_cache.clear()
-    reset_sampling_for_tests()
-    track_store.clear()
-    face_gallery.reset_for_tests()
-    stream_promotion.reset_for_tests()
-    face_zoom.zoom_limiter.reset()
-    static_faces.reset_for_tests()
+    for fn in resets:
+        _call(fn)
     yield
-    inference_cache.clear()
-    reset_sampling_for_tests()
-    track_store.clear()
-    face_gallery.reset_for_tests()
-    stream_promotion.reset_for_tests()
-    face_zoom.zoom_limiter.reset()
-    static_faces.reset_for_tests()
+    for fn in resets:
+        _call(fn)
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -119,20 +139,22 @@ async def _clean_tables():
         for table in reversed(Base.metadata.sorted_tables):
             await conn.execute(table.delete())
     limiter.reset()  # slowapi's in-memory bucket is a module-level singleton
-    from app.jobs.camera_health import reset_camera_health_state_for_tests
     from app.services.face_matching import invalidate_candidate_matrix_cache
 
-    from app.jobs import attendance_ai
-    from app.services import situation as situation_svc
+    reset_health = _optional("app.jobs.camera_health", "reset_camera_health_state_for_tests")
+    attendance_ai = _optional("app.jobs.attendance_ai")
+    situation_svc = _optional("app.services.situation")
 
     # Umumiy (foydalanuvchiga bog'liq bo'lmagan) 15 s keshlar oldingi testdan qolmasin.
-    situation_svc.clear_cache()
+    if situation_svc is not None:
+        situation_svc.clear_cache()
     invalidate_candidate_matrix_cache()
-    reset_camera_health_state_for_tests()
-    attendance_ai._off_hours_raised.clear()
+    _call(reset_health)
+    if attendance_ai is not None:
+        attendance_ai._off_hours_raised.clear()
     yield
     invalidate_candidate_matrix_cache()
-    reset_camera_health_state_for_tests()
+    _call(reset_health)
 
 
 #: Testlardagi ro'yxatdan o'tish kodi.

@@ -65,15 +65,6 @@ class TestAttendanceOnlySocket:
         assert manager._allowed(ws, {"kind": "attendance_recorded"}) is True
 
 
-@pytest.mark.anyio
-async def test_attendance_viewer_may_open_the_socket(client, seeded):
-    """manageAttendance/viewReports egasi ham ulanadi (jonli davomat);
-    kamera mas'uli — yo'q (test_operator_permissions)."""
-    from app.routers.events import authorize_events_socket
-    from tests.conftest import TestSessionLocal, login
-
-    token = await login(client, "operator", "operator123")
-    assert await authorize_events_socket(token, TestSessionLocal) is None
 
 
 class TestRound6Rules:
@@ -126,18 +117,3 @@ class TestRound6Rules:
         assert _looks_complete(200, 1000) is False  # birinchi sahifagina keldi
 
 
-@pytest.mark.anyio
-async def test_excluded_camera_records_no_arrival(db_session, seeded):
-    """Admin 6 va 7-modulni o'chirgan kamera yagona tekshiruvda ham kelish yozmaydi."""
-    from app.jobs.unified_face_sweep import record_arrivals
-    from app.models import Camera
-    from app.services.face_matching import CandidateMatrix
-
-    import numpy as np
-
-    camera = Camera(name="Yo'lak", ip="10.8.0.1", zone="Z", resolution="1080p", status="faol",
-                    excluded_module_codes=[6, 7])
-    db_session.add(camera)
-    await db_session.commit()
-    candidates = CandidateMatrix(ids=["x"], matrix=np.array([[1.0, 0.0]]))
-    assert await record_arrivals(db_session, camera, [object()], candidates, {}) == 0
