@@ -34,6 +34,7 @@ from app.routers import (
     enrollment,
     face,
     integration_v1,
+    presentation,
     integrations,
     metrics,
     notifications,
@@ -169,6 +170,7 @@ app.include_router(privacy.router)
 # Tashkiliy tuzilma daraxti, ism bo'yicha qidiruv va PDF shu yerda.
 app.include_router(situation.router, dependencies=[Depends(fresh_attendance_policy)])
 app.include_router(integration_v1.router)
+app.include_router(presentation.router)
 
 
 @app.get("/health")
