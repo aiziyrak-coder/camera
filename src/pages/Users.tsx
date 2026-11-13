@@ -18,10 +18,10 @@ export default function UsersPage() {
   const [resetting2fa, setResetting2fa] = useState<AdminUser | null>(null);
 
   return (
-    <div className="max-w-4xl">
+    <div>
       <PageHead
         title="Foydalanuvchilar"
-        text="Tizimga kira oladigan xodimlar"
+        text="Tizimga kira oladigan xodimlar va ularning huquqlari"
         actions={
           <Button variant="primary" icon={Plus} onClick={() => setEditing('new')}>
             Yangi foydalanuvchi
@@ -30,43 +30,64 @@ export default function UsersPage() {
       />
 
       {users.error ? (
-        <Alert>{users.error}</Alert>
+        <div className="p-6">
+          <Alert>{users.error}</Alert>
+        </div>
       ) : !users.data ? (
         <Spinner />
       ) : users.data.length === 0 ? (
-        <div className="card">
-          <Empty icon={UserCog} title="Foydalanuvchi yo‘q" />
-        </div>
+        <Empty icon={UserCog} title="Foydalanuvchi yo‘q" />
       ) : (
-        <div className="card divide-y divide-line">
-          {users.data.map((u) => (
-            <div key={u.id} className="flex flex-wrap items-center gap-3 px-5 py-4">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ink/[0.06] text-[14px] font-semibold text-soft">
-                {u.initials || u.name.slice(0, 1)}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[15px] font-medium text-ink">
-                  {u.name}
-                  {u.login === userName && <span className="ml-2 text-[13px] font-normal text-faint">(siz)</span>}
-                </p>
-                <p className="truncate text-[13px] text-soft">
-                  {u.login} · Oxirgi kirish: {u.lastLogin || 'hech qachon'}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <Badge tone={u.role === 'Super Admin' ? 'brand' : 'plain'}>{u.role}</Badge>
-                {u.twoFactorEnabled && <Badge tone="ok">2FA</Badge>}
-              </div>
-              <div className="flex">
-                <IconButton icon={Pencil} label="Tahrirlash" onClick={() => setEditing(u)} />
-                <IconButton icon={KeyRound} label="Parolni almashtirish" onClick={() => setResetting(u)} />
-                {u.twoFactorEnabled && <IconButton icon={ShieldOff} label="2FA ni bekor qilish" onClick={() => setResetting2fa(u)} />}
-                {u.login !== userName && (
-                  <IconButton icon={Trash2} label="O‘chirish" className="hover:bg-bad-tint hover:text-bad" onClick={() => setDeleting(u)} />
-                )}
-              </div>
-            </div>
-          ))}
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[820px] text-left text-[13px]">
+            <thead>
+              <tr className="[&>th]:h-9 [&>th]:border-b [&>th]:border-line [&>th]:px-3 [&>th]:text-[11.5px] [&>th]:font-medium [&>th]:uppercase [&>th]:tracking-[0.05em] [&>th]:text-faint">
+                <th className="!pl-6">Foydalanuvchi</th>
+                <th>Login</th>
+                <th>Rol</th>
+                <th>2FA</th>
+                <th>Oxirgi kirish</th>
+                <th className="w-40 !pr-6" />
+              </tr>
+            </thead>
+            <tbody>
+              {users.data.map((u) => (
+                <tr key={u.id} className="group [&>td]:h-14 [&>td]:border-b [&>td]:border-line/70 [&>td]:px-3 hover:bg-side">
+                  <td className="!pl-6">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-sunk text-[12px] font-semibold text-soft">
+                        {u.initials || u.name.slice(0, 1)}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-ink">
+                          {u.name}
+                          {u.login === userName && <span className="ml-2 text-[12px] font-normal text-faint">siz</span>}
+                        </p>
+                        {(u.email || u.phone) && <p className="truncate text-[12px] text-faint">{u.email || u.phone}</p>}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="font-mono text-[12.5px] text-soft">{u.login}</td>
+                  <td>
+                    <Badge tone={u.role === 'Super Admin' ? 'brand' : 'plain'}>{u.role}</Badge>
+                  </td>
+                  <td>{u.twoFactorEnabled ? <Badge tone="ok">Yoqilgan</Badge> : <span className="text-faint">—</span>}</td>
+                  <td className="tnum text-soft">{u.lastLogin || 'hech qachon'}</td>
+                  <td className="!pr-6">
+                    <div className="flex justify-end opacity-70 transition-opacity group-hover:opacity-100">
+                      <IconButton icon={Pencil} label="Tahrirlash" onClick={() => setEditing(u)} />
+                      <IconButton icon={KeyRound} label="Parolni almashtirish" onClick={() => setResetting(u)} />
+                      {u.twoFactorEnabled && <IconButton icon={ShieldOff} label="2FA ni bekor qilish" onClick={() => setResetting2fa(u)} />}
+                      {u.login !== userName && (
+                        <IconButton icon={Trash2} label="O‘chirish" className="hover:bg-bad-tint hover:text-bad" onClick={() => setDeleting(u)} />
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="px-6 py-3 text-[12.5px] text-faint">{users.data.length} ta foydalanuvchi</p>
         </div>
       )}
 

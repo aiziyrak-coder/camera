@@ -14,8 +14,8 @@
     "browser"
   ],
   "orientation": "any",
-  "background_color": "#F6F7F9",
-  "theme_color": "#1F8A5B",
+  "background_color": "#FFFFFF",
+  "theme_color": "#FFFFFF",
   "categories": [
     "security",
     "productivity",

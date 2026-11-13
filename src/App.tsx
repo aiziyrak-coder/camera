@@ -7,7 +7,9 @@ import LoginPage from './pages/Login';
 
 const ResetPasswordPage = lazyPage(() => import('./pages/ResetPassword'));
 const EnrollPage = lazyPage(() => import('./pages/enroll/Enroll'));
+const DashboardPage = lazyPage(() => import('./pages/Dashboard'));
 const FacesPage = lazyPage(() => import('./pages/Faces'));
+const ReviewPage = lazyPage(() => import('./pages/Review'));
 const HemisPage = lazyPage(() => import('./pages/Hemis'));
 const TelegramPage = lazyPage(() => import('./pages/Telegram'));
 const UsersPage = lazyPage(() => import('./pages/Users'));
@@ -45,6 +47,22 @@ export default function App() {
         <Route element={<RequireAuth />}>
           <Route element={<Shell />}>
             <Route path="/" element={<Home />} />
+            <Route
+              path="/panel"
+              element={
+                <RequirePermission permission="registerPeople">
+                  <DashboardPage />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/tasdiqlash"
+              element={
+                <RequirePermission permission="registerPeople">
+                  <ReviewPage />
+                </RequirePermission>
+              }
+            />
             <Route
               path="/yuzlar"
               element={

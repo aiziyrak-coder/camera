@@ -5,7 +5,7 @@ import { api } from '../lib/apiClient';
 import { useAuth } from '../lib/auth';
 import { formatLogTime, notificationsApi, type NotificationLogEntry, type NotificationLogPage, type NotificationStatus } from '../lib/notificationsApi';
 import { useDebouncedValue } from '../lib/useDebouncedValue';
-import { Alert, Badge, Button, Empty, PageHead, Select, Spinner, errorText, formatNumber } from '../kit';
+import { Alert, Badge, Button, Dot, Empty, IconButton, PageHead, Panel, Select, Spinner, Stat, errorText, formatNumber } from '../kit';
 
 interface ParentCoverage {
   students: number;
@@ -48,79 +48,71 @@ export default function TelegramPage() {
       .catch(() => undefined);
   }, [token]);
 
-  if (error) return <Alert>{error}</Alert>;
+  if (error)
+    return (
+      <div className="p-6">
+        <Alert>{error}</Alert>
+      </div>
+    );
   if (!status) return <Spinner />;
 
   return (
-    <div className="max-w-4xl">
-      <PageHead title="Telegram" text="Ota-onalarga va xodimlarga Telegram orqali xabar yuborish" />
+    <div>
+      <PageHead
+        title="Telegram"
+        text="Ota-onalarga va xodimlarga Telegram orqali xabar yuborish"
+        actions={
+          status.telegramBotUsername && (
+            <a href={`https://t.me/${status.telegramBotUsername}`} target="_blank" rel="noreferrer">
+              <Button icon={Send}>@{status.telegramBotUsername}</Button>
+            </a>
+          )
+        }
+      />
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="card p-6">
-          <div className="flex items-center gap-3">
-            <span className={`flex h-12 w-12 items-center justify-center rounded-2xl ${status.telegramConfigured ? 'bg-ok-tint text-ok' : 'bg-bad-tint text-bad'}`}>
-              <Send size={22} aria-hidden />
-            </span>
-            <div>
-              <p className="text-[17px] font-semibold text-ink">{status.telegramConfigured ? 'Bot ishlayapti' : 'Bot sozlanmagan'}</p>
-              {status.telegramBotUsername && (
-                <a href={`https://t.me/${status.telegramBotUsername}`} target="_blank" rel="noreferrer" className="text-[14px] font-medium text-brand hover:underline">
-                  @{status.telegramBotUsername}
-                </a>
-              )}
-            </div>
-          </div>
-          <ul className="mt-5 flex flex-col gap-2.5 text-[14px]">
-            <Toggle label="Talaba kelganda ota-onaga xabar" on={status.parentArrivalEnabled} />
-            <Toggle label="Talaba kelmaganda ota-onaga xabar" on={status.parentAbsenceEnabled} />
-            <Toggle label="Botga yozilgan xabarlarni qabul qilish" on={status.telegramPollingEnabled} />
-          </ul>
-          <p className="mt-4 text-[13px] text-faint">Bu sozlamalar serverda o‘rnatiladi.</p>
+      <div className="flex flex-col gap-5 p-4 lg:p-6">
+        <div className="card grid grid-cols-2 gap-px overflow-hidden bg-line lg:grid-cols-4 [&>*]:bg-white">
+          <Stat
+            label="Bot"
+            value={
+              <span className="flex items-center gap-2 text-[18px]">
+                <Dot tone={status.telegramConfigured ? 'ok' : 'bad'} />
+                {status.telegramConfigured ? 'Ishlayapti' : 'Sozlanmagan'}
+              </span>
+            }
+          />
+          <Stat
+            label="Botga ulangan ota-onalar"
+            value={parents ? formatNumber(parents.telegramLinked) : '—'}
+            meter={parents && parents.students ? parents.telegramLinked / parents.students : 0}
+            sub={parents ? `${formatNumber(parents.students)} talabadan` : undefined}
+          />
+          <Stat label="7 kunda yuborildi" value={parents ? formatNumber(parents.weekSent) : '—'} />
+          <Stat label="7 kunda xato" value={parents ? formatNumber(parents.weekFailed) : '—'} sub={parents ? `${formatNumber(parents.weekSkipped)} ta o‘tkazib yuborildi` : undefined} />
         </div>
 
-        <div className="card p-6">
-          <p className="text-[17px] font-semibold text-ink">Ota-onalar</p>
-          {parents ? (
-            <>
-              <div className="mt-4 flex items-baseline gap-2">
-                <span className="text-[30px] font-semibold tracking-tight text-ink">{formatNumber(parents.telegramLinked)}</span>
-                <span className="text-[14px] text-soft">/ {formatNumber(parents.students)} talabaning ota-onasi botga ulangan</span>
-              </div>
-              <div className="mt-2 h-2 overflow-hidden rounded-full bg-ink/[0.06]">
-                <div className="h-full rounded-full bg-brand" style={{ width: `${parents.students ? (parents.telegramLinked / parents.students) * 100 : 0}%` }} />
-              </div>
-              <dl className="mt-5 grid grid-cols-3 gap-3 text-center">
-                <Mini label="7 kunda yuborildi" value={parents.weekSent} tone="text-ok" />
-                <Mini label="Xato" value={parents.weekFailed} tone={parents.weekFailed ? 'text-bad' : 'text-ink'} />
-                <Mini label="O‘tkazildi" value={parents.weekSkipped} tone="text-soft" />
-              </dl>
-            </>
-          ) : (
-            <p className="mt-4 text-[14px] text-soft">Yuklanmoqda...</p>
-          )}
+        <div className="grid gap-5 xl:grid-cols-[1fr_340px]">
+          <MessageLog />
+          <Panel title="Sozlamalar" bodyClassName="p-0">
+            <ul className="divide-y divide-line">
+              <Toggle label="Talaba kelganda ota-onaga xabar" on={status.parentArrivalEnabled} />
+              <Toggle label="Talaba kelmaganda ota-onaga xabar" on={status.parentAbsenceEnabled} />
+              <Toggle label="Botga yozilgan xabarlarni qabul qilish" on={status.telegramPollingEnabled} />
+            </ul>
+            <p className="border-t border-line px-4 py-3 text-[12px] text-faint">Bu sozlamalar serverda o‘rnatiladi.</p>
+          </Panel>
         </div>
       </div>
-
-      <MessageLog />
     </div>
   );
 }
 
 function Toggle({ label, on }: { label: string; on: boolean }) {
   return (
-    <li className="flex items-center justify-between gap-3">
+    <li className="flex items-center justify-between gap-3 px-4 py-3 text-[13px]">
       <span className="text-ink">{label}</span>
       <Badge tone={on ? 'ok' : 'plain'}>{on ? 'Yoqilgan' : 'O‘chiq'}</Badge>
     </li>
-  );
-}
-
-function Mini({ label, value, tone }: { label: string; value: number; tone: string }) {
-  return (
-    <div className="rounded-xl bg-page px-2 py-3">
-      <dd className={`text-[20px] font-semibold ${tone}`}>{formatNumber(value)}</dd>
-      <dt className="mt-0.5 text-[12px] text-faint">{label}</dt>
-    </div>
   );
 }
 
@@ -152,58 +144,57 @@ function MessageLog() {
   }, [page, statusFilter, debounced, token]);
 
   return (
-    <section className="mt-10">
-      <div className="mb-3 flex flex-wrap items-center gap-3">
-        <h2 className="mr-auto text-[18px] font-semibold text-ink">Yuborilgan xabarlar</h2>
-        <div className="relative w-full sm:w-64">
-          <Search size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" aria-hidden />
-          <input className="input h-10 pl-9 text-[14px]" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Qidirish" aria-label="Xabarlarni qidirish" />
-        </div>
-        <Select value={statusFilter} onChange={setStatusFilter} placeholder="Hammasi" options={STATUS_FILTERS} className="h-10 w-full text-[14px] sm:w-48" ariaLabel="Holat" />
-      </div>
-
+    <Panel
+      title="Yuborilgan xabarlar"
+      bodyClassName="p-0"
+      actions={
+        <>
+          <div className="relative hidden w-52 sm:block">
+            <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" aria-hidden />
+            <input className="input h-7 pl-8 text-[12.5px]" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Qidirish" aria-label="Xabarlarni qidirish" />
+          </div>
+          <Select value={statusFilter} onChange={setStatusFilter} placeholder="Hammasi" options={STATUS_FILTERS} className="h-7 w-40 text-[12.5px]" ariaLabel="Holat" />
+        </>
+      }
+    >
       {error ? (
-        <Alert>{error}</Alert>
+        <div className="p-4">
+          <Alert>{error}</Alert>
+        </div>
       ) : !data ? (
         <Spinner />
       ) : data.items.length === 0 ? (
-        <div className="card">
-          <Empty icon={MessageCircle} title="Xabar yo‘q" text="Hali hech qanday xabar yuborilmagan." />
-        </div>
+        <Empty icon={MessageCircle} title="Xabar yo‘q" text="Hali hech qanday xabar yuborilmagan." />
       ) : (
         <>
-          <div className="card divide-y divide-line">
+          <ul className="divide-y divide-line">
             {data.items.map((m) => (
-              <div key={m.id} className="px-5 py-3.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[13px] text-faint">{formatLogTime(m.createdAt)}</span>
-                  <span className="text-[13px] text-soft">· {KIND_LABEL[m.kind] ?? m.kind}</span>
-                  <span className="ml-auto">
-                    <Badge tone={m.status === 'yuborildi' ? 'ok' : m.status === 'xato' ? 'bad' : 'plain'}>
-                      {m.status === 'yuborildi' ? 'Yuborildi' : m.status === 'xato' ? 'Xato' : 'O‘tkazildi'}
-                    </Badge>
-                  </span>
+              <li key={m.id} className="flex gap-4 px-4 py-3">
+                <span className="tnum w-28 shrink-0 pt-px text-[12px] text-faint">{formatLogTime(m.createdAt)}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[12px] font-medium text-soft">{KIND_LABEL[m.kind] ?? m.kind}</p>
+                  <p className="mt-0.5 line-clamp-2 whitespace-pre-line text-[13px] text-ink">{m.text}</p>
+                  {m.error && <p className="mt-1 text-[12px] text-bad">{m.error}</p>}
                 </div>
-                <p className="mt-1 line-clamp-2 whitespace-pre-line text-[14px] text-ink">{m.text}</p>
-                {m.error && <p className="mt-1 text-[13px] text-bad">{m.error}</p>}
-              </div>
+                <span className="shrink-0">
+                  <Badge tone={m.status === 'yuborildi' ? 'ok' : m.status === 'xato' ? 'bad' : 'plain'}>
+                    {m.status === 'yuborildi' ? 'Yuborildi' : m.status === 'xato' ? 'Xato' : 'O‘tkazildi'}
+                  </Badge>
+                </span>
+              </li>
             ))}
-          </div>
+          </ul>
           {data.totalPages > 1 && (
-            <div className="mt-4 flex items-center justify-center gap-3">
-              <Button size="sm" icon={ChevronLeft} disabled={page <= 1} onClick={() => setPage(page - 1)}>
-                Oldingi
-              </Button>
-              <span className="text-[14px] text-soft">
+            <div className="flex h-11 items-center justify-end gap-1 border-t border-line px-3 text-[12.5px] text-soft">
+              <IconButton icon={ChevronLeft} label="Oldingi" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)} />
+              <span className="tnum min-w-[64px] text-center">
                 {page} / {data.totalPages}
               </span>
-              <Button size="sm" disabled={page >= data.totalPages} onClick={() => setPage(page + 1)}>
-                Keyingi <ChevronRight size={15} aria-hidden />
-              </Button>
+              <IconButton icon={ChevronRight} label="Keyingi" size="sm" disabled={page >= data.totalPages} onClick={() => setPage(page + 1)} />
             </div>
           )}
         </>
       )}
-    </section>
+    </Panel>
   );
 }

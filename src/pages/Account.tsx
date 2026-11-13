@@ -173,7 +173,7 @@ function TwoFactorSetupModal({ onClose, onDone }: { onClose: () => void; onDone:
           </div>
           <Field label="Ilovadagi kod">
             <input
-              className="input text-center text-[20px] tracking-[0.35em]"
+              className="input h-12 text-center text-[20px] tracking-[0.35em]"
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/[^\d]/g, '').slice(0, 6))}
               inputMode="numeric"
@@ -221,7 +221,7 @@ function DisableTwoFactorModal({ onClose, onDone }: { onClose: () => void; onDon
       >
         <p className="text-[14px] text-soft">Tasdiqlash uchun ilovadagi joriy kodni kiriting.</p>
         <input
-          className="input text-center text-[20px] tracking-[0.35em]"
+          className="input h-12 text-center text-[20px] tracking-[0.35em]"
           value={code}
           onChange={(e) => setCode(e.target.value.replace(/[^\d]/g, '').slice(0, 6))}
           inputMode="numeric"

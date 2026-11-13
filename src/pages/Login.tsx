@@ -68,26 +68,25 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center px-4 py-10">
-      <div className="w-full max-w-[400px]">
-        <div className="mb-8 flex flex-col items-center text-center">
-          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand text-white shadow-lift">
-            <ScanFace size={28} aria-hidden />
+    <div className="flex h-full bg-white">
+      {/* Chap: forma */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto px-6 py-8 sm:px-12">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink text-white">
+            <ScanFace size={17} aria-hidden />
           </span>
-          <h1 className="mt-5 text-[24px] font-semibold tracking-tight text-ink">Yuzlar bazasi</h1>
-          <p className="mt-1 text-[14px] text-soft">{branding.orgFullName}</p>
+          <span className="text-[14px] font-semibold text-ink">Yuzlar bazasi</span>
         </div>
 
-        <div className="card p-6 sm:p-7">
+        <div className="mx-auto flex w-full max-w-[360px] flex-1 flex-col justify-center py-10">
+          <h1 className="text-[26px] font-semibold tracking-[-0.02em] text-ink">{challenge ? 'Tasdiqlash kodi' : 'Tizimga kirish'}</h1>
+          <p className="mb-8 mt-1.5 text-[13.5px] text-soft">{branding.orgFullName}</p>
           {challenge ? (
             <form onSubmit={submitCode} className="flex flex-col gap-5">
-              <div>
-                <p className="text-[17px] font-semibold text-ink">Tasdiqlash kodi</p>
-                <p className="mt-1 text-[14px] text-soft">Telefoningizdagi autentifikator ilovasidan 6 xonali kodni kiriting.</p>
-              </div>
+              <p className="text-[13.5px] text-soft">Telefoningizdagi autentifikator ilovasidan 6 xonali kodni kiriting.</p>
               <Field label="Kod">
                 <input
-                  className="input text-center text-[22px] tracking-[0.4em]"
+                  className="input h-12 text-center text-[22px] tracking-[0.4em]"
                   value={code}
                   onChange={(e) => setCode(e.target.value.replace(/[^\d]/g, '').slice(0, 6))}
                   inputMode="numeric"
@@ -97,7 +96,7 @@ export default function LoginPage() {
                 />
               </Field>
               {error && <Alert>{error}</Alert>}
-              <Button type="submit" variant="primary" size="lg" block loading={busy} disabled={code.length !== 6}>
+              <Button type="submit" variant="primary" block className="h-10" loading={busy} disabled={code.length !== 6}>
                 Kirish
               </Button>
               <Button variant="ghost" icon={ArrowLeft} block onClick={() => setChallenge(null)}>
@@ -107,12 +106,12 @@ export default function LoginPage() {
           ) : (
             <form onSubmit={submitPassword} className="flex flex-col gap-5">
               <Field label="Login">
-                <input className="input" value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="username" autoFocus required />
+                <input className="input h-10" value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="username" autoFocus required />
               </Field>
               <Field label="Parol">
                 <div className="relative">
                   <input
-                    className="input pr-11"
+                    className="input h-10 pr-11"
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -130,23 +129,48 @@ export default function LoginPage() {
                 </div>
               </Field>
               {error && <Alert>{error}</Alert>}
-              <Button type="submit" variant="primary" size="lg" block loading={busy} disabled={!login || !password}>
+              <Button type="submit" variant="primary" block className="h-10" loading={busy} disabled={!login || !password}>
                 Kirish
               </Button>
-              <button type="button" onClick={() => setForgotOpen(true)} className="text-[14px] font-medium text-brand hover:underline">
+              <button type="button" onClick={() => setForgotOpen(true)} className="text-[13px] font-medium text-soft hover:text-ink">
                 Parolni unutdingizmi?
               </button>
             </form>
           )}
+          <p className="mt-8 text-[13px] text-soft">
+            Yuzingizni ro‘yxatdan o‘tkazmoqchimisiz?{' '}
+            <a href="/royxatdan-otish" className="font-medium text-ink underline underline-offset-4">
+              Shu yerga bosing
+            </a>
+          </p>
         </div>
 
-        <p className="mt-6 text-center text-[14px] text-soft">
-          Yuzingizni ro‘yxatdan o‘tkazmoqchimisiz?{' '}
-          <a href="/royxatdan-otish" className="font-medium text-brand hover:underline">
-            Shu yerga bosing
-          </a>
-        </p>
+        <p className="text-[12px] text-faint">© {new Date().getFullYear()} {branding.orgName}</p>
       </div>
+
+      {/* O'ng: tizim haqida */}
+      <aside className="hidden w-[46%] max-w-[640px] flex-col justify-between border-l border-line bg-side p-12 lg:flex">
+        <p className="label-xs">Yuzni tanish platformasi</p>
+        <div>
+          <p className="max-w-md text-[30px] font-semibold leading-[1.15] tracking-[-0.02em] text-ink">
+            Talaba va xodimlarning yuzlari — bitta xavfsiz bazada.
+          </p>
+          <ul className="mt-10 grid max-w-md grid-cols-2 gap-x-8 gap-y-6 text-[13px]">
+            {[
+              ['Yuzlar bazasi', 'Kameralar taniydigan har bir odam'],
+              ['Tasdiqlash', 'Yuborilgan yuzlarni tekshirish'],
+              ['HEMIS', 'Ro‘yxat avtomatik yangilanadi'],
+              ['Telegram', 'Ota-onalarga xabar'],
+            ].map(([t, d]) => (
+              <li key={t} className="border-t border-line pt-3">
+                <p className="font-medium text-ink">{t}</p>
+                <p className="mt-0.5 text-soft">{d}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p className="text-[12px] text-faint">Barcha amallar jurnalga yoziladi.</p>
+      </aside>
 
       {forgotOpen && <ForgotPassword initialLogin={login} onClose={() => setForgotOpen(false)} />}
     </div>

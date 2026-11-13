@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -7,21 +7,48 @@
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  html, body, #root {
+    height: 100%;
   }
   body {
-    @apply bg-page font-sans text-[15px] text-ink antialiased;
+    @apply bg-page font-sans text-[13.5px] text-ink antialiased;
   }
   :focus-visible {
-    @apply outline-none ring-2 ring-brand/40 ring-offset-1;
+    @apply outline-none ring-2 ring-ink/25 ring-offset-1;
+  }
+  ::selection {
+    @apply bg-ink text-white;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #d4d4d8 transparent;
   }
 }
 
 @layer components {
   .card {
-    @apply rounded-2xl border border-line bg-white shadow-card;
+    @apply rounded-xl border border-line bg-white;
   }
   .input {
-    @apply h-11 w-full rounded-xl border border-line bg-white px-3.5 text-[15px] text-ink placeholder:text-faint transition-colors focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15 disabled:bg-page disabled:text-soft;
+    @apply h-9 w-full rounded-lg border border-line bg-white px-3 text-[13.5px] text-ink placeholder:text-faint transition-colors hover:border-[#d4d4d8] focus:border-ink focus:outline-none focus:ring-0 disabled:bg-sunk disabled:text-soft;
+  }
+  .kbd {
+    @apply inline-flex h-5 min-w-[20px] items-center justify-center rounded border border-line bg-white px-1 font-sans text-[11px] font-medium text-faint;
+  }
+  .label-xs {
+    @apply text-[11px] font-medium uppercase tracking-[0.06em] text-faint;
+  }
+  /* Ochiq telefon sahifasi: katta maydonlar, iOS kattalashtirmasin (16px). */
+  .enroll .input {
+    @apply h-12 rounded-xl px-4 text-[16px];
+  }
+  .enroll [role='tablist'] button {
+    @apply py-2.5 text-[14px];
+  }
+  .tnum {
+    font-variant-numeric: tabular-nums;
   }
 }
 
@@ -30,17 +57,26 @@
   to { opacity: 1; }
 }
 @keyframes slide-in {
-  from { transform: translateX(24px); opacity: 0; }
+  from { transform: translateX(16px); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
 @keyframes pop-in {
-  from { transform: translateY(8px) scale(0.98); opacity: 0; }
+  from { transform: translateY(4px) scale(0.985); opacity: 0; }
   to { transform: translateY(0) scale(1); opacity: 1; }
 }
-.anim-fade { animation: fade-in 0.15s ease-out; }
-.anim-slide { animation: slide-in 0.2s ease-out; }
-.anim-pop { animation: pop-in 0.18s ease-out; }
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.anim-fade { animation: fade-in 0.12s ease-out; }
+.anim-slide { animation: slide-in 0.16s ease-out; }
+.anim-pop { animation: pop-in 0.14s ease-out; }
+.skeleton {
+  background: linear-gradient(90deg, #f1f1f3 0px, #e9e9ec 80px, #f1f1f3 160px);
+  background-size: 800px 100%;
+  animation: shimmer 1.2s linear infinite;
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .anim-fade, .anim-slide, .anim-pop { animation: none; }
+  .anim-fade, .anim-slide, .anim-pop, .skeleton { animation: none; }
 }

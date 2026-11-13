@@ -135,26 +135,31 @@ export default function EnrollPage() {
   const stepIndex = STEPS.findIndex((group) => group.includes(step));
 
   return (
-    <div className="min-h-screen bg-page">
-      <div className="mx-auto flex min-h-screen w-full max-w-[440px] flex-col px-4 pb-10 pt-6">
+    <div className="enroll min-h-full overflow-y-auto bg-white sm:bg-side">
+      <div className="mx-auto flex min-h-full w-full max-w-[460px] flex-col px-5 pb-10 pt-5 sm:pt-10">
         <header className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand text-white">
-            <ScanFace size={20} aria-hidden />
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink text-white">
+            <ScanFace size={17} aria-hidden />
           </span>
-          <span className="text-[15px] font-semibold text-ink">{branding.orgName}</span>
+          <span className="flex-1 text-[14px] font-semibold text-ink">{branding.orgName}</span>
+          {step !== 'success' && (
+            <span className="tnum text-[12.5px] font-medium text-faint">
+              {stepIndex + 1} / {STEPS.length}
+            </span>
+          )}
         </header>
 
         {step !== 'success' && (
           <div className="mt-6 flex gap-1.5" aria-label={`${stepIndex + 1}-qadam, jami ${STEPS.length}`}>
             {STEPS.map((_, i) => (
-              <span key={i} className={cn('h-1.5 flex-1 rounded-full transition-colors', i <= stepIndex ? 'bg-brand' : 'bg-ink/10')} />
+              <span key={i} className={cn('h-1 flex-1 rounded-full transition-colors', i <= stepIndex ? 'bg-ink' : 'bg-sunk')} />
             ))}
           </div>
         )}
 
-        <main className="card mt-5 p-6">
+        <main className="mt-6 sm:rounded-xl sm:border sm:border-line sm:bg-white sm:p-7">
           {groupHint && step === 'identify' && (
-            <p className="mb-4 rounded-xl bg-brand-tint px-3.5 py-2.5 text-[14px] text-brand">
+            <p className="mb-4 rounded-lg border border-line bg-side px-3.5 py-2.5 text-[14px] text-ink">
               Guruh: <b>{groupHint}</b>
             </p>
           )}
@@ -223,7 +228,7 @@ export default function EnrollPage() {
                 Davom etish
               </Button>
               {notFound && (
-                <Button
+                <Button size="lg"
                   block
                   onClick={() => {
                     setError(null);
@@ -253,8 +258,8 @@ export default function EnrollPage() {
           {step === 'confirm' && found && (
             <div className="flex flex-col gap-5">
               <Title title="Bu sizmisiz?" />
-              <div className="flex items-center gap-4 rounded-2xl bg-page p-4">
-                <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-white text-faint shadow-card">
+              <div className="flex items-center gap-4 rounded-xl border border-line bg-side p-4">
+                <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-line bg-white text-faint">
                   <UserRound size={28} aria-hidden />
                 </span>
                 <div className="min-w-0">
@@ -276,7 +281,7 @@ export default function EnrollPage() {
                   </Button>
                 </>
               )}
-              <Button variant="ghost" icon={ArrowLeft} block onClick={restart}>
+              <Button size="lg" variant="ghost" icon={ArrowLeft} block onClick={restart}>
                 Yo‘q, qaytadan kiritaman
               </Button>
             </div>
@@ -306,7 +311,7 @@ export default function EnrollPage() {
                   ? `${found.fullName}, yuzingiz qabul qilindi. Administrator tekshirgandan keyin tasdiqlanadi.`
                   : `${found.fullName}, yuzingiz muvaffaqiyatli saqlandi.`}
               </p>
-              <Button className="mt-8" block onClick={restart}>
+              <Button size="lg" className="mt-8" block onClick={restart}>
                 Boshqa odamni ro‘yxatdan o‘tkazish
               </Button>
             </div>
@@ -352,10 +357,10 @@ function Consent({ onContinue, onBack }: { onContinue: (agreed: boolean) => void
     return (
       <div className="flex flex-col gap-3">
         <Alert>{error}</Alert>
-        <Button variant="primary" block onClick={() => setAttempt((n) => n + 1)}>
+        <Button size="lg" variant="primary" block onClick={() => setAttempt((n) => n + 1)}>
           Qayta urinish
         </Button>
-        <Button variant="ghost" icon={ArrowLeft} block onClick={onBack}>
+        <Button size="lg" variant="ghost" icon={ArrowLeft} block onClick={onBack}>
           Orqaga
         </Button>
       </div>
@@ -400,7 +405,7 @@ function Consent({ onContinue, onBack }: { onContinue: (agreed: boolean) => void
       <Button variant="primary" size="lg" block disabled={!canContinue} onClick={() => onContinue(agreed)}>
         Kamerani yoqish
       </Button>
-      <Button variant="ghost" icon={ArrowLeft} block onClick={onBack}>
+      <Button size="lg" variant="ghost" icon={ArrowLeft} block onClick={onBack}>
         Orqaga
       </Button>
     </div>
@@ -512,7 +517,7 @@ function SelfRegister({
       <Button type="submit" variant="primary" size="lg" block loading={submitting} disabled={!valid}>
         Davom etish
       </Button>
-      <Button variant="ghost" icon={ArrowLeft} block onClick={onBack} disabled={submitting}>
+      <Button size="lg" variant="ghost" icon={ArrowLeft} block onClick={onBack} disabled={submitting}>
         Orqaga
       </Button>
     </form>

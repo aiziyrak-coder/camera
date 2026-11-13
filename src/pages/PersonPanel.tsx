@@ -1,11 +1,11 @@
-/* Bitta odam: yuz rasmlari, ma'lumotlari va amallar. */
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+/* Tanlangan odam: katta ekranda o'ngdagi panel, kichik ekranda chiquvchi oyna. */
+import { useEffect, useState, useSyncExternalStore, type FormEvent, type ReactNode } from 'react';
 import { Check, Pencil, QrCode as QrIcon, Trash2, X } from 'lucide-react';
 import { api } from '../lib/apiClient';
 import { useAuth } from '../lib/auth';
 import { useFaculties } from '../lib/useFaculties';
 import type { StudentStaffDetail, StudentStaffRecord } from '../types';
-import { Alert, Badge, Button, Confirm, Drawer, Field, Modal, Photo, Segmented, Select, errorText, useToast } from '../kit';
+import { Alert, Badge, Button, Confirm, Drawer, Field, IconButton, Modal, Photo, Segmented, Select, Skeleton, errorText, useToast } from '../kit';
 import { faceStatus } from './Faces';
 import { EnrollLinkModal } from './EnrollLink';
 
@@ -16,9 +16,23 @@ interface Props {
   onChanged: (next: StudentStaffRecord | null) => void;
 }
 
+const WIDE = '(min-width: 1280px)';
+
+function useWide(): boolean {
+  return useSyncExternalStore(
+    (cb) => {
+      const mq = window.matchMedia(WIDE);
+      mq.addEventListener('change', cb);
+      return () => mq.removeEventListener('change', cb);
+    },
+    () => window.matchMedia(WIDE).matches,
+  );
+}
+
 export default function PersonPanel({ person, onClose, onChanged }: Props) {
   const { token } = useAuth();
   const toast = useToast();
+  const wide = useWide();
   const [detail, setDetail] = useState<StudentStaffDetail | null>(null);
   const [busy, setBusy] = useState<'approve' | 'reject' | null>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -30,21 +44,26 @@ export default function PersonPanel({ person, onClose, onChanged }: Props) {
     setDetail(null);
     api
       .get<StudentStaffDetail>(`/api/students-staff/${person.id}/details`, token)
-      .then((d) => !cancelled && setDetail(d))
+      .then((d) => {
+        if (!cancelled) setDetail(d);
+      })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
   }, [person.id, token]);
 
+  // Keng ekranda panel oyna emas — Esc bilan yopilsin.
+  useEffect(() => {
+    if (!wide) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && !document.querySelector('[role="dialog"]')) onClose();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [wide, onClose]);
+
   const p = detail ?? person;
-  const status = faceStatus(p);
-  const hasFace = Boolean(p.biometricPhotoUrl);
-  const angles = [
-    { url: p.biometricPhotoUrl, label: 'Old' },
-    { url: p.biometricPhotoLeftUrl, label: 'Chap' },
-    { url: p.biometricPhotoRightUrl, label: 'O‘ng' },
-  ].filter((a) => a.url);
 
   async function decide(decision: 'approve' | 'reject') {
     setBusy(decision);
@@ -60,97 +79,37 @@ export default function PersonPanel({ person, onClose, onChanged }: Props) {
   }
 
   const group = p.type === 'talaba' ? p.group || p.reportedGroup : null;
+  const footer = (
+    <>
+      <Button size="sm" icon={Pencil} onClick={() => setEditOpen(true)} disabled={!detail}>
+        Tahrirlash
+      </Button>
+      <Button size="sm" icon={QrIcon} onClick={() => setLinkOpen(true)}>
+        Havola
+      </Button>
+      <Button size="sm" variant="danger-ghost" icon={Trash2} className="ml-auto" onClick={() => setDeleteOpen(true)}>
+        O‘chirish
+      </Button>
+    </>
+  );
+  const body = <PersonBody p={p} detail={detail} busy={busy} onDecide={decide} group={group} />;
 
   return (
     <>
-      <Drawer
-        title={p.fullName}
-        onClose={onClose}
-        footer={
-          <>
-            <Button icon={Pencil} onClick={() => setEditOpen(true)} disabled={!detail}>
-              Tahrirlash
-            </Button>
-            <Button icon={QrIcon} onClick={() => setLinkOpen(true)}>
-              Havola
-            </Button>
-            <Button variant="danger-ghost" icon={Trash2} className="ml-auto" onClick={() => setDeleteOpen(true)}>
-              O‘chirish
-            </Button>
-          </>
-        }
-      >
-        {/* Rasmlar */}
-        <div className="bg-page p-5">
-          {angles.length > 1 ? (
-            <div className="grid grid-cols-3 gap-2">
-              {angles.map((a) => (
-                <figure key={a.label}>
-                  <Photo src={a.url} name={p.fullName} className="aspect-square w-full rounded-xl" />
-                  <figcaption className="mt-1 text-center text-[12px] text-faint">{a.label}</figcaption>
-                </figure>
-              ))}
-            </div>
-          ) : angles.length === 1 ? (
-            <Photo src={angles[0].url} name={p.fullName} className="mx-auto aspect-square w-48 rounded-2xl" />
-          ) : (
-            <div className="flex flex-col items-center gap-3 py-6 text-center">
-              {p.hemisPhotoUrl ? (
-                <Photo src={p.hemisPhotoUrl} name={p.fullName} className="h-40 w-40 rounded-2xl" />
-              ) : (
-                <Photo name={p.fullName} className="h-28 w-28 rounded-2xl" />
-              )}
-              <p className="max-w-[280px] text-[14px] text-soft">
-                Yuz hali kiritilmagan. Odamga ro‘yxatdan o‘tish havolasini bering — u yuzini telefonidan o‘zi kiritadi.
-              </p>
-              {p.hemisPhotoUrl && <p className="text-[12px] text-faint">Yuqoridagi rasm HEMIS’dan olingan</p>}
-            </div>
-          )}
-        </div>
-
-        <div className="p-5">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge tone={status.tone}>{status.label}</Badge>
-            <Badge>{p.type === 'talaba' ? 'Talaba' : 'Xodim'}</Badge>
-            {p.selfRegistered && <Badge tone="brand">O‘zi ro‘yxatdan o‘tgan</Badge>}
+      {wide ? (
+        <aside className="anim-slide flex w-[400px] shrink-0 flex-col border-l border-line bg-white" aria-label={p.fullName}>
+          <div className="flex h-12 shrink-0 items-center gap-2 border-b border-line pl-5 pr-2.5">
+            <span className="label-xs">Ma’lumot</span>
+            <IconButton icon={X} label="Yopish (Esc)" size="sm" className="ml-auto" onClick={onClose} />
           </div>
-
-          {p.awaitingApproval && (
-            <div className="mt-4 rounded-2xl border border-warn/20 bg-warn-tint p-4">
-              <p className="text-[15px] font-medium text-ink">Yuz tasdiqingizni kutmoqda</p>
-              <p className="mt-1 text-[14px] text-soft">
-                {p.reviewReason || 'Rasmlar shu odamga tegishli ekanini tekshiring.'}
-              </p>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <Button variant="primary" icon={Check} loading={busy === 'approve'} disabled={busy !== null} onClick={() => decide('approve')}>
-                  Tasdiqlash
-                </Button>
-                <Button icon={X} loading={busy === 'reject'} disabled={busy !== null} onClick={() => decide('reject')}>
-                  Rad etish
-                </Button>
-              </div>
-            </div>
-          )}
-
-          <dl className="mt-5 divide-y divide-line">
-            <Row label="Fakultet" value={p.faculty} />
-            {p.type === 'talaba' ? (
-              <>
-                <Row label="Kurs" value={p.course ? `${p.course}-kurs` : null} />
-                <Row label="Guruh" value={group} />
-              </>
-            ) : (
-              <>
-                <Row label="Bo‘lim" value={p.orgUnit} />
-                <Row label="Lavozim" value={p.position || p.groupOrPosition} />
-              </>
-            )}
-            <Row label="JSHSHIR" value={detail ? detail.pinfl : p.hasPinfl ? '••••••••••••••' : null} mono />
-            {hasFace && <Row label="Yuz kiritilgan" value={p.confirmedLabel} />}
-            {p.type === 'talaba' && detail && <Row label="Ota-ona telefoni" value={detail.parentPhone} />}
-          </dl>
-        </div>
-      </Drawer>
+          <div className="min-h-0 flex-1 overflow-y-auto">{body}</div>
+          <div className="flex shrink-0 gap-2 border-t border-line px-4 py-3">{footer}</div>
+        </aside>
+      ) : (
+        <Drawer title={p.fullName} onClose={onClose} footer={footer}>
+          {body}
+        </Drawer>
+      )}
 
       {editOpen && detail && (
         <EditPerson
@@ -187,11 +146,128 @@ export default function PersonPanel({ person, onClose, onChanged }: Props) {
   );
 }
 
+function PersonBody({
+  p,
+  detail,
+  busy,
+  onDecide,
+  group,
+}: {
+  p: StudentStaffRecord | StudentStaffDetail;
+  detail: StudentStaffDetail | null;
+  busy: 'approve' | 'reject' | null;
+  onDecide: (d: 'approve' | 'reject') => void;
+  group: string | null | undefined;
+}) {
+  const status = faceStatus(p);
+  const angles = [
+    { url: p.biometricPhotoUrl, label: 'Old' },
+    { url: p.biometricPhotoLeftUrl, label: 'Chap' },
+    { url: p.biometricPhotoRightUrl, label: 'O‘ng' },
+  ].filter((a) => a.url);
+
+  return (
+    <>
+      <div className="px-5 pb-4 pt-5">
+        <div className="flex items-start gap-4">
+          <Photo src={p.biometricPhotoUrl || p.hemisPhotoUrl} name={p.fullName} className="h-16 w-16 shrink-0 rounded-lg" />
+          <div className="min-w-0">
+            <p className="text-[16px] font-semibold leading-snug text-ink">{p.fullName}</p>
+            <p className="mt-0.5 text-[12.5px] text-soft">{p.type === 'talaba' ? 'Talaba' : 'Xodim'}{group ? ` · ${group}` : ''}</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <Badge tone={status.tone}>{status.label}</Badge>
+              {p.selfRegistered && <Badge>O‘zi ro‘yxatdan o‘tgan</Badge>}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {p.awaitingApproval && (
+        <div className="mx-5 mb-4 rounded-lg border border-line bg-side p-3.5">
+          <p className="flex items-center gap-2 text-[13px] font-semibold text-ink">
+            <span className="h-1.5 w-1.5 rounded-full bg-warn" /> Tasdiqingizni kutmoqda
+          </p>
+          <p className="mt-1 text-[12.5px] text-soft">{p.reviewReason || 'Rasmlar shu odamga tegishli ekanini tekshiring.'}</p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <Button variant="primary" icon={Check} loading={busy === 'approve'} disabled={busy !== null} onClick={() => onDecide('approve')}>
+              Tasdiqlash
+            </Button>
+            <Button icon={X} loading={busy === 'reject'} disabled={busy !== null} onClick={() => onDecide('reject')}>
+              Rad etish
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <Section title="Yuz rasmlari">
+        {angles.length > 0 ? (
+          <div className="grid grid-cols-3 gap-2">
+            {angles.map((a) => (
+              <figure key={a.label}>
+                <Photo src={a.url} name={p.fullName} className="aspect-[4/5] w-full rounded-lg" />
+                <figcaption className="mt-1 text-center text-[11.5px] text-faint">{a.label}</figcaption>
+              </figure>
+            ))}
+            {p.hemisPhotoUrl && (
+              <figure>
+                <Photo src={p.hemisPhotoUrl} name={p.fullName} className="aspect-[4/5] w-full rounded-lg opacity-90" />
+                <figcaption className="mt-1 text-center text-[11.5px] text-faint">HEMIS</figcaption>
+              </figure>
+            )}
+          </div>
+        ) : (
+          <div className="flex gap-3 rounded-lg border border-dashed border-line p-3">
+            {p.hemisPhotoUrl && <Photo src={p.hemisPhotoUrl} name={p.fullName} className="h-20 w-16 shrink-0 rounded-md" />}
+            <p className="text-[12.5px] leading-relaxed text-soft">
+              Yuz hali kiritilmagan. Odamga <b className="font-medium text-ink">ro‘yxatdan o‘tish havolasini</b> bering — u yuzini telefonidan o‘zi kiritadi.
+              {p.hemisPhotoUrl && <span className="mt-1 block text-faint">Chapdagi rasm HEMIS’dan olingan.</span>}
+            </p>
+          </div>
+        )}
+      </Section>
+
+      <Section title="Ma’lumotlar">
+        <dl className="text-[13px]">
+          <Row label="Fakultet" value={p.faculty} />
+          {p.type === 'talaba' ? (
+            <>
+              <Row label="Kurs" value={p.course ? `${p.course}-kurs` : null} />
+              <Row label="Guruh" value={group} />
+            </>
+          ) : (
+            <>
+              <Row label="Bo‘lim" value={p.orgUnit} />
+              <Row label="Lavozim" value={p.position || p.groupOrPosition} />
+            </>
+          )}
+          <Row
+            label="JSHSHIR"
+            value={detail ? detail.pinfl : p.hasPinfl ? <Skeleton className="ml-auto h-3 w-28" /> : null}
+            mono
+          />
+          <Row label="Yuz kiritilgan" value={p.confirmedLabel} />
+          {p.type === 'talaba' && <Row label="Ota-ona telefoni" value={detail ? detail.parentPhone : null} />}
+          {p.type === 'talaba' && detail && <Row label="Ota-ona Telegram" value={detail.parentTelegramLinked ? 'Ulangan' : 'Ulanmagan'} />}
+        </dl>
+      </Section>
+    </>
+  );
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="border-t border-line px-5 py-4">
+      <h3 className="label-xs mb-3">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
 function Row({ label, value, mono }: { label: string; value?: ReactNode; mono?: boolean }) {
   return (
-    <div className="flex items-start justify-between gap-4 py-3">
-      <dt className="shrink-0 text-[14px] text-soft">{label}</dt>
-      <dd className={mono ? 'text-right font-mono text-[14px] text-ink' : 'text-right text-[14px] text-ink'}>{value || <span className="text-faint">—</span>}</dd>
+    <div className="flex items-start justify-between gap-4 py-1.5">
+      <dt className="shrink-0 text-soft">{label}</dt>
+      <dd className={mono ? 'tnum text-right font-mono text-[12.5px] text-ink' : 'text-right text-ink'}>{value || <span className="text-faint">—</span>}</dd>
     </div>
   );
 }
