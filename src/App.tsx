@@ -7,6 +7,7 @@ import LoginPage from './pages/Login';
 
 const ResetPasswordPage = lazyPage(() => import('./pages/ResetPassword'));
 const EnrollPage = lazyPage(() => import('./pages/enroll/Enroll'));
+const TaqdimotPage = lazyPage(() => import('./pages/taqdimot/Taqdimot'));
 const DashboardPage = lazyPage(() => import('./pages/Dashboard'));
 const FacesPage = lazyPage(() => import('./pages/Faces'));
 const ReviewPage = lazyPage(() => import('./pages/Review'));
@@ -43,6 +44,8 @@ export default function App() {
         <Route path="/parolni-tiklash" element={<ResetPasswordPage />} />
         {/* Ochiq sahifa: hisobi yo'q odam o'z yuzini o'zi kiritadi. */}
         <Route path="/royxatdan-otish" element={<EnrollPage />} />
+        {/* Ochiq taqdimot (rahbariyat uchun). */}
+        <Route path="/taqdimot" element={<TaqdimotPage />} />
 
         <Route element={<RequireAuth />}>
           <Route element={<Shell />}>
