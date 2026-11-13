@@ -1,5 +1,6 @@
 /* Taqdimot slaydlari. Har biri 1600x900 sahnaga chiziladi. */
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { fmt, timeLabel, totals, useStats } from './stats';
 import {
   ArrowRight,
   Bell,
@@ -169,6 +170,8 @@ function PhoneHead({ step }: { step: number }) {
 /* ─────────────────────────── 1. Titul */
 
 export function SlideTitle() {
+  const st = useStats();
+  const tt = totals(st);
   return (
     <div className="relative flex h-full">
       <div className="relative z-10 flex w-[760px] flex-col justify-center">
@@ -196,7 +199,7 @@ export function SlideTitle() {
 
       {/* O'ng: ilova maketi */}
       <div className="absolute right-[-10px] top-[60px] h-[620px] w-[720px]">
-        <div className="absolute right-[40px] top-[40px]" data-a="zoom" style={d(3)}>
+        <div className="tq-par absolute right-[40px] top-[40px]" data-a="zoom" style={d(3, { ['--k' as string]: 10 })}>
           <Window title="Yuzlar bazasi · Talabalar" className="w-[600px]">
             <div className="flex">
               <div className="w-[120px] border-r border-[#eef2f7] bg-[#f8fafc] p-3">
@@ -210,15 +213,15 @@ export function SlideTitle() {
               <div className="flex-1">
                 <div className="grid grid-cols-3 border-b border-[#eef2f7]">
                   {[
-                    ['Jami', '9 057'],
-                    ['Yuzi bor', '8 163'],
-                    ['Kutmoqda', '14'],
+                    ['Jami', fmt(tt.total)],
+                    ['Yuzi bor', fmt(tt.confirmed)],
+                    ['Kutmoqda', fmt(tt.awaiting)],
                   ].map(([l, v], i) => (
                     <div key={l} className={`px-4 py-3 ${i ? 'border-l border-[#eef2f7]' : ''}`}>
                       <p className="text-[10px] text-[#94a3b8]">{l}</p>
                       <p className="tq-display mt-0.5 text-[20px] font-extrabold">{v}</p>
                       {i === 1 && (
-                        <div className="tq-bar mt-1.5 h-1 rounded-full bg-[#eef2f7]" style={d(4, { ['--w' as string]: '90%' })}>
+                        <div className="tq-bar mt-1.5 h-1 rounded-full bg-[#eef2f7]" style={d(4, { ['--w' as string]: `${tt.ratio * 100}%` })}>
                           <span style={{ background: '#059669' }} />
                         </div>
                       )}
@@ -241,13 +244,13 @@ export function SlideTitle() {
         </div>
 
         <div data-a="pop" style={d(8)}>
-          <Toast icon={UserCheck} title="Tirik odam tasdiqlandi" sub="Old · Chap · O‘ng" tone="green" className="tq-float left-0 top-[150px]" />
+          <Toast icon={UserCheck} title="Tirik odam tasdiqlandi" sub="Old · Chap · O‘ng" tone="green" className="tq-float tq-par left-0 top-[150px]" style={{ ['--k' as string]: 28 } as CSSProperties} />
         </div>
         <div data-a="pop" style={d(9)}>
-          <Toast icon={RefreshCw} title="HEMIS yangilandi" sub="3 ta yangi, 41 ta o‘zgardi" className="tq-float-2 right-0 top-[470px]" />
+          <Toast icon={RefreshCw} title="HEMIS bilan ulangan" sub={`ro‘yxat har ${st.hemis.intervalHours} soatda yangilanadi`} className="tq-float-2 tq-par right-0 top-[470px]" style={{ ['--k' as string]: 34 } as CSSProperties} />
         </div>
 
-        <div data-a="right" style={d(6)}>
+        <div className="tq-par" data-a="right" style={d(6, { ['--k' as string]: 20 })}>
           <Phone className="left-[10px] top-[300px] scale-[0.62] origin-top-left">
             <PhoneHead step={4} />
             <p className="mt-4 text-[15px] font-bold">Boshingizni chapga buring</p>
@@ -339,12 +342,13 @@ const ANSWERS: { icon: LucideIcon; old: string; now: string }[] = [
   { icon: FileImage, old: 'Eski, sifatsiz HEMIS rasmlari', now: 'Har kim o‘zi 3 tomondan jonli rasm beradi' },
   { icon: Fingerprint, old: 'Birovning rasmini yuklash mumkin', now: 'Tirik odam tekshiruvi va administrator tasdig‘i' },
   { icon: Layers, old: 'Har tizim o‘z yuz bazasini yig‘adi', now: 'Bitta baza — boshqalar API orqali oladi' },
-  { icon: RefreshCw, old: 'Ro‘yxat eskirib qoladi', now: 'HEMIS bilan har 6 soatda avtomatik' },
+  { icon: RefreshCw, old: 'Ro‘yxat eskirib qoladi', now: 'HEMIS bilan har {H} soatda avtomatik' },
   { icon: Bell, old: 'Ota-ona bexabar', now: 'Telegram bot orqali xabar' },
   { icon: HardDrive, old: 'Ma’lumot yo‘qolishi xavfi', now: 'O‘z serverida, har kuni zaxira' },
 ];
 
 export function SlideAnswers() {
+  const s = useStats();
   return (
     <div className="flex h-full flex-col">
       <Chip n="01" label="Muammo → javob" />
@@ -366,7 +370,7 @@ export function SlideAnswers() {
                 </span>
               </p>
               <p className="mt-1.5 flex items-center gap-2 text-[20px] font-bold text-[#0b1220]">
-                <ArrowRight size={18} className="text-[#059669]" /> {a.now}
+                <ArrowRight size={18} className="text-[#059669]" /> {a.now.replace('{H}', String(s.hemis.intervalHours))}
               </p>
             </div>
           </div>
@@ -379,40 +383,236 @@ export function SlideAnswers() {
 /* ─────────────────────────── 4. Raqamlar */
 
 export function SlideNumbers({ active }: { active: boolean }) {
+  const s = useStats();
+  const t = totals(s);
   const items: { v: number; suffix?: string; label: string; sub: string; icon: LucideIcon }[] = [
-    { v: 9057, label: 'kishi bazada', sub: 'talabalar va xodimlar', icon: Users },
-    { v: 8163, label: 'yuz vektori', sub: 'kameralar shu yuzlarni taniydi', icon: ScanFace },
-    { v: 23284, label: 'asl rasm', sub: 'zaxirada, har kuni yangilanadi', icon: FileImage },
-    { v: 7749, label: 'iMentor bilan bog‘langan', sub: 'har soatda avtomatik', icon: Layers },
-    { v: 6, suffix: ' soat', label: 'HEMIS bilan yangilanish', sub: 'yangi talaba o‘zi qo‘shiladi', icon: RefreshCw },
-    { v: 3, suffix: ' tomon', label: 'har bir yuz', sub: 'old, chap va o‘ng', icon: Camera },
+    { v: t.total, label: 'kishi bazada', sub: `${fmt(s.talaba.total)} talaba · ${fmt(s.xodim.total)} xodim`, icon: Users },
+    { v: s.faceVectors, label: 'tasdiqlangan yuz', sub: 'kameralar shu yuzlarni taniydi', icon: ScanFace },
+    { v: s.photos, label: 'asl rasm', sub: 'old, chap, o‘ng — har kuni zaxirada', icon: FileImage },
+    { v: s.selfRegistered, label: 'o‘zi ro‘yxatdan o‘tgan', sub: 'telefoni orqali, navbatsiz', icon: Smartphone },
+    { v: s.hemis.intervalHours, suffix: ' soat', label: 'HEMIS bilan yangilanish', sub: 'yangi talaba o‘zi qo‘shiladi', icon: RefreshCw },
+    { v: t.missing, label: 'kishining yuzi yo‘q', sub: 'ularga QR havola beriladi', icon: QrCode },
   ];
   return (
     <div className="flex h-full flex-col">
-      <Chip n="02" label="Amalda" />
+      <div className="flex items-start justify-between">
+        <Chip n="02" label="Amalda" />
+        <LiveBadge />
+      </div>
       <H2>Bu reja emas — ishlayotgan baza.</H2>
-      <div className="mt-12 grid grid-cols-3 gap-5">
-        {items.map((it, i) => (
-          <div key={it.label} className="tq-card relative px-8 py-7" data-a="pop" style={d(2 + i * 0.6)}>
-            <span className="absolute right-6 top-6 flex h-11 w-11 items-center justify-center rounded-xl bg-[#eff6ff] text-[#2563eb]">
-              <it.icon size={20} />
-            </span>
-            <p className="tq-display text-[60px] font-extrabold leading-none tabular-nums">
-              <Counter to={it.v} active={active} />
-              {it.suffix && <span className="text-[30px] text-[#64748b]">{it.suffix}</span>}
-            </p>
-            <p className="mt-3 text-[19px] font-bold">{it.label}</p>
-            <p className="mt-1 text-[15px] text-[#64748b]">{it.sub}</p>
-            {i === 1 && (
-              <div className="mt-4 flex items-center gap-3">
-                <div className="tq-bar h-1.5 flex-1 rounded-full bg-[#eef2f7]" style={d(4, { ['--w' as string]: '90%' })}>
-                  <span style={{ background: 'linear-gradient(90deg,#2563eb,#0d9488)' }} />
+      <div className="mt-10 flex gap-6">
+        <div className="tq-card flex w-[400px] shrink-0 flex-col items-center justify-center px-8 py-8" data-a="zoom" style={d(2)}>
+          <Donut value={t.ratio} active={active} size={260} />
+          <p className="mt-5 text-[20px] font-bold">umumiy qamrov</p>
+          <p className="mt-1 text-center text-[15px] text-[#64748b]">
+            {fmt(t.confirmed)} kishining yuzi bor, {fmt(t.total)} kishidan
+          </p>
+        </div>
+        <div className="grid flex-1 grid-cols-3 gap-5">
+          {items.map((it, i) => (
+            <div key={it.label} className="tq-card relative px-7 py-6" data-a="pop" style={d(3 + i * 0.5)}>
+              <span className="absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-xl bg-[#eff6ff] text-[#2563eb]">
+                <it.icon size={19} />
+              </span>
+              <p className="tq-display text-[46px] font-extrabold leading-none tabular-nums">
+                <Counter to={it.v} active={active} />
+                {it.suffix && <span className="text-[24px] text-[#64748b]">{it.suffix}</span>}
+              </p>
+              <p className="mt-3 text-[17px] font-bold leading-snug">{it.label}</p>
+              <p className="mt-1 text-[13.5px] text-[#64748b]">{it.sub}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────── Qamrov: fakultetlar va kurslar (jonli) */
+
+export function SlideFaculties() {
+  const s = useStats();
+  const rows = [...s.byFaculty].filter((r) => r.total >= 50).sort((a, b) => b.total - a.total).slice(0, 8);
+  const max = Math.max(1, ...rows.map((r) => r.total));
+  const weakest = [...rows].sort((a, b) => a.confirmed / a.total - b.confirmed / b.total)[0];
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-start justify-between">
+        <Chip n="03" label="Qamrov · fakultetlar" />
+        <LiveBadge />
+      </div>
+      <H2>Har fakultetda kim yuzini bergani — aniq ko‘rinadi.</H2>
+      <div className="mt-14 flex flex-col gap-[22px]">
+        {rows.map((r, i) => {
+          const ratio = r.total ? r.confirmed / r.total : 0;
+          const low = ratio < 0.9;
+          const width = `${(r.total / max) * 100}%`;
+          return (
+            <div key={r.faculty} className="flex items-center gap-6" data-a="left" style={d(2 + i * 0.35)}>
+              <span className="w-[400px] text-[19px] font-semibold leading-tight">{r.faculty}</span>
+              <div className="relative h-[38px] flex-1">
+                <div className="absolute inset-y-0 left-0 overflow-hidden rounded-lg bg-[#e8edf5]" style={{ width }}>
+                  <div className="tq-bar h-full rounded-lg" style={d(i * 0.4, { ['--w' as string]: `${ratio * 100}%` })}>
+                    <span style={{ background: low ? 'linear-gradient(90deg,#f59e0b,#d97706)' : 'linear-gradient(90deg,#2563eb,#0d9488)' }} />
+                  </div>
                 </div>
-                <span className="text-[13px] font-bold text-[#0d9488]">90% qamrov</span>
               </div>
-            )}
+              <span className="w-[130px] text-right text-[15px] tabular-nums text-[#64748b]">
+                {fmt(r.confirmed)} / {fmt(r.total)}
+              </span>
+              <span className={`tq-display w-[86px] text-right text-[26px] font-extrabold tabular-nums ${low ? 'text-[#d97706]' : ''}`}>
+                {Math.round(ratio * 100)}%
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-6 flex items-center gap-6 text-[14px] text-[#64748b]" data-a="fade" style={d(6)}>
+        <span className="flex items-center gap-2">
+          <span className="h-3 w-6 rounded bg-gradient-to-r from-[#2563eb] to-[#0d9488]" /> yuzi bor
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="h-3 w-6 rounded bg-[#e8edf5]" /> hali yo‘q
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="h-3 w-6 rounded bg-[#d97706]" /> 90% dan past — e’tibor kerak
+        </span>
+        <span className="ml-auto">Chiziq uzunligi — fakultetdagi odamlar soni</span>
+      </p>
+      {weakest && weakest.total - weakest.confirmed > 0 && (
+        <div className="tq-card mt-8 flex items-center gap-5 px-7 py-5" data-a="pop" style={d(7)}>
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#fffbeb] text-[#d97706]">
+            <QrCode size={22} />
+          </span>
+          <p className="text-[19px] leading-snug">
+            <b>{weakest.faculty}</b>da {fmt(weakest.total - weakest.confirmed)} kishi hali yuzini bermagan. Ular uchun guruh QR-kodlari tayyor — keyingi qadam shu.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function SlideCourses({ active }: { active: boolean }) {
+  const s = useStats();
+  const rows = s.byCourse;
+  const daily = s.daily;
+  const dailyMax = Math.max(1, ...daily.map((x) => x.count));
+  const monthSum = daily.reduce((a, x) => a + x.count, 0);
+  const courseMax = Math.max(1, ...rows.map((r) => r.total));
+  const minPct = rows.length ? Math.floor(Math.min(...rows.map((r) => (r.total ? (r.confirmed / r.total) * 100 : 0)))) : 0;
+  return (
+    <div className="flex h-full gap-12">
+      <div className="flex flex-1 flex-col">
+        <Chip n="04" label="Qamrov · kurslar" />
+        <H2>Har bir kursda qamrov {minPct}% dan yuqori.</H2>
+        <p className="mt-3 text-[16px] text-[#64748b]" data-a="fade" style={d(2)}>Ustun balandligi — kursdagi talabalar soni, rangli qismi — yuzi borlar.</p>
+        <div className="mt-8 flex h-[400px] items-end gap-6 border-b-2 border-[#e2e8f0] px-2">
+          {rows.map((r, i) => {
+            const ratio = r.total ? r.confirmed / r.total : 0;
+            return (
+              <div key={r.course} className="flex h-full flex-1 flex-col items-center justify-end">
+                <span className="tq-display mb-2 text-[22px] font-extrabold tabular-nums" data-a="fade" style={d(4 + i * 0.4)}>
+                  {(ratio * 100).toFixed(1)}%
+                </span>
+                <div className="tq-col relative w-full overflow-hidden rounded-t-2xl bg-[#e2e8f0]" style={d(i * 0.6, { ['--h' as string]: `${Math.max(10, (r.total / courseMax) * 82)}%` })}>
+                  <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#2563eb] to-[#0d9488]" style={{ height: `${ratio * 100}%` }} />
+                  <span className="absolute inset-x-0 bottom-3 text-center text-[14px] font-bold text-white/90 tabular-nums">{fmt(r.confirmed)}</span>
+                </div>
+                <span className="mt-3 text-[17px] font-bold">{r.course}</span>
+                <span className="text-[13px] text-[#94a3b8] tabular-nums">{fmt(r.total)} talaba</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div className="flex w-[380px] shrink-0 flex-col gap-5 pt-[60px]">
+        {(
+          [
+            ['Talabalar', s.talaba],
+            ['Xodimlar', s.xodim],
+          ] as const
+        ).map(([label, c], i) => (
+          <div key={label} className="tq-card px-7 py-6" data-a="right" style={d(3 + i)}>
+            <p className="text-[14px] font-semibold text-[#64748b]">{label}</p>
+            <p className="tq-display mt-1 text-[44px] font-extrabold tabular-nums">
+              <Counter to={c.confirmed} active={active} />
+              <span className="text-[20px] text-[#94a3b8]"> / {fmt(c.total)}</span>
+            </p>
+            <div className="tq-bar mt-3 h-2 rounded-full bg-[#eef2f7]" style={d(3 + i, { ['--w' as string]: `${(c.confirmed / Math.max(1, c.total)) * 100}%` })}>
+              <span style={{ background: 'linear-gradient(90deg,#2563eb,#0d9488)' }} />
+            </div>
           </div>
         ))}
+        {daily.length > 0 && (
+          <div className="tq-card px-7 py-5" data-a="right" style={d(5)}>
+            <p className="flex items-baseline justify-between text-[14px] font-semibold text-[#64748b]">
+              So‘nggi 30 kunda tasdiqlangan <span className="tq-display text-[22px] font-extrabold text-[#0b1220]">+{fmt(monthSum)}</span>
+            </p>
+            <div className="mt-3 flex h-[64px] items-end gap-[3px]">
+              {daily.map((x, i) => (
+                <span
+                  key={x.date}
+                  className="tq-col flex-1 rounded-t-[3px] bg-[#2563eb]/75"
+                  title={`${x.date}: ${x.count}`}
+                  style={d(i * 0.05, { ['--h' as string]: `${Math.max(4, (x.count / dailyMax) * 100)}%` })}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────── Jonli belgi va foiz halqasi */
+
+function LiveBadge() {
+  const s = useStats();
+  return (
+    <span className="mt-[-6px] inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-[13px] font-semibold text-[#475569] shadow-[0_0_0_1px_rgba(15,23,42,0.07)]" data-a="fade" style={d(1)}>
+      <span className="relative flex h-2.5 w-2.5">
+        {s.live && <span className="absolute inset-0 animate-ping rounded-full bg-[#10b981] opacity-60" />}
+        <span className={`relative h-2.5 w-2.5 rounded-full ${s.live ? 'bg-[#10b981]' : 'bg-[#cbd5e1]'}`} />
+      </span>
+      {s.live ? `Jonli ma’lumot · ${timeLabel(s.generatedAt)}` : 'Ma’lumot: 13.11.2026'}
+    </span>
+  );
+}
+
+function Donut({ value, active, size = 240 }: { value: number; active: boolean; size?: number }) {
+  const r = 44;
+  const c = 2 * Math.PI * r;
+  const pct = Math.round(value * 1000) / 10;
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90">
+        <defs>
+          <linearGradient id="tq-donut" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0" stopColor="#2563eb" />
+            <stop offset="1" stopColor="#0d9488" />
+          </linearGradient>
+        </defs>
+        <circle cx="50" cy="50" r={r} fill="none" stroke="#eef2f7" strokeWidth="9" />
+        <circle
+          cx="50"
+          cy="50"
+          r={r}
+          fill="none"
+          stroke="url(#tq-donut)"
+          strokeWidth="9"
+          strokeLinecap="round"
+          strokeDasharray={c}
+          strokeDashoffset={active ? c * (1 - value) : c}
+          style={{ transition: 'stroke-dashoffset 1.8s cubic-bezier(0.2,0.7,0.2,1) 0.4s' }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="tq-display text-[64px] font-extrabold leading-none tabular-nums">
+          <Counter to={Math.round(pct)} active={active} />
+          <span className="text-[30px]">%</span>
+        </span>
       </div>
     </div>
   );
@@ -430,7 +630,7 @@ export function SlideEnroll() {
   return (
     <div className="flex h-full">
       <div className="w-[640px] shrink-0">
-        <Chip n="03" label="Yechim · ro‘yxatdan o‘tish" />
+        <Chip n="05" label="Yechim · ro‘yxatdan o‘tish" />
         <H2>Yuzini har kim o‘z telefonidan kiritadi.</H2>
         <ol className="mt-10 flex flex-col gap-5">
           {steps.map(([t, s], i) => (
@@ -449,7 +649,7 @@ export function SlideEnroll() {
       </div>
 
       <div className="relative flex-1">
-        <div data-a="right" style={d(2)}>
+        <div className="tq-par" data-a="right" style={d(2, { ['--k' as string]: 10 })}>
           <Phone className="left-[40px] top-[90px] rotate-[-7deg]">
             <PhoneHead step={1} />
             <p className="mt-5 text-[17px] font-bold leading-tight">Yuzingizni ro‘yxatdan o‘tkazing</p>
@@ -460,7 +660,7 @@ export function SlideEnroll() {
             <div className="mt-auto rounded-xl bg-[#0b1220] py-3 text-center text-[13px] font-bold text-white">Davom etish</div>
           </Phone>
         </div>
-        <div data-a="right" style={d(3)}>
+        <div className="tq-par" data-a="right" style={d(3, { ['--k' as string]: 22 })}>
           <Phone className="left-[240px] top-[40px] z-10">
             <PhoneHead step={2} />
             <p className="mt-5 text-[17px] font-bold">Bu sizmisiz?</p>
@@ -476,7 +676,7 @@ export function SlideEnroll() {
             <div className="mt-2 py-1 text-center text-[11px] font-semibold text-[#64748b]">Yo‘q, bu men emas</div>
           </Phone>
         </div>
-        <div data-a="right" style={d(4)}>
+        <div className="tq-par" data-a="right" style={d(4, { ['--k' as string]: 14 })}>
           <Phone className="left-[450px] top-[110px] rotate-[7deg]">
             <PhoneHead step={4} />
             <p className="mt-5 text-[15px] font-bold">Kameraga qarang</p>
@@ -506,7 +706,7 @@ export function SlideLiveness() {
   return (
     <div className="flex h-full">
       <div className="w-[600px] shrink-0">
-        <Chip n="04" label="Yechim · tirik odam" />
+        <Chip n="06" label="Yechim · tirik odam" />
         <H2>Rasmni rasmga tutib o‘tib bo‘lmaydi.</H2>
         <ul className="mt-10 flex flex-col gap-4 text-[20px]">
           {[
@@ -523,7 +723,7 @@ export function SlideLiveness() {
         </ul>
       </div>
       <div className="relative flex flex-1 flex-col items-center pt-2">
-        <div className="relative" data-a="zoom" style={d(1)}>
+        <div className="tq-par relative" data-a="zoom" style={d(1, { ['--k' as string]: 16 })}>
           <span className="tq-ring absolute inset-[-30px] rounded-full border-2 border-[#2563eb]/40" />
           <span className="tq-ring absolute inset-[-30px] rounded-full border-2 border-[#2563eb]/30" style={{ animationDelay: '1.2s' }} />
           <div className="relative h-[330px] w-[330px] overflow-hidden rounded-full border-[6px] border-white bg-[#eef2f7] shadow-[0_30px_70px_-25px_rgba(37,99,235,0.45)]">
@@ -565,7 +765,7 @@ export function SlideLiveness() {
 export function SlideReview() {
   return (
     <div className="flex h-full flex-col">
-      <Chip n="05" label="Yechim · tasdiqlash" />
+      <Chip n="07" label="Yechim · tasdiqlash" />
       <div className="flex items-end justify-between gap-10">
         <H2>Shubhali yuzni inson tekshiradi — bitta tugma bilan.</H2>
         <p className="mb-2 w-[420px] shrink-0 text-[18px] leading-[1.5] text-[#475569]" data-a style={d(2)}>
@@ -613,7 +813,7 @@ export function SlideReview() {
           </div>
         </Window>
         <div data-a="pop" style={d(8)}>
-          <Toast icon={ScanFace} title="O‘xshashlik past — 0.41" sub="Qo‘lda tekshirish tavsiya etiladi" tone="amber" className="tq-float right-[-20px] top-[-30px]" />
+          <Toast icon={ScanFace} title="O‘xshashlik past — 0.41" sub="Qo‘lda tekshirish tavsiya etiladi" tone="amber" className="tq-float tq-par right-[-20px] top-[-30px]" style={{ ['--k' as string]: 26 } as CSSProperties} />
         </div>
       </div>
     </div>
@@ -623,18 +823,16 @@ export function SlideReview() {
 /* ─────────────────────────── 8. Boshqaruv paneli */
 
 export function SlideDashboard({ active }: { active: boolean }) {
-  const rows = [
-    ['Davolash ishi', 95],
-    ['Pediatriya', 92],
-    ['Stomatologiya', 88],
-    ['Tibbiy profilaktika', 84],
-    ['Farmatsiya', 79],
-    ['Oliy hamshiralik', 73],
-  ] as const;
+  const st = useStats();
+  const tt = totals(st);
+  const rows = [...st.byFaculty]
+    .sort((x, y) => y.total - x.total)
+    .slice(0, 6)
+    .map((r) => [r.faculty.replace(/ fakulteti$/i, ''), r.total ? Math.round((r.confirmed / r.total) * 100) : 0] as const);
   return (
     <div className="flex h-full gap-14">
       <div className="w-[480px] shrink-0">
-        <Chip n="06" label="Boshqaruv paneli" />
+        <Chip n="08" label="Boshqaruv paneli" />
         <H2>Kim yuzini bergan, kim yo‘q — bir qarashda.</H2>
         <ul className="mt-9 flex flex-col gap-4 text-[19px] text-[#1e293b]">
           {['Fakultet va kurs kesimida qamrov', 'Har bir odamning holati va rasmlari', 'Ctrl K — istalgan odamni bir zumda topish', 'Ro‘yxatdan o‘tmaganlarga QR havola'].map((t, i) => (
@@ -648,10 +846,10 @@ export function SlideDashboard({ active }: { active: boolean }) {
         <Window title="Boshqaruv paneli">
           <div className="grid grid-cols-4 border-b border-[#eef2f7]">
             {[
-              ['Bazadagi odamlar', 9057],
-              ['Yuzi bor', 8163],
-              ['Yuzi yo‘q', 894],
-              ['Tasdiq kutmoqda', 14],
+              ['Bazadagi odamlar', tt.total],
+              ['Yuzi bor', tt.confirmed],
+              ['Yuzi yo‘q', tt.missing],
+              ['Tasdiq kutmoqda', tt.awaiting],
             ].map(([l, v], i) => (
               <div key={l} className={`px-5 py-4 ${i ? 'border-l border-[#eef2f7]' : ''}`}>
                 <p className="text-[11px] text-[#64748b]">{l}</p>
@@ -665,7 +863,7 @@ export function SlideDashboard({ active }: { active: boolean }) {
             <p className="mb-3 text-[12px] font-bold">Qamrov — fakultetlar kesimida</p>
             {rows.map(([name, p], i) => (
               <div key={name} className="flex items-center gap-4 py-[9px]">
-                <span className="w-[170px] text-[13px] text-[#334155]">{name}</span>
+                <span className="w-[190px] truncate text-[13px] text-[#334155]">{name}</span>
                 <div className="tq-bar h-2 flex-1 rounded-full bg-[#eef2f7]" style={d(i, { ['--w' as string]: `${p}%` })}>
                   <span style={{ background: '#0b1220' }} />
                 </div>
@@ -675,7 +873,7 @@ export function SlideDashboard({ active }: { active: boolean }) {
           </div>
         </Window>
         <p className="mt-3 text-right text-[13px] text-[#94a3b8]" data-a="fade" style={d(6)}>
-          Ekran ko‘rinishi. Fakultet foizlari — namuna.
+          Ekran ko‘rinishi · raqamlar haqiqiy, {st.live ? `jonli: ${timeLabel(st.generatedAt)}` : '13.11.2026 holati'}
         </p>
       </div>
     </div>
@@ -685,8 +883,10 @@ export function SlideDashboard({ active }: { active: boolean }) {
 /* ─────────────────────────── 9. Integratsiya */
 
 export function SlideHub() {
+  const st = useStats();
+  const tt = totals(st);
   const nodes: { x: number; y: number; icon: LucideIcon; t: string; s: string; dir: 'in' | 'out'; future?: boolean }[] = [
-    { x: 180, y: 120, icon: Database, t: 'HEMIS', s: 'ro‘yxat va rasmlar · 6 soatda', dir: 'in' },
+    { x: 180, y: 120, icon: Database, t: 'HEMIS', s: `ro‘yxat va rasmlar · ${st.hemis.intervalHours} soatda`, dir: 'in' },
     { x: 180, y: 430, icon: Smartphone, t: 'Telefon', s: 'odam yuzini o‘zi kiritadi', dir: 'in' },
     { x: 1220, y: 120, icon: Users, t: 'iMentor', s: 'yuz vektorlari · har soatda', dir: 'out' },
     { x: 1220, y: 310, icon: Send, t: 'Telegram', s: 'ota-onaga xabar', dir: 'out' },
@@ -696,7 +896,7 @@ export function SlideHub() {
   const cy = 330;
   return (
     <div className="flex h-full flex-col">
-      <Chip n="07" label="Integratsiya" />
+      <Chip n="09" label="Integratsiya" />
       <H2>Bitta baza — barcha tizimlar uchun.</H2>
       <div className="relative mt-4 h-[580px]">
         <svg className="absolute inset-0 h-full w-full" viewBox="0 0 1392 580" preserveAspectRatio="none">
@@ -741,7 +941,7 @@ export function SlideHub() {
           <div className="relative flex h-[180px] w-[260px] flex-col items-center justify-center rounded-[28px] bg-[#0b1220] text-white shadow-[0_30px_60px_-20px_rgba(15,23,42,0.6)]">
             <ScanFace size={40} />
             <p className="tq-display mt-3 text-[24px] font-extrabold">Yuzlar bazasi</p>
-            <p className="text-[13px] text-white/60">9 057 kishi · 8 163 yuz</p>
+            <p className="text-[13px] text-white/60">{fmt(tt.total)} kishi · {fmt(st.faceVectors)} yuz</p>
           </div>
         </div>
       </div>
@@ -767,7 +967,7 @@ export function SlideSecurity() {
   return (
     <div className="flex h-full gap-14">
       <div className="flex-1">
-        <Chip n="08" label="Xavfsizlik" />
+        <Chip n="10" label="Xavfsizlik" />
         <H2>Ma’lumot institut serveridan chiqmaydi.</H2>
         <div className="relative mt-10 rounded-[26px] border-2 border-dashed border-[#93c5fd] bg-[#f5f8ff] p-7" data-a="zoom" style={d(2)}>
           <p className="absolute -top-3.5 left-7 bg-[#f5f8ff] px-2 text-[12px] font-bold uppercase tracking-[0.14em] text-[#2563eb]">Institut serveri</p>
@@ -804,8 +1004,9 @@ export function SlideSecurity() {
 /* ─────────────────────────── 11. Jarayon */
 
 export function SlideFlow() {
+  const st = useStats();
   const steps: { icon: LucideIcon; t: string; s: string; time: string }[] = [
-    { icon: Database, t: 'Ro‘yxat', s: 'HEMIS’dan avtomatik', time: '6 soatda' },
+    { icon: Database, t: 'Ro‘yxat', s: 'HEMIS’dan avtomatik', time: 'har {H} soatda' },
     { icon: QrCode, t: 'QR-kod', s: 'guruhga chop etiladi', time: '1 varaq' },
     { icon: Smartphone, t: 'Telefon', s: 'yuz 3 tomondan', time: '~1 daqiqa' },
     { icon: UserCheck, t: 'Tasdiq', s: 'shubhali bo‘lsa — admin', time: 'bir tugma' },
@@ -813,7 +1014,7 @@ export function SlideFlow() {
   ];
   return (
     <div className="flex h-full flex-col">
-      <Chip n="09" label="Jarayon" />
+      <Chip n="11" label="Jarayon" />
       <H2>Ro‘yxatdan tanishgacha — besh qadam.</H2>
       <div className="relative mt-[110px]">
         <svg className="absolute left-0 right-0 top-[60px] h-4 w-full" viewBox="0 0 1392 16" preserveAspectRatio="none">
@@ -837,7 +1038,7 @@ export function SlideFlow() {
               </span>
               <p className="tq-display mt-6 text-[26px] font-extrabold">{s.t}</p>
               <p className="mt-1 text-[16px] text-[#64748b]">{s.s}</p>
-              <p className="mt-4 rounded-full bg-[#eff6ff] px-3 py-1 text-[13px] font-bold text-[#2563eb]">{s.time}</p>
+              <p className="mt-4 rounded-full bg-[#eff6ff] px-3 py-1 text-[13px] font-bold text-[#2563eb]">{s.time.replace('{H}', String(st.hemis.intervalHours))}</p>
             </div>
           ))}
         </div>
@@ -849,6 +1050,7 @@ export function SlideFlow() {
 /* ─────────────────────────── 12. Asos */
 
 export function SlideFoundation() {
+  const st = useStats();
   const layers = [
     { t: 'Xavfsizlik nazorati', s: 'notanish odamni aniqlash', on: false },
     { t: 'Dars davomati', s: 'sinf kameralari, 4K kadr', on: false },
@@ -858,14 +1060,14 @@ export function SlideFoundation() {
   return (
     <div className="flex h-full gap-16">
       <div className="w-[640px] shrink-0">
-        <Chip n="10" label="Avval asos" />
+        <Chip n="12" label="Avval asos" />
         <H2>Avval mustahkam asos — keyin kengaytirish.</H2>
         <div className="mt-10 grid grid-cols-2 gap-4">
           {[
             ['Ortiqcha modullar olib tashlandi', 'oxirigacha ishlamagan qismlar'],
             ['Zaxira tuzatildi', 'baza va rasmlar — har kuni'],
             ['Yangi boshqaruv paneli', 'qamrov, tasdiqlash, qidiruv'],
-            ['23 284 rasm saqlangan', 'model almashsa ham qayta ro‘yxat shart emas'],
+            [`${fmt(st.photos)} rasm saqlangan`, 'model almashsa ham qayta ro‘yxat shart emas'],
           ].map(([t, s], i) => (
             <div key={t} className="tq-card p-5" data-a="pop" style={d(2 + i * 0.6)}>
               <CheckCircle2 size={22} className="text-[#059669]" />
@@ -909,15 +1111,17 @@ export function SlideFoundation() {
 /* ─────────────────────────── 13. Keyingi bosqich */
 
 export function SlideRoadmap() {
+  const st = useStats();
+  const tt = totals(st);
   const steps = [
-    { t: 'Qamrovni 100% ga yetkazish', s: 'Yuzi yo‘q ~900 kishiga guruh QR-kodlari', time: '2–3 hafta' },
+    { t: 'Qamrovni 100% ga yetkazish', s: `Yuzi yo‘q ${fmt(tt.missing)} kishiga guruh QR-kodlari`, time: '2–3 hafta' },
     { t: 'Server quvvati', s: 'Protsessor rejimini o‘zgartirish — tanish 5–10 barobar tezlashadi', time: '1 kun' },
     { t: 'Kirish nazorati sinovi', s: '1–2 kamera, har kuni o‘lchanadi: kim o‘tdi, kim tanildi', time: '2 hafta' },
     { t: 'Keng joriy etish', s: 'Natija mezonga yetgach — bino-bino', time: 'bosqichma-bosqich' },
   ];
   return (
     <div className="flex h-full flex-col">
-      <Chip n="11" label="Keyingi bosqich" />
+      <Chip n="13" label="Keyingi bosqich" />
       <H2>Keyingi bosqich — to‘rt qadam.</H2>
       <div className="mt-16 grid grid-cols-4 gap-5">
         {steps.map((s, i) => (

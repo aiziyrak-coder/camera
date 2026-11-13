@@ -1,12 +1,15 @@
 /* Rahbariyat uchun taqdimot: /taqdimot. 16:9 sahna, ← → bilan boshqariladi. */
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { ChevronLeft, ChevronRight, Expand, LayoutGrid, Minimize, RotateCw, ShieldCheck, X } from 'lucide-react';
 import './taqdimot.css';
+import { StatsProvider } from './stats';
 import {
   SlideTitle,
   SlideProblem,
   SlideAnswers,
   SlideNumbers,
+  SlideFaculties,
+  SlideCourses,
   SlideEnroll,
   SlideLiveness,
   SlideReview,
@@ -33,6 +36,8 @@ const SLIDES: SlideDef[] = [
   { section: 'Muammo', render: () => <SlideProblem /> },
   { section: 'Muammo → javob', render: () => <SlideAnswers /> },
   { section: 'Amalda', render: (p) => <SlideNumbers {...p} /> },
+  { section: 'Fakultetlar', render: () => <SlideFaculties /> },
+  { section: 'Kurslar', render: (p) => <SlideCourses {...p} /> },
   { section: 'Ro‘yxatdan o‘tish', render: () => <SlideEnroll /> },
   { section: 'Tirik odam tekshiruvi', render: () => <SlideLiveness /> },
   { section: 'Tasdiqlash', render: () => <SlideReview /> },
@@ -59,6 +64,7 @@ export default function TaqdimotPage() {
   const [full, setFull] = useState(false);
   const [grid, setGrid] = useState(false);
   const touchX = useRef<number | null>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
   const total = SLIDES.length;
 
   const go = useCallback((i: number) => setIndex(Math.max(0, Math.min(total - 1, i))), [total]);
@@ -123,6 +129,7 @@ export default function TaqdimotPage() {
   }, [index, go, total, toggleFull, grid]);
 
   return (
+    <StatsProvider>
     <div
       className="tq"
       onTouchStart={(e) => {
@@ -138,8 +145,21 @@ export default function TaqdimotPage() {
       <div className="tq-progress" style={{ width: `${((index + 1) / total) * 100}%` }} />
 
       <div
+        ref={stageRef}
         className="tq-stage"
         style={{ transform: `translate(-50%, calc(-50% - ${full ? 0 : 30}px)) scale(${scale})` }}
+        onMouseMove={(e) => {
+          // Chuqurlik effekti: qatlamlar sichqonchaga qarab sal siljiydi.
+          const el = stageRef.current;
+          if (!el) return;
+          const r = el.getBoundingClientRect();
+          const x = (e.clientX - r.left) / r.width;
+          const y = (e.clientY - r.top) / r.height;
+          el.style.setProperty('--mx', (x * 2 - 1).toFixed(3));
+          el.style.setProperty('--my', (y * 2 - 1).toFixed(3));
+          el.style.setProperty('--px', `${(x * 100).toFixed(1)}%`);
+          el.style.setProperty('--py', `${(y * 100).toFixed(1)}%`);
+        }}
         onClick={(e) => {
           // Sahnaning o'ng yarmini bosish — keyingi, chap chetini — oldingi.
           const rect = e.currentTarget.getBoundingClientRect();
@@ -149,6 +169,8 @@ export default function TaqdimotPage() {
           else if (x < 0.1) go(index - 1);
         }}
       >
+        <span className="tq-orb tq-orb-a" style={{ ['--k' as string]: -30 } as CSSProperties} />
+        <span className="tq-orb tq-orb-b" style={{ ['--k' as string]: 40 } as CSSProperties} />
         {SLIDES.map((s, i) => (
           <section
             key={i}
@@ -233,6 +255,7 @@ export default function TaqdimotPage() {
         <p className="mt-1 text-[14px] text-[#64748b]">Taqdimot gorizontal ekranga mo‘ljallangan.</p>
       </div>
     </div>
+    </StatsProvider>
   );
 }
 
