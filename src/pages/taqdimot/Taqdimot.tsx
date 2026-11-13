@@ -1,6 +1,6 @@
 /* Rahbariyat uchun taqdimot: /taqdimot. 16:9 sahna, ← → bilan boshqariladi. */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ChevronLeft, ChevronRight, Expand, Minimize, ShieldCheck } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Expand, LayoutGrid, Minimize, RotateCw, ShieldCheck, X } from 'lucide-react';
 import './taqdimot.css';
 import {
   SlideTitle,
@@ -57,6 +57,7 @@ export default function TaqdimotPage() {
   const [index, setIndex] = useState(readHash);
   const [scale, setScale] = useState(1);
   const [full, setFull] = useState(false);
+  const [grid, setGrid] = useState(false);
   const touchX = useRef<number | null>(null);
   const total = SLIDES.length;
 
@@ -102,6 +103,11 @@ export default function TaqdimotPage() {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key.toLowerCase() === 'g' || (grid && e.key === 'Escape')) {
+        setGrid((v) => !v);
+        return;
+      }
+      if (grid) return;
       if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(e.key)) {
         e.preventDefault();
         go(index + 1);
@@ -114,7 +120,7 @@ export default function TaqdimotPage() {
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [index, go, total, toggleFull]);
+  }, [index, go, total, toggleFull, grid]);
 
   return (
     <div
@@ -164,7 +170,11 @@ export default function TaqdimotPage() {
         <button type="button" className="tq-btn" onClick={() => go(index + 1)} disabled={index === total - 1} aria-label="Keyingi">
           <ChevronRight size={18} />
         </button>
-        <span className="ml-2 hidden text-[12.5px] text-[#64748b] md:inline">← → yoki bo‘sh joy · F — to‘liq ekran</span>
+        <button type="button" className="tq-btn" onClick={() => setGrid(true)} title="Barcha slaydlar (G)">
+          <LayoutGrid size={15} />
+          <span className="hidden lg:inline">Barcha slaydlar</span>
+        </button>
+        <span className="ml-2 hidden text-[12.5px] text-[#64748b] xl:inline">← → yoki bo‘sh joy · F — to‘liq ekran · G — barchasi</span>
         <div className="mx-auto flex items-center gap-1.5">
           {SLIDES.map((s, i) => (
             <button key={i} type="button" className={`tq-dot ${i === index ? 'on' : ''}`} onClick={() => go(i)} aria-label={`${i + 1}: ${s.section}`} title={s.section} />
@@ -181,7 +191,68 @@ export default function TaqdimotPage() {
           Kirish
         </a>
       </div>
+
+      {grid && (
+        <div className="tq-grid anim-fade" role="dialog" aria-label="Barcha slaydlar">
+          <div className="mb-6 flex items-center justify-between">
+            <p className="tq-display text-[22px] font-extrabold">Barcha slaydlar</p>
+            <button type="button" className="tq-btn" onClick={() => setGrid(false)}>
+              <X size={15} /> Yopish
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-4">
+            {SLIDES.map((s, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => {
+                  go(i);
+                  setGrid(false);
+                }}
+                className={`tq-thumb-btn ${i === index ? 'on' : ''}`}
+              >
+                <Thumb>
+                  <span className="tq-slide is-active">
+                    <span className="tq-bignum">{String(i + 1).padStart(2, '0')}</span>
+                    {s.render({ active: false })}
+                  </span>
+                </Thumb>
+                <span className="flex items-center gap-2 px-1 pt-2 text-left text-[13px] font-semibold">
+                  <span className="tabular-nums text-[#94a3b8]">{String(i + 1).padStart(2, '0')}</span>
+                  {s.section}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="tq-rotate">
+        <RotateCw size={36} />
+        <p className="mt-4 text-[17px] font-bold">Telefonni yotqizing</p>
+        <p className="mt-1 text-[14px] text-[#64748b]">Taqdimot gorizontal ekranga mo‘ljallangan.</p>
+      </div>
     </div>
+  );
+}
+
+/** Kichik nusxa: 1600x900 slaydni kartochka eniga moslab kichraytiradi. */
+function Thumb({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [k, setK] = useState(0.2);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setK(el.clientWidth / W));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <span ref={ref} className="tq-thumb">
+      <span className="tq-thumb-inner" style={{ transform: `scale(${k})` }}>
+        {children}
+      </span>
+    </span>
   );
 }
 

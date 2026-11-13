@@ -54,12 +54,14 @@ function H2({ children, delay = 1, className = '' }: { children: ReactNode; dela
 
 /** Raqam noldan oxirigacha sanaladi (slayd ochilganda). */
 function Counter({ to, active, duration = 1600 }: { to: number; active: boolean; duration?: number }) {
-  const [v, setV] = useState(0);
+  const [v, setV] = useState(to);
   useEffect(() => {
+    // Faol bo'lmaganda (kichik nusxalarda) yakuniy qiymat ko'rinadi.
     if (!active) {
-      setV(0);
+      setV(to);
       return;
     }
+    setV(0);
     let raf = 0;
     const t0 = performance.now() + 350;
     const tick = (t: number) => {
@@ -291,17 +293,29 @@ export function SlideProblem() {
     <div className="flex h-full items-center gap-[80px]">
       <div className="relative w-[640px] shrink-0">
         <p
-          className="tq-display text-[260px] font-extrabold leading-none"
+          className="tq-display text-[220px] font-extrabold leading-none"
           data-a="zoom"
           style={d(1, { color: '#e11d48', textShadow: '0 30px 80px rgba(225,29,72,0.25)' })}
         >
           15<span className="text-[120px]"> px</span>
         </p>
-        <div className="mt-6 flex items-center gap-4" data-a style={d(4)}>
-          <span className="relative h-[60px] w-[60px] rounded-lg border-2 border-dashed border-[#e11d48]/50 bg-white">
-            <span className="absolute left-1/2 top-1/2 h-[15px] w-[15px] -translate-x-1/2 -translate-y-1/2 rounded-[3px] bg-[#e11d48]" />
-          </span>
-          <span className="text-[18px] text-[#64748b]">Sinf kamerasining oddiy oqimida bitta yuz shuncha joy egallaydi.</span>
+        <div className="mt-8 flex items-end gap-8" data-a style={d(4)}>
+          {[
+            { px: 15, t: 'Oddiy oqim', s: 'deyarli tanilmaydi', c: '#e11d48' },
+            { px: 40, t: 'Tanish chegarasi', s: 'kamida shuncha kerak', c: '#d97706' },
+            { px: 55, t: '4K kadr', s: 'ishonchli tanish', c: '#059669' },
+          ].map((x, i) => (
+            <div key={x.t} className="flex flex-col items-start" data-a="pop" style={d(5 + i * 0.6)}>
+              <span className="flex h-[120px] w-[120px] items-center justify-center rounded-xl border border-dashed border-[#cbd5e1] bg-white">
+                <span className="rounded-[6px]" style={{ width: x.px * 1.8, height: x.px * 1.8, background: x.c, opacity: 0.85 }} />
+              </span>
+              <span className="mt-3 text-[16px] font-bold" style={{ color: x.c }}>
+                {x.px} px
+              </span>
+              <span className="text-[14px] font-semibold text-[#0b1220]">{x.t}</span>
+              <span className="text-[13px] text-[#64748b]">{x.s}</span>
+            </div>
+          ))}
         </div>
       </div>
       <div className="max-w-[640px]">
@@ -365,13 +379,13 @@ export function SlideAnswers() {
 /* ─────────────────────────── 4. Raqamlar */
 
 export function SlideNumbers({ active }: { active: boolean }) {
-  const items: { v: number; suffix?: string; label: string; sub: string }[] = [
-    { v: 9057, label: 'kishi bazada', sub: 'talabalar va xodimlar' },
-    { v: 8163, label: 'yuz vektori', sub: 'kameralar shu yuzlarni taniydi' },
-    { v: 23284, label: 'asl rasm', sub: 'zaxirada, har kuni yangilanadi' },
-    { v: 7749, label: 'iMentor bilan bog‘langan', sub: 'har soatda avtomatik' },
-    { v: 6, suffix: ' soat', label: 'HEMIS bilan yangilanish', sub: 'yangi talaba o‘zi qo‘shiladi' },
-    { v: 3, suffix: ' tomon', label: 'har bir yuz', sub: 'old, chap va o‘ng' },
+  const items: { v: number; suffix?: string; label: string; sub: string; icon: LucideIcon }[] = [
+    { v: 9057, label: 'kishi bazada', sub: 'talabalar va xodimlar', icon: Users },
+    { v: 8163, label: 'yuz vektori', sub: 'kameralar shu yuzlarni taniydi', icon: ScanFace },
+    { v: 23284, label: 'asl rasm', sub: 'zaxirada, har kuni yangilanadi', icon: FileImage },
+    { v: 7749, label: 'iMentor bilan bog‘langan', sub: 'har soatda avtomatik', icon: Layers },
+    { v: 6, suffix: ' soat', label: 'HEMIS bilan yangilanish', sub: 'yangi talaba o‘zi qo‘shiladi', icon: RefreshCw },
+    { v: 3, suffix: ' tomon', label: 'har bir yuz', sub: 'old, chap va o‘ng', icon: Camera },
   ];
   return (
     <div className="flex h-full flex-col">
@@ -379,7 +393,10 @@ export function SlideNumbers({ active }: { active: boolean }) {
       <H2>Bu reja emas — ishlayotgan baza.</H2>
       <div className="mt-12 grid grid-cols-3 gap-5">
         {items.map((it, i) => (
-          <div key={it.label} className="tq-card px-8 py-7" data-a="pop" style={d(2 + i * 0.6)}>
+          <div key={it.label} className="tq-card relative px-8 py-7" data-a="pop" style={d(2 + i * 0.6)}>
+            <span className="absolute right-6 top-6 flex h-11 w-11 items-center justify-center rounded-xl bg-[#eff6ff] text-[#2563eb]">
+              <it.icon size={20} />
+            </span>
             <p className="tq-display text-[60px] font-extrabold leading-none tabular-nums">
               <Counter to={it.v} active={active} />
               {it.suffix && <span className="text-[30px] text-[#64748b]">{it.suffix}</span>}
@@ -693,6 +710,11 @@ export function SlideHub() {
               <g key={n.t}>
                 <path d={path} fill="none" stroke="#e2e8f0" strokeWidth="3" className="tq-draw" style={d(i)} />
                 <path d={path} fill="none" stroke={n.future ? '#cbd5e1' : '#2563eb'} strokeWidth="2.5" className="tq-flow" opacity="0.9" />
+                {!n.future && (
+                  <circle r="6" fill="#2563eb" opacity="0.9">
+                    <animateMotion dur={`${2.6 + i * 0.4}s`} repeatCount="indefinite" path={path} begin={`${i * 0.5}s`} />
+                  </circle>
+                )}
               </g>
             );
           })}
