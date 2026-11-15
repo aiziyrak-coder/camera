@@ -1,7 +1,10 @@
 /* Yuzlar bazasi — jadval + o'ngda tanlangan odam paneli. */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, LayoutGrid, QrCode as QrIcon, Rows3, Search, UserCheck, Users, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, LayoutGrid, QrCode as QrIcon, Rows3, Search, UserCheck, Users, X } from 'lucide-react';
+import { api } from '../lib/apiClient';
+import { useAuth } from '../lib/auth';
+import { usePermissions } from '../lib/permissions';
 import { useFaculties } from '../lib/useFaculties';
 import { invalidateServerPageCache, useServerPage } from '../lib/useServerPage';
 import type { StudentStaffRecord } from '../types';
@@ -23,6 +26,7 @@ import {
   formatNumber,
   isTyping,
   layerOpen,
+  useToast,
   type Tone,
 } from '../kit';
 import PersonPanel from './PersonPanel';
@@ -40,6 +44,12 @@ const FACE_FILTERS: { value: FaceFilter; label: string }[] = [
   { value: 'yoq', label: 'Yuzi yo‘q' },
   { value: 'tasdiq_kutmoqda', label: 'Kutmoqda' },
 ];
+
+const FACE_SLUG: Record<Exclude<FaceFilter, ''>, string> = {
+  tasdiqlangan: 'yuzi-bor',
+  yoq: 'yuzi-yoq',
+  tasdiq_kutmoqda: 'tasdiq-kutmoqda',
+};
 
 export function faceStatus(p: StudentStaffRecord): { tone: Tone; label: string } {
   if (p.awaitingApproval) return { tone: 'warn', label: 'Tasdiq kutmoqda' };
@@ -69,6 +79,11 @@ export default function FacesPage() {
   const [selected, setSelected] = useState<StudentStaffRecord | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
   const [view, setView] = useState<View>(readView);
+  const [exporting, setExporting] = useState(false);
+  const { token, role } = useAuth();
+  const { can } = usePermissions();
+  const toast = useToast();
+  const canExport = can('exportData', role);
 
   // Ctrl K dan kelgan qidiruv matni.
   const q = params.get('q');
@@ -87,18 +102,39 @@ export default function FacesPage() {
     }
   }, [view]);
 
-  const list = useServerPage<StudentStaffRecord>(
-    '/api/students-staff/search',
-    {
+  // Ro'yxat va Excel AYNAN shu filtrdan foydalanadi — fayl ekrandagi ro'yxatga mos keladi.
+  const filter = useMemo(
+    () => ({
       type,
       faculty: faculty || undefined,
       search: search.trim() || undefined,
       biometricsStatus: face || undefined,
       course: type === 'talaba' && course ? course : undefined,
-    },
-    PAGE_SIZE,
-    { post: true },
+    }),
+    [type, faculty, search, face, course],
   );
+  const list = useServerPage<StudentStaffRecord>('/api/students-staff/search', filter, PAGE_SIZE, { post: true });
+
+  async function downloadExcel() {
+    setExporting(true);
+    try {
+      const blob = await api.postBlob('/api/students-staff/export', { ...filter, kind: 'people' }, token);
+      const parts = [type === 'xodim' ? 'xodimlar' : 'talabalar', face ? FACE_SLUG[face] : '', course ? `${course}-kurs` : ''].filter(Boolean);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${parts.join('-')}-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      toast(`${formatNumber(list.total)} kishilik ro‘yxat yuklab olindi`);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Faylni yuklab bo‘lmadi', 'bad');
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const refresh = useCallback(() => {
     invalidateServerPageCache('/api/students-staff');
@@ -109,6 +145,12 @@ export default function FacesPage() {
   const stats = overview?.[type];
   const awaiting = stats?.awaitingApproval ?? 0;
   const hasFilters = Boolean(face || faculty || course || search.trim());
+  const chips = [
+    search.trim() && { key: 'q', label: `“${search.trim()}”`, clear: () => setSearch('') },
+    faculty && { key: 'f', label: faculty, clear: () => setFaculty('') },
+    type === 'talaba' && course && { key: 'c', label: `${course}-kurs`, clear: () => setCourse('') },
+    face && { key: 's', label: FACE_FILTERS.find((f) => f.value === face)?.label ?? face, clear: () => setFace('') },
+  ].filter(Boolean) as { key: string; label: string; clear: () => void }[];
 
   // Klaviatura: ↑/↓ — ro'yxat bo'ylab, Esc — panelni yopish.
   const items = list.items;
@@ -188,7 +230,7 @@ export default function FacesPage() {
               className="input pl-8 pr-8"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Ism, familiya yoki JSHSHIR"
+              placeholder="Ism, JSHSHIR yoki guruh"
               aria-label="Qidirish"
             />
             {search && (
@@ -209,21 +251,6 @@ export default function FacesPage() {
             />
           )}
           <Segmented value={face} onChange={setFace} options={FACE_FILTERS} />
-          {hasFilters && (
-            <Button
-              size="sm"
-              variant="ghost"
-              icon={X}
-              onClick={() => {
-                setFace('');
-                setFaculty('');
-                setCourse('');
-                setSearch('');
-              }}
-            >
-              Tozalash
-            </Button>
-          )}
           <div className="ml-auto flex items-center rounded-lg border border-line p-0.5">
             <IconButton
               icon={Rows3}
@@ -240,6 +267,62 @@ export default function FacesPage() {
               className={cn('h-6 w-7 rounded-md', view === 'kartochka' && 'bg-sunk text-ink')}
             />
           </div>
+        </div>
+
+        {/* Natija qatori: nechta topildi, qaysi filtrlar, Excel */}
+        <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-side/60 px-4 py-2 lg:px-6">
+          <p className="tnum text-[13px] text-soft" aria-live="polite">
+            {list.loading && !items.length ? (
+              'Yuklanmoqda…'
+            ) : (
+              <>
+                {hasFilters ? 'Topildi: ' : 'Jami: '}
+                <b className="text-[15px] font-semibold text-ink">{formatNumber(list.total)}</b> kishi
+                {hasFilters && stats ? <span className="text-faint"> · {formatNumber(stats.total)} tadan</span> : null}
+              </>
+            )}
+          </p>
+          {hasFilters && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {chips.map((c) => (
+                <button
+                  key={c.key}
+                  type="button"
+                  onClick={c.clear}
+                  title="Filtrni olib tashlash"
+                  className="group inline-flex h-6 max-w-[240px] items-center gap-1 rounded-md bg-brand-tint pl-2 pr-1 text-[12px] font-medium text-brand-dark ring-1 ring-brand-line transition-colors hover:bg-white"
+                >
+                  <span className="truncate">{c.label}</span>
+                  <X size={12} className="shrink-0 opacity-60 group-hover:opacity-100" aria-hidden />
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setFace('');
+                  setFaculty('');
+                  setCourse('');
+                  setSearch('');
+                }}
+                className="ml-0.5 text-[12px] font-medium text-soft underline-offset-4 hover:text-ink hover:underline"
+              >
+                Hammasini tozalash
+              </button>
+            </div>
+          )}
+          {canExport && (
+            <Button
+              size="sm"
+              icon={Download}
+              className="ml-auto"
+              loading={exporting}
+              disabled={!list.total}
+              onClick={downloadExcel}
+              title={hasFilters ? 'Filtrlangan ro‘yxatni Excel faylga yuklab olish' : 'To‘liq ro‘yxatni Excel faylga yuklab olish'}
+            >
+              Excel yuklab olish{list.total ? ` · ${formatNumber(list.total)}` : ''}
+            </Button>
+          )}
         </div>
 
         {/* Ro'yxat */}

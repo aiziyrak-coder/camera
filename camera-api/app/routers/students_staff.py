@@ -230,8 +230,14 @@ def _filtered_query(
     # "Ism Familiya" deb yozadi.
     for word in _search_words(search):
         term = f"%{word}%"
+        # Guruh bo'yicha ham ("DI-4526"): dekanat ro'yxatni ko'pincha guruh
+        # kesimida so'raydi; group_or_position — "1-kurs, DI-4526".
         stmt = stmt.where(
-            or_(StudentStaff.full_name.ilike(term), StudentStaff.pinfl.ilike(term))
+            or_(
+                StudentStaff.full_name.ilike(term),
+                StudentStaff.pinfl.ilike(term),
+                StudentStaff.group_or_position.ilike(term),
+            )
         )
     if biometrics == UNCONFIRMED_FILTER:
         stmt = stmt.where(StudentStaff.biometrics_status != "tasdiqlangan")

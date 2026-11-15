@@ -225,6 +225,9 @@ export const api = {
   /** Fayl (Excel) — xato bo'lsa JSON'dagi `detail` bilan ApiError. */
   blob: (path: string, token?: string | null, opts: CallOptions = {}) =>
     request<Blob>(path, { method: 'GET', token, signal: opts.signal, responseType: 'blob' }),
+  /** Fayl, filtr so'rov tanasida (URL'da JSHSHIR qolmasin). */
+  postBlob: (path: string, body: unknown, token?: string | null, opts: CallOptions = {}) =>
+    request<Blob>(path, { method: 'POST', body, token, signal: opts.signal, responseType: 'blob' }),
 };
 
 export function isAbortError(err: unknown): boolean {
