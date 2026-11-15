@@ -29,7 +29,10 @@ function Log($text) {
 $failed = $false
 try {
     # Serverdagi eng yangi fayllar va ularning SHA-256 si.
-    $remote = 'cd ~/camera-backups && for p in "db-*.dump" "minio-*.tgz" "env-*.bak"; do f=$(ls -1t $p 2>/dev/null | head -1); [ -n "$f" ] && sha256sum "$f"; done'
+    # Diqqat: Windows PowerShell 5.1 tashqi dasturga argumentdagi qo'shtirnoqlarni
+    # buzib uzatadi (2026-11-15 da shu sabab "eng yangisi" o'rniga hammasi
+    # yuklangan) — buyruqda qo'shtirnoq ishlatilmaydi.
+    $remote = 'cd ~/camera-backups && sha256sum $(ls -1t db-*.dump | head -1) $(ls -1t minio-*.tgz | head -1) $(ls -1t env-*.bak | head -1)'
     $listing = & ssh.exe @SshOpts $Target $remote
     if ($LASTEXITCODE -ne 0 -or -not $listing) { throw "serverdan ro'yxat olinmadi (ssh $LASTEXITCODE)" }
 
@@ -55,11 +58,14 @@ try {
         Log ("yuklandi: {0} ({1:N0} MB)" -f $name, ((Get-Item $final).Length / 1MB))
     }
 
-    # Eskilarini tozalash — faqat shu papkadagi zaxira fayllari.
-    $cutoff = (Get-Date).AddDays(-7)
-    Get-ChildItem -LiteralPath $Dest -File | Where-Object { $_.Name -match '^(db-.*\.dump|env-.*\.bak)$' -and $_.LastWriteTime -lt $cutoff } |
+    # Eskilarini tozalash — faqat shu papkadagi zaxira fayllari. Sana fayl
+    # NOMIDAN olinadi (db-2026-11-15-0215.dump): yuklangan vaqt (LastWriteTime)
+    # zaxira qachon olinganini bildirmaydi.
+    $cutoff = (Get-Date).AddDays(-7).ToString('yyyy-MM-dd')
+    Get-ChildItem -LiteralPath $Dest -File | Where-Object { $_.Name -match '^(db|env)-(\d{4}-\d{2}-\d{2})-\d{4}\.(dump|bak)$' -and $Matches[2] -lt $cutoff } |
         ForEach-Object { Remove-Item -LiteralPath $_.FullName; Log "o'chirildi (7 kundan eski): $($_.Name)" }
-    Get-ChildItem -LiteralPath $Dest -File | Where-Object { $_.Name -match '^minio-.*\.tgz$' } | Sort-Object LastWriteTime -Descending |
+    Get-ChildItem -LiteralPath $Dest -File | Where-Object { $_.Name -match '^minio-(kun-)?\d{4}-\d{2}-\d{2}-\d{4}\.tgz$' } |
+        Sort-Object { $_.Name -replace '^minio-(kun-)?', '' } -Descending |
         Select-Object -Skip 2 | ForEach-Object { Remove-Item -LiteralPath $_.FullName; Log "o'chirildi (rasmlar, eng yangi 2 tasi qoladi): $($_.Name)" }
     Get-ChildItem -LiteralPath $Dest -File -Filter '*.part' | Where-Object { $_.LastWriteTime -lt (Get-Date).AddHours(-12) } |
         ForEach-Object { Remove-Item -LiteralPath $_.FullName }
