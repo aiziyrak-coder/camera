@@ -16,23 +16,23 @@
     @apply bg-page font-sans text-[13.5px] text-ink antialiased;
   }
   :focus-visible {
-    @apply outline-none ring-2 ring-ink/25 ring-offset-1;
+    @apply outline-none ring-2 ring-brand/40 ring-offset-1;
   }
   ::selection {
-    @apply bg-ink text-white;
+    @apply bg-brand text-white;
   }
   * {
     scrollbar-width: thin;
-    scrollbar-color: #d4d4d8 transparent;
+    scrollbar-color: #cfd5e1 transparent;
   }
 }
 
 @layer components {
   .card {
-    @apply rounded-xl border border-line bg-white;
+    @apply rounded-xl border border-line bg-white shadow-card;
   }
   .input {
-    @apply h-9 w-full rounded-lg border border-line bg-white px-3 text-[13.5px] text-ink placeholder:text-faint transition-colors hover:border-[#d4d4d8] focus:border-ink focus:outline-none focus:ring-0 disabled:bg-sunk disabled:text-soft;
+    @apply h-9 w-full rounded-lg border border-line bg-white px-3 text-[13.5px] text-ink placeholder:text-faint transition-colors hover:border-[#cfd5e1] focus:border-brand focus:outline-none focus:ring-[3px] focus:ring-brand/15 disabled:bg-sunk disabled:text-soft;
   }
   .kbd {
     @apply inline-flex h-5 min-w-[20px] items-center justify-center rounded border border-line bg-white px-1 font-sans text-[11px] font-medium text-faint;
@@ -46,6 +46,28 @@
   }
   .enroll [role='tablist'] button {
     @apply py-2.5 text-[14px];
+  }
+  /* Asosiy rangli yumshoq gradient — tugma, logotip, foiz chizig'i. */
+  .bg-brand-grad {
+    background-image: linear-gradient(135deg, #4a67f5 0%, #3d5af1 45%, #2c45d0 100%);
+  }
+  .bar-brand {
+    background-image: linear-gradient(90deg, #6c84f7 0%, #3d5af1 100%);
+  }
+  /* Ish maydoni tepasidagi juda yengil yorug'lik. */
+  .glow-top {
+    background-image: radial-gradient(900px 260px at 78% -80px, rgba(61, 90, 241, 0.07), transparent 70%);
+    background-repeat: no-repeat;
+  }
+  /* Kirish sahifasining o'ng qismi: to'q indigo, yengil nur va to'r. */
+  .panel-brand {
+    background-color: #1e2a78;
+    background-image:
+      radial-gradient(520px 380px at 85% 8%, rgba(108, 132, 247, 0.55), transparent 65%),
+      radial-gradient(460px 420px at 0% 100%, rgba(61, 90, 241, 0.5), transparent 70%),
+      linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+    background-size: auto, auto, 44px 44px, 44px 44px;
   }
   .tnum {
     font-variant-numeric: tabular-nums;
@@ -72,7 +94,7 @@
 .anim-slide { animation: slide-in 0.16s ease-out; }
 .anim-pop { animation: pop-in 0.14s ease-out; }
 .skeleton {
-  background: linear-gradient(90deg, #f1f1f3 0px, #e9e9ec 80px, #f1f1f3 160px);
+  background: linear-gradient(90deg, #eff2f7 0px, #e6eaf2 80px, #eff2f7 160px);
   background-size: 800px 100%;
   animation: shimmer 1.2s linear infinite;
 }

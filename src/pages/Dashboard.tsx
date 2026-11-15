@@ -8,6 +8,9 @@ import {
   QrCode as QrIcon,
   RefreshCw,
   Send,
+  Users,
+  ScanFace,
+  UserX,
 } from "lucide-react";
 import { api } from "../lib/apiClient";
 import { useAuth } from "../lib/auth";
@@ -151,6 +154,7 @@ export default function DashboardPage() {
         {/* Asosiy ko'rsatkichlar */}
         <div className="card grid grid-cols-2 gap-px overflow-hidden bg-line lg:grid-cols-4 [&>*]:bg-white">
           <Stat
+            icon={Users}
             label="Bazadagi odamlar"
             value={
               all ? formatNumber(all.total) : <Skeleton className="h-6 w-20" />
@@ -162,6 +166,7 @@ export default function DashboardPage() {
             }
           />
           <Stat
+            icon={ScanFace}
             label="Yuzi bor"
             value={
               all ? (
@@ -171,7 +176,6 @@ export default function DashboardPage() {
               )
             }
             meter={all && all.total ? all.confirmed / all.total : 0}
-            meterTone="ok"
             sub={
               all && all.total
                 ? `${Math.round((all.confirmed / all.total) * 100)}% — kameralar taniydi`
@@ -179,6 +183,7 @@ export default function DashboardPage() {
             }
           />
           <Stat
+            icon={UserX}
             label="Yuzi yo‘q"
             value={
               all ? (
@@ -191,6 +196,7 @@ export default function DashboardPage() {
             onClick={() => navigate("/yuzlar")}
           />
           <Stat
+            icon={ListChecks}
             label={
               <span className="flex items-center gap-1.5">
                 Tasdiq kutmoqda{" "}

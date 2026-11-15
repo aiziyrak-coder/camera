@@ -50,7 +50,7 @@ export default function AccountModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal title="Hisobim" onClose={onClose}>
       <div className="flex items-center gap-3">
-        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-ink/[0.06] text-[17px] font-semibold text-soft">
+        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-tint text-[17px] font-semibold text-brand-dark ring-1 ring-brand-line">
           {(userName ?? '?').slice(0, 1).toUpperCase()}
         </span>
         <div>

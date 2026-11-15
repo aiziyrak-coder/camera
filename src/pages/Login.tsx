@@ -72,7 +72,7 @@ export default function LoginPage() {
       {/* Chap: forma */}
       <div className="flex min-w-0 flex-1 flex-col overflow-y-auto px-6 py-8 sm:px-12">
         <div className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink text-white">
+          <span className="bg-brand-grad flex h-8 w-8 items-center justify-center rounded-lg text-white shadow-btn">
             <ScanFace size={17} aria-hidden />
           </span>
           <span className="text-[14px] font-semibold text-ink">Yuzlar bazasi</span>
@@ -139,7 +139,7 @@ export default function LoginPage() {
           )}
           <p className="mt-8 text-[13px] text-soft">
             Yuzingizni ro‘yxatdan o‘tkazmoqchimisiz?{' '}
-            <a href="/royxatdan-otish" className="font-medium text-ink underline underline-offset-4">
+            <a href="/royxatdan-otish" className="font-medium text-brand underline-offset-4 hover:underline">
               Shu yerga bosing
             </a>
           </p>
@@ -149,10 +149,10 @@ export default function LoginPage() {
       </div>
 
       {/* O'ng: tizim haqida */}
-      <aside className="hidden w-[46%] max-w-[640px] flex-col justify-between border-l border-line bg-side p-12 lg:flex">
-        <p className="label-xs">Yuzni tanish platformasi</p>
-        <div>
-          <p className="max-w-md text-[30px] font-semibold leading-[1.15] tracking-[-0.02em] text-ink">
+      <aside className="panel-brand relative hidden w-[46%] max-w-[640px] flex-col justify-between overflow-hidden p-12 text-white lg:flex">
+        <p className="relative text-[11px] font-medium uppercase tracking-[0.08em] text-white/60">Yuzni tanish platformasi</p>
+        <div className="relative">
+          <p className="max-w-md text-[30px] font-semibold leading-[1.15] tracking-[-0.02em]">
             Talaba va xodimlarning yuzlari — bitta xavfsiz bazada.
           </p>
           <ul className="mt-10 grid max-w-md grid-cols-2 gap-x-8 gap-y-6 text-[13px]">
@@ -162,14 +162,14 @@ export default function LoginPage() {
               ['HEMIS', 'Ro‘yxat avtomatik yangilanadi'],
               ['Telegram', 'Ota-onalarga xabar'],
             ].map(([t, d]) => (
-              <li key={t} className="border-t border-line pt-3">
-                <p className="font-medium text-ink">{t}</p>
-                <p className="mt-0.5 text-soft">{d}</p>
+              <li key={t} className="border-t border-white/20 pt-3">
+                <p className="font-medium">{t}</p>
+                <p className="mt-0.5 text-white/65">{d}</p>
               </li>
             ))}
           </ul>
         </div>
-        <p className="text-[12px] text-faint">Barcha amallar jurnalga yoziladi.</p>
+        <p className="relative text-[12px] text-white/50">Barcha amallar jurnalga yoziladi.</p>
       </aside>
 
       {forgotOpen && <ForgotPassword initialLogin={login} onClose={() => setForgotOpen(false)} />}

@@ -24,8 +24,8 @@ export function cn(...parts: (string | false | null | undefined)[]): string {
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'danger-ghost';
 
 const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
-  primary: 'bg-ink text-white hover:bg-[#2a2a2e] disabled:bg-ink/40',
-  secondary: 'border border-line bg-white text-ink hover:bg-sunk disabled:text-faint',
+  primary: 'bg-brand-grad text-white shadow-btn hover:brightness-110 active:brightness-95 disabled:opacity-50 disabled:shadow-none',
+  secondary: 'border border-line bg-white text-ink shadow-card hover:border-[#cfd5e1] hover:bg-side disabled:text-faint',
   ghost: 'text-soft hover:bg-sunk hover:text-ink disabled:text-faint',
   danger: 'bg-bad text-white hover:bg-bad/90 disabled:bg-bad/50',
   'danger-ghost': 'text-bad hover:bg-bad-tint disabled:text-faint',
@@ -65,7 +65,7 @@ export function Button({
       type={type}
       disabled={disabled || loading}
       className={cn(
-        'inline-flex shrink-0 select-none items-center justify-center rounded-lg font-medium transition-colors disabled:cursor-not-allowed',
+        'inline-flex shrink-0 select-none items-center justify-center rounded-lg font-medium transition-[background-color,border-color,color,filter] disabled:cursor-not-allowed',
         sizing,
         BUTTON_VARIANTS[variant],
         block && 'w-full',
@@ -224,7 +224,7 @@ export function Tabs<T extends string>({
           onClick={() => onChange(o.value)}
           className={cn(
             '-mb-px flex shrink-0 items-center gap-1.5 border-b-2 pb-2.5 pt-1 text-[13px] font-medium transition-colors',
-            value === o.value ? 'border-ink text-ink' : 'border-transparent text-faint hover:text-soft',
+            value === o.value ? 'border-brand text-ink' : 'border-transparent text-faint hover:text-soft',
           )}
         >
           {o.label}
@@ -243,8 +243,8 @@ const DOT: Record<Tone, string> = {
   ok: 'bg-ok',
   warn: 'bg-warn',
   bad: 'bg-bad',
-  plain: 'bg-[#C4C4CB]',
-  brand: 'bg-ink',
+  plain: 'bg-[#C3CAD8]',
+  brand: 'bg-brand',
 };
 
 export function Dot({ tone = 'plain', pulse = false, className }: { tone?: Tone; pulse?: boolean; className?: string }) {
@@ -314,9 +314,9 @@ export function Empty({ icon: Icon, title, text, action }: { icon: LucideIcon; t
 /** Ingichka foiz chizig'i. */
 export function Meter({ value, className, tone = 'ink' }: { value: number | null | undefined; className?: string; tone?: 'ink' | 'ok' | 'warn' }) {
   const pctValue = Math.max(0, Math.min(100, (value ?? 0) * 100));
-  const color = tone === 'ok' ? 'bg-ok' : tone === 'warn' ? 'bg-warn' : 'bg-ink';
+  const color = tone === 'ok' ? 'bg-ok' : tone === 'warn' ? 'bg-warn' : 'bar-brand';
   return (
-    <div className={cn('h-1 overflow-hidden rounded-full bg-sunk', className)}>
+    <div className={cn('h-1.5 overflow-hidden rounded-full bg-sunk', className)}>
       <div className={cn('h-full rounded-full transition-[width] duration-500', color)} style={{ width: `${pctValue}%` }} />
     </div>
   );
@@ -327,7 +327,7 @@ export function Meter({ value, className, tone = 'ink' }: { value: number | null
 /** Sahifa sarlavhasi — ish maydonining yuqori qatori. */
 export function PageHead({ title, text, actions, children }: { title: string; text?: ReactNode; actions?: ReactNode; children?: ReactNode }) {
   return (
-    <div className="shrink-0 border-b border-line px-6 pt-5">
+    <div className="glow-top shrink-0 border-b border-line px-6 pt-5">
       <div className={cn('flex flex-wrap items-start justify-between gap-3', children ? 'pb-3' : 'pb-5')}>
         <div className="min-w-0">
           <h1 className="text-[19px] font-semibold tracking-[-0.01em] text-ink">{title}</h1>
@@ -374,11 +374,13 @@ export function Stat({
   sub,
   meter,
   meterTone,
+  icon: Icon,
   onClick,
   className,
 }: {
   label: ReactNode;
   value: ReactNode;
+  icon?: LucideIcon;
   sub?: ReactNode;
   meter?: number | null;
   meterTone?: 'ink' | 'ok' | 'warn';
@@ -387,15 +389,22 @@ export function Stat({
 }) {
   const body = (
     <>
-      <span className="text-[12.5px] text-soft">{label}</span>
-      <span className="tnum mt-1.5 text-[26px] font-semibold leading-none tracking-[-0.02em] text-ink">{value}</span>
+      <span className="flex items-center justify-between gap-2 text-[12.5px] text-soft">
+        <span className="min-w-0">{label}</span>
+        {Icon && (
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-tint text-brand ring-1 ring-brand-line/70">
+            <Icon size={14} aria-hidden />
+          </span>
+        )}
+      </span>
+      <span className="tnum mt-1 text-[27px] font-semibold leading-none tracking-[-0.02em] text-ink">{value}</span>
       {meter !== undefined && <Meter value={meter} tone={meterTone} className="mt-3" />}
       {sub && <span className="mt-2 text-[12px] text-faint">{sub}</span>}
     </>
   );
   if (onClick) {
     return (
-      <button type="button" onClick={onClick} className={cn('flex flex-col px-5 py-4 text-left transition-colors hover:bg-side', className)}>
+      <button type="button" onClick={onClick} className={cn('flex flex-col px-5 py-4 text-left transition-colors hover:!bg-brand-tint/40', className)}>
         {body}
       </button>
     );
@@ -420,7 +429,7 @@ export function Photo({ src, name, className }: { src?: string | null; name: str
     return <img src={src} alt={name} loading="lazy" onError={() => setBroken(true)} className={cn('bg-sunk object-cover', className)} />;
   }
   return (
-    <div className={cn('flex items-center justify-center bg-sunk font-semibold text-faint', className)} aria-label={name}>
+    <div className={cn('flex items-center justify-center bg-brand-tint font-semibold text-brand/70', className)} aria-label={name}>
       <span className="text-[clamp(10px,32%,36px)]">{initials || '?'}</span>
     </div>
   );

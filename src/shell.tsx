@@ -116,7 +116,7 @@ function OverviewProvider({ children }: { children: ReactNode }) {
 export function Logo({ className, compact = false }: { className?: string; compact?: boolean }) {
   return (
     <span className={cn('flex min-w-0 items-center gap-2.5', className)}>
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-ink text-white">
+      <span className="bg-brand-grad flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white shadow-btn">
         <ScanFace size={17} aria-hidden />
       </span>
       {!compact && (
@@ -242,7 +242,7 @@ export default function Shell() {
             <button
               type="button"
               onClick={() => setPaletteOpen(true)}
-              className="ml-auto flex h-8 items-center gap-2 rounded-lg border border-line px-2.5 text-[12.5px] text-faint transition-colors hover:border-[#d4d4d8] hover:text-soft sm:w-64"
+              className="ml-auto flex h-8 items-center gap-2 rounded-lg border border-line px-2.5 text-[12.5px] text-faint transition-colors hover:border-brand-line hover:text-soft sm:w-64"
             >
               <Search size={14} aria-hidden />
               <span className="hidden flex-1 text-left sm:inline">Qidirish yoki o‘tish...</span>
@@ -321,7 +321,7 @@ function Sidebar({
                       cn(
                         'group relative flex h-8 items-center gap-2.5 rounded-lg text-[13px] font-medium transition-colors',
                         collapsed ? 'justify-center' : 'px-2.5',
-                        isActive ? 'bg-white text-ink shadow-[0_0_0_1px_rgba(10,10,11,0.06),0_1px_2px_rgba(10,10,11,0.05)]' : 'text-soft hover:bg-black/[0.04] hover:text-ink',
+                        isActive ? 'bg-white text-ink shadow-[0_0_0_1px_rgba(61,90,241,0.14),0_1px_2px_rgba(30,42,120,0.08)] [&>svg]:text-brand' : 'text-soft hover:bg-brand/[0.06] hover:text-ink',
                       )
                     }
                   >
@@ -330,7 +330,7 @@ function Sidebar({
                     {item.to === '/tasdiqlash' && awaiting > 0 && (
                       <span
                         className={cn(
-                          'tnum rounded-md bg-ink text-[11px] font-semibold text-white',
+                          'tnum rounded-md bg-brand text-[11px] font-semibold text-white',
                           collapsed ? 'absolute -right-1 -top-1 px-1' : 'px-1.5 py-px',
                         )}
                       >
@@ -350,9 +350,9 @@ function Sidebar({
           type="button"
           onClick={onAccount}
           title="Hisobim"
-          className={cn('flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors hover:bg-black/[0.04]', collapsed && 'justify-center')}
+          className={cn('flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors hover:bg-brand/[0.06]', collapsed && 'justify-center')}
         >
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-ink text-[12px] font-semibold text-white">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-brand-tint text-[12px] font-semibold text-brand-dark ring-1 ring-brand-line">
             {(userName ?? '?').slice(0, 1).toUpperCase()}
           </span>
           {!collapsed && (
@@ -366,7 +366,7 @@ function Sidebar({
           <button
             type="button"
             onClick={onToggle}
-            className={cn('mt-1 flex h-7 w-full items-center gap-2 rounded-lg text-[12px] text-faint transition-colors hover:bg-black/[0.04] hover:text-soft', collapsed ? 'justify-center' : 'px-2.5')}
+            className={cn('mt-1 flex h-7 w-full items-center gap-2 rounded-lg text-[12px] text-faint transition-colors hover:bg-brand/[0.06] hover:text-soft', collapsed ? 'justify-center' : 'px-2.5')}
             title={collapsed ? 'Menyuni kengaytirish' : 'Menyuni yig‘ish'}
           >
             {collapsed ? <ChevronsRight size={15} aria-hidden /> : <ChevronsLeft size={15} aria-hidden />}

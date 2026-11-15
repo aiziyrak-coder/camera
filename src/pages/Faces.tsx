@@ -164,7 +164,6 @@ export default function FacesPage() {
             label="Yuzi bor"
             value={stats ? formatNumber(stats.confirmed) : '—'}
             meter={stats && stats.total ? stats.confirmed / stats.total : 0}
-            meterTone="ok"
             sub={stats && stats.total ? `${Math.round((stats.confirmed / stats.total) * 100)}% qamrov` : undefined}
             onClick={() => setFace('tasdiqlangan')}
           />
@@ -390,14 +389,14 @@ function PeopleGrid({ items, selectedId, onSelect }: { items: StudentStaffRecord
             onClick={() => onSelect(p)}
             className={cn(
               'group overflow-hidden rounded-xl border bg-white text-left transition-all',
-              p.id === selectedId ? 'border-ink ring-1 ring-ink' : 'border-line hover:border-[#d4d4d8]',
+              p.id === selectedId ? 'border-ink ring-1 ring-ink' : 'border-line hover:border-[#cfd5e1]',
             )}
           >
             <div className="relative aspect-[4/5] overflow-hidden bg-sunk">
               {p.biometricPhotoUrl || p.hemisPhotoUrl ? (
                 <Photo src={p.biometricPhotoUrl || p.hemisPhotoUrl} name={p.fullName} className="h-full w-full" />
               ) : (
-                <div className="flex h-full w-full items-center justify-center text-[#d4d4d8]">
+                <div className="flex h-full w-full items-center justify-center text-[#cfd5e1]">
                   <UserCheck size={40} strokeWidth={1.25} aria-hidden />
                 </div>
               )}

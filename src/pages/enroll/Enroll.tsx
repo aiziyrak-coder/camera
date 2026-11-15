@@ -138,7 +138,7 @@ export default function EnrollPage() {
     <div className="enroll min-h-full overflow-y-auto bg-white sm:bg-side">
       <div className="mx-auto flex min-h-full w-full max-w-[460px] flex-col px-5 pb-10 pt-5 sm:pt-10">
         <header className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink text-white">
+          <span className="bg-brand-grad flex h-8 w-8 items-center justify-center rounded-lg text-white shadow-btn">
             <ScanFace size={17} aria-hidden />
           </span>
           <span className="flex-1 text-[14px] font-semibold text-ink">{branding.orgName}</span>
@@ -152,7 +152,7 @@ export default function EnrollPage() {
         {step !== 'success' && (
           <div className="mt-6 flex gap-1.5" aria-label={`${stepIndex + 1}-qadam, jami ${STEPS.length}`}>
             {STEPS.map((_, i) => (
-              <span key={i} className={cn('h-1 flex-1 rounded-full transition-colors', i <= stepIndex ? 'bg-ink' : 'bg-sunk')} />
+              <span key={i} className={cn('h-1 flex-1 rounded-full transition-colors', i <= stepIndex ? 'bg-brand' : 'bg-sunk')} />
             ))}
           </div>
         )}
