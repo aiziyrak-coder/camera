@@ -12,7 +12,12 @@ xabar beradi:
   * disk        — server diski settings.system_alerts_disk_percent dan to'la;
   * hemis       — HEMIS sinxronlashi oxirgi marta xato bilan tugagan yoki
                   settings.system_alerts_hemis_hours dan beri muvaffaqiyatli
-                  bo'lmagan.
+                  bo'lmagan;
+  * zaxira      — kunlik zaxira (deploy/backup.sh natijasini
+                  integration_sync_runs ga source="zaxira" bilan yozadi) xato
+                  bilan tugagan yoki settings.system_alerts_backup_hours dan
+                  beri muvaffaqiyatli bo'lmagan. 2026-10 da zaxira 3 hafta
+                  jimgina ishlamagan — shu sababli.
 
 Xabar olish uchun Bildirishnomalar sahifasida "Tizim" turiga qoida kerak.
 Holat jarayon xotirasida (vazifa faqat leader'da ishlaydi).
@@ -42,7 +47,11 @@ TITLES = {
     "ai": "AI to'xtab qoldi",
     "disk": "Server diski to'lmoqda",
     "hemis": "HEMIS sinxronlashi ishlamayapti",
+    "zaxira": "Kunlik zaxira ishlamayapti",
 }
+
+#: deploy/backup.sh shu manba nomi bilan yozadi.
+BACKUP_SOURCE = "zaxira"
 
 # muammo kaliti -> oxirgi yuborilgan payt (monotonic)
 _active: dict[str, float] = {}
@@ -85,6 +94,31 @@ async def hemis_problem(db, now: datetime) -> str | None:
     return None
 
 
+async def backup_problem(db, now: datetime) -> str | None:
+    """Zaxira hech qachon yozilmagan bo'lsa — jim (skript hali yangilanmagan
+    serverda soxta ogohlantirish bo'lmasin)."""
+    runs = (
+        await db.execute(
+            select(IntegrationSyncRun)
+            .where(IntegrationSyncRun.source == BACKUP_SOURCE, IntegrationSyncRun.status != "ishlamoqda")
+            .order_by(IntegrationSyncRun.started_at.desc())
+            .limit(20)
+        )
+    ).scalars().all()
+    if not runs:
+        return None
+    last = runs[0]
+    if last.status == "xato":
+        reason = (last.error or "sabab noma'lum")[:200]
+        return f"Oxirgi zaxira xato bilan tugadi: {reason}"
+    success = next((r for r in runs if r.status == "muvaffaqiyatli"), None)
+    moment = (success.finished_at or success.started_at) if success else None
+    if moment is not None and now - moment > timedelta(hours=settings.system_alerts_backup_hours):
+        hours = int((now - moment).total_seconds() // 3600)
+        return f"{hours} soatdan beri muvaffaqiyatli zaxira olinmadi"
+    return None
+
+
 #: Tekshiruvning o'zi yiqildi — holat noma'lum: oldingi holat saqlanadi
 #: ("tiklandi" deb ham, yangi ogohlantirish deb ham yuborilmaydi).
 CHECK_FAILED = "<tekshiruv-yiqildi>"
@@ -94,6 +128,7 @@ async def collect_problems(db, now: datetime) -> dict[str, str]:
     problems: dict[str, str] = {}
     checks = (
         ("hemis", lambda: hemis_problem(db, now)),
+        ("zaxira", lambda: backup_problem(db, now)),
     )
     for key, check in checks:
         try:

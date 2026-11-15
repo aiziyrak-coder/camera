@@ -143,3 +143,25 @@ async def get_run(run_id: uuid.UUID, db: DbDep, _: ManageDep) -> SyncRunOut:
     # Fon vazifasi boshqa sessiyada yozadi — eski nusxa qaytmasin.
     await db.refresh(run)
     return run_to_out(run)
+
+
+@router.get("/api/integrations/backup/status")
+async def backup_status(db: DbDep, _: ManageDep) -> dict:
+    """Kunlik zaxira holati (deploy/backup.sh yozadi) — boshqaruv paneli uchun."""
+    from datetime import datetime, timezone
+
+    from app.jobs.system_alerts import BACKUP_SOURCE, backup_problem
+
+    base = select(IntegrationSyncRun).where(IntegrationSyncRun.source == BACKUP_SOURCE)
+    last = (await db.execute(base.order_by(IntegrationSyncRun.started_at.desc()).limit(1))).scalar_one_or_none()
+    success = (
+        await db.execute(
+            base.where(IntegrationSyncRun.status == "muvaffaqiyatli").order_by(IntegrationSyncRun.started_at.desc()).limit(1)
+        )
+    ).scalar_one_or_none()
+    moment = (success.finished_at or success.started_at) if success else None
+    return {
+        "lastRun": run_to_out(last).model_dump(by_alias=True) if last else None,
+        "lastSuccessAt": to_local(moment).isoformat(timespec="seconds") if moment else None,
+        "problem": await backup_problem(db, datetime.now(timezone.utc)),
+    }

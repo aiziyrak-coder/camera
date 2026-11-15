@@ -16,14 +16,37 @@ STAMP=$(date +%F-%H%M)
 mkdir -p "$OUT_DIR"
 cd "$APP_DIR"
 
+# Natija bazaga yoziladi (integration_sync_runs, source='zaxira'): boshqaruv
+# paneli ko'rsatadi, system_alerts esa xato yoki 30 soat jimlikda
+# ogohlantiradi. 2026-10 da zaxira 3 hafta ishlamagan va hech kim bilmagan.
+# Baza ishlamasa yozuv tushmaydi — bu ham "jimlik" sifatida ushlanadi.
+STARTED=$(date -u +%FT%TZ)
+ERRORS=""
+STATS=""
+add_stat() { STATS="${STATS:+$STATS,}\"$1\":\"$2\""; }
+record_run() {
+    local rc=$1 status=muvaffaqiyatli err=NULL
+    if [ "$rc" != 0 ]; then
+        status=xato
+        err="\$z\$${ERRORS:-skript $rc kodi bilan tugadi}\$z\$"
+    fi
+    docker compose exec -T db sh -c 'psql -q -v ON_ERROR_STOP=1 -U $POSTGRES_USER -d $POSTGRES_DB' >/dev/null <<SQL || echo "$(date -Is) ogohlantirish: natija bazaga yozilmadi" >&2
+INSERT INTO integration_sync_runs (source, started_at, finished_at, status, stats, error, triggered_by)
+VALUES ('zaxira', '$STARTED', now(), '$status', '{$STATS}'::jsonb, $err, 'cron');
+SQL
+}
+trap 'record_run $?' EXIT
+
 # 1. Baza. Vaqtinchalik faylga yoziladi va faqat muvaffaqiyatli tugagach
 #    yakuniy nomga o'tkaziladi — yarim yozilgan dump zaxira bo'lib qolmasin.
 tmp="$OUT_DIR/.db-$STAMP.part"
 if docker compose exec -T db sh -c 'pg_dump -U $POSTGRES_USER -Fc $POSTGRES_DB' > "$tmp"; then
     mv "$tmp" "$OUT_DIR/db-$STAMP.dump"
     echo "$(date -Is) baza: $(du -h "$OUT_DIR/db-$STAMP.dump" | cut -f1)"
+    add_stat baza "$(du -h "$OUT_DIR/db-$STAMP.dump" | cut -f1)"
 else
     rm -f "$tmp"
+    ERRORS="baza zaxirasi olinmadi"
     echo "$(date -Is) XATO: baza zaxirasi olinmadi" >&2
     exit 1
 fi
@@ -54,8 +77,10 @@ img=$(docker inspect -f '{{.Image}}' "$api_container" 2>/dev/null || true)
 if [ -n "$img" ]     && docker run --rm -v "$MINIO_VOLUME":/data:ro --entrypoint tar "$img" -cz -C /data camera-uploads > "$minio_out.part"     && gzip -t "$minio_out.part"; then
     mv "$minio_out.part" "$minio_out"
     echo "$(date -Is) rasmlar: $(du -h "$minio_out" | cut -f1)"
+    add_stat rasmlar "$(du -h "$minio_out" | cut -f1)"
 else
     rm -f "$minio_out.part"
+    ERRORS="rasmlar (MinIO) zaxirasi olinmadi"
     echo "$(date -Is) XATO: rasmlar zaxirasi olinmadi" >&2
     failed=1
 fi
@@ -74,5 +99,7 @@ find "$OUT_DIR" -maxdepth 1 -name 'www-*.tgz' -mtime +60 -delete
 if [ "$failed" = 0 ]; then
     date -Is > "$OUT_DIR/oxirgi-muvaffaqiyatli"
 fi
+add_stat jami "$(du -sh "$OUT_DIR" | cut -f1)"
+add_stat disk_bosh "$(df -h "$OUT_DIR" | awk 'NR==2{print $4}')"
 echo "$(date -Is) tayyor; jami: $(du -sh "$OUT_DIR" | cut -f1)"
 exit "$failed"

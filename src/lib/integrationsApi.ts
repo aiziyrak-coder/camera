@@ -47,6 +47,14 @@ export interface SyncRun {
   error: string | null;
 }
 
+/** Kunlik zaxira holati (deploy/backup.sh har tunda yozadi). */
+export interface BackupStatus {
+  lastRun: (Omit<SyncRun, 'stats'> & { stats: Record<string, string> | null }) | null;
+  lastSuccessAt: string | null;
+  /** Ogohlantirish matni — xato yoki 30 soatdan beri muvaffaqiyatsiz. */
+  problem: string | null;
+}
+
 export interface HemisStatus {
   configured: boolean;
   baseUrl: string | null;
@@ -142,6 +150,7 @@ export interface DeviceForm {
 
 export const integrationsApi = {
   hemisStatus: (token: string | null) => api.get<HemisStatus>('/api/integrations/hemis/status', token),
+  backupStatus: (token: string | null) => api.get<BackupStatus>('/api/integrations/backup/status', token),
   hemisTest: (token: string | null) => api.post<HemisTestResult>('/api/integrations/hemis/test', {}, token),
   hemisSync: (token: string | null) => api.post<{ runId: string }>('/api/integrations/hemis/sync', {}, token),
   run: (id: string, token: string | null) => api.get<SyncRun>(`/api/integrations/runs/${id}`, token),

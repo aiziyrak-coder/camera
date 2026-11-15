@@ -1436,6 +1436,8 @@ class Settings(BaseSettings):
     system_alerts_repeat_hours: int = 6
     system_alerts_disk_percent: float = 90.0
     system_alerts_hemis_hours: int = 48
+    # Kunlik zaxira (deploy/backup.sh) shu soatdan beri muvaffaqiyatli bo'lmasa — ogohlantirish.
+    system_alerts_backup_hours: int = 30
     # Fermi Face ID — institut loyihalari uchun yuz orqali kirish
     # (app/services/faceid.py). Chegaralar: 1:1 — ID kiritilganda (odamning
     # o'z yuziga), 1:N — faqat yuz bilan (qat'iyroq va ikkinchi nomzoddan uzoq).
