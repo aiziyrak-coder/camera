@@ -391,7 +391,7 @@ export function SlideNumbers({ active }: { active: boolean }) {
     { v: s.photos, label: 'asl rasm', sub: 'old, chap, o‘ng — har kuni zaxirada', icon: FileImage },
     { v: s.selfRegistered, label: 'o‘zi ro‘yxatdan o‘tgan', sub: 'telefoni orqali, navbatsiz', icon: Smartphone },
     { v: s.hemis.intervalHours, suffix: ' soat', label: 'HEMIS bilan yangilanish', sub: 'yangi talaba o‘zi qo‘shiladi', icon: RefreshCw },
-    { v: t.missing, label: 'kishining yuzi yo‘q', sub: 'ularga QR havola beriladi', icon: QrCode },
+    { v: t.missing, label: 'kishining yuzi yo‘q', sub: 'umumiy QR-kod orqali o‘tadi', icon: QrCode },
   ];
   return (
     <div className="flex h-full flex-col">
@@ -485,7 +485,7 @@ export function SlideFaculties() {
             <QrCode size={22} />
           </span>
           <p className="text-[19px] leading-snug">
-            <b>{weakest.faculty}</b>da {fmt(weakest.total - weakest.confirmed)} kishi hali yuzini bermagan. Ular uchun guruh QR-kodlari tayyor — keyingi qadam shu.
+            <b>{weakest.faculty}</b>da {fmt(weakest.total - weakest.confirmed)} kishi hali yuzini bermagan. Ular umumiy QR-kod orqali 1 daqiqada o‘tadi — keyingi qadam shu.
           </p>
         </div>
       )}
@@ -555,7 +555,7 @@ export function SlideCourses({ active }: { active: boolean }) {
               <QrCode size={19} />
             </span>
             <p className="text-[16px] leading-snug text-[#78350f]">
-              <b>Magistratura {weak.course}: {fmt(weak.total - weak.confirmed)} kishi</b> hali yuzini bermagan — bu yangi qabul. Guruhlariga QR-kod beriladi: telefonda 1 daqiqa.
+              <b>Magistratura {weak.course}: {fmt(weak.total - weak.confirmed)} kishi</b> hali yuzini bermagan — bu yangi qabul. Umumiy QR-kodni skanerlab, telefonda 1 daqiqada o‘tadi.
             </p>
           </div>
         )}
@@ -678,7 +678,7 @@ export function SlideEnroll() {
           ))}
         </ol>
         <p className="mt-9 flex items-center gap-3 text-[16px] text-[#475569]" data-a="fade" style={d(6)}>
-          <QrCode size={22} className="text-[#2563eb]" /> Har guruh uchun QR-kod chop etiladi — navbat, qog‘oz va operator kerak emas.
+          <QrCode size={22} className="text-[#2563eb]" /> Hamma uchun bitta QR-kod — talaba, xodim, yangi kelgan. Navbat, qog‘oz va operator kerak emas.
         </p>
       </div>
 
@@ -869,7 +869,7 @@ export function SlideDashboard({ active }: { active: boolean }) {
         <Chip n="08" label="Boshqaruv paneli" />
         <H2>Kim yuzini bergan, kim yo‘q — bir qarashda.</H2>
         <ul className="mt-9 flex flex-col gap-4 text-[19px] text-[#1e293b]">
-          {['Fakultet va kurs kesimida qamrov', 'Har bir odamning holati va rasmlari', 'Ctrl K — istalgan odamni bir zumda topish', 'Ro‘yxatdan o‘tmaganlarga QR havola'].map((t, i) => (
+          {['Fakultet va kurs kesimida qamrov', 'Har bir odamning holati va rasmlari', 'Ctrl K — istalgan odamni bir zumda topish', 'Hamma uchun bitta QR havola'].map((t, i) => (
             <li key={t} className="flex items-center gap-3" data-a="left" style={d(2 + i * 0.6)}>
               <span className="h-2 w-2 rounded-full bg-[#2563eb]" /> {t}
             </li>
@@ -1041,7 +1041,7 @@ export function SlideFlow() {
   const st = useStats();
   const steps: { icon: LucideIcon; t: string; s: string; time: string }[] = [
     { icon: Database, t: 'Ro‘yxat', s: 'HEMIS’dan avtomatik', time: 'har {H} soatda' },
-    { icon: QrCode, t: 'QR-kod', s: 'guruhga chop etiladi', time: '1 varaq' },
+    { icon: QrCode, t: 'QR-kod', s: 'hamma uchun bitta', time: '1 varaq' },
     { icon: Smartphone, t: 'Telefon', s: 'yuz 3 tomondan', time: '~1 daqiqa' },
     { icon: UserCheck, t: 'Tasdiq', s: 'shubhali bo‘lsa — admin', time: 'bir tugma' },
     { icon: Camera, t: 'Foydalanish', s: 'iMentor, kameralar', time: 'har soatda' },
@@ -1148,7 +1148,7 @@ export function SlideRoadmap() {
   const st = useStats();
   const tt = totals(st);
   const steps = [
-    { t: 'Qamrovni 100% ga yetkazish', s: `Yuzi yo‘q ${fmt(tt.missing)} kishiga guruh QR-kodlari`, time: '2–3 hafta' },
+    { t: 'Qamrovni 100% ga yetkazish', s: `Yuzi yo‘q ${fmt(tt.missing)} kishi — umumiy QR-kod orqali`, time: '2–3 hafta' },
     { t: 'Server quvvati', s: 'Protsessor rejimini o‘zgartirish — tanish 5–10 barobar tezlashadi', time: '1 kun' },
     { t: 'Kirish nazorati sinovi', s: '1–2 kamera, har kuni o‘lchanadi: kim o‘tdi, kim tanildi', time: '2 hafta' },
     { t: 'Keng joriy etish', s: 'Natija mezonga yetgach — bino-bino', time: 'bosqichma-bosqich' },
