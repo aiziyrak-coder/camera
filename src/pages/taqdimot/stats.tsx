@@ -12,6 +12,13 @@ export interface Cov {
   percent: number | null;
 }
 
+export interface CourseRow {
+  course: string;
+  total: number;
+  confirmed: number;
+  percent: number | null;
+}
+
 export interface Stats {
   generatedAt: string | null;
   talaba: Cov;
@@ -20,14 +27,17 @@ export interface Stats {
   photos: number;
   selfRegistered: number;
   byFaculty: { faculty: string; total: number; confirmed: number; percent: number | null }[];
-  byCourse: { course: string; total: number; confirmed: number; percent: number | null }[];
+  byCourse: CourseRow[];
+  /** Faqat bakalavriat (magistratura alohida). Eski server javobida bo'lmasligi mumkin. */
+  bachelorByCourse?: CourseRow[];
+  masters?: { total: number; confirmed: number; percent: number | null; byCourse: CourseRow[] };
   daily: { date: string; count: number }[];
   hemis: { configured: boolean; intervalHours: number; lastSuccessAt: string | null };
   parents: { students: number; telegramLinked: number; weekSent: number };
   live: boolean;
 }
 
-/** 2026-11-13 22:01 holati. */
+/** 2026-11-13 holati (kurslar — 2026-11-15). */
 export const FALLBACK: Stats = {
   generatedAt: null,
   talaba: { total: 7419, confirmed: 7141, pending: 0, missing: 278, awaiting: 0, percent: 96.3 },
@@ -42,14 +52,24 @@ export const FALLBACK: Stats = {
     { faculty: 'Tibbiy profilaktika va jamoat salomatligi fakulteti', total: 1166, confirmed: 1156, percent: 99.1 },
     { faculty: 'Magistratura boʻlimi', total: 611, confirmed: 415, percent: 67.9 },
   ],
-  byCourse: [
-    { course: '1-kurs', total: 1802, confirmed: 1765, percent: 97.9 },
-    { course: '2-kurs', total: 1530, confirmed: 1522, percent: 99.5 },
+  byCourse: [],
+  bachelorByCourse: [
+    { course: '1-kurs', total: 1313, confirmed: 1256, percent: 95.7 },
+    { course: '2-kurs', total: 1813, confirmed: 1805, percent: 99.6 },
     { course: '3-kurs', total: 1333, confirmed: 1331, percent: 99.8 },
     { course: '4-kurs', total: 985, confirmed: 983, percent: 99.8 },
     { course: '5-kurs', total: 879, confirmed: 876, percent: 99.7 },
     { course: '6-kurs', total: 458, confirmed: 451, percent: 98.5 },
   ],
+  masters: {
+    total: 611,
+    confirmed: 415,
+    percent: 67.9,
+    byCourse: [
+      { course: '1-kurs', total: 489, confirmed: 297, percent: 60.7 },
+      { course: '2-kurs', total: 113, confirmed: 112, percent: 99.1 },
+    ],
+  },
   daily: [],
   hemis: { configured: true, intervalHours: 24, lastSuccessAt: null },
   parents: { students: 7419, telegramLinked: 0, weekSent: 0 },

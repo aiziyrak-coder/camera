@@ -24,5 +24,7 @@ async def test_presentation_stats_are_public_and_aggregate_only(client: AsyncCli
     assert data["talaba"]["total"] >= 1
     assert len(data["daily"]) == 30
     assert {"faceVectors", "photos", "byFaculty", "byCourse", "hemis", "parents"} <= data.keys()
+    assert any(r["course"] == "2-kurs" and r["total"] >= 1 for r in data["bachelorByCourse"])
+    assert {"total", "confirmed", "percent", "byCourse"} <= data["masters"].keys()
     # Ism yoki boshqa shaxsiy ma'lumot chiqmasligi kerak.
     assert "Taqdimot Talabasi" not in resp.text

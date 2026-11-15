@@ -1,6 +1,6 @@
 /* Taqdimot slaydlari. Har biri 1600x900 sahnaga chiziladi. */
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
-import { fmt, timeLabel, totals, useStats } from './stats';
+import { fmt, timeLabel, totals, useStats, type CourseRow } from './stats';
 import {
   ArrowRight,
   Bell,
@@ -495,36 +495,70 @@ export function SlideFaculties() {
 
 export function SlideCourses({ active }: { active: boolean }) {
   const s = useStats();
-  const rows = s.byCourse;
+  // Yangi server bakalavriat va magistraturani alohida beradi; eski javobda — umumiy kurslar.
+  const rows = s.bachelorByCourse ?? s.byCourse;
+  const masters = s.bachelorByCourse ? s.masters : undefined;
+  const mRows = masters?.byCourse ?? [];
   const daily = s.daily;
   const dailyMax = Math.max(1, ...daily.map((x) => x.count));
   const monthSum = daily.reduce((a, x) => a + x.count, 0);
-  const courseMax = Math.max(1, ...rows.map((r) => r.total));
+  const courseMax = Math.max(1, ...rows.map((r) => r.total), ...mRows.map((r) => r.total));
   const minPct = rows.length ? Math.floor(Math.min(...rows.map((r) => (r.total ? (r.confirmed / r.total) * 100 : 0)))) : 0;
+  const weak = [...mRows].filter((r) => r.total && r.confirmed / r.total < 0.9).sort((x, y) => y.total - y.confirmed - (x.total - x.confirmed))[0];
+
+  const column = (r: CourseRow, i: number, unit: string) => {
+    const ratio = r.total ? r.confirmed / r.total : 0;
+    const low = ratio < 0.9;
+    return (
+      <div key={unit + r.course} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end">
+        <span className={`tq-display mb-2 text-[21px] font-extrabold tabular-nums ${low ? 'text-[#d97706]' : ''}`} data-a="fade" style={d(4 + i * 0.35)}>
+          {(ratio * 100).toFixed(1)}%
+        </span>
+        <div className="tq-col relative w-full overflow-hidden rounded-t-2xl bg-[#e2e8f0]" style={d(i * 0.5, { ['--h' as string]: `${Math.max(10, (r.total / courseMax) * 84)}%` })}>
+          <span
+            className="absolute inset-x-0 bottom-0"
+            style={{ height: `${ratio * 100}%`, background: low ? 'linear-gradient(0deg,#d97706,#f59e0b)' : 'linear-gradient(0deg,#2563eb,#0d9488)' }}
+          />
+          <span className="absolute inset-x-0 bottom-3 text-center text-[13px] font-bold text-white/90 tabular-nums">{fmt(r.confirmed)}</span>
+        </div>
+        <span className="mt-3 text-[16px] font-bold">{r.course}</span>
+        <span className="text-[12.5px] text-[#94a3b8] tabular-nums">{fmt(r.total)} {unit}</span>
+      </div>
+    );
+  };
+
   return (
     <div className="flex h-full gap-12">
-      <div className="flex flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         <Chip n="04" label="Qamrov · kurslar" />
-        <H2>Har bir kursda qamrov {minPct}% dan yuqori.</H2>
-        <p className="mt-3 text-[16px] text-[#64748b]" data-a="fade" style={d(2)}>Ustun balandligi — kursdagi talabalar soni, rangli qismi — yuzi borlar.</p>
-        <div className="mt-8 flex h-[400px] items-end gap-6 border-b-2 border-[#e2e8f0] px-2">
-          {rows.map((r, i) => {
-            const ratio = r.total ? r.confirmed / r.total : 0;
-            return (
-              <div key={r.course} className="flex h-full flex-1 flex-col items-center justify-end">
-                <span className="tq-display mb-2 text-[22px] font-extrabold tabular-nums" data-a="fade" style={d(4 + i * 0.4)}>
-                  {(ratio * 100).toFixed(1)}%
-                </span>
-                <div className="tq-col relative w-full overflow-hidden rounded-t-2xl bg-[#e2e8f0]" style={d(i * 0.6, { ['--h' as string]: `${Math.max(10, (r.total / courseMax) * 82)}%` })}>
-                  <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#2563eb] to-[#0d9488]" style={{ height: `${ratio * 100}%` }} />
-                  <span className="absolute inset-x-0 bottom-3 text-center text-[14px] font-bold text-white/90 tabular-nums">{fmt(r.confirmed)}</span>
-                </div>
-                <span className="mt-3 text-[17px] font-bold">{r.course}</span>
-                <span className="text-[13px] text-[#94a3b8] tabular-nums">{fmt(r.total)} talaba</span>
-              </div>
-            );
-          })}
+        <H2>{masters ? `Bakalavriatda har kursda ${minPct}% dan yuqori.` : `Har bir kursda qamrov ${minPct}% dan yuqori.`}</H2>
+        <p className="mt-3 text-[16px] text-[#64748b]" data-a="fade" style={d(2)}>
+          Ustun balandligi — kursdagi talabalar soni, rangli qismi — yuzi borlar.
+        </p>
+        <div className="mt-7 flex h-[350px] items-end gap-8">
+          <div className="flex h-full min-w-0 flex-[6] flex-col">
+            <div className="flex min-h-0 flex-1 items-end gap-4 border-b-2 border-[#e2e8f0] px-1">{rows.map((r, i) => column(r, i, 'talaba'))}</div>
+            {masters && <p className="mt-2 text-center text-[12px] font-bold uppercase tracking-[0.14em] text-[#94a3b8]">Bakalavriat</p>}
+          </div>
+          {masters && mRows.length > 0 && (
+            <div className="flex h-full min-w-0 flex-[2.2] flex-col border-l-2 border-dashed border-[#e2e8f0] pl-8" data-a="right" style={d(3)}>
+              <div className="flex min-h-0 flex-1 items-end gap-4 border-b-2 border-[#e2e8f0] px-1">{mRows.map((r, i) => column(r, rows.length + i, 'magistr'))}</div>
+              <p className="mt-2 text-center text-[12px] font-bold uppercase tracking-[0.14em] text-[#94a3b8]">
+                Magistratura · {masters.percent ?? 0}%
+              </p>
+            </div>
+          )}
         </div>
+        {weak && (
+          <div className="mt-6 flex items-center gap-4 rounded-2xl bg-[#fffbeb] px-6 py-4 shadow-[0_0_0_1px_rgba(217,119,6,0.18)]" data-a="rise" style={d(6)}>
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#fef3c7] text-[#d97706]">
+              <QrCode size={19} />
+            </span>
+            <p className="text-[16px] leading-snug text-[#78350f]">
+              <b>Magistratura {weak.course}: {fmt(weak.total - weak.confirmed)} kishi</b> hali yuzini bermagan — bu yangi qabul. Guruhlariga QR-kod beriladi: telefonda 1 daqiqa.
+            </p>
+          </div>
+        )}
       </div>
       <div className="flex w-[380px] shrink-0 flex-col gap-5 pt-[60px]">
         {(

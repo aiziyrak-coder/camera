@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.models import IntegrationSyncRun, NotificationLog, StudentStaff
+from app.models import Faculty, IntegrationSyncRun, NotificationLog, StudentStaff
 from app.routers.students_staff import _coverage
 from app.services.integrations import hemis
 from app.timezone import INSTITUTE_TZ, to_local
@@ -75,6 +75,8 @@ async def _build(db: AsyncSession) -> dict[str, Any]:
         for i in range(DAYS - 1, -1, -1)
     ]
 
+    programs = await _programs(db)
+
     success = (
         await db.execute(
             select(IntegrationSyncRun)
@@ -114,6 +116,8 @@ async def _build(db: AsyncSession) -> dict[str, Any]:
             for r in talaba.by_course
             if r.total and r.course_number
         ],
+        "bachelorByCourse": programs["bachelor"],
+        "masters": programs["masters"],
         "daily": daily,
         "hemis": {
             "configured": hemis.hemis_active(),
@@ -124,6 +128,39 @@ async def _build(db: AsyncSession) -> dict[str, Any]:
         },
         "parents": {"students": students_total, "telegramLinked": parents_linked, "weekSent": week_sent or 0},
     }
+
+
+async def _programs(db: AsyncSession) -> dict[str, Any]:
+    """Bakalavriat kurslari va magistratura alohida: HEMIS magistrlarga ham
+    "1-kurs"/"2-kurs" beradi, aralashtirilsa bakalavr kurslari noto'g'ri ko'rinadi."""
+    course = func.substring(StudentStaff.group_or_position, r"^(\d+)-kurs")
+    is_masters = func.coalesce(Faculty.name.ilike("magistr%"), False)
+    confirmed = func.count().filter(StudentStaff.biometrics_status == "tasdiqlangan")
+    rows = (
+        await db.execute(
+            select(is_masters, course, func.count(), confirmed)
+            .select_from(StudentStaff)
+            .outerjoin(Faculty, Faculty.id == StudentStaff.faculty_id)
+            .where(StudentStaff.active.is_(True), StudentStaff.type == "talaba")
+            .group_by(is_masters, course)
+        )
+    ).all()
+
+    def pct(c: int, t: int) -> float | None:
+        return round(c * 100 / t, 1) if t else None
+
+    bachelor: list[dict[str, Any]] = []
+    masters = {"total": 0, "confirmed": 0, "byCourse": []}
+    for m, c, total, conf in sorted(rows, key=lambda r: int(r[1]) if r[1] else 99):
+        if m:
+            masters["total"] += total
+            masters["confirmed"] += conf
+        if not c:
+            continue
+        row = {"course": f"{int(c)}-kurs", "total": total, "confirmed": conf, "percent": pct(conf, total)}
+        (masters["byCourse"] if m else bachelor).append(row)
+    masters["percent"] = pct(masters["confirmed"], masters["total"])
+    return {"bachelor": bachelor, "masters": masters}
 
 
 @router.get("/taqdimot")
