@@ -208,10 +208,18 @@ export default function ReviewPage() {
         <Confirm
           title="Hammasi tasdiqlansinmi?"
           confirmLabel={`${formatNumber(total)} tasini tasdiqlash`}
-          text={`${type === 'talaba' ? 'Talabalar' : 'Xodimlar'} navbatidagi barcha ${formatNumber(total)} ta yuz tasdiqlanadi va kameralar ularni taniy boshlaydi.`}
+          text={`${type === 'talaba' ? 'Talabalar' : 'Xodimlar'} navbatidagi yuzlar tasdiqlanadi. Shaxsi shubhali (boshqa odamga o‘xshash, HEMIS suratiga mos kelmagan) yuzlar tasdiqlanmaydi — ularni bittalab ko‘rib chiqing.`}
           onConfirm={async () => {
-            const res = await api.post<{ approved: number }>(`/api/students-staff/biometrics/approve-all?type=${type}`, {}, token);
-            toast(`${formatNumber(res.approved)} ta yuz tasdiqlandi`);
+            const res = await api.post<{ approved: number; skippedAngles: number; skippedIdentity?: number }>(
+              `/api/students-staff/biometrics/approve-all?type=${type}`,
+              {},
+              token,
+            );
+            const left = [
+              res.skippedIdentity ? `${formatNumber(res.skippedIdentity)} tasini bittalab tekshiring` : '',
+              res.skippedAngles ? `${formatNumber(res.skippedAngles)} tasida 3 tomon yo‘q` : '',
+            ].filter(Boolean);
+            toast(`${formatNumber(res.approved)} ta yuz tasdiqlandi${left.length ? ` · ${left.join(', ')}` : ''}`);
             refresh();
           }}
           onClose={() => setApproveAllOpen(false)}

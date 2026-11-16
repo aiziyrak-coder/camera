@@ -23,6 +23,31 @@ from app.models import AuditLog, StudentStaff
 logger = logging.getLogger("app.self_enrollment")
 _LOCK_KEY = 7_310_422_001
 
+#: Ochiq havolada anonim so'rov institut ro'yxatidagi (HEMIS) JSHSHIRsiz
+#: yozuvni "meniki" deb egalladi (enrollment.register_self). Ism va guruh
+#: sir emas — shuning uchun bunday yozuvga topshirilgan yuz faqat HEMIS
+#: surati bilan mos kelsa avtomatik tasdiqlanadi (2026-11-17, audit S-H1).
+CLAIM_REASON = "havola orqali ro'yxatdagi yozuvga bog'landi — shaxsni administrator tasdiqlashi kerak"
+
+#: Shaxsga oid sabablar: bu yozuvlar "Hammasini tasdiqlash"da
+#: tasdiqlanmaydi, faqat bittalab ko'rib chiqiladi (audit S-H2).
+IDENTITY_REASON_MARKERS = (
+    CLAIM_REASON,
+    "ga o'xshash (",
+    "HEMIS surati bilan mos kelmadi",
+    "shaxsni avtomatik tasdiqlab bo'lmadi",
+)
+
+
+def is_claimed(record: StudentStaff) -> bool:
+    """Yozuv ochiq havola orqali egallangan va hali administrator ko'rmagan."""
+    return CLAIM_REASON in (record.biometrics_review_reason or "")
+
+
+def needs_individual_review(reason: str | None) -> bool:
+    """Yozuv ommaviy tasdiqlanmasin — sababi shaxs bilan bog'liq."""
+    return bool(reason) and any(marker in reason for marker in IDENTITY_REASON_MARKERS)
+
 
 def _unit(vec: list[float]) -> np.ndarray | None:
     arr = np.asarray(vec, dtype=np.float32)
@@ -83,7 +108,13 @@ async def decide_status(db: AsyncSession, record: StudentStaff, embedding: list[
         return "kutilmoqda", f"yuzi {hit[0]} ga o'xshash ({hit[1]:.2f})"
     from app.services.integrations.hemis import hemis_active
 
-    if settings.self_enrollment_identity_check and hemis_active():
+    identity_check_runs = settings.self_enrollment_identity_check and hemis_active()
+    if is_claimed(record) and not identity_check_runs:
+        # Egallangan yozuv: HEMIS surati bilan solishtirib bo'lmasa — faqat
+        # administrator (aks holda ismni bilgan har kim o'z yuzini boshqa
+        # odamning yozuviga bog'lab, darhol tasdiqlatardi).
+        return "kutilmoqda", CLAIM_REASON
+    if identity_check_runs:
         # HEMIS uzilgan bo'lsa surat olinmaydi — tekshiruv hammani
         # "kutilmoqda"ga tushirardi.
         # JSHSHIR sir emas: topshirgan odam AYNAN shu odam ekani HEMIS

@@ -17,7 +17,9 @@ from app.database import get_db
 from app.routers import integration_v1 as api
 from app.services import integration_students as svc
 
-pytestmark = pytest.mark.anyio
+# pytest.mark.anyio ishlatilmaydi: u testni boshqa event loop'da yurgizadi va
+# sessiya darajasidagi baza ulanishi bilan to'qnashadi ("attached to a different
+# loop"). pytest.ini da asyncio_mode=auto — async testlar o'zi ishlaydi.
 
 KEY = "test-integration-key-0123456789"
 PINFL = "12345678901234"

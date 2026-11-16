@@ -39,6 +39,7 @@ from app.services.face_matching import announce_roster_change
 from app.services.name_matching import name_key, name_tokens, names_match
 from app.services.notifications.sms import normalize_phone
 from app.services.face_recognition import NoFaceDetectedError, extract_embedding
+from app.services.self_enrollment import is_claimed, needs_individual_review
 from app.services.staff_export import (
     STATUS_LABELS,
     XLSX_MIME,
@@ -1276,6 +1277,9 @@ async def _awaiting_record(db: AsyncSession, record_id: str) -> StudentStaff:
 class BulkApproveOut(CamelModel):
     approved: int
     skipped_angles: int
+    # Shaxsga oid sabab bilan ushlangan (o'xshash yuz, HEMIS suratiga mos
+    # emas, havola orqali egallangan) — faqat bittalab (audit S-H2).
+    skipped_identity: int = 0
 
 
 @router.post("/biometrics/approve-all", response_model=BulkApproveOut)
@@ -1286,14 +1290,18 @@ async def approve_all_awaiting(
     type: Annotated[Literal["talaba", "xodim"] | None, Query()] = None,
 ) -> BulkApproveOut:
     """Tasdiq kutayotgan barcha yuzlarni bir bosishda tasdiqlash (administrator
-    qarori). Uch tomoni (old, chap, o'ng) to'liq bo'lmaganlar tasdiqlanmaydi."""
+    qarori). Uch tomoni (old, chap, o'ng) to'liq bo'lmaganlar va shaxsga oid
+    sabab bilan ushlanganlar (needs_individual_review) tasdiqlanmaydi."""
     stmt = select(StudentStaff).where(AWAITING_APPROVAL, StudentStaff.active.is_(True))
     if type:
         stmt = stmt.where(StudentStaff.type == type)
     rows = (await db.execute(stmt)).scalars().all()
     now = datetime.now(timezone.utc)
-    approved = skipped = 0
+    approved = skipped = skipped_identity = 0
     for record in rows:
+        if needs_individual_review(record.biometrics_review_reason):
+            skipped_identity += 1
+            continue
         if not record.has_all_angles:
             skipped += 1
             continue
@@ -1303,12 +1311,13 @@ async def approve_all_awaiting(
         approved += 1
     await log_action(
         db, request, current_user.id,
-        f"Tasdiq kutayotganlar ommaviy tasdiqlandi: {approved} ta (3 tomoni yo'q: {skipped})", "Talabalar",
+        f"Tasdiq kutayotganlar ommaviy tasdiqlandi: {approved} ta (3 tomoni yo'q: {skipped}, "
+        f"shaxsni bittalab tekshirish kerak: {skipped_identity})", "Talabalar",
     )
     await db.commit()
     if approved:
         await announce_roster_change()
-    return BulkApproveOut(approved=approved, skipped_angles=skipped)
+    return BulkApproveOut(approved=approved, skipped_angles=skipped, skipped_identity=skipped_identity)
 
 
 @router.post("/{record_id}/biometrics/approve", response_model=StudentStaffOut)
@@ -1350,10 +1359,21 @@ async def reject_self_enrollment(
     "yo'q" holatiga qaytadi (odam qayta yuborishi mumkin). Yozuvning
     o'zini butunlay o'chirish — DELETE."""
     record = await _awaiting_record(db, record_id)
+    undo_claim = is_claimed(record)
     photo_keys = clear_biometrics(record)
     record.biometrics_review_reason = None
+    if undo_claim:
+        # Ochiq havola orqali egallangan yozuv: egallash ham bekor — anonim
+        # yozgan JSHSHIR/pasport olib tashlanadi, haqiqiy egasi yozuvni
+        # o'z JSHSHIRi bilan qayta topa oladi (audit S-H1).
+        record.pinfl = None
+        record.passport_series = None
+        record.passport_number = None
     await log_action(
-        db, request, current_user.id, f"O'zi ro'yxatdan o'tgan odamning yuzini rad etdi: {record.full_name}", "Talabalar"
+        db, request, current_user.id,
+        f"O'zi ro'yxatdan o'tgan odamning yuzini rad etdi: {record.full_name}"
+        + (" (havola orqali egallash bekor qilindi)" if undo_claim else ""),
+        "Talabalar",
     )
     await db.commit()
     if photo_keys:

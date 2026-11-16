@@ -81,7 +81,7 @@ from app.services.hemis_reconcile import NOT_IN_HEMIS, hemis_groups, match_hemis
 from app.services.integrations.hemis import hemis_configured
 from app.services.inference_gate import PRIORITY_LIVE
 from app.services.privacy import record_consent
-from app.services.self_enrollment import decide_status
+from app.services.self_enrollment import CLAIM_REASON, decide_status, is_claimed
 from app.services.face_recognition import (
     InconsistentFacesError,
     NoFaceDetectedError,
@@ -465,6 +465,8 @@ async def register_self(
     claimed = await _claim_unclaimed(db, body.full_name.strip(), body.type, group_or_position + " " + (reported_group or ""))
     if claimed is not None:
         claimed.pinfl = pinfl or claimed.pinfl
+        # Yuz topshirilganda decide_status buni ko'radi (audit S-H1).
+        claimed.biometrics_review_reason = CLAIM_REASON
         if series and number and not claimed.passport_number:
             claimed.passport_series, claimed.passport_number = series, number
         db.add(AuditLog(
@@ -809,7 +811,12 @@ async def submit_enrollment(
     # bog'lab, davomat va turniketda o'sha odam bo'lib ko'rinardi. Halol
     # topshirgan odamning yuzi hech kimga o'xshamaydi, shuning uchun
     # tekshiruvga faqat o'zgalashtirish holati tushadi.
+    claimed = is_claimed(record)
     new_status, reason = await decide_status(db, record, embedding)
+    if claimed and new_status != "tasdiqlangan" and reason and CLAIM_REASON not in reason:
+        # Boshqa sabab bilan ushlansa ham "egallangan" belgisi yo'qolmasin —
+        # rad etilganda egallash bekor qilinadi (students_staff.reject).
+        reason = f"{CLAIM_REASON}; {reason}"
     record.biometrics_status = new_status
     record.biometrics_review_reason = reason[:300] if reason else None
     record.biometrics_confirmed_at = datetime.now(timezone.utc) if new_status == "tasdiqlangan" else None

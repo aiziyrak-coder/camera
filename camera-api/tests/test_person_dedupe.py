@@ -11,7 +11,9 @@ from app.models import AttendanceRecord, AuditLog, StudentStaff
 from app.services.person_dedupe import group_duplicates, name_tokens
 from tests.conftest import auth_headers
 
-pytestmark = pytest.mark.anyio
+# pytest.mark.anyio ishlatilmaydi: u testni boshqa event loop'da yurgizadi va
+# sessiya darajasidagi baza ulanishi bilan to'qnashadi ("attached to a different
+# loop"). pytest.ini da asyncio_mode=auto — async testlar o'zi ishlaydi.
 
 
 def _row(name, *, type_="xodim", pinfl=None, self_registered=False, bio="yoq", att=0, id_=None):

@@ -10,7 +10,9 @@ from app.models import IntegrationSyncRun
 from app.services.integrations import hemis
 from tests.conftest import TestSessionLocal
 
-pytestmark = pytest.mark.anyio
+# pytest.mark.anyio ishlatilmaydi: u testni boshqa event loop'da yurgizadi va
+# sessiya darajasidagi baza ulanishi bilan to'qnashadi ("attached to a different
+# loop"). pytest.ini da asyncio_mode=auto — async testlar o'zi ishlaydi.
 
 Usage = namedtuple("Usage", "total used free")
 

@@ -28,7 +28,7 @@ def fake_face_pipeline(monkeypatch, request):
 
     # Qo'lda tasdiqlash rejimi (self_enrollment_auto_approve=False) testlari;
     # avtomatik rejim — TestAutoApprove.
-    auto = request.cls in (TestAutoApprove, TestImpersonationOfAnImportedPerson)
+    auto = request.cls in (TestAutoApprove, TestImpersonationOfAnImportedPerson, TestClaimingAListedRecord)
     monkeypatch.setattr(settings, "self_enrollment_auto_approve", auto)
     async def no_liveness_check(frames):
         return None
@@ -336,7 +336,126 @@ async def test_approve_all_confirms_only_three_angle_faces(client, db_session, s
     headers = await auth_headers(client, "admin", "admin123")
     res = await client.post("/api/students-staff/biometrics/approve-all?type=talaba", headers=headers)
     assert res.status_code == 200, res.text
-    assert res.json() == {"approved": 1, "skippedAngles": 1}
+    assert res.json() == {"approved": 1, "skippedAngles": 1, "skippedIdentity": 0}
     await db_session.refresh(full)
     await db_session.refresh(partial)
     assert full.biometrics_status == "tasdiqlangan" and partial.biometrics_status == "kutilmoqda"
+
+
+@pytest.mark.usefixtures("seeded")
+class TestClaimingAListedRecord:
+    """Audit S-H1 (2026-11-17): ochiq havolada ism va guruh sir emas — anonim
+    so'rov ro'yxatdagi (JSHSHIRsiz, yuzsiz) yozuvni egallab, o'z yuzini
+    unga bog'lasa, yuz HEMIS surati bilan tasdiqlanmaguncha tanilmaydi."""
+
+    async def _listed_person(self, db_session) -> StudentStaff:
+        person = StudentStaff(full_name="Ro'yxatdagi Toshmatov Alisher", type="xodim",
+                              group_or_position="Assistent", biometrics_status="yoq")
+        db_session.add(person)
+        await db_session.commit()
+        return person
+
+    async def _claim_and_submit(self, client: AsyncClient, pinfl: str) -> dict:
+        resp = await client.post(
+            "/api/public/enrollment/register",
+            json={"code": ENROLL_CODE, "fullName": "Ro'yxatdagi Toshmatov Alisher", "type": "xodim",
+                  "groupOrPosition": "Assistent", "pinfl": pinfl},
+        )
+        assert resp.status_code == 201, resp.text
+        record_id = resp.json()["recordId"]
+        sub = await client.post(f"/api/public/enrollment/{record_id}/submit",
+                                data={"code": ENROLL_CODE, "pinfl": pinfl, "consent": "true"}, files=FRAMES)
+        assert sub.status_code == 200, sub.text
+        return {"id": record_id, **sub.json()}
+
+    async def test_claimed_record_waits_when_hemis_photo_cannot_be_checked(self, client: AsyncClient, db_session):
+        from app.services.self_enrollment import CLAIM_REASON
+
+        person = await self._listed_person(db_session)
+        result = await self._claim_and_submit(client, "41234567890123")
+        assert result["id"] == str(person.id)  # yangi yozuv emas — mavjudi egallandi
+        assert result["biometricsStatus"] == "kutilmoqda"
+        await db_session.refresh(person)
+        assert person.biometrics_review_reason == CLAIM_REASON
+        assert str(person.id) not in await _known_ids(db_session)
+
+    async def test_claimed_record_is_confirmed_when_hemis_photo_matches(self, client: AsyncClient, db_session, monkeypatch):
+        from app.config import settings
+        from app.services import identity_check
+        from app.services.integrations import hemis
+
+        monkeypatch.setattr(settings, "self_enrollment_identity_check", True)
+        monkeypatch.setattr(hemis, "hemis_active", lambda: True)
+
+        async def matches(person, embedding):
+            return 0.91, None
+
+        monkeypatch.setattr(identity_check, "hemis_similarity", matches)
+        person = await self._listed_person(db_session)
+        result = await self._claim_and_submit(client, "41234567890124")
+        assert result["biometricsStatus"] == "tasdiqlangan"
+        assert str(person.id) in await _known_ids(db_session)
+
+    async def test_claimed_record_with_a_different_face_is_held(self, client: AsyncClient, db_session, monkeypatch):
+        from app.config import settings
+        from app.services import identity_check
+        from app.services.integrations import hemis
+
+        monkeypatch.setattr(settings, "self_enrollment_identity_check", True)
+        monkeypatch.setattr(hemis, "hemis_active", lambda: True)
+
+        async def differs(person, embedding):
+            return 0.12, None
+
+        monkeypatch.setattr(identity_check, "hemis_similarity", differs)
+        person = await self._listed_person(db_session)
+        result = await self._claim_and_submit(client, "41234567890125")
+        assert result["biometricsStatus"] == "kutilmoqda"
+        assert str(person.id) not in await _known_ids(db_session)
+        await db_session.refresh(person)
+        assert "HEMIS surati bilan mos kelmadi" in person.biometrics_review_reason
+        assert "havola orqali" in person.biometrics_review_reason  # belgi yo'qolmaydi
+
+    async def test_rejecting_a_claim_frees_the_record_for_its_real_owner(self, client: AsyncClient, db_session):
+        person = await self._listed_person(db_session)
+        await self._claim_and_submit(client, "41234567890126")
+        headers = await auth_headers(client, "admin", "admin123")
+        rejected = await client.post(f"/api/students-staff/{person.id}/biometrics/reject", headers=headers)
+        assert rejected.status_code == 200, rejected.text
+        await db_session.refresh(person)
+        assert person.pinfl is None and person.biometrics_status == "yoq"
+        # Begona yozgan JSHSHIR endi hech narsani ochmaydi; haqiqiy egasi qayta egallay oladi.
+        again = await client.post(
+            "/api/public/enrollment/register",
+            json={"code": ENROLL_CODE, "fullName": "Ro'yxatdagi Toshmatov Alisher", "type": "xodim",
+                  "groupOrPosition": "Assistent", "pinfl": "41234567890127"},
+        )
+        assert again.status_code == 201, again.text
+        assert again.json()["recordId"] == str(person.id)
+
+
+async def test_approve_all_leaves_identity_doubts_for_one_by_one_review(client, db_session, seeded):
+    """Audit S-H2: "Hammasini tasdiqlash" shaxsi shubhali yuzlarni tasdiqlamaydi."""
+    from app.services.self_enrollment import CLAIM_REASON
+
+    def waiting(name: str, reason: str) -> StudentStaff:
+        return StudentStaff(full_name=name, type="talaba", group_or_position="DI-1", biometrics_status="kutilmoqda",
+                            biometric_embedding="[1]", biometric_photo_key="a", biometric_photo_left_key="b",
+                            biometric_photo_right_key="c", biometrics_review_reason=reason)
+
+    newcomer = waiting("Yangi Keldi", "institut ro'yxatida yo'q — administrator tasdig'i kerak")
+    lookalike = waiting("O'xshash Yuz", "yuzi Boshqa Odam ga o'xshash (0.71)")
+    mismatch = waiting("Mos Kelmadi", "HEMIS surati bilan mos kelmadi (0.18)")
+    claimed = waiting("Egallangan", CLAIM_REASON)
+    db_session.add_all([newcomer, lookalike, mismatch, claimed])
+    await db_session.commit()
+
+    headers = await auth_headers(client, "admin", "admin123")
+    res = await client.post("/api/students-staff/biometrics/approve-all?type=talaba", headers=headers)
+    assert res.status_code == 200, res.text
+    assert res.json() == {"approved": 1, "skippedAngles": 0, "skippedIdentity": 3}
+    for record in (newcomer, lookalike, mismatch, claimed):
+        await db_session.refresh(record)
+    assert newcomer.biometrics_status == "tasdiqlangan"
+    assert {lookalike.biometrics_status, mismatch.biometrics_status, claimed.biometrics_status} == {"kutilmoqda"}
+    assert lookalike.biometrics_review_reason  # sabab saqlanadi — administrator ko'radi

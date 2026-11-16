@@ -16,7 +16,9 @@ from app.models import Permission, User
 from app.services import totp
 from tests.conftest import auth_headers, login
 
-pytestmark = pytest.mark.anyio
+# pytest.mark.anyio ishlatilmaydi: u testni boshqa event loop'da yurgizadi va
+# sessiya darajasidagi baza ulanishi bilan to'qnashadi ("attached to a different
+# loop"). pytest.ini da asyncio_mode=auto — async testlar o'zi ishlaydi.
 
 # Qadam chegarasiga yaqin tushib, test tasodifan yiqilmasin — soat qo'lda.
 T0 = 1_900_000_000.0

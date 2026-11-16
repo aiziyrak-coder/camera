@@ -15,7 +15,9 @@ from app.models import Building, Camera, FaceGalleryEmbedding, LessonSession, St
 from app.services.integrations import hemis_schedule as hs
 from app.timezone import INSTITUTE_TZ
 
-pytestmark = pytest.mark.anyio
+# pytest.mark.anyio ishlatilmaydi: u testni boshqa event loop'da yurgizadi va
+# sessiya darajasidagi baza ulanishi bilan to'qnashadi ("attached to a different
+# loop"). pytest.ini da asyncio_mode=auto — async testlar o'zi ishlaydi.
 
 
 def test_building_and_room_are_read_from_hemis_names():

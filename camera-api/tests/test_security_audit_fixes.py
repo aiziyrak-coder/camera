@@ -228,6 +228,27 @@ async def test_reset_link_is_not_written_to_logs(
 
 
 @pytest.mark.asyncio
+async def test_reset_link_is_not_logged_even_for_users_with_email_when_smtp_is_missing(
+    client: AsyncClient, db_session: AsyncSession, seeded: None, caplog: pytest.LogCaptureFixture, monkeypatch
+) -> None:
+    """Audit S-M1 (2026-11-17): SMTP sozlanmagan production'da emaili bor
+    foydalanuvchining havolasi jurnalga yozilardi."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "smtp_host", "")
+    admin = (await db_session.execute(select(User).where(User.login == "admin"))).scalar_one()
+    admin.email = "admin@example.test"
+    await db_session.commit()
+
+    with caplog.at_level("DEBUG"):
+        resp = await client.post("/api/auth/forgot-password", json={"login": "admin"})
+    assert resp.status_code == 204
+    text = caplog.text + "".join(str(vars(r)) for r in caplog.records)
+    assert "parolni-tiklash?token=" not in text
+    assert "reset_link" not in text
+
+
+@pytest.mark.asyncio
 async def test_older_reset_tokens_die_with_the_used_one(
     client: AsyncClient, db_session: AsyncSession, seeded: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
