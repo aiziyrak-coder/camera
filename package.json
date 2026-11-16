@@ -11,15 +11,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "hls.js": "^1.6.16",
-    "jspdf": "^4.2.1",
     "lucide-react": "^0.469.0",
-    "motion": "^12.43.0",
-    "pdfjs-dist": "^6.2.108",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-router-dom": "^7.18.2",
-    "recharts": "^3.10.1"
+    "react-router-dom": "^7.18.2"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^7.0.0",

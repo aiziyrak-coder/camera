@@ -24,6 +24,14 @@ backups/
 *.pem
 hodisa-rasmlar/
 
+# Model og'irliklari va ma'lumot fayllari — ilova ularni ishlatmaydi
+# (YOLO/mediapipe o'chirilgan modullarga tegishli edi); obrazni og'irlashtiradi.
+*.pt
+*.task
+*.tgz
+*.xlsx
+nvr-eksport/
+
 # Ish jarayoni qoldiqlari
 *.log
 *.bak

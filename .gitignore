@@ -36,3 +36,7 @@ deploy/run_migrate_fermi.py
 
 # Yozib olingan videolar (kunlik video tahlil)
 nvr-eksport/
+
+# Deploy arxivlari (frontend build'ning .tgz nusxalari) — build artifact,
+# repoga kirmaydi. 2026-10-05 da 9 tasi tasodifan commit qilingan edi.
+*.tgz

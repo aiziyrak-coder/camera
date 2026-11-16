@@ -9,7 +9,4 @@ export default defineConfig({
     // (deploy/server-pull.sh APP_VERSION beradi), aks holda build vaqti.
     __APP_BUILD_ID__: JSON.stringify(process.env.APP_VERSION || new Date().toISOString()),
   },
-  optimizeDeps: {
-    exclude: ['pdfjs-dist'],
-  },
 })
