@@ -76,12 +76,11 @@ yozuvidan davomat va dars davomati (`DECISIONS_AND_BLOCKERS.md`, D1–D2).
 
 Batafsil: `FEATURE_INVENTORY.md`, `SECURITY_AUDIT.md`, `REQUIREMENTS_GAPS.md`.
 
-1. **Xavfsizlik (High):** ochiq ro'yxatdan o'tishda birovning HEMIS yozuviga
-   o'z yuzini bog'lash mumkin; "Hammasini tasdiqlash" shubhali yuzlarni ham
-   tasdiqlaydi (S-H1, S-H2).
-2. **Xavfsizlik (Medium):** SMTP sozlanmagan → parol tiklash havolasi server
-   jurnaliga yoziladi (S-M1); login cheklovi faqat IP bo'yicha (S-M2);
-   ochiq rasm endpointlarida "piksel bombasi" himoyasi yo'q (S-M3).
+1. **Xavfsizlik:** 2 ta High va 1 ta Medium topilma 2026-11-17 da kodda
+   tuzatildi (S-H1, S-H2, S-M1); qolgan Medium/Low topilmalar ochiq. Tafsilot
+   ochiq repoga qo'yilmaydi — `docs/SECURITY_AUDIT.md` faqat lokal nusxada.
+2. **Ishlatish (OPS-1):** fon vazifalari ishlaydigan `ai-worker` konteyneri
+   yangilash skripti tomonidan qayta qurilmaydi (2026-11-12 obrazida qolgan).
 3. **Ishlamaydigan va'dalar:** Telegram bot sozlanmagan (token yo'q) —
    Telegram sahifasi, ota-onaga xabar, tizim ogohlantirishlari yetkazilmaydi.
    Ota-onaga "keldi/kelmadi" xabarini yaratuvchi jarayon umuman yo'q.

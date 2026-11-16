@@ -12,18 +12,18 @@ rejimida tekshirilgan.
 
 | ID | Funksiya | Rol | Holat | Muammo / izoh | Dalil |
 |---|---|---|---|---|---|
-| F01 | Login (parol) | hamma xodim | UNTESTED | per-IP limit 5/min; per-akkaunt bloklash yo'q (S-M2) | `auth.py:66`; testlar — TEST_REPORT |
+| F01 | Login (parol) | hamma xodim | UNTESTED | ochiq topilma S-M2 | `auth.py:66`; testlar — TEST_REPORT |
 | F02 | 2FA (TOTP) | hamma | UNTESTED | 8 foydalanuvchidan 1 tasida yoqilgan; majburiy emas | prod: `admin_2fa_required=False` |
-| F03 | Parolni tiklash (email) | hamma | BLOCKED | SMTP sozlanmagan → xat ketmaydi, havola jurnalga yoziladi (S-M1) | prod: `smtp_host` bo'sh |
+| F03 | Parolni tiklash (email) | hamma | BLOCKED | SMTP sozlanmagan → xat ketmaydi (S-M1 jurnal muammosi tuzatildi) | prod: `smtp_host` bo'sh |
 | F04 | Chiqish, sessiya | hamma | UNTESTED | token localStorage'da (S-L16) | `auth.tsx` |
 | F05 | Boshqaruv paneli | registerPeople | VERIFIED (UI, mock) | "kameralar taniydi" yozuvi — kamera tahlili hozir yo'q | lokal preview |
 | F06 | Yuzlar bazasi: ro'yxat, qidiruv, filtr | registerPeople | PARTIAL | "Yuzi yo'q" filtri `yoq` yuboradi, karta `missing+pending` sanaydi — `kutilmoqda` paydo bo'lsa farq qiladi (FE-1) | `Faces.tsx:44,212`; `students_staff.py:185` |
-| F07 | Excel eksport (filtr bo'yicha) | exportData | VERIFIED (backend) | formula injection himoyasi yo'q (S-M5); eksport audit jurnaliga yozilmaydi (S-M7) | prod: 40 qator = ekrandagi son |
+| F07 | Excel eksport (filtr bo'yicha) | exportData | VERIFIED (backend) | ochiq topilmalar S-M5, S-M7 | prod: 40 qator = ekrandagi son |
 | F08 | Odam kartasi: tahrirlash | registerPeople | UNTESTED | — | `PersonPanel.tsx` |
 | F09 | Odamni o'chirish | registerPeople | BROKEN (UX) | HEMIS odamida har doim 409 va UI'da yo'q "Birlashtirish" tugmasini aytadi | `PersonPanel.tsx:90`; backend 409 |
 | F10 | Tasdiqlash navbati (bittalab) | registerPeople | UNTESTED | faqat birinchi 50 ta ko'rinadi, sahifalash yo'q | `Review.tsx:23` |
-| F11 | "Hammasini tasdiqlash" | registerPeople | BROKEN (xavfsizlik) | shubhali (HEMIS rasmiga o'xshamagan) yuzlarni ham tasdiqlaydi (S-H2) | `students_staff.py:1281` |
-| F12 | Ochiq ro'yxatdan o'tish (telefon) | ochiq | PARTIAL | birovning yozuviga bog'lanish xavfi (S-H1), piksel bombasi (S-M3), PINFL enumeratsiya (S-M4) | `enrollment.py` |
+| F11 | "Hammasini tasdiqlash" | registerPeople | UNTESTED (prod) | S-H2 kodda tuzatildi, test bilan | `students_staff.py:1281` |
+| F12 | Ochiq ro'yxatdan o'tish (telefon) | ochiq | PARTIAL | S-H1 kodda tuzatildi; ochiq topilmalar S-M3, S-M4 | `enrollment.py` |
 | F13 | QR / havola, umumiy plakat | registerPeople | VERIFIED | QR dekod qilib tekshirilgan | `qr-plakat.pdf` |
 | F14 | HEMIS: holat, tekshirish, sinxron | manageIntegrations | VERIFIED (prod) | oxirgi muvaffaqiyatli 2026-11-14 18:26, har 24 soatda | prod `integration_sync_runs` |
 | F15 | HEMIS rasmidan yuz olish | — | OBSOLETE (qaror bilan o'chiq) | buyurtmachi qarori: faqat 3 tomonlama ro'yxat | `config.py` hemis_photo_* |

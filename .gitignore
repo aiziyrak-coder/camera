@@ -40,3 +40,6 @@ nvr-eksport/
 # Deploy arxivlari (frontend build'ning .tgz nusxalari) — build artifact,
 # repoga kirmaydi. 2026-10-05 da 9 tasi tasodifan commit qilingan edi.
 *.tgz
+
+# Xavfsizlik auditi tafsilotlari — repozitoriy ochiq, faqat lokal nusxada.
+docs/SECURITY_AUDIT.md
