@@ -57,7 +57,7 @@ function printCard() {
   const win = window.open('', '_blank', 'width=600,height=800');
   if (!win) return;
   win.document.write(
-    `<!doctype html><html><head><meta charset="utf-8"><title>QR</title><style>body{font-family:Inter,system-ui,sans-serif;display:flex;justify-content:center;padding:40px;color:#151B26}div{text-align:center}svg{width:320px;height:320px}p{margin:8px 0}</style></head><body><div>${node.innerHTML}</div></body></html>`,
+    `<!doctype html><html><head><meta charset="utf-8"><title>QR</title><style>body{font-family:Inter,system-ui,sans-serif;display:flex;justify-content:center;padding:40px;color:#26281F}div{text-align:center}svg{width:320px;height:320px}p{margin:8px 0}</style></head><body><div>${node.innerHTML}</div></body></html>`,
   );
   win.document.close();
   win.focus();

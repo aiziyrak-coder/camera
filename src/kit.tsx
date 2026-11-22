@@ -25,7 +25,7 @@ type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'danger-ghos
 
 const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
   primary: 'bg-brand-grad text-white shadow-btn hover:brightness-110 active:brightness-95 disabled:opacity-50 disabled:shadow-none',
-  secondary: 'border border-line bg-white text-ink shadow-card hover:border-[#cfd5e1] hover:bg-side disabled:text-faint',
+  secondary: 'border border-line bg-white text-ink shadow-card hover:border-[#d6ccb8] hover:bg-side disabled:text-faint',
   ghost: 'text-soft hover:bg-sunk hover:text-ink disabled:text-faint',
   danger: 'bg-bad text-white hover:bg-bad/90 disabled:bg-bad/50',
   'danger-ghost': 'text-bad hover:bg-bad-tint disabled:text-faint',
@@ -191,7 +191,7 @@ export function Segmented<T extends string>({
           onClick={() => onChange(o.value)}
           className={cn(
             'flex-1 whitespace-nowrap rounded-md px-3 py-1.5 text-[12.5px] font-medium transition-colors',
-            value === o.value ? 'bg-white text-ink shadow-[0_1px_2px_rgba(0,0,0,0.08),0_0_0_1px_rgba(0,0,0,0.04)]' : 'text-soft hover:text-ink',
+            value === o.value ? 'bg-white text-ink shadow-[0_1px_2px_rgba(60,50,30,0.08),0_0_0_1px_rgba(60,50,30,0.04)]' : 'text-soft hover:text-ink',
           )}
         >
           {o.label}
@@ -243,7 +243,7 @@ const DOT: Record<Tone, string> = {
   ok: 'bg-ok',
   warn: 'bg-warn',
   bad: 'bg-bad',
-  plain: 'bg-[#C3CAD8]',
+  plain: 'bg-[#CFC4AE]',
   brand: 'bg-brand',
 };
 
