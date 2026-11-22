@@ -321,7 +321,7 @@ function Sidebar({
                       cn(
                         'group relative flex h-8 items-center gap-2.5 rounded-lg text-[13px] font-medium transition-colors',
                         collapsed ? 'justify-center' : 'px-2.5',
-                        isActive ? 'bg-white text-ink shadow-[0_0_0_1px_rgba(61,90,241,0.14),0_1px_2px_rgba(30,42,120,0.08)] [&>svg]:text-brand' : 'text-soft hover:bg-brand/[0.06] hover:text-ink',
+                        isActive ? 'bg-white text-ink shadow-[0_0_0_1px_rgba(85,122,70,0.14),0_1px_2px_rgba(67,99,58,0.08)] [&>svg]:text-brand' : 'text-soft hover:bg-brand/[0.06] hover:text-ink',
                       )
                     }
                   >

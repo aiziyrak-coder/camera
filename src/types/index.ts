@@ -169,6 +169,8 @@ export interface StudentStaffRecord {
   reviewReason?: string | null;
   /** HEMIS surati — yuborilgan yuz bilan solishtirish uchun. */
   hemisPhotoUrl?: string | null;
+  /** HEMIS'dan kelgan yozuv — o'chirib bo'lmaydi. */
+  hemisLinked?: boolean;
 }
 
 /** Tahrirlash oynasi — ro'yxatda yuborilmaydigan shaxsiy identifikatorlar bilan. */

@@ -1,5 +1,5 @@
 /* Tizimga kiradigan foydalanuvchilar. */
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { KeyRound, Pencil, Plus, ShieldOff, Trash2, UserCog } from 'lucide-react';
 import { api, fetchAllPages } from '../lib/apiClient';
 import { useAuth } from '../lib/auth';
@@ -10,6 +10,20 @@ import { Alert, Badge, Button, Confirm, Empty, Field, IconButton, Modal, PageHea
 
 export default function UsersPage() {
   const { token, userName } = useAuth();
+  // "siz" belgisi uchun joriy LOGIN kerak (useAuth faqat to'liq ismni saqlaydi).
+  const [myLogin, setMyLogin] = useState<string | null>(null);
+  useEffect(() => {
+    if (!token) return;
+    let alive = true;
+    api
+      .get<{ login?: string | null }>('/api/auth/me', token)
+      .then((me) => alive && setMyLogin(me.login ?? null))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [token]);
+  const isMe = (u: AdminUser) => (myLogin ? u.login === myLogin : u.login === userName || u.name === userName);
   const toast = useToast();
   const users = useApiResourceList(() => fetchAllPages<AdminUser>('/api/users', token, {}, 200), [token]);
   const [editing, setEditing] = useState<AdminUser | 'new' | null>(null);
@@ -61,7 +75,7 @@ export default function UsersPage() {
                       <div className="min-w-0">
                         <p className="truncate font-medium text-ink">
                           {u.name}
-                          {u.login === userName && <span className="ml-2 text-[12px] font-normal text-faint">siz</span>}
+                          {isMe(u) && <span className="ml-2 text-[12px] font-normal text-faint">siz</span>}
                         </p>
                         {(u.email || u.phone) && <p className="truncate text-[12px] text-faint">{u.email || u.phone}</p>}
                       </div>
@@ -78,7 +92,7 @@ export default function UsersPage() {
                       <IconButton icon={Pencil} label="Tahrirlash" onClick={() => setEditing(u)} />
                       <IconButton icon={KeyRound} label="Parolni almashtirish" onClick={() => setResetting(u)} />
                       {u.twoFactorEnabled && <IconButton icon={ShieldOff} label="2FA ni bekor qilish" onClick={() => setResetting2fa(u)} />}
-                      {u.login !== userName && (
+                      {!isMe(u) && (
                         <IconButton icon={Trash2} label="O‘chirish" className="hover:bg-bad-tint hover:text-bad" onClick={() => setDeleting(u)} />
                       )}
                     </div>

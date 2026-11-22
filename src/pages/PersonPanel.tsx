@@ -87,9 +87,15 @@ export default function PersonPanel({ person, onClose, onChanged }: Props) {
       <Button size="sm" icon={QrIcon} onClick={() => setLinkOpen(true)}>
         Havola
       </Button>
-      <Button size="sm" variant="danger-ghost" icon={Trash2} className="ml-auto" onClick={() => setDeleteOpen(true)}>
-        O‘chirish
-      </Button>
+      {p.hemisLinked ? (
+        <span className="ml-auto self-center text-[12px] text-faint" title="HEMIS ID, guruh va davomat yo‘qolmasligi uchun HEMIS yozuvi o‘chirilmaydi">
+          HEMIS yozuvi
+        </span>
+      ) : (
+        <Button size="sm" variant="danger-ghost" icon={Trash2} className="ml-auto" onClick={() => setDeleteOpen(true)}>
+          O‘chirish
+        </Button>
+      )}
     </>
   );
   const body = <PersonBody p={p} detail={detail} busy={busy} onDecide={decide} group={group} />;

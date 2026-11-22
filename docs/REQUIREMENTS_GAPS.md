@@ -22,12 +22,12 @@ Sana: 2026-11-17 (1-sikl). Ustuvorlik: **P0** — reliz to'sig'i,
 | T07 | S-M3 | test bilan | TODO |
 | T08 | S-M2 | test bilan | TODO |
 | T09 | S-M5, S-M7 | test bilan | TODO |
-| T10 | "Yuzi yo'q" filtri `tasdiqlanmagan` dan foydalansin (FE-1) | karta soni = ro'yxat = Excel | TODO |
-| T11 | Foydalanuvchilar: "siz" belgisi va o'zini o'chirish (FE-2) | backend `/me` login'ni ham qaytaradi yoki id solishtiriladi | TODO |
-| T12 | HEMIS odamini o'chirish: tugma yashirilsin yoki tushunarli sabab (F09) | 409 ko'rinmaydi | TODO |
-| T13 | Tasdiqlash navbatida sahifalash (F10) | 50 dan ortiq yozuv ko'rinadi | TODO |
+| T10 | "Yuzi yo'q" filtri `tasdiqlanmagan` dan foydalansin (FE-1) | karta soni = ro'yxat = Excel | DONE (2026-11-22) |
+| T11 | Foydalanuvchilar: "siz" belgisi va o'zini o'chirish (FE-2) | backend `/me` login'ni ham qaytaradi yoki id solishtiriladi | DONE (2026-11-22, `/me` login qaytaradi) |
+| T12 | HEMIS odamini o'chirish: tugma yashirilsin yoki tushunarli sabab (F09) | 409 ko'rinmaydi | DONE (2026-11-22, tugma yashirildi) |
+| T13 | Tasdiqlash navbatida sahifalash (F10) | 50 dan ortiq yozuv ko'rinadi | DONE (2026-11-22) |
 | T14 | `jspdf` ni olib tashlash (S-L17) | `npm audit` 0 critical | DONE (531888a) |
-| T15 | Telegram/ota-ona va'dalari: UI ishlamaydigan narsani ko'rsatmasin | F17/F18 holati ochiq yozilgan | DECISION (D6) |
+| T15 | Telegram/ota-ona va'dalari: UI ishlamaydigan narsani ko'rsatmasin | F17/F18 holati ochiq yozilgan | DONE (UI ogohlantirishi); bot — D6 |
 | T16 | CSP'ni majburiy qilish (S-M8) | sarlavha `Content-Security-Policy`; sayt buzilmaydi | TODO (nginx — ruxsat kerak) |
 
 ## P2 — texnik qarz
@@ -38,5 +38,5 @@ Sana: 2026-11-17 (1-sikl). Ustuvorlik: **P0** — reliz to'sig'i,
 | T21 | O'lik frontend kodi: `/api/access/*` funksiyalari, `reportLock.ts`, `types/index.ts` dagi 71 eksport | TODO |
 | T22 | Eskirgan hujjatlar: `camera-api/docs/KUNLIK_VIDEO_TAHLIL.md`, `SITUATION_API.md` | TODO |
 | T23 | `revoked_tokens` / `password_reset_tokens` tozalash | TODO |
-| T24 | Bildirishnomadagi o'lik havolalar (`/hodisalar`, `/sozlamalar/kameralar`) | TODO |
-| T25 | Noto'g'ri UUID → 400 (S-L14) | TODO |
+| T24 | Bildirishnomadagi o'lik havolalar (`/hodisalar`, `/sozlamalar/kameralar`) | DONE (2026-11-22, `/panel` ga) |
+| T25 | Noto'g'ri UUID → 400 (S-L14) | DONE (allaqachon 404 qaytaradi, 500 emas) |

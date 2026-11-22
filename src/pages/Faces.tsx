@@ -33,7 +33,7 @@ import PersonPanel from './PersonPanel';
 import { EnrollLinkModal } from './EnrollLink';
 
 type PersonType = 'talaba' | 'xodim';
-type FaceFilter = '' | 'tasdiqlangan' | 'yoq' | 'tasdiq_kutmoqda';
+type FaceFilter = '' | 'tasdiqlangan' | 'tasdiqlanmagan' | 'tasdiq_kutmoqda';
 type View = 'jadval' | 'kartochka';
 
 const PAGE_SIZE = 50;
@@ -41,13 +41,13 @@ const PAGE_SIZE = 50;
 const FACE_FILTERS: { value: FaceFilter; label: string }[] = [
   { value: '', label: 'Hammasi' },
   { value: 'tasdiqlangan', label: 'Yuzi bor' },
-  { value: 'yoq', label: 'Yuzi yo‘q' },
+  { value: 'tasdiqlanmagan', label: 'Yuzi yo‘q' },
   { value: 'tasdiq_kutmoqda', label: 'Kutmoqda' },
 ];
 
 const FACE_SLUG: Record<Exclude<FaceFilter, ''>, string> = {
   tasdiqlangan: 'yuzi-bor',
-  yoq: 'yuzi-yoq',
+  tasdiqlanmagan: 'yuzi-yoq',
   tasdiq_kutmoqda: 'tasdiq-kutmoqda',
 };
 
@@ -209,7 +209,7 @@ export default function FacesPage() {
             sub={stats && stats.total ? `${Math.round((stats.confirmed / stats.total) * 100)}% qamrov` : undefined}
             onClick={() => setFace('tasdiqlangan')}
           />
-          <Stat label="Yuzi yo‘q" value={stats ? formatNumber(stats.missing + stats.pending) : '—'} onClick={() => setFace('yoq')} />
+          <Stat label="Yuzi yo‘q" value={stats ? formatNumber(stats.missing + stats.pending) : '—'} onClick={() => setFace('tasdiqlanmagan')} />
           <Stat
             label={
               <span className="flex items-center gap-1.5">
@@ -472,14 +472,14 @@ function PeopleGrid({ items, selectedId, onSelect }: { items: StudentStaffRecord
             onClick={() => onSelect(p)}
             className={cn(
               'group overflow-hidden rounded-xl border bg-white text-left transition-all',
-              p.id === selectedId ? 'border-ink ring-1 ring-ink' : 'border-line hover:border-[#cfd5e1]',
+              p.id === selectedId ? 'border-ink ring-1 ring-ink' : 'border-line hover:border-[#d6ccb8]',
             )}
           >
             <div className="relative aspect-[4/5] overflow-hidden bg-sunk">
               {p.biometricPhotoUrl || p.hemisPhotoUrl ? (
                 <Photo src={p.biometricPhotoUrl || p.hemisPhotoUrl} name={p.fullName} className="h-full w-full" />
               ) : (
-                <div className="flex h-full w-full items-center justify-center text-[#cfd5e1]">
+                <div className="flex h-full w-full items-center justify-center text-[#d6ccb8]">
                   <UserCheck size={40} strokeWidth={1.25} aria-hidden />
                 </div>
               )}
