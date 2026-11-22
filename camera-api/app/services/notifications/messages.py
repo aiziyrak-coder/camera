@@ -77,7 +77,7 @@ def severity_label(severity: str | None) -> str:
 
 
 def event_link(event_id: str) -> str:
-    return f"{settings.frontend_base_url.rstrip('/')}/hodisalar?id={event_id}"
+    return f"{settings.frontend_base_url.rstrip('/')}/panel"
 
 
 def event_message(
@@ -155,7 +155,7 @@ def camera_status_message(
     return Message(
         title=title,
         lines=lines,
-        link=f"{settings.frontend_base_url.rstrip('/')}/sozlamalar/kameralar",
+        link=f"{settings.frontend_base_url.rstrip('/')}/panel",
         link_label="Kameralar",
     )
 

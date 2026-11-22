@@ -145,6 +145,7 @@ def _to_out(record: StudentStaff, faculty_name: str, org_unit: str | None = None
         confirmed_label=_confirmed_label(record),
         self_registered=record.self_registered,
         awaiting_approval=record.awaiting_approval,
+        hemis_linked=bool(record.hemis_id),
         review_reason=record.biometrics_review_reason if record.awaiting_approval else None,
         # HEMIS surati — administrator yuborilgan yuz bilan ko'z bilan solishtiradi.
         hemis_photo_url=record.hemis_photo_url if record.awaiting_approval else None,

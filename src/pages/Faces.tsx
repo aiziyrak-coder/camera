@@ -33,7 +33,7 @@ import PersonPanel from './PersonPanel';
 import { EnrollLinkModal } from './EnrollLink';
 
 type PersonType = 'talaba' | 'xodim';
-type FaceFilter = '' | 'tasdiqlangan' | 'yoq' | 'tasdiq_kutmoqda';
+type FaceFilter = '' | 'tasdiqlangan' | 'tasdiqlanmagan' | 'tasdiq_kutmoqda';
 type View = 'jadval' | 'kartochka';
 
 const PAGE_SIZE = 50;
@@ -41,13 +41,13 @@ const PAGE_SIZE = 50;
 const FACE_FILTERS: { value: FaceFilter; label: string }[] = [
   { value: '', label: 'Hammasi' },
   { value: 'tasdiqlangan', label: 'Yuzi bor' },
-  { value: 'yoq', label: 'Yuzi yo‘q' },
+  { value: 'tasdiqlanmagan', label: 'Yuzi yo‘q' },
   { value: 'tasdiq_kutmoqda', label: 'Kutmoqda' },
 ];
 
 const FACE_SLUG: Record<Exclude<FaceFilter, ''>, string> = {
   tasdiqlangan: 'yuzi-bor',
-  yoq: 'yuzi-yoq',
+  tasdiqlanmagan: 'yuzi-yoq',
   tasdiq_kutmoqda: 'tasdiq-kutmoqda',
 };
 
@@ -209,7 +209,7 @@ export default function FacesPage() {
             sub={stats && stats.total ? `${Math.round((stats.confirmed / stats.total) * 100)}% qamrov` : undefined}
             onClick={() => setFace('tasdiqlangan')}
           />
-          <Stat label="Yuzi yo‘q" value={stats ? formatNumber(stats.missing + stats.pending) : '—'} onClick={() => setFace('yoq')} />
+          <Stat label="Yuzi yo‘q" value={stats ? formatNumber(stats.missing + stats.pending) : '—'} onClick={() => setFace('tasdiqlanmagan')} />
           <Stat
             label={
               <span className="flex items-center gap-1.5">

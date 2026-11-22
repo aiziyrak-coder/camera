@@ -133,6 +133,15 @@ export default function ReviewPage() {
                 </li>
               ))}
             </ul>
+            {list.totalPages > 1 && (
+              <div className="flex h-10 shrink-0 items-center justify-between border-t border-line px-2">
+                <IconButton icon={ChevronLeft} label="Oldingi sahifa" size="sm" disabled={list.page <= 1} onClick={() => { list.setPage(list.page - 1); setCurrentId(null); }} />
+                <span className="tnum text-[12px] text-faint">
+                  {list.page} / {list.totalPages}
+                </span>
+                <IconButton icon={ChevronRight} label="Keyingi sahifa" size="sm" disabled={list.page >= list.totalPages} onClick={() => { list.setPage(list.page + 1); setCurrentId(null); }} />
+              </div>
+            )}
           </aside>
 
           {/* Ko'rib chiqish */}

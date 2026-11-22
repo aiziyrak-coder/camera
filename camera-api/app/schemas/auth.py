@@ -33,6 +33,8 @@ class SessionResponse(CamelModel):
 
     role: str
     user_name: str
+    # Foydalanuvchilar ro'yxatida "siz" belgisi va o'zini o'chirmaslik uchun.
+    login: str | None = None
     # Administrator, 2FA hali yoqilmagan — mijoz sozlash oynasini majburan ochadi.
     two_factor_required: bool = False
 

@@ -71,6 +71,11 @@ export default function TelegramPage() {
       />
 
       <div className="flex flex-col gap-5 p-4 lg:p-6">
+        {!status.telegramConfigured && (
+          <Alert tone="warn">
+            Telegram bot hali ulanmagan — ota-onalarga xabar yuborilmaydi. Ishga tushirish uchun bot tokeni (BotFather) serverga kiritilishi kerak.
+          </Alert>
+        )}
         <div className="card grid grid-cols-2 gap-px overflow-hidden bg-line lg:grid-cols-4 [&>*]:bg-white">
           <Stat
             label="Bot"
